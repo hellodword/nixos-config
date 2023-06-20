@@ -1,0 +1,78 @@
+{ lib, inputs, ... }:
+
+{
+  imports = [
+    ../global
+    ../features/cli
+  ]
+  ++
+  [
+    ../features/desktop/i3
+    ../features/desktop/optional/flameshot.nix
+
+    ../features/cli/optional/bat.nix
+    ../features/cli/optional/nix-index.nix
+
+    ../features/desktop/optional/kdeconnect.nix
+    ../features/desktop/optional/safeeyes.nix
+
+    ../features/desktop/optional/firefox.nix
+    ../features/desktop/optional/chrome.nix
+    ../features/desktop/optional/vscode.nix
+    ../features/desktop/optional/thunderbird.nix
+    ../features/desktop/optional/joplin.nix
+    ../features/desktop/optional/bitwarden.nix
+    ../features/desktop/optional/libreoffice.nix
+    ../features/desktop/optional/virtualbox.nix
+    ../features/desktop/optional/android-studio.nix
+  ]
+  ;
+
+  home.username = lib.mkDefault "ubuntu";
+
+  programs.ssh.matchBlocks = inputs.nixos-privates.ssh."laptop3".matchBlocks;
+
+  programs.autorandr = {
+    enable = true;
+    profiles = {
+      default = {
+        fingerprint = {
+          "${inputs.nixos-privates.monitors."laptop3-embedded".name}" = "${inputs.nixos-privates.monitors."laptop3-embedded".fingerprint}";
+        };
+        config = {
+          "${inputs.nixos-privates.monitors."laptop3-embedded".name}" = {
+            enable = true;
+            primary = true;
+            position = "0x0";
+            mode = "${inputs.nixos-privates.monitors."laptop3-embedded".mode}";
+            rate = "60.00";
+          };
+        };
+      };
+      "with-dell-1" = {
+        fingerprint = {
+          "${inputs.nixos-privates.monitors."laptop3-embedded".name}" = "${inputs.nixos-privates.monitors."laptop3-embedded".fingerprint}";
+          "${inputs.nixos-privates.monitors."dell-1".name}" = "${inputs.nixos-privates.monitors."dell-1".fingerprint}";
+        };
+        config = {
+          "${inputs.nixos-privates.monitors."laptop3-embedded".name}" = {
+            enable = true;
+            primary = false;
+            position = "0x0";
+            mode = "${inputs.nixos-privates.monitors."laptop3-embedded".mode}";
+            rate = "60.00";
+          };
+          "${inputs.nixos-privates.monitors."dell-1".name}" = {
+            enable = true;
+            primary = true;
+            position = "0x0";
+            mode = "${inputs.nixos-privates.monitors."dell-1".mode}";
+            rate = "60.00";
+          };
+        };
+      };
+    };
+  };
+
+  programs.alacritty.settings.font.size = lib.mkForce 9.0;
+}

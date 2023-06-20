@@ -1,0 +1,5 @@
+.config
+.secrets
+*.key
+keys.txt
+nixos-privates

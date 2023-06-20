@@ -1,0 +1,113 @@
+{
+  description = "Ubuntu's NixOS Flake";
+
+  inputs = {
+    # https://nixos.org/manual/nixos/unstable/options.html
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable"; # "github:NixOS/nixpkgs/release-22.11";
+    # https://nix-community.github.io/home-manager/options.html
+    home-manager = {
+      url = "github:nix-community/home-manager"; # "github:nix-community/home-manager/release-22.11";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    nixos-hardware.url = "github:NixOS/nixos-hardware/master";
+    impermanence.url = "github:nix-community/impermanence";
+    sops-nix.url = "github:Mic92/sops-nix/36b062a2c85a0efb37de1300c79c54602a094fab";
+
+    lanzaboote = {
+      url = "github:nix-community/lanzaboote/e9003f12e63588736dde12acf95a4d0361b215e5";
+
+      # Optional but recommended to limit the size of your system closure.
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    disko = {
+      url = "github:nix-community/disko/f0b9f374bb42fdcd57baa7d4448ac5d4788226bd";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # https://github.com/Baitinq/nixos-config/blob/1ab479c29c7dc2629664ffb80653616666019b9e/flake.nix#L32
+    arkenfox-userjs = {
+      url = "github:arkenfox/user.js";
+      flake = false;
+    };
+    thunderbird-userjs = {
+      url = "github:HorlogeSkynet/thunderbird-user.js";
+      flake = false;
+    };
+
+    nixos-privates.url = "git+ssh://git@hellodword.github.com/hellodword/nixos-privates.git";
+  };
+
+  outputs =
+    { self, nixpkgs, home-manager, lanzaboote, sops-nix, nixos-hardware, disko, ... }@ inputs:
+    let
+      inherit (self) outputs;
+      forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
+      forEachPkgs = f: forEachSystem (sys: f nixpkgs.legacyPackages.${sys});
+      commonArgs = { persistPath = "/persist"; };
+    in
+    {
+      nixosModules = import ./modules/nixos;
+      homeManagerModules = import ./modules/home-manager;
+      overlays = import ./overlays { inherit inputs outputs; };
+
+      # Your custom packages
+      # Accessible through 'nix build', 'nix shell', etc
+      packages = forEachSystem (system:
+        let pkgs = nixpkgs.legacyPackages.${system};
+        in import ./pkgs { inherit pkgs; }
+      );
+
+      devShells = forEachPkgs (pkgs: import ./shell.nix { inherit pkgs; });
+      formatter = forEachPkgs (pkgs: pkgs.nixpkgs-fmt);
+
+      # vbox
+      nixosConfigurations."vbox" = nixpkgs.lib.nixosSystem {
+        modules = [
+          ./hosts/vbox
+        ];
+        specialArgs = {
+          commonArgs = commonArgs;
+          inherit inputs outputs;
+        } // commonArgs;
+      };
+      # homeConfigurations."ubuntu@vbox" = home-manager.lib.homeManagerConfiguration {
+      #   modules = [ ./home/ubuntu/vbox ];
+      #   pkgs = nixpkgs.legacyPackages."x86_64-linux";
+      #   extraSpecialArgs = {
+      #     inherit inputs outputs;
+      #   } // commonArgs;
+      # };
+
+      # laptop3
+      nixosConfigurations."laptop3" = nixpkgs.lib.nixosSystem {
+        modules = [
+          ./hosts/laptop3
+        ];
+        specialArgs = {
+          commonArgs = commonArgs;
+          inherit inputs outputs;
+        } // commonArgs;
+      };
+      # homeConfigurations."ubuntu@laptop3" = home-manager.lib.homeManagerConfiguration {
+      #   modules = [ ./home/ubuntu/laptop3 ];
+      #   pkgs = nixpkgs.legacyPackages."x86_64-linux";
+      #   extraSpecialArgs = {
+      #     inherit inputs outputs;
+      #   } // commonArgs;
+      # };
+
+
+      # r86s
+      nixosConfigurations."r86s" = nixpkgs.lib.nixosSystem {
+        modules = [
+          ./hosts/r86s
+        ];
+        specialArgs = {
+          commonArgs = commonArgs;
+          inherit inputs outputs;
+        } // commonArgs;
+      };
+
+    };
+}

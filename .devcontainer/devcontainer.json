@@ -1,0 +1,23 @@
+{
+	"remoteUser": "vscode",
+	"name": "Nix",
+	"dockerFile": "Dockerfile",
+	"context": "${localWorkspaceFolder}",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"redhat.vscode-yaml",
+				"jnoortheen.nix-ide",
+				"streetsidesoftware.code-spell-checker"
+			]
+		}
+	},
+	"postCreateCommand": "bash .devcontainer/postCreateCommand.sh",
+	// // privileged is required by GitHub codespaces - https://github.com/microsoft/vscode-dev-containers/issues/727
+	"runArgs": [
+		"-v",
+		"${env:HOME}/.ssh:/home/vscode/.ssh:ro",
+		"--network",
+		"host"
+	]
+}
