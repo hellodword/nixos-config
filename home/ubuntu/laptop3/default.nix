@@ -16,7 +16,10 @@
     ../features/desktop/optional/kdeconnect.nix
     ../features/desktop/optional/safeeyes.nix
 
+    ../features/desktop/optional/peek.nix
+
     ../features/desktop/optional/firefox.nix
+    ../features/desktop/optional/chromium.nix
     ../features/desktop/optional/chrome.nix
     ../features/desktop/optional/vscode.nix
     ../features/desktop/optional/thunderbird.nix

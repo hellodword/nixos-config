@@ -1,22 +1,6 @@
-{ config, pkgs, persistPath, ... }:
+{ config, persistPath, ... }:
 
 {
-  # TODO backup
-  home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".config/chromium" ];
-  };
-
-  # TODO config
-  programs.chromium = {
-    enable = true;
-    package = pkgs.chromium;
-    commandLineArgs = [ ];
-    extensions = [
-      { id = "dhdgffkkebhmkfjojejmpbldmpobfkfo"; } # Tampermonkey
-      # { id = "cjpalhdlnbpafiamejdnhcphjbkeiagm"; } # ublock origin
-    ];
-  };
-
   allowedUnfreePkg = [
     "google-chrome"
   ];
