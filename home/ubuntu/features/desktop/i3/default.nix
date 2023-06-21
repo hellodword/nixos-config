@@ -57,6 +57,7 @@ in
 
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [
+      # 使用新的 rimeDataPkgs 的时候要把文件清空
       ".config/ibus/rime"
       ".local/share/fcitx5/rime"
     ];
@@ -67,7 +68,9 @@ in
     # fcitx.engines = with pkgs.fcitx-engines; [ rime ];
     # fcitx5.enableRimeData = true;
     fcitx5.addons = with pkgs; [
-      fcitx5-rime
+      (fcitx5-rime.override {
+        rimeDataPkgs = [ pkgs.rime-ice ];
+      })
     ];
   };
 

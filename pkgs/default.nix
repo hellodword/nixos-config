@@ -1,3 +1,5 @@
 { pkgs ? import <nixpkgs> { } }:
 
-rec { }
+rec {
+  rime-ice = pkgs.callPackage ./rime-ice { };
+}
