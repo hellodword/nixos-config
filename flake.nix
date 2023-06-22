@@ -43,12 +43,13 @@
     let
       inherit (self) outputs;
       forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
-      forEachPkgs = f: forEachSystem (sys: f nixpkgs.legacyPackages.${sys});
+      # forEachPkgs = f: forEachSystem (sys: f nixpkgs.legacyPackages.${sys});
       commonArgs = { persistPath = "/persist"; };
     in
     {
       nixosModules = import ./modules/nixos;
       homeManagerModules = import ./modules/home-manager;
+
       overlays = import ./overlays { inherit inputs outputs; };
 
       # Your custom packages
@@ -57,9 +58,6 @@
         let pkgs = nixpkgs.legacyPackages.${system};
         in import ./pkgs { inherit pkgs; }
       );
-
-      devShells = forEachPkgs (pkgs: import ./shell.nix { inherit pkgs; });
-      formatter = forEachPkgs (pkgs: pkgs.nixpkgs-fmt);
 
       # vbox
       nixosConfigurations."vbox" = nixpkgs.lib.nixosSystem {
@@ -71,13 +69,6 @@
           inherit inputs outputs;
         } // commonArgs;
       };
-      # homeConfigurations."ubuntu@vbox" = home-manager.lib.homeManagerConfiguration {
-      #   modules = [ ./home/ubuntu/vbox ];
-      #   pkgs = nixpkgs.legacyPackages."x86_64-linux";
-      #   extraSpecialArgs = {
-      #     inherit inputs outputs;
-      #   } // commonArgs;
-      # };
 
       # laptop3
       nixosConfigurations."laptop3" = nixpkgs.lib.nixosSystem {
@@ -89,13 +80,6 @@
           inherit inputs outputs;
         } // commonArgs;
       };
-      # homeConfigurations."ubuntu@laptop3" = home-manager.lib.homeManagerConfiguration {
-      #   modules = [ ./home/ubuntu/laptop3 ];
-      #   pkgs = nixpkgs.legacyPackages."x86_64-linux";
-      #   extraSpecialArgs = {
-      #     inherit inputs outputs;
-      #   } // commonArgs;
-      # };
 
 
       # r86s
