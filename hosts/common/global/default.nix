@@ -15,6 +15,8 @@
     ./inetutils.nix
   ] ++ (builtins.attrValues outputs.nixosModules);
 
+  system.configurationRevision = inputs.self.rev or "dirty";
+
   nixpkgs = {
     # You can add overlays here
     overlays = [
