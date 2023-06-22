@@ -65,6 +65,7 @@
     htop
     lm_sensors
     pciutils
+    sops
   ];
 
   boot.kernelPackages = pkgs.linuxPackages_6_3;
