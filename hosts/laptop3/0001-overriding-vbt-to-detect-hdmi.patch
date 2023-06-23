@@ -1,0 +1,18 @@
+diff --git a/drivers/gpu/drm/i915/display/intel_ddi.c b/drivers/gpu/drm/i915/display/intel_ddi.c
+index 379050d22..fe10dfab8 100644
+--- a/drivers/gpu/drm/i915/display/intel_ddi.c
++++ b/drivers/gpu/drm/i915/display/intel_ddi.c
+@@ -4346,6 +4346,13 @@ void intel_ddi_init(struct drm_i915_private *dev_priv, enum port port)
+ 	encoder = &dig_port->base;
+ 	encoder->devdata = devdata;
+ 
++	pr_err("%s: **TEST_i915** port(%c) phy(%c) hdmi(%d) dp(%d) eDP(%d)\n", __func__, port_name(port), phy_name(phy), init_hdmi, ((intel_dp_is_port_edp(dev_priv, port) ? 0:1)) && init_dp, (intel_dp_is_port_edp(dev_priv, port) ? 1:0) && init_dp);
++	if(port_name(port) == 'B') {
++		init_dp = 0;
++		init_hdmi = 1;
++		pr_err("%s: **TEST_i915** port(%c) phy(%c) hdmi(%d) dp(%d) eDP(%d)\n", __func__, port_name(port), phy_name(phy), init_hdmi, (intel_dp_is_port_edp(dev_priv, port)? 0:1) && init_dp, (intel_dp_is_port_edp(dev_priv, port) ? 1:0) && init_dp);
++	}
++
+ 	if (DISPLAY_VER(dev_priv) >= 13 && port >= PORT_D_XELPD) {
+ 		drm_encoder_init(&dev_priv->drm, &encoder->base, &intel_ddi_funcs,
+ 				 DRM_MODE_ENCODER_TMDS,
