@@ -2,6 +2,9 @@
 
 {
   # TODO key bindings
+  #   CTRL+SHIFT+N 新开实例
+  #   翻页
+  #   ~~滚动条~~ https://github.com/kovidgoyal/kitty/issues/2502#issuecomment-606996263
   programs.kitty = {
     enable = true;
     package = pkgs.kitty;

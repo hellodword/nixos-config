@@ -4,17 +4,36 @@ let
   mod = config.xsession.windowManager.i3.config.modifier;
 in
 {
-  # home.packages = with pkgs; [
-  #   rofi
-  #   rofi-power-menu
-  # ];
+  home.packages = with pkgs; [
+    # rofi
+    rofi-power-menu
+  ];
 
-  # TODO
   programs.rofi = {
     enable = true;
     plugins = with pkgs; [ rofi-calc rofi-emoji rofi-power-menu ];
     terminal = "${pkgs.kitty}/bin/kitty";
     # theme = ./theme.rafi;
+    extraConfig = {
+      disable-history = false;
+      show-icons = true;
+      sidebar-mode = false;
+      sort = true;
+
+      drun-display-format = "{icon} {name}";
+
+      display-drun = "   Run ";
+      display-emoji = "   Emoji ";
+      display-window = " 﩯 Window ";
+      display-power-menu = "  Power Menu ";
+
+      modi = "run,drun,filebrowser,emoji,power-menu:${
+          lib.getExe pkgs.rofi-power-menu
+        }";
+
+      xoffset = 0;
+      yoffset = 0;
+    };
   };
 
   # 使用频率影响排序
