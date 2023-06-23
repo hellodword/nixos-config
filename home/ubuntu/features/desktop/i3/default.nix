@@ -1,4 +1,4 @@
-{ pkgs, lib, config, persistPath, ... }:
+{ pkgs, lib, config, ... }:
 
 let
   mod = "Mod4";

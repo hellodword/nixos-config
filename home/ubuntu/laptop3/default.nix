@@ -60,7 +60,7 @@
         };
         config = {
           "${inputs.nixos-privates.monitors."laptop3-embedded".name}" = {
-            enable = true;
+            enable = false;
             primary = false;
             position = "0x0";
             mode = "${inputs.nixos-privates.monitors."laptop3-embedded".mode}";
