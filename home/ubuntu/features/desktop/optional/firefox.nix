@@ -218,6 +218,8 @@
             user_pref("browser.urlbar.suggest.topsites", false);
             user_pref("browser.toolbars.bookmarks.visibility", "newtab");
             // user_pref("browser.bookmarks.addedImportButton", false);
+            // disable Ask to save logins and passwords for websites
+            user_pref("signon.rememberSignons", false);
           ''
         ];
       };
