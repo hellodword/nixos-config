@@ -1,24 +1,9 @@
-{ pkgs, lib, config, ... }:
+{ pkgs, lib, ... }:
 
 let
   mod = "Mod4";
 in
 {
-
-  # TODO split/refactor
-
-
-  # home.file.".xinitrc".text = ''
-  #   autorandr --change
-  #   exec i3
-  # '';
-
-  # programs.bash.bashrcExtra = ''
-  #   if [ -z $DISPLAY ] && [ "$(tty)" = "/dev/tty1" ]; then
-  #     exec ${pkgs.systemd}/bin/systemd-cat -t i3 ${pkgs.xorg.xinit}/bin/startx
-  #   fi
-  # '';
-
   imports = [
     ../common
 
@@ -26,7 +11,7 @@ in
     ./deadd.nix
     ./i3status.nix
     ./rime.nix
-    ./rofi.nix
+    ./rofi
     ./wallpaper.nix
   ];
 
@@ -35,10 +20,8 @@ in
     alsa-utils
     brightnessctl
 
-    # dmenu
-    # networkmanager_dmenu
-
-    # dmenu #application launcher most people use
+    networkmanager_dmenu
+    dmenu #application launcher most people use
     i3lock #default i3 screen locker
   ];
 

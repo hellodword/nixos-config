@@ -4,13 +4,18 @@ let
   mod = config.xsession.windowManager.i3.config.modifier;
 in
 {
-  home.packages = with pkgs; [
-    rofi
-    rofi-power-menu
-  ];
+  # home.packages = with pkgs; [
+  #   rofi
+  #   rofi-power-menu
+  # ];
 
-  # # TODO
-  # programs.rofi = { };
+  # TODO
+  programs.rofi = {
+    enable = true;
+    plugins = with pkgs; [ rofi-calc rofi-emoji ];
+    terminal = "${pkgs.kitty}/bin/kitty";
+    theme = ./theme.rafi;
+  };
 
   # 使用频率影响排序
   home.persistence = {
