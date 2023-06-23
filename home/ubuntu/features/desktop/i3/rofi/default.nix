@@ -12,9 +12,9 @@ in
   # TODO
   programs.rofi = {
     enable = true;
-    plugins = with pkgs; [ rofi-calc rofi-emoji ];
+    plugins = with pkgs; [ rofi-calc rofi-emoji rofi-power-menu ];
     terminal = "${pkgs.kitty}/bin/kitty";
-    theme = ./theme.rafi;
+    # theme = ./theme.rafi;
   };
 
   # 使用频率影响排序
