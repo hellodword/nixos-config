@@ -79,4 +79,5 @@
   };
 
   programs.alacritty.settings.font.size = lib.mkForce 9.0;
+  programs.kitty.font.size = lib.mkForce 9.0;
 }

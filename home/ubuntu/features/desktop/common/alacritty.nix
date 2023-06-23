@@ -33,7 +33,7 @@ in
 
       font = {
         normal = {
-          family = "JetBrainsMono Nerd Font";
+          family = "FiraCode Nerd Font";
           style = "Medium";
         };
         size = 11.0;

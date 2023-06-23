@@ -41,33 +41,46 @@
   #   };
   # };
 
-  fonts.enableDefaultFonts = false;
-  fonts.fonts = with pkgs; [
-    noto-fonts
-    noto-fonts-cjk-sans
-    noto-fonts-cjk-serif
-    noto-fonts-emoji
-    jetbrains-mono
-    (nerdfonts.override { fonts = [ "JetBrainsMono" "RobotoMono" ]; })
-  ];
-  fonts.fontconfig.defaultFonts = pkgs.lib.mkForce {
-    serif = [
-      "Noto Serif"
-      "Noto Serif CJK SC"
-      "Noto Color Emoji"
+  # https://github.com/alacritty/alacritty/issues/153
+
+  fonts = {
+    # enableDefaultFonts = false;
+    fontDir.enable = true;
+    fonts = with pkgs; [
+      noto-fonts
+      noto-fonts-cjk-sans
+      noto-fonts-cjk-serif
+      noto-fonts-emoji
+      jetbrains-mono
+      roboto
+      roboto-slab
+      sarasa-gothic
+      (nerdfonts.override { fonts = [ "JetBrainsMono" "RobotoMono" "FiraCode" "Noto" ]; })
     ];
-    sansSerif = [
-      "Noto Sans"
-      "Noto Sans CJK SC"
-      "Noto Color Emoji"
-    ];
-    monospace = [
-      "JetBrains Mono"
-      # https://github.com/alacritty/alacritty/issues/153
-      "Noto Color Emoji"
-    ];
-    emoji = [
-      "Noto Color Emoji"
-    ];
+    # fontconfig.defaultFonts = pkgs.lib.mkForce {
+    #   serif = [
+    #     "Noto Serif"
+    #     "Noto Serif CJK SC"
+    #     "Noto Color Emoji"
+    #   ];
+    #   sansSerif = [
+    #     "Noto Sans"
+    #     "Noto Sans CJK SC"
+    #     "Noto Color Emoji"
+    #   ];
+    #   monospace = [
+    #     "JetBrains Mono"
+    #     "Noto Color Emoji"
+    #   ];
+    #   emoji = [
+    #     "Noto Color Emoji"
+    #   ];
+    # };
+    fontconfig.defaultFonts = {
+      monospace = [ "RobotoMono Nerd Font" "Noto Sans Mono CJK SC" ];
+      sansSerif = [ "Roboto" "Sarasa Gothic SC" "NotoSans Nerd Font" ];
+      serif = [ "Roboto Slab" "Noto Serif CJK SC" "NotoSerif Nerd Font" ];
+      emoji = [ "Noto Color Emoji" ];
+    };
   };
 }
