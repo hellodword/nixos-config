@@ -1,4 +1,4 @@
-{ lib, inputs, ... }:
+{ lib, inputs, pkgs, ... }:
 
 {
   imports = [
@@ -76,8 +76,27 @@
         };
       };
     };
+    hooks = {
+      postswitch = {
+        "change-dpi" = ''
+          case "$AUTORANDR_CURRENT_PROFILE" in
+            default)
+              DPI=120
+              ;;
+            with-dell-1)
+              DPI=110
+              ;;
+            *)
+              echo "Unknown profile: $AUTORANDR_CURRENT_PROFILE"
+              exit 1
+          esac
+
+          echo "Xft.dpi: $DPI" | ${pkgs.xorg.xrdb}/bin/xrdb -merge
+        '';
+      };
+    };
   };
 
-  programs.alacritty.settings.font.size = lib.mkForce 9.0;
-  programs.kitty.font.size = lib.mkForce 9.0;
+  # programs.alacritty.settings.font.size = lib.mkForce 9.0;
+  # programs.kitty.font.size = lib.mkForce 9.0;
 }

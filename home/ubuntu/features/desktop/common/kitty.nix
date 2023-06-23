@@ -1,6 +1,7 @@
 { pkgs, ... }:
 
 {
+  # TODO key bindings
   programs.kitty = {
     enable = true;
     package = pkgs.kitty;
