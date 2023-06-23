@@ -26,6 +26,7 @@ in
   programs.alacritty = {
     enable = true;
 
+    # https://github.com/alacritty/alacritty/blob/5fdfd47f832522b5fbfa111006046561404789a2/alacritty.yml
     settings = {
       cursor.style = "Beam";
       inherit (theme) color_schemes colors;
@@ -48,6 +49,34 @@ in
           key = "N";
           mods = "Control|Shift";
           action = "SpawnNewInstance";
+        }
+        #- { key: PageUp,    mods: Shift,   mode: ~Alt,        action: ScrollPageUp   }
+        #- { key: PageDown,  mods: Shift,   mode: ~Alt,        action: ScrollPageDown }
+        #- { key: Home,      mods: Shift,   mode: ~Alt,        action: ScrollToTop    }
+        #- { key: End,       mods: Shift,   mode: ~Alt,        action: ScrollToBottom }
+        {
+          key = "PageUp";
+          mods = "Shift";
+          mode = "~Alt";
+          action = "ScrollPageUp";
+        }
+        {
+          key = "PageDown";
+          mods = "Shift";
+          mode = "~Alt";
+          action = "ScrollPageDown";
+        }
+        {
+          key = "Home";
+          mods = "Shift";
+          mode = "~Alt";
+          action = "ScrollToTop";
+        }
+        {
+          key = "End";
+          mods = "Shift";
+          mode = "~Alt";
+          action = "ScrollToBottom";
         }
       ];
     };
