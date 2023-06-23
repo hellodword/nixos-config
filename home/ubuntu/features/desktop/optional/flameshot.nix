@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 {
   services.flameshot = {
@@ -9,5 +9,7 @@
     };
   };
 
-  # xsession.windowManager.i3.config.keybindings."Print" = "exec flameshot gui";
+  xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault {
+    "Print" = "exec flameshot gui";
+  };
 }

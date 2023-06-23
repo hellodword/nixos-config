@@ -86,12 +86,6 @@ in
       ];
 
       keybindings = lib.mkOptionDefault {
-        # 输入法切换冲突
-        "${mod}+space" = null;
-        "${mod}+d" = "exec rofi -modi drun -show drun -drun-show-actions -font 'Jetbrains Mono 16'";
-        "${mod}+Shift+d" = "exec rofi -show run -font 'Jetbrains Mono 16'";
-        "${mod}+Shift+p" = "exec rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'Jetbrains Mono 16'";
-        "${mod}+z" = "exec kill -s USR1 $(pidof deadd-notification-center)";
         "${mod}+semicolon" = "exec i3lock -c 01544A -n";
         # https://github.com/Th0rgal/horus-nix-home/blob/200c746e2baf5a299ad99756ed32e09a05bcbc1c/configs/i3.nix#L20
         "XF86AudioMute" = "exec amixer set Master toggle";
@@ -99,7 +93,6 @@ in
         "XF86AudioRaiseVolume" = "exec amixer set Master 4%+";
         "XF86MonBrightnessDown" = "exec brightnessctl set 4%-";
         "XF86MonBrightnessUp" = "exec brightnessctl set 4%+";
-        "Print" = if config.services.flameshot.enable then "exec flameshot gui" else null;
       };
 
       bars = [ ];

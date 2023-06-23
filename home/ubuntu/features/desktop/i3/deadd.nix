@@ -1,5 +1,8 @@
-{ pkgs, ... }:
+{ pkgs, config, lib, ... }:
 
+let
+  mod = config.xsession.windowManager.i3.config.modifier;
+in
 {
   home.packages = with pkgs; [
     deadd-notification-center
@@ -20,4 +23,8 @@
       workspace = null;
     }
   ];
+
+  xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault {
+    "${mod}+z" = "exec kill -s USR1 $(pidof deadd-notification-center)";
+  };
 }

@@ -1,5 +1,8 @@
-{ pkgs, config, persistPath, ... }:
+{ pkgs, config, lib, persistPath, ... }:
 
+let
+  mod = config.xsession.windowManager.i3.config.modifier;
+in
 {
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [
@@ -25,5 +28,10 @@
     recursive = true;
     # https://github.com/nix-community/home-manager/issues/1213#issuecomment-626240819
     force = true;
+  };
+
+  xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault {
+    # 输入法切换冲突
+    "${mod}+space" = null;
   };
 }
