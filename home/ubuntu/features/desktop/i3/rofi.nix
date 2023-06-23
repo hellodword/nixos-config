@@ -8,6 +8,6 @@
 
   # 使用频率影响排序
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".cache/rofi3.druncache" ];
+    "${persistPath}${config.home.homeDirectory}".files = [ ".cache/rofi3.druncache" ];
   };
 }
