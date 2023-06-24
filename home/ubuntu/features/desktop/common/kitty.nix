@@ -1,10 +1,7 @@
 { pkgs, ... }:
 
 {
-  # TODO key bindings
-  #   CTRL+SHIFT+N 新开实例
-  #   翻页
-  #   ~~滚动条~~ https://github.com/kovidgoyal/kitty/issues/2502#issuecomment-606996263
+  # ~~滚动条~~ https://github.com/kovidgoyal/kitty/issues/2502#issuecomment-606996263
   programs.kitty = {
     enable = true;
     package = pkgs.kitty;
@@ -24,5 +21,9 @@
       modify_font underline_position +3
       modify_font underline_thickness 150%
     '';
+    keybindings = {
+      "kitty_mod+n" = "new_os_window_with_cwd";
+      "kitty_mod+t" = "new_tab_with_cwd";
+    };
   };
 }
