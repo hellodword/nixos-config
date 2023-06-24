@@ -20,6 +20,7 @@
     # VirtualBox is not currently allowed to access USB devices
     ++ lib.optionals config.virtualisation.virtualbox.host.enable [ "vboxusers" ]
     ++ lib.optionals config.hardware.brillo.enable [ "video" ]
+    ++ lib.optionals config.programs.adb.enable [ "adbusers" ]
     ++ [ ];
 
     passwordFile = config.sops.secrets."ubuntu-password".path;

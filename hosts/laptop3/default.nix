@@ -40,6 +40,7 @@
     ../common/optional/apkid.nix
 
     ../common/optional/gpg.nix
+    ../common/optional/adb.nix
   ]
   ++
   [
