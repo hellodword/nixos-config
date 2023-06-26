@@ -116,6 +116,10 @@
           "tls://[2620:fe::9]"
         ];
         upstream_dns_file = "/usr/local/etc/adguard-home/whitelist_full_combine.txt";
+        rewrites = [
+          { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
+          { domain = "chat.openai.com"; answer = "2606:4700::6812:7b9"; }
+        ];
       };
     };
   };
