@@ -173,6 +173,10 @@
         # https://gist.github.com/0XDE57/fbd302cef7693e62c769
         # https://github.com/arkenfox/user.js/
         # https://github.com/Baitinq/nixos-config/blob/1ab479c29c7dc2629664ffb80653616666019b9e/hosts/home.nix#L200
+        # 调试方法:
+        #   cp ~/.mozilla/firefox/default/prefs.js /tmp/prefs.js
+        #   修改配置
+        #   diff ~/.mozilla/firefox/default/prefs.js /tmp/prefs.js
         extraConfig = lib.strings.concatStrings [
           (builtins.readFile "${inputs.arkenfox-userjs}/user.js")
           ''
@@ -220,6 +224,10 @@
             // user_pref("browser.bookmarks.addedImportButton", false);
             // disable Ask to save logins and passwords for websites
             user_pref("signon.rememberSignons", false);
+            user_pref("network.dns.disableIPv6", false);
+            // turn off secure DNS
+            user_pref("doh-rollout.disable-heuristics", true);
+            user_pref("network.trr.mode", 5);
           ''
         ];
       };
