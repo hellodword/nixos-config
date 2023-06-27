@@ -54,6 +54,7 @@ in
         ".config/Google"
         ".gradle"
         ".android"
+        ".local/share/Google" # consentOptions/accepted
       ];
     };
   };
