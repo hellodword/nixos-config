@@ -30,14 +30,14 @@
       "extensions.autoUpdate" = false;
     };
     extensions = (with pkgs.vscode-extensions; [
-      dart-code.dart-code
-      dart-code.flutter
+      # dart-code.dart-code
+      # dart-code.flutter
       esbenp.prettier-vscode
-      golang.go
+      # golang.go
       jnoortheen.nix-ide
       ms-python.python
-      ms-vscode.makefile-tools
-      ms-vscode.cmake-tools
+      # ms-vscode.makefile-tools
+      # ms-vscode.cmake-tools
       ms-vscode.cpptools
       ms-azuretools.vscode-docker
       ms-python.vscode-pylance
