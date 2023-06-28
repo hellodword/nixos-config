@@ -55,6 +55,7 @@
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [
       ".config/Code"
+      ".cache/vscode-cpptools"
     ];
   };
 }
