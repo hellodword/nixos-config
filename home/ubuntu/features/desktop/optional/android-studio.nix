@@ -55,6 +55,7 @@ in
         ".gradle"
         ".android"
         ".local/share/Google" # consentOptions/accepted
+        ".jdks"
       ];
     };
   };
