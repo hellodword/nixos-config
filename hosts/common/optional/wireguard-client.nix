@@ -27,7 +27,9 @@
 
     PostUp = ip -4 route add default dev %i src 172.16.0.2 table 51820
     PostUp = ip -4 rule add fwmark 51820 lookup 51820
+    PostUp = ip -4 rule add ipproto icmp lookup 51820
     PostDown = ip -4 rule del fwmark 51820 lookup 51820 || true
+    PostDown = ip -4 rule del ipproto icmp lookup 51820 || true
 
     PostUp = iptables -t mangle -C OUTPUT -m set --match-set %i dst -j MARK --set-mark 51820 2>/dev/null || iptables -t mangle -I OUTPUT -m set --match-set %i dst -j MARK --set-mark 51820
     PostUp = iptables -t nat -C POSTROUTING -m mark --mark 51820 -j SNAT --to-source 172.16.0.2 2>/dev/null || iptables -t nat -I POSTROUTING -m mark --mark 51820 -j SNAT --to-source 172.16.0.2
