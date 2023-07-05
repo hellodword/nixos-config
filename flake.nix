@@ -36,6 +36,11 @@
     };
 
     nixos-privates.url = "git+ssh://git@hellodword.github.com/hellodword/nixos-privates.git";
+
+    firefox-addons = {
+      url = "gitlab:rycee/nur-expressions/69e5964e445ae35ae3c17f8c7dcf2a22dbcff94c?dir=pkgs/firefox-addons";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =

@@ -98,8 +98,17 @@
             ];
           }
         ];
-        # # TODO
-        # extensions = [ ];
+        extensions = [
+          (inputs.firefox-addons.lib.${pkgs.system}.buildFirefoxXpiAddon rec {
+            pname = "tampermonkey";
+            addonId = "firefox@tampermonkey.net";
+            version = "4.19.0";
+            url =
+              "https://addons.mozilla.org/firefox/downloads/file/4115771/tampermonkey-4.19.0.xpi";
+            sha256 = "0f6v853mccj2rkmjy3g9r1gvgk7yfad7mjh1wqzdhhws7imiysi2";
+            meta = { };
+          })
+        ];
         /* 
           ff 的 alias 使用起来没有 chrome 灵活。
           例如 alias 是 git：
