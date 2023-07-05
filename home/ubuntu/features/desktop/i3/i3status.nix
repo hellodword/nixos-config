@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   home.packages = with pkgs; [
@@ -82,7 +82,6 @@
 
       "battery all" = {
         position = 70;
-        enable = lib.mkDefault false;
         settings = {
           format = "%status %percentage %remaining";
           low_threshold = 10;
