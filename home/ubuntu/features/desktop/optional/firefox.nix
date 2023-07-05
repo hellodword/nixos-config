@@ -100,6 +100,12 @@
         ];
         # # TODO
         # extensions = [ ];
+        /* 
+          ff 的 alias 使用起来没有 chrome 灵活。
+          例如 alias 是 git：
+          在 chrome 中输入 git+空格，会进入搜索待输入模式，但这时退格删除掉空格，git 就变成了待搜索词；
+          而在 ff 中则以 git+空格 开头永远是识别为 alias。
+        */
         search = {
           default = "Google";
           force = true;
@@ -117,14 +123,14 @@
               urls = [{
                 template = "https://github.com/search?l=&p=1&q={searchTerms}+extension:yml+extension:yaml+path:.github/workflows&type=Code";
               }];
-              definedAliases = [ "@actions" "actions" ];
+              definedAliases = [ "@actions" "@ci" ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "Github" = {
               urls = [{
                 template = "https://github.com/search?q={searchTerms}";
               }];
-              definedAliases = [ "@git" "git" ];
+              definedAliases = [ "@git" ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "Github Nix" = {
@@ -138,7 +144,7 @@
               urls = [{
                 template = "https://github.com/search?q=repo%3ANixOS%2Fnixpkgs+{searchTerms}+language%3Anix&type=code";
               }];
-              definedAliases = [ "@nixpkgs" "nixpkgs" ];
+              definedAliases = [ "@nixpkgs" ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "home-manager" = {
@@ -159,7 +165,7 @@
               urls = [{
                 template = "https://www.google.com/search?q={searchTerms}+site:v2ex.com";
               }];
-              definedAliases = [ "@v2ex" "v2ex" ];
+              definedAliases = [ "@v2ex" ];
               iconUpdateURL = "https://www.v2ex.com/favicon.ico";
             };
 
