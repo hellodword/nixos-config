@@ -44,10 +44,14 @@
       ms-vscode-remote.remote-ssh
     ]) ++ pkgs.vscode-utils.extensionsFromVscodeMarketplace [
       {
+        # https://github.com/NixOS/nixpkgs/blob/a40b1a0c8296ffdfe90bd34ccfab19857586c005/pkgs/applications/editors/vscode/extensions/mktplcExtRefToFetchArgs.nix#L6C10-L6C179
+        # https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers
+        # https://${publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/${publisher}/extension/${name}/${version}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage
+        # https://ms-vscode-remote.gallery.vsassets.io/_apis/public/gallery/publisher/ms-vscode-remote/extension/remote-containers/0.298.0/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage
         name = "remote-containers";
         publisher = "ms-vscode-remote";
-        version = "0.295.0";
-        sha256 = "1bzyag89qvd92mwagw3l3qm5383nbf06x65di5yw3mw67dk5s5g4";
+        version = "0.298.0";
+        sha256 = "19bylhfr1qzp79z9vflqrcrlr45x66w5pxgfvzkm51c9hzm3fr8i";
       }
     ];
   };
