@@ -20,7 +20,7 @@
 
     ../common/optional/router
 
-    # ../common/optional/netdata.nix
+    ../common/optional/netdata.nix
   ]
   ++
   [
