@@ -2,6 +2,7 @@
 
 {
   # ~~滚动条~~ https://github.com/kovidgoyal/kitty/issues/2502#issuecomment-606996263
+  # WARNING: terminal is not fully functional https://sw.kovidgoyal.net/kitty/faq/#i-get-errors-about-the-terminal-being-unknown-or-opening-the-terminal-failing-or-functional-keys-like-arrow-keys-don-t-work
   programs.kitty = {
     enable = true;
     package = pkgs.kitty;

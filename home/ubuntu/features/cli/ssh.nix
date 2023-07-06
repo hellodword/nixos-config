@@ -9,6 +9,13 @@
     hashKnownHosts = true;
     serverAliveCountMax = 60;
     serverAliveInterval = 30;
+    # for kitty
+    extraConfig = ''
+      SetEnv=TERM=xterm-color
+    '';
+    extraOptionOverrides = {
+      SetEnv = "TERM=xterm-color";
+    };
   };
 
   home.persistence = {
