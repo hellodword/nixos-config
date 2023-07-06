@@ -11,7 +11,9 @@
 # with .sops.yaml and ~/.config/sops/age/keys.txt
 sops secrets/secrets.yaml
 ```
+
 ---
+
 ## debug
 
 ```sh
@@ -25,6 +27,7 @@ nix-repl> nixosConfigurations.vbox.config.allowedUnfreePkg
 ```
 
 ---
+
 ## hosts
 
 ### vbox
@@ -33,7 +36,6 @@ nix-repl> nixosConfigurations.vbox.config.allowedUnfreePkg
 > System 勾选 `Enable EFI`
 
 0. 克隆
-
 
 ```sh
 export TARGET_HOSTNAME="vbox"
@@ -54,6 +56,17 @@ export TMPDIR=/tmp/tmp
 
 nix-shell -p git sbctl
 
+mkdir -p ~/.ssh
+vim ~/.ssh/<private key for nix-privates>
+vim ~/.ssh/config
+# Host hellodword.github.com
+#   IdentitiesOnly yes
+#   User hellodword
+#   HostName github.com
+#   ProxyCommand nc -v -x 192.168.1.2:1080 %h %p
+#   IdentityFile ~/.ssh/<private key for nix-privates>
+#   PreferredAuthentications publickey
+
 git clone <nixos config> nixos-config
 cd nixos-config
 ```
@@ -61,7 +74,6 @@ cd nixos-config
 1. 分区
 
 > 只建议用 uuid 区分磁盘
-
 
 <details><summary>手动分区</summary>
 
@@ -130,7 +142,6 @@ nixos-generate-config --root /mnt
 
 然后对比 `/mnt/etc/nixos/hardware-configuration.nix` 并修改 nixos config 中新 host 的对应文件
 
-
 3. 准备文件
 
 ```sh
@@ -190,14 +201,15 @@ nixos-rebuild --use-remote-sudo switch --flake .#laptop3
 ### Secure Boot
 
 > boot.lanzaboote enable 之后
-- BIOS - Security - Secure Boot
-    - Secure Boot: Enabled
-    - Secure Boot Mode: Custom
-    - Key Management - Factory Key Provision: Disabled
-    - Reset To Setup Mode
 
+- BIOS - Security - Secure Boot
+  - Secure Boot: Enabled
+  - Secure Boot Mode: Custom
+  - Key Management - Factory Key Provision: Disabled
+  - Reset To Setup Mode
 
 ---
+
 ## TODO
 
 ### minimal
