@@ -31,7 +31,8 @@ in
   systemd.user.services.autorandr-trigger = {
     Unit = {
       Description = "autorandr trigger";
-      After = [ "autorandr.service" ];
+      After = config.systemd.user.services.autorandr.Unit.After;
+      PartOf = config.systemd.user.services.autorandr.Unit.PartOf;
     };
 
     Service = {
@@ -40,6 +41,8 @@ in
       Restart = "on-failure";
       RestartSec = "5m";
     };
+
+    Install.WantedBy = config.systemd.user.services.autorandr.Install.WantedBy;
   };
   /*
     systemd.user.services.autorandr = {
