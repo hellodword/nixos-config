@@ -21,10 +21,10 @@
 
     # # Imperative
     # allowAuxiliaryImperativeNetworks = true;
-    # userControlled = {
-    #   enable = true;
-    #   group = "network";
-    # };
+    userControlled = {
+      enable = true;
+      # group = "network";
+    };
     # extraConfig = ''
     #   update_config=1
     # '';
