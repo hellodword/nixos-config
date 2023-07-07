@@ -11,6 +11,14 @@
 
   # systemd.user.services.autorandr.Unit.After = [ "sops-nix.service" ];
   services.autorandr.enable = true;
+  systemd.user.timers.autorandr = {
+    Timer = {
+      OnBootSec = "30s";
+      OnUnitInactiveSec = "5s";
+      AccuracySec = "1us";
+    };
+    Install = { WantedBy = [ "timers.target" ]; };
+  };
   /*
     systemd.user.services.autorandr = {
     Unit = {
