@@ -1,4 +1,4 @@
-{ config, ... }:
+{ lib, pkgs, config, ... }:
 
 {
   # Wireless secrets stored through sops
@@ -29,6 +29,8 @@
     #   update_config=1
     # '';
   };
+
+  environment.systemPackages = lib.optionals config.services.xserver.enable [ pkgs.wpa_supplicant_gui ];
 
   # # Ensure group exists
   # users.groups.network = { };
