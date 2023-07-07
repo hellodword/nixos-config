@@ -43,7 +43,6 @@
     git
     screen
     openssl_legacy
-    (busybox.override { enableAppletSymlinks = false; })
     sysstat
     aria
   ];
