@@ -20,7 +20,7 @@ in
     alsa-utils
     brightnessctl
 
-    networkmanager_dmenu
+    # networkmanager_dmenu
     dmenu #application launcher most people use
     i3lock #default i3 screen locker
   ];
