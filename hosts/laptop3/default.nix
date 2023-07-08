@@ -74,7 +74,7 @@
     sops
   ];
 
-  boot.kernelPackages = pkgs.linuxPackages_6_4;
+  boot.kernelPackages = pkgs.linuxPackages_6_1;
   boot.kernelPatches = [
     # {
     #   # https://gitlab.freedesktop.org/drm/intel/-/issues/6454#note_1559405

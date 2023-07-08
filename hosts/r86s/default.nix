@@ -30,7 +30,7 @@
 
   networking.hostName = "r86s";
 
-  boot.kernelPackages = pkgs.linuxPackages_6_4;
+  boot.kernelPackages = pkgs.linuxPackages_6_1;
 
   users.users."ubuntu".openssh.authorizedKeys.keys = [
     "${inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKey}"
