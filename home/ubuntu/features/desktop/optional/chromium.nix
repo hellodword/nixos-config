@@ -1,4 +1,4 @@
-{ config, pkgs, persistPath, ... }:
+{ lib, config, pkgs, persistPath, ... }:
 
 {
   home.persistence = {
@@ -14,4 +14,7 @@
       # { id = "cjpalhdlnbpafiamejdnhcphjbkeiagm"; } # ublock origin
     ];
   };
+
+  # flutter debugger or other apps need this
+  home.sessionVariables.CHROME_EXECUTABLE = lib.mkOverride 100 "${config.programs.chromium.package}/bin/chromium";
 }

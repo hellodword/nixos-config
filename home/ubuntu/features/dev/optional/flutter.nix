@@ -11,4 +11,6 @@
       pkgs.vscode-extensions.dart-code.dart-code
       pkgs.vscode-extensions.dart-code.flutter
     ];
+
+  # TODO maybe need android-sdk
 }

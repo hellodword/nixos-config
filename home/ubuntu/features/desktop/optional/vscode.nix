@@ -30,10 +30,7 @@
       "extensions.autoUpdate" = false;
     };
     extensions = (with pkgs.vscode-extensions; [
-      # dart-code.dart-code
-      # dart-code.flutter
       esbenp.prettier-vscode
-      # golang.go
       jnoortheen.nix-ide
       ms-python.python
       # ms-vscode.makefile-tools

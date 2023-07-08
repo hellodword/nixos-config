@@ -29,7 +29,7 @@
     ../features/desktop/optional/virtualbox.nix
     ../features/desktop/optional/android-studio.nix
 
-    ../features/dev/optional/flutter.nix
+    ../features/dev/optional/go.nix
   ]
   ;
 
