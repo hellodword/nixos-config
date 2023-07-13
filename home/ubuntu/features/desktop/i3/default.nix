@@ -66,6 +66,12 @@ in
           notification = false;
           workspace = null;
         }
+        {
+          command = "wpa_gui -q -t -i $(iw dev | grep -oP '(?<=Interface ).*$')";
+          always = true;
+          notification = false;
+          workspace = null;
+        }
       ];
 
       keybindings = lib.mkOptionDefault {
