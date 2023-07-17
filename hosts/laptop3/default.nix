@@ -21,7 +21,10 @@
     ../common/optional/podman.nix
 
     ../common/optional/wireguard-client.nix
+
     ../common/optional/openvpn.nix
+    ../common/optional/openvpn-goose.nix
+    ../common/optional/openvpn-fastestvpn.nix
 
     ../common/optional/access-tokens.nix
 

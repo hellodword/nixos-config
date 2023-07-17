@@ -166,9 +166,14 @@ curl --output /mnt/persist/usr/local/etc/adguard-home/whitelist_full_combine.txt
     https://fastly.jsdelivr.net/gh/hellodword/you-know-who@assets/adguard-home/whitelist_full_combine.txt
 
 mkdir -p /mnt/persist/usr/local/etc/openvpn/client
+
 vim /mnt/persist/usr/local/etc/openvpn/client/goose.ovpn
-chmod 0700 /mnt/persist/usr/local/etc/openvpn/client
 chmod 600 /mnt/persist/usr/local/etc/openvpn/client/goose.ovpn
+
+vim /mnt/persist/usr/local/etc/openvpn/client/fastestvpn.ovpn
+chmod 600 /mnt/persist/usr/local/etc/openvpn/client/fastestvpn.ovpn
+
+chmod 0700 /mnt/persist/usr/local/etc/openvpn/client
 
 mkdir -p /mnt/persist/usr/local/etc/v2ray
 vim /mnt/persist/usr/local/etc/v2ray/v2ray.jsonc
