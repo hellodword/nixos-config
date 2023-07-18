@@ -22,10 +22,6 @@
 
     ../common/optional/wireguard-client.nix
 
-    ../common/optional/openvpn.nix
-    ../common/optional/openvpn-goose.nix
-    ../common/optional/openvpn-fastestvpn.nix
-
     ../common/optional/access-tokens.nix
 
     ../common/optional/auditd.nix
@@ -65,6 +61,10 @@
     ../common/optional/touchpad.nix
     ../common/optional/thermald.nix
     ../common/optional/fwupd.nix
+  ]
+  ++
+  [
+    ./vpn.nix
   ]
   ;
 
