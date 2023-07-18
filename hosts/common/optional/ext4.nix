@@ -1,0 +1,3 @@
+{
+  boot.supportedFilesystems = [ "ext4" ];
+}

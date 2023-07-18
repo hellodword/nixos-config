@@ -14,6 +14,10 @@
 
     ../common/optional/openssh-server.nix
 
+    ../common/optional/ntfs.nix
+    ../common/optional/vfat.nix
+    ../common/optional/ext4.nix
+
     ../common/optional/adguardhome.nix
     ../common/optional/v2ray.nix
 
