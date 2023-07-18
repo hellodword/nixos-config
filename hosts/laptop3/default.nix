@@ -69,6 +69,7 @@
   ++
   [
     ./vpn.nix
+    ./backup.nix
   ]
   ;
 

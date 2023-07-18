@@ -31,37 +31,4 @@
       ];
     };
   };
-
-  # services.borgbackup.jobs."ssh-hostkeys" = {
-  #   repo = "${persistPath}/borgbackup/ssh-hostkeys";
-  #   appendFailedSuffix = true;
-  #   compression = "auto,zstd,3";
-  #   doInit = true;
-  #   encryption = {
-  #     mode = "repokey";
-  #     # passphrase = "123";
-  #     passCommand = "cat ${config.sops.secrets."borgbackup".path}";
-  #   };
-  #   # environment = {
-  #   #   BORG_RSH = "ssh -i /path/to/key";
-  #   # };
-  #   user = "root";
-  #   group = "root";
-  #   startAt = "daily";
-  #   prune = {
-  #     keep = {
-  #       within = "2d"; # Keep all archives from the last day
-  #       daily = 7;
-  #       weekly = 4;
-  #       monthly = -1; # Keep at least one archive for each month
-  #     };
-  #   };
-
-  #   paths = [
-  #     "/etc/ssh/ssh_host_ed25519_key.pub"
-  #     "/etc/ssh/ssh_host_ed25519_key"
-  #     "/etc/ssh/ssh_host_rsa_key.pub"
-  #     "/etc/ssh/ssh_host_rsa_key"
-  #   ];
-  # };
 }

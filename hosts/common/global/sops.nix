@@ -17,15 +17,6 @@
     age.generateKey = false;
   };
 
-  # sops.secrets."borgbackup" = {
-  #   sopsFile = ../../${config.networking.hostName}/secrets/secrets.yaml;
-  # };
-
-  # system.activationScripts.make-borgbackup-base-public.text = ''
-  #   mkdir -p "${persistPath}/borgbackup"
-  #   chown 1000 "${persistPath}/borgbackup"
-  # '';
-
   # system.activationScripts.protect-age-keys.text = ''
   #   chown -R root:root "${persistPath}/var/lib/sops-nix"
   #   chmod 0700 "${persistPath}/var/lib/sops-nix"

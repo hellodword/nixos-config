@@ -189,6 +189,14 @@ mkdir -p /mnt/etc/secureboot
 cp -r /mnt/persist/etc/secureboot/* /mnt/etc/secureboot/
 ```
 
+```sh
+# 从 borg 恢复
+mkdir -p /tmp/borg
+borg mount /path/to/borg/repo::<...> /tmp/borg
+# ...
+borg umount /tmp/borg
+```
+
 4. 安装
 
 ```sh
