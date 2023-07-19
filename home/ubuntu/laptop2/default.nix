@@ -3,33 +3,42 @@
 {
   imports = [
     ../global
+  ]
+  ++
+  [
     ../features/cli
+
+    ../features/cli/optional/bat.nix
+    ../features/cli/optional/nix-index.nix
+    ../features/cli/optional/ffmpeg.nix
+    ../features/cli/optional/nnn.nix
   ]
   ++
   [
     ../features/desktop/i3
     ../features/desktop/optional/flameshot.nix
-
-    ../features/cli/optional/bat.nix
-    ../features/cli/optional/nix-index.nix
-
-    ../features/desktop/optional/kdeconnect.nix
-    ../features/desktop/optional/safeeyes.nix
-
-    ../features/desktop/optional/peek.nix
+    ../features/desktop/optional/thunar.nix
 
     ../features/desktop/optional/firefox.nix
     ../features/desktop/optional/chromium.nix
     ../features/desktop/optional/chrome.nix
-    ../features/desktop/optional/vscode.nix
+  ]
+  ++
+  [
+    ../features/desktop/optional/kdeconnect.nix
+    ../features/desktop/optional/safeeyes.nix
+    ../features/desktop/optional/peek.nix
     ../features/desktop/optional/thunderbird.nix
     ../features/desktop/optional/joplin.nix
     ../features/desktop/optional/bitwarden.nix
     ../features/desktop/optional/libreoffice.nix
-    ../features/desktop/optional/virtualbox.nix
-    ../features/desktop/optional/android-studio.nix
-
+  ]
+  ++
+  [
     ../features/dev/optional/go.nix
+    ../features/desktop/optional/virtualbox.nix
+    ../features/desktop/optional/vscode.nix
+    ../features/desktop/optional/android-studio.nix
   ]
   ;
 
