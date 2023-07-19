@@ -3,12 +3,12 @@
 with lib;
 with types;
 {
-  options.allowedUnfreePkg = mkOption {
+  options.me.allowedUnfreePkg = mkOption {
     type = listOf str;
     default = [ ];
   };
 
   config = {
-    nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) config.allowedUnfreePkg;
+    nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) config.me.allowedUnfreePkg;
   };
 }

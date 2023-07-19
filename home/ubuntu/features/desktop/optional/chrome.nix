@@ -1,7 +1,7 @@
 { lib, config, persistPath, ... }:
 
 {
-  allowedUnfreePkg = [
+  me.allowedUnfreePkg = [
     "google-chrome"
   ];
 

@@ -1,5 +1,5 @@
 {
-  allowedUnfreePkg = [
+  me.allowedUnfreePkg = [
     "Oracle_VM_VirtualBox_Extension_Pack"
   ];
 

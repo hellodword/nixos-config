@@ -15,7 +15,7 @@ in
 
   # https://github.com/jo1gi/Config/blob/9ebb02e9e89e659738e36d6f720d6288f08a3049/home/modules/programming/android.nix
 
-  allowedUnfreePkg = [
+  me.allowedUnfreePkg = [
     "android-studio-stable"
     # "android-sdk-cmdline-tools"
     # "android-sdk-tools"

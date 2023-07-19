@@ -1,7 +1,7 @@
 { config, pkgs, persistPath, ... }:
 
 {
-  allowedUnfreePkg = [
+  me.allowedUnfreePkg = [
     "vscode"
 
     "vscode-extension-MS-python-vscode-pylance"
