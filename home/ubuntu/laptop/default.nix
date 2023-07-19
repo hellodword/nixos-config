@@ -1,4 +1,4 @@
-{ lib, inputs, pkgs, ... }:
+{ lib, inputs, pkgs, nixosConfig, ... }:
 
 {
   imports = [
@@ -18,6 +18,7 @@
     ../features/desktop/i3
     ../features/desktop/optional/flameshot.nix
     ../features/desktop/optional/thunar.nix
+    ../features/desktop/optional/vlc.nix
 
     ../features/desktop/optional/firefox.nix
     ../features/desktop/optional/chromium.nix
@@ -52,29 +53,29 @@
     profiles = {
       default = {
         fingerprint = {
-          "${inputs.nixos-privates.monitors."laptop2-embedded".name}" = "${inputs.nixos-privates.monitors."laptop2-embedded".fingerprint}";
+          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".fingerprint}";
         };
         config = {
-          "${inputs.nixos-privates.monitors."laptop2-embedded".name}" = {
+          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" = {
             enable = true;
             primary = true;
             position = "0x0";
-            mode = "${inputs.nixos-privates.monitors."laptop2-embedded".mode}";
+            mode = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".mode}";
             rate = "60.00";
           };
         };
       };
       "with-dell-1" = {
         fingerprint = {
-          "${inputs.nixos-privates.monitors."laptop2-embedded".name}" = "${inputs.nixos-privates.monitors."laptop2-embedded".fingerprint}";
+          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".fingerprint}";
           "${inputs.nixos-privates.monitors."dell-1".name}" = "${inputs.nixos-privates.monitors."dell-1".fingerprint}";
         };
         config = {
-          "${inputs.nixos-privates.monitors."laptop2-embedded".name}" = {
+          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" = {
             enable = false;
             primary = false;
             position = "0x0";
-            mode = "${inputs.nixos-privates.monitors."laptop2-embedded".mode}";
+            mode = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".mode}";
             rate = "60.00";
           };
           "${inputs.nixos-privates.monitors."dell-1".name}" = {
@@ -92,7 +93,7 @@
         "change-dpi" = ''
           case "$AUTORANDR_CURRENT_PROFILE" in
             default)
-              DPI=110
+              DPI=120
               ;;
             with-dell-1)
               DPI=110
