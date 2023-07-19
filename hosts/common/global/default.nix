@@ -13,6 +13,7 @@
     ./sops.nix
     ./systemd-initrd.nix
     ./inetutils.nix
+    ./disable-mime.nix
   ] ++ (builtins.attrValues outputs.nixosModules);
 
   system.configurationRevision = inputs.self.rev or "dirty";
