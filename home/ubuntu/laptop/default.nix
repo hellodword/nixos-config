@@ -18,7 +18,7 @@
     ../features/desktop/i3
     ../features/desktop/optional/flameshot.nix
     ../features/desktop/optional/thunar.nix
-    ../features/desktop/optional/vlc.nix
+    ../features/desktop/optional/mpv.nix
     ../features/desktop/optional/feh.nix
 
     ../features/desktop/optional/firefox.nix
