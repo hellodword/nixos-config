@@ -75,6 +75,17 @@
         } // commonArgs;
       };
 
+      # laptop2
+      nixosConfigurations."laptop2" = nixpkgs.lib.nixosSystem {
+        modules = [
+          ./hosts/laptop2
+        ];
+        specialArgs = {
+          commonArgs = commonArgs;
+          inherit inputs outputs;
+        } // commonArgs;
+      };
+
       # laptop3
       nixosConfigurations."laptop3" = nixpkgs.lib.nixosSystem {
         modules = [
