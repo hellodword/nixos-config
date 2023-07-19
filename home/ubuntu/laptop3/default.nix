@@ -35,8 +35,8 @@
 
   home.username = lib.mkDefault "ubuntu";
 
-  programs.ssh.matchBlocks = inputs.nixos-privates.ssh."laptop3".matchBlocks;
-  programs.firefox.profiles.default.bookmarks = inputs.nixos-privates.firefox."laptop3".bookmarks;
+  programs.ssh.matchBlocks = inputs.nixos-privates.ssh."laptop".matchBlocks;
+  programs.firefox.profiles.default.bookmarks = inputs.nixos-privates.firefox."laptop".bookmarks;
 
   programs.autorandr = {
     enable = true;
