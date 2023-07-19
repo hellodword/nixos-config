@@ -11,7 +11,7 @@
     ../features/cli/optional/bat.nix
     ../features/cli/optional/nix-index.nix
     ../features/cli/optional/ffmpeg.nix
-    ../features/cli/optional/nnn.nix
+    ../features/cli/optional/ranger.nix
   ]
   ++
   [
