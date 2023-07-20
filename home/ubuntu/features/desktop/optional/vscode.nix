@@ -9,6 +9,8 @@
     "vscode-extension-ms-vscode-cpptools"
   ];
 
+  me.mimeApps.defApps.editor = "code.desktop";
+
   programs.vscode = {
     enable = true;
     package = pkgs.vscode;

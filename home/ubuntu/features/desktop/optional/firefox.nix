@@ -9,12 +9,8 @@
     };
   };
 
-  xdg.mimeApps.defaultApplications = {
-    "text/html" = [ "firefox.desktop" ];
-    "text/xml" = [ "firefox.desktop" ];
-    "x-scheme-handler/http" = [ "firefox.desktop" ];
-    "x-scheme-handler/https" = [ "firefox.desktop" ];
-  };
+  me.mimeApps.defApps.webBrowser = "firefox.desktop";
+
 
   /*
     TODO ff sync self-hosted
