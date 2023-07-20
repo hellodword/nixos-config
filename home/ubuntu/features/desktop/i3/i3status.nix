@@ -29,77 +29,87 @@
 
     modules = {
       ipv6 = {
-        position = 10;
+        position = 1;
         enable = true;
+        settings = {
+          format_up = "IPv6";
+          format_down = "IPv6";
+        };
       };
 
       "wireless _first_" = {
-        position = 20;
+        position = 2;
         settings = {
-          format_up = "W: (%quality)";
-          format_down = "W: down";
+          format_up = "🛜%quality";
+          format_down = "🛜";
         };
       };
 
       "ethernet _first_" = {
-        position = 30;
+        position = 3;
         settings = {
-          format_up = "E: up";
-          format_down = "E: down";
+          format_up = "🖧";
+          format_down = "🖧";
         };
       };
 
       load = {
-        position = 40;
+        position = 4;
         settings = {
-          format = "↺ %1min";
+          format = "💪 %1min";
         };
       };
 
       "volume master" = {
-        position = 50;
+        position = 5;
         settings = {
-          format = "♪ %volume";
+          format = "🔊 %volume";
           device = "default";
           mixer = "Master";
           mixer_idx = 0;
         };
       };
 
-      "disk /nix" = {
-        position = 60;
-        settings = {
-          format = "%avail";
-        };
-      };
+      # "disk /nix" = {
+      #   position = 6;
+      #   settings = {
+      #     format = "/nix %avail";
+      #   };
+      # };
 
       "disk /persist" = {
-        position = 65;
+        position = 6;
         settings = {
-          format = "%avail";
+          format = "📁 %avail";
         };
       };
 
       "battery all" = {
-        position = 70;
+        position = 7;
         settings = {
-          format = "%status %percentage %remaining";
+          # last_full_capacity = true;
+          format = "%status %percentage %remaining %emptytime";
+          format_down = "None";
+          status_chr = "⚡CHR";
+          status_bat = "🔋BAT";
+          status_unk = "❓UNK";
+          status_full = "😄FULL";
+          path = "/sys/class/power_supply/BAT%d/uevent";
           low_threshold = 10;
-          last_full_capacity = true;
         };
       };
 
       "tztime local" = {
-        position = 80;
+        position = 8;
         settings = {
-          format = "%Y-%m-%d ⌚ %H:%M:%S";
+          format = "⏰%Y-%m-%d %H:%M:%S";
         };
       };
 
       "tztime CN" = {
-        position = 90;
+        position = 9;
         settings = {
-          format = "CN⌚ %H:%M";
+          format = "🇨🇳%H:%M";
           timezone = "Asia/Shanghai";
         };
       };
