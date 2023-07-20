@@ -45,6 +45,11 @@ in
           description = "";
           default = "firefox.desktop";
         };
+        reader = lib.mkOption {
+          type = str;
+          description = "";
+          default = "calibre.desktop";
+        };
       };
     };
 
@@ -57,18 +62,30 @@ in
         let
           defaultApps =
             let
-              inherit (cfg.defApps) editor fileBrowser imageViewer mediaPlayer webBrowser;
+              inherit (cfg.defApps) editor fileBrowser imageViewer mediaPlayer webBrowser reader;
             in
             {
+              pdf = [ reader ];
+              epub = [ reader ];
               audio = [ mediaPlayer ];
               browser = [ webBrowser ];
               compression = [ fileBrowser ];
               directory = [ fileBrowser ];
+              binary = [ fileBrowser ];
               image = [ imageViewer ];
               text = [ editor ];
               video = [ mediaPlayer ];
             };
           mimeMap = {
+            pdf = [
+              "application/pdf"
+            ];
+            epub = [
+              "application/epub+zip"
+            ];
+            binary = [
+              "application/vnd.android.package-archive" # apk
+            ];
             audio = [
               "audio/3gpp"
               "audio/3gpp2"
@@ -196,7 +213,10 @@ in
               "image/svg+xml"
               "image/vnd.microsoft.icon"
             ];
-            text = [ "text/plain" ];
+            text = [
+              "text/plain"
+              "application/xml"
+            ];
             video = [
               "application/smil"
               "application/streamingmedia"
