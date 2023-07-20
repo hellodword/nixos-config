@@ -4,6 +4,7 @@
   imports = [
     inputs.impermanence.nixosModules.home-manager.impermanence
     ../features/cli
+    ./sops.nix
   ] ++ (builtins.attrValues outputs.homeManagerModules);
 
   # https://github.com/nix-community/home-manager/tree/master/modules/programs
