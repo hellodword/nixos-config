@@ -11,5 +11,6 @@
 
   xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault {
     "Print" = "exec flameshot gui";
+    "Shift+Print" = "exec flameshot full --clipboard";
   };
 }
