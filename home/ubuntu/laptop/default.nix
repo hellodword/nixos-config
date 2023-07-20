@@ -34,7 +34,7 @@
     ../features/desktop/optional/joplin.nix
     ../features/desktop/optional/bitwarden.nix
     ../features/desktop/optional/libreoffice.nix
-    ../features/desktop/optional/calibre.nix
+    ../features/desktop/optional/zathura.nix
   ]
   ++
   [

@@ -1,4 +1,5 @@
 # https://github.com/Icy-Thought/snowflake/blob/005878d0c0656fa4d6f39d7ccba4be6c414d96c5/modules/desktop/extensions/mimeApps.nix#L13
+# env XDG_UTILS_DEBUG_LEVEL=2 xdg-mime query default application/pdf
 { config
 , lib
 , ...
@@ -48,7 +49,7 @@ in
         reader = lib.mkOption {
           type = str;
           description = "";
-          default = "calibre.desktop";
+          default = "org.pwmt.zathura.desktop";
         };
       };
     };
@@ -75,8 +76,13 @@ in
               image = [ imageViewer ];
               text = [ editor ];
               video = [ mediaPlayer ];
+              unknown = [ fileBrowser ];
             };
           mimeMap = {
+            unknown = [
+              "x-scheme-handler/webcal"
+              "x-scheme-handler/unknown"
+            ];
             pdf = [
               "application/pdf"
             ];
@@ -165,7 +171,6 @@ in
               "x-scheme-handler/about"
               "x-scheme-handler/http"
               "x-scheme-handler/https"
-              "x-scheme-handler/unknown"
             ];
             compression = [
               "application/bzip2"
@@ -191,7 +196,9 @@ in
               "application/x-xz-compressed-tar"
               "application/zip"
             ];
-            directory = [ "inode/directory" ];
+            directory = [
+              "inode/directory"
+            ];
             image = [
               "image/bmp"
               "image/gif"
@@ -216,6 +223,11 @@ in
             text = [
               "text/plain"
               "application/xml"
+              "application/rdf+xml"
+              "application/rss+xml"
+              "application/xhtml+xml"
+              "application/xhtml_xml"
+              "text/xml"
             ];
             video = [
               "application/smil"
