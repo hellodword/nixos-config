@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, nixosConfig, ... }:
 
 {
   home.packages = with pkgs; [
@@ -38,30 +38,57 @@
       };
 
       "wireless _first_" = {
-        position = 2;
+        position = 11;
         settings = {
           format_up = "🛜%quality";
-          format_down = "🛜";
+          format_down = "🛜 🚫";
         };
       };
 
       "ethernet _first_" = {
-        position = 3;
+        position = 21;
         settings = {
           format_up = "🖧";
           format_down = "🖧";
         };
       };
 
-      load = {
-        position = 4;
+      "ethernet wgcf" = {
+        enable = builtins.hasAttr "wgcf" nixosConfig.networking.wg-quick.interfaces;
+        position = 22;
         settings = {
-          format = "💪 %1min";
+          format_up = "wgcf";
+          format_down = "wgcf";
         };
       };
 
+      "ethernet goose" = {
+        enable = builtins.hasAttr "goose" nixosConfig.services.openvpn.servers;
+        position = 23;
+        settings = {
+          format_up = "goose";
+          format_down = "goose";
+        };
+      };
+
+      "ethernet fastestvpn" = {
+        enable = builtins.hasAttr "fastestvpn" nixosConfig.services.openvpn.servers;
+        position = 24;
+        settings = {
+          format_up = "fastest";
+          format_down = "fastest";
+        };
+      };
+
+      # load = {
+      #   position = 31;
+      #   settings = {
+      #     format = "💪 %1min";
+      #   };
+      # };
+
       "volume master" = {
-        position = 5;
+        position = 31;
         settings = {
           format = "🔊 %volume";
           device = "default";
@@ -71,21 +98,21 @@
       };
 
       # "disk /nix" = {
-      #   position = 6;
+      #   position = 41;
       #   settings = {
       #     format = "/nix %avail";
       #   };
       # };
 
       "disk /persist" = {
-        position = 6;
+        position = 41;
         settings = {
           format = "📁 %avail";
         };
       };
 
       "battery all" = {
-        position = 7;
+        position = 51;
         settings = {
           # last_full_capacity = true;
           format = "%status %percentage %remaining %emptytime";
@@ -100,16 +127,16 @@
       };
 
       "tztime local" = {
-        position = 8;
+        position = 61;
         settings = {
-          format = "⏰%Y-%m-%d %H:%M:%S";
+          format = "⏰ %Y-%m-%d %H:%M:%S";
         };
       };
 
       "tztime CN" = {
-        position = 9;
+        position = 71;
         settings = {
-          format = "🇨🇳%H:%M";
+          format = "🇨🇳 %H:%M";
           timezone = "Asia/Shanghai";
         };
       };
