@@ -41,6 +41,11 @@
       url = "gitlab:rycee/nur-expressions/69e5964e445ae35ae3c17f8c7dcf2a22dbcff94c?dir=pkgs/firefox-addons";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    kitty-gruvbox-themes = {
+      url = "github:wdomitrz/kitty-gruvbox-theme/b930abcc3a1cdcc763fb65988f07ee0270710f9c";
+      flake = false;
+    };
   };
 
   outputs =
