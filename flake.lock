@@ -480,6 +480,7 @@
       "original": {
         "owner": "HorlogeSkynet",
         "repo": "thunderbird-user.js",
+        "rev": "ac8a715b067749c9a7845d2fe862764f34bef20f",
         "type": "github"
       }
     }
