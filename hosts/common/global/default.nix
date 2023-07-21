@@ -13,6 +13,7 @@
     ./sops.nix
     ./systemd-initrd.nix
     ./inetutils.nix
+    ./p7zip.nix
   ] ++ (builtins.attrValues outputs.nixosModules);
 
   system.configurationRevision = inputs.self.rev or "dirty";
@@ -33,7 +34,6 @@
     nix-prefetch-scripts
     file
     tree
-    p7zip
     unzip
     tcpdump
     ipset
