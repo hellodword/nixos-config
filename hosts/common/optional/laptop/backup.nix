@@ -1,8 +1,11 @@
-{ config, persistPath, ... }:
+{ lib, config, persistPath, ... }:
 
+let
+  username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
+in
 {
   sops.secrets."borgbackup" = {
-    sopsFile = ./secrets/secrets.yaml;
+    sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml;
   };
 
   # system.activationScripts.make-borgbackup-base-public.text = ''
@@ -35,20 +38,20 @@
     };
 
     exclude = [
-      "${persistPath}/home/ubuntu/.ssh/config"
+      "${persistPath}/home/${username}/.ssh/config"
     ];
     paths = [
       "${persistPath}/etc"
 
-      "${persistPath}/home/ubuntu/.ssh"
-      "${persistPath}/home/ubuntu/.bash_history"
+      "${persistPath}/home/${username}/.ssh"
+      "${persistPath}/home/${username}/.bash_history"
 
-      "${persistPath}/home/ubuntu/.config/kdeconnect"
-      "${persistPath}/home/ubuntu/.config/joplin-desktop"
-      "${persistPath}/home/ubuntu/.config/Bitwarden"
+      "${persistPath}/home/${username}/.config/kdeconnect"
+      "${persistPath}/home/${username}/.config/joplin-desktop"
+      "${persistPath}/home/${username}/.config/Bitwarden"
 
-      "${persistPath}/home/ubuntu/.android/adbkey"
-      "${persistPath}/home/ubuntu/.android/adbkey.pub"
+      "${persistPath}/home/${username}/.android/adbkey"
+      "${persistPath}/home/${username}/.android/adbkey.pub"
     ];
   };
 }

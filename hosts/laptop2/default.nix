@@ -51,12 +51,7 @@
   ]
   ++
   [
-    inputs.nixos-hardware.nixosModules.common-cpu-intel
-    inputs.nixos-hardware.nixosModules.common-gpu-intel
     ../common/optional/intel-tearing.nix
-    inputs.nixos-hardware.nixosModules.common-pc-laptop
-    inputs.nixos-hardware.nixosModules.common-pc-laptop-ssd
-    inputs.nixos-hardware.nixosModules.common-pc-laptop-acpi_call
   ]
   ++
   [
@@ -68,19 +63,13 @@
   ]
   ++
   [
-    ./vpn.nix
-    ./backup.nix
+    ../common/optional/laptop/packages.nix
+    ../common/optional/laptop/openvpn.nix
+    ../common/optional/laptop/backup.nix
   ]
   ;
 
   networking.hostName = "laptop2";
-
-  environment.systemPackages = with pkgs; [
-    htop
-    lm_sensors
-    pciutils
-    sops
-  ];
 
   boot.kernelPackages = pkgs.linuxPackages_6_1;
   boot.kernelModules = [ "lkrg" ];

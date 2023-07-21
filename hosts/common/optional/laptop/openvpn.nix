@@ -8,7 +8,7 @@
   };
 
   sops.secrets."goose.auth" = {
-    sopsFile = ./secrets/goose.auth;
+    sopsFile = ../../../${config.networking.hostName}/secrets/goose.auth;
     format = "binary";
   };
 
@@ -19,7 +19,7 @@
   };
 
   sops.secrets."fastestvpn.auth" = {
-    sopsFile = ./secrets/fastestvpn.auth;
+    sopsFile = ../../../${config.networking.hostName}/secrets/fastestvpn.auth;
     format = "binary";
   };
 
