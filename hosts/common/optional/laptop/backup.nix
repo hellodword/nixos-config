@@ -52,6 +52,8 @@ in
 
       "${persistPath}/home/${username}/.android/adbkey"
       "${persistPath}/home/${username}/.android/adbkey.pub"
+
+      "${persistPath}/home/${username}/backups/borged"
     ];
   };
 }
