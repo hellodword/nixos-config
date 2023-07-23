@@ -3,29 +3,59 @@
 let
   username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
 
-  /*
-    scaleway
-      https://www.scaleway.com/en/docs/tutorials/restic-s3-backup/
-      https://status.scaleway.com/uptime/6q1d32x121dx
-
-    1. 创建 project restic https://console.scaleway.com/project 并创建 object storage bucket
-    2. 创建 policy restic https://console.scaleway.com/iam/policies 选择 1 中的 project，选择 ObjectStorageObjectsDelete/ObjectStorageObjectsRead/ObjectStorageObjectsWrite/ObjectStorageReadOnly
-    3. 创建 application restic https://console.scaleway.com/iam/applications 选择 2 中的 policy restic
-    4. 创建 API Keys https://console.scaleway.com/iam/api-keys 选择 3 中的 application restic
-  */
-
-  /*
-    idrive
-      https://github.com/restic/restic/pull/4279/files
-  */
-
   # TODO hetzner storage box
 
-  # TODO wasabi
   # TODO backblaze b2
   # TODO cloudflare R2
   # TODO telnyx storage
-  resticS3Providers = [ "idrive" "scaleway" ];
+  resticS3Providers = [
+    /*
+      idrive
+      https://github.com/restic/restic/pull/4279/files
+    */
+    "idrive"
+
+    /*
+      scaleway
+      https://www.scaleway.com/en/docs/tutorials/restic-s3-backup/
+      https://status.scaleway.com/uptime/6q1d32x121dx
+
+      1. 创建 project restic https://console.scaleway.com/project 并创建 object storage bucket
+      2. 创建 policy restic https://console.scaleway.com/iam/policies 选择 1 中的 project，选择 ObjectStorageObjectsDelete/ObjectStorageObjectsRead/ObjectStorageObjectsWrite/ObjectStorageReadOnly
+      3. 创建 application restic https://console.scaleway.com/iam/applications 选择 2 中的 policy restic
+      4. 创建 API Keys https://console.scaleway.com/iam/api-keys 选择 3 中的 application restic
+    */
+    "scaleway"
+
+    /*
+      wasabi
+      https://status.wasabi.com/uptime/5w7g77w19r8z?page=1
+
+      1. 创建 policy restic https://console.wasabisys.com/policies
+      {
+          "Version": "2012-10-17",
+          "Statement": [
+              {
+                  "Effect": "Allow",
+                  "Action": [
+                      "s3:ListBucket",
+                      "s3:DeleteObject",
+                      "s3:GetObject",
+                      "s3:PutObject",
+                      "s3:PutObjectAcl"
+                  ],
+                  "Resource": [
+                      "arn:aws:s3:::bucketname",
+                      "arn:aws:s3:::bucketname/*"
+                  ]
+              }
+          ]
+      }
+
+      2. 创建 User restic https://console.wasabisys.com/users 勾选 Programmatic，创建 group restic，Policy 选择 restic
+    */
+    "wasabi"
+  ];
 
   mkResticS3 = name:
     let
