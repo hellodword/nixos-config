@@ -14,4 +14,8 @@
       CacheDirectory = "nix";
     };
   };
+
+  system.activationScripts.clean-tmpdir.text = ''
+    rm -rf /var/cache/nix/*
+  '';
 }
