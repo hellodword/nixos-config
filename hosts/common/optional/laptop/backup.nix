@@ -8,19 +8,28 @@ let
       https://www.scaleway.com/en/docs/tutorials/restic-s3-backup/
       https://status.scaleway.com/uptime/6q1d32x121dx
 
-    1. 创建 project restic https://console.scaleway.com/project
+    1. 创建 project restic https://console.scaleway.com/project 并创建 object storage bucket
     2. 创建 policy restic https://console.scaleway.com/iam/policies 选择 1 中的 project，选择 ObjectStorageObjectsDelete/ObjectStorageObjectsRead/ObjectStorageObjectsWrite/ObjectStorageReadOnly
     3. 创建 application restic https://console.scaleway.com/iam/applications 选择 2 中的 policy restic
     4. 创建 API Keys https://console.scaleway.com/iam/api-keys 选择 3 中的 application restic
   */
 
+  /*
+    idrive
+      https://github.com/restic/restic/pull/4279/files
+  */
 
-  # https://github.com/restic/restic/pull/4279/files
-  # https://www.hetzner.com/storage/storage-box
-  # https://telnyx.com/pricing/storage
+  # TODO hetzner storage box
+
+  # TODO wasabi
+  # TODO backblaze b2
+  # TODO cloudflare R2
+  # TODO telnyx storage
+  resticS3Providers = [ "idrive" "scaleway" ];
+
   mkResticS3 = name:
     let
-      cacheDir = "${persistPath}/borgbackup/.restic";
+      cacheDir = "${persistPath}/borgbackup/.restic/${name}";
     in
     {
       package = pkgs.restic;
@@ -50,8 +59,6 @@ let
       };
       user = "root";
     };
-
-  resticS3Providers = [ "idrive" "scaleway" ];
 in
 {
   environment.systemPackages = with pkgs; [
