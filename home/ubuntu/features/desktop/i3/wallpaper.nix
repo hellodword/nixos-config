@@ -1,6 +1,7 @@
 { lib, pkgs, config, ... }:
 
 let
+  out = "${config.home.homeDirectory}/Pictures/wallpaper";
   fetch-bing-wallpaper = pkgs.writeShellApplication {
     name = "fetch-bing-wallpaper";
     runtimeInputs = with pkgs; [ curl coreutils gnugrep ];
@@ -15,7 +16,6 @@ let
       fi
     '';
   };
-  out = "${config.home.homeDirectory}/Pictures/wallpaper";
 in
 {
   services.random-background = {

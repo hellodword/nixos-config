@@ -5,7 +5,6 @@
     joplin-desktop
   ];
 
-  # TODO backup
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/joplin-desktop" ];
   };

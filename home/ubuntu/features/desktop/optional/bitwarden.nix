@@ -5,7 +5,6 @@
     bitwarden
   ];
 
-  # TODO backup
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/Bitwarden" ];
   };
