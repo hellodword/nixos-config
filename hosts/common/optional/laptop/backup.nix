@@ -86,8 +86,25 @@ let
       timerConfig = {
         OnCalendar = "daily";
         Persistent = true;
+        RandomizedDelaySec = "10m";
       };
       user = "root";
+    };
+
+  setResticS3 = cfg: name:
+    let
+      require = [ "network.target" ]
+        ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
+        ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ];
+    in
+    {
+      requires = lib.mkForce require;
+      after = lib.mkForce require;
+      # before = [ ]
+      #   # (maybe) fix: a stop job is running for dhcp
+      #   ++ lib.optionals config.networking.dhcpcd.enable [ "dhcpcd.service" ];
+      # preStart = '''';
+      # preStop = '''';
     };
 in
 {
@@ -171,4 +188,6 @@ in
   };
 
   services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "borgbackup-${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
+
+  systemd.services = (lib.listToAttrs (map (name: lib.nameValuePair "restic-backups-borgbackup-${config.networking.hostName}-${name}" (setResticS3 name)) resticS3Providers));
 }
