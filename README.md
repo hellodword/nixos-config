@@ -58,6 +58,7 @@ nix-shell -p git sbctl
 
 mkdir -p ~/.ssh
 vim ~/.ssh/<private key for nix-privates>
+sudo chmod 600 ~/.ssh/<private key for nix-privates>
 vim ~/.ssh/config
 # Host hellodword.github.com
 #   IdentitiesOnly yes
@@ -66,6 +67,10 @@ vim ~/.ssh/config
 #   ProxyCommand nc -v -x 192.168.1.2:1080 %h %p
 #   IdentityFile ~/.ssh/<private key for nix-privates>
 #   PreferredAuthentications publickey
+
+eval `ssh-agent`
+ssh-add ~/.ssh/<private key for nix-privates>
+ssh -T git@hellodword.github.com
 
 git clone <nixos config> nixos-config
 cd nixos-config

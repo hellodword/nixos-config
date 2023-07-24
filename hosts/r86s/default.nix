@@ -5,7 +5,7 @@
     ./hardware-configuration.nix
 
     ../common/global
-    ../common/users/ubuntu/ubuntu.nix # without home-manager
+    ../common/users/ubuntu/ubuntu-without-password.nix # without home-manager and password
 
     ../common/optional/tmp.nix
     ../common/optional/gc.nix
@@ -15,7 +15,6 @@
     ../common/optional/adguardhome.nix
     ../common/optional/v2ray.nix
 
-    ../common/optional/wireguard-client.nix
     ../common/optional/wireguard-server.nix
 
     ../common/optional/router
@@ -35,6 +34,8 @@
   users.users."ubuntu".openssh.authorizedKeys.keys = [
     "${inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKey}"
   ];
+
+  security.sudo.wheelNeedsPassword = false;
 
   system.stateVersion = "22.11";
 }
