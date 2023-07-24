@@ -15,6 +15,7 @@ let
           set -x
 
           ip -4 rule del fwmark ${toString cfg.table} lookup ${toString cfg.table} || true
+          ip rule flush table ${toString cfg.table} || true
 
           iptables -t mangle -D OUTPUT -m set --match-set ${name} dst -j MARK --set-mark ${toString cfg.table} || true
 
