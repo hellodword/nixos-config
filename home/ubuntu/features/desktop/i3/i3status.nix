@@ -104,15 +104,22 @@
       #   };
       # };
 
-      "disk /persist" = {
+      "memory" = {
         position = 41;
+        settings = {
+          format = "%available";
+        };
+      };
+
+      "disk /persist" = {
+        position = 51;
         settings = {
           format = "📁 %avail";
         };
       };
 
       "battery all" = {
-        position = 51;
+        position = 61;
         settings = {
           # last_full_capacity = true;
           format = "%status %percentage %remaining %emptytime";
@@ -127,14 +134,14 @@
       };
 
       "tztime local" = {
-        position = 61;
+        position = 71;
         settings = {
-          format = "⏰ %Y-%m-%d %H:%M:%S";
+          format = "⏰ %m-%d %H:%M:%S";
         };
       };
 
       "tztime CN" = {
-        position = 71;
+        position = 81;
         settings = {
           format = "🇨🇳 %H:%M";
           timezone = "Asia/Shanghai";
