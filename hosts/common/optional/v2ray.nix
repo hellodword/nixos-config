@@ -120,14 +120,6 @@ let
 
       # systemd-resolve
       iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner systemd-resolve -j RETURN
-
-      # wgcf
-      iptables -w 3 -t mangle -I V2RAY -m set --match-set wgcf dst -j RETURN || true
-      iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set wgcf dst -j RETURN || true
-
-      # goose
-      iptables -w 3 -t mangle -I V2RAY -m set --match-set goose dst -j RETURN || true
-      iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set goose dst -j RETURN || true
     '';
   };
 in

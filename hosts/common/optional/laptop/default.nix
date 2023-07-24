@@ -2,6 +2,7 @@
   imports = [
     ./backup.nix
     ./openvpn.nix
+    ./wireguard.nix
     ./packages.nix
   ] ++
   [
@@ -24,8 +25,6 @@
 
     ../../../common/optional/docker.nix
     ../../../common/optional/podman.nix
-
-    ../../../common/optional/wireguard-client.nix
 
     ../../../common/optional/access-tokens.nix
 

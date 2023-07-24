@@ -3,7 +3,7 @@
 let
 
   cfg = config.ovpn;
-  makeOpenVPN = cfg: name:
+  mkOpenVPN = cfg: name:
     let
       # use the parameters (tun name, ip) that openvpn passed to these scripts.
       # https://openvpn.net/community-resources/reference-manual-for-openvpn-2-0/
@@ -76,7 +76,7 @@ let
         down ${down}/bin/down
       '';
     };
-  setOpenVPN = cfg: name:
+  setService = cfg: name:
     let
       require = [ "network.target" ]
         ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
@@ -85,11 +85,6 @@ let
     {
       requires = lib.mkForce require;
       after = lib.mkForce require;
-      # before = [ ]
-      #   # (maybe) fix: a stop job is running for dhcp
-      #   ++ lib.optionals config.networking.dhcpcd.enable [ "dhcpcd.service" ];
-      # preStart = '''';
-      # preStop = '''';
     };
 in
 {
@@ -118,9 +113,20 @@ in
 
   config = lib.mkIf (cfg.servers != { }) {
 
-    services.openvpn.servers = (lib.listToAttrs (lib.mapAttrsFlatten (name: value: lib.nameValuePair "${name}" (makeOpenVPN value name)) cfg.servers));
+    services.openvpn.servers = (lib.listToAttrs (lib.mapAttrsFlatten (name: value: lib.nameValuePair "${name}" (mkOpenVPN value name)) cfg.servers));
 
-    systemd.services = (lib.listToAttrs (lib.mapAttrsFlatten (name: value: lib.nameValuePair "openvpn-${name}" (setOpenVPN value name)) cfg.servers));
-
+    systemd.services = (lib.listToAttrs (
+      (lib.mapAttrsFlatten (name: value: lib.nameValuePair "openvpn-${name}" (setService value name)) cfg.servers) ++
+      lib.optionals config.services.v2ray.enable [
+        (lib.nameValuePair "v2ray" {
+          serviceConfig.ExecStartPre = lib.mkAfter (lib.flatten (lib.mapAttrsFlatten
+            (name: value: [
+              "+${pkgs.bash}/bin/bash -c 'iptables -w 3 -t mangle -I V2RAY -m set --match-set ${name} dst -j RETURN || true'"
+              "+${pkgs.bash}/bin/bash -c 'iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set ${name} dst -j RETURN || true'"
+            ])
+            cfg.servers));
+        })
+      ]
+    ));
   };
 }
