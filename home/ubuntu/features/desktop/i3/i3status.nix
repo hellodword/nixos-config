@@ -121,8 +121,8 @@
       "battery all" = {
         position = 61;
         settings = {
-          # last_full_capacity = true;
-          format = "%status %percentage %remaining %emptytime";
+          last_full_capacity = true; # not the design
+          format = "%status %percentage";
           format_down = "None";
           status_chr = "⚡CHR";
           status_bat = "🔋BAT";
