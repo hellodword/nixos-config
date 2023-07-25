@@ -3,7 +3,7 @@
 {
   programs.git = {
     enable = true;
-    package = pkgs.git;
+    package = pkgs.gitAndTools.gitFull;
     extraConfig = {
       core.editor = "vim";
     };
