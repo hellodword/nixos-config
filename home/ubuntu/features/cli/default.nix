@@ -2,7 +2,6 @@
 
 {
   imports = [
-    ./autorandr.nix
     ./bash.nix
     ./git.nix
     ./ssh.nix

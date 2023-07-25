@@ -84,7 +84,7 @@ let
         ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ];
     in
     {
-      requires = lib.mkForce require;
+      # requires = lib.mkForce require;
       after = lib.mkForce require;
     };
 in

@@ -5,6 +5,7 @@
     ./alacritty.nix
     ./kitty.nix
     ./xautolock.nix
+    ./autorandr.nix
   ];
 
   # xdg.mimeApps.enable = true;

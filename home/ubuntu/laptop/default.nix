@@ -35,6 +35,10 @@
     ../features/desktop/optional/bitwarden.nix
     ../features/desktop/optional/libreoffice.nix
     ../features/desktop/optional/zathura.nix
+  ]
+  ++
+  [
+    ../features/cli/optional/sqlite.nix
     ../features/desktop/optional/sqlitebrowser.nix
   ]
   ++

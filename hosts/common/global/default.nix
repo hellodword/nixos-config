@@ -8,12 +8,12 @@
     ./locale.nix
     ./nix.nix
     ./bash.nix
-    ./openssh-client.nix
     ./optin-persistence.nix
     ./sops.nix
     ./systemd-initrd.nix
     ./inetutils.nix
     ./p7zip.nix
+    ./openssh-client.nix
   ] ++ (builtins.attrValues outputs.nixosModules);
 
   system.configurationRevision = inputs.self.rev or "dirty";

@@ -1,4 +1,4 @@
-{ inputs, pkgs, ... }:
+{ lib, inputs, pkgs, ... }:
 
 {
   # ~~滚动条~~ https://github.com/kovidgoyal/kitty/issues/2502#issuecomment-606996263
@@ -29,4 +29,11 @@
       "kitty_mod+t" = "new_tab_with_cwd";
     };
   };
+
+  programs.ssh.extraConfig = lib.mkAfter ''
+    SetEnv=TERM=xterm-color
+  '';
+  # programs.ssh.extraOptionOverrides = {
+  #   SetEnv = "TERM=xterm-color";
+  # };
 }

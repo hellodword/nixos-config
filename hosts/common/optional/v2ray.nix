@@ -1,6 +1,6 @@
 # UDP: https://github.com/v2fly/v2ray-core/issues/68
 
-{ lib, pkgs, persistPath, ... }:
+{ lib, config, pkgs, persistPath, ... }:
 
 let
   stop = pkgs.writeShellApplication {
@@ -27,10 +27,11 @@ let
     text = ''
       ${stop}/bin/v2ray.stop
 
-      # TODO 仅在启用了 docker 时才有这几条 sysctl
+      ${lib.strings.optionalString config.virtualisation.docker.enable ''
       sysctl net.bridge.bridge-nf-call-ip6tables=0  || true
       sysctl net.bridge.bridge-nf-call-iptables=0   || true
       sysctl net.bridge.bridge-nf-call-arptables=0  || true
+      ''}
 
       ip rule add fwmark 1 table 100
       ip route add local default dev lo table 100

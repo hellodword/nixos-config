@@ -2,12 +2,12 @@
 
 {
   programs.ssh = {
-    askPassword = "${pkgs.x11_ssh_askpass}/libexec/x11-ssh-askpass";
-    enableAskPassword = true;
-    startAgent = true;
+    # askPassword = "${pkgs.x11_ssh_askpass}/libexec/x11-ssh-askpass";
+    # enableAskPassword = true;
+    # startAgent = true;
+    # agentTimeout = "2h";
+    # package = pkgs.openssh;
 
-    package = pkgs.openssh;
-    agentTimeout = "2h";
     knownHostsFiles = [
       # https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints
       (pkgs.writeText "github.keys" ''
@@ -35,7 +35,7 @@
         # gitlab.freedesktop.org:22 SSH-2.0-GitLab-SSHD
         gitlab.freedesktop.org ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBLuKqEdZd9cm7EpVVkg2iWADT6+x2eJuwHuRqXU6/V/hcZZ53Xf/5Ha6wfa9Cqq+U1cfYtYHKLsAXHolhOCZlEg=
         # gitlab.freedesktop.org:22 SSH-2.0-GitLab-SSHD
-        gitlab.freedesktop.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOzdNH/aTnOOINO/iGupQ/rYnmKF40ESCrkRg+5JkLVN      
+        gitlab.freedesktop.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOzdNH/aTnOOINO/iGupQ/rYnmKF40ESCrkRg+5JkLVN
       '')
     ];
   };
