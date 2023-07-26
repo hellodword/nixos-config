@@ -1,10 +1,14 @@
-{ inputs, pkgs, config, ... }:
+{ inputs, lib, pkgs, config, ... }:
 
 {
   sops.secrets."wgcf.priv" = {
     sopsFile = ../../../${config.networking.hostName}/secrets/wgcf.priv;
     format = "binary";
   };
+
+  systemd.services."wg-quick-wgcf".after = lib.mkForce ([ "network.target" ]
+    ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
+    ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ]);
 
   networking.wg-quick.interfaces."wgcf" =
     let
