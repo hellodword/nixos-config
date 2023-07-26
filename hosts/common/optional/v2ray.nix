@@ -128,6 +128,8 @@ in
   # !important! or will not work with docker bridge network
   networking.firewall.enable = lib.mkForce false;
 
+  # TODO IPv6
+
   environment.systemPackages = with pkgs; [ iproute2 iptables ];
 
   services.v2ray = {
