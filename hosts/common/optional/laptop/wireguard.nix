@@ -10,6 +10,8 @@
     ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
     ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ]);
 
+  systemd.network.wait-online.ignoredInterfaces = [ "wgcf" ];
+
   networking.wg-quick.interfaces."wgcf" =
     let
       name = "wgcf";

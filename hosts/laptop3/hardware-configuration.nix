@@ -28,6 +28,8 @@
   networking.useDHCP = true;
   networking.useNetworkd = true;
 
+  systemd.network.wait-online.extraArgs = [ "--interface=wlo1" ];
+
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   powerManagement.cpuFreqGovernor = lib.mkDefault "powersave";
   hardware.cpu.intel.updateMicrocode = lib.mkDefault config.hardware.enableRedistributableFirmware;

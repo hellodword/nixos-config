@@ -28,4 +28,6 @@
     auth = "${config.sops.secrets."fastestvpn.auth".path}";
     extraConfig = "/usr/local/etc/openvpn/client/fastestvpn.ovpn";
   };
+
+  systemd.network.wait-online.ignoredInterfaces = [ "goose" "fastestvpn" ];
 }
