@@ -1,4 +1,4 @@
-{ pkgs, config, persistPath, ... }:
+{ config, persistPath, ... }:
 
 {
   # https://serverfault.com/questions/581367/amazon-ec2-instance-ssh-rsa-fingerprint/581458#581458
@@ -6,9 +6,9 @@
 
   # services.ssh-agent.enable = true;
 
-  home.packages = with pkgs; [
-    x11_ssh_askpass
-  ];
+  # home.packages = with pkgs; [
+  #   x11_ssh_askpass
+  # ];
 
   # home.sessionVariables.SSH_ASKPASS = "${pkgs.x11_ssh_askpass}/libexec/x11-ssh-askpass";
   # home.sessionVariables.SSH_ASKPASS_REQUIRE = "prefer";

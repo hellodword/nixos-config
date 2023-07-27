@@ -55,6 +55,8 @@
 
   programs.ssh.matchBlocks = inputs.nixos-privates.ssh."laptop".matchBlocks;
   programs.firefox.profiles.default.bookmarks = inputs.nixos-privates.firefox."laptop".bookmarks;
+  services.gpg-agent.sshKeys = lib.mkForce inputs.nixos-privates.gpg."laptop".sshKeys;
+  programs.git.aliases."signing" = "!git config commit.gpgsign true && git config user.signingkey ${inputs.nixos-privates.gpg."laptop".git-signingkey}";
 
   programs.autorandr = {
     enable = true;

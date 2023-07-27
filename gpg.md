@@ -103,24 +103,17 @@ gpg2 --list-secret-keys
 gpg2 --export-options export-minimal --export alice | gpg2 --list-packets  | grep version
 
 
-# 导出主密钥的公钥
-gpg2 -a --output alice.pub --export alice
-
-
-# 导出主密钥的私钥
+# 导出主密钥的公私钥
+gpg2 -a --output alice.pub --export 0xD52F1CEAA87CFBD8!
 gpg2 -a --output alice.gpg --export-secret-key 0xD52F1CEAA87CFBD8!
 
 
-# 导出所有子密钥
-gpg2 -a --output alice.subkeys.gpg --export-secret-subkeys alice
-
-# 导出 ssh 公钥
-gpg2 -a --output alice.ssh.pub --export-ssh-key 0xF27335A008768136!
+# # 导出所有子密钥
+# gpg2 -a --output alice.subkeys.gpg --export-secret-subkeys alice
 
 # 导出单独的子密钥 (需要带上感叹号，否则会导出所有)
+gpg2  -a --output alice.subkey-s.pub --export 0x8F455A76A68FC390!
 gpg2  -a --output alice.subkey-s.gpg --export-secret-subkeys 0x8F455A76A68FC390!
-gpg2  -a --output alice.subkey-e.gpg --export-secret-subkeys 0x76DB9E0C4CC24DAA!
-gpg2  -a --output alice.subkey-a.gpg --export-secret-subkeys 0xF27335A008768136!
 
 ls -alh
 #  3429 Jul 27 00:00 alice.gpg
@@ -143,6 +136,10 @@ gpg2 --edit-key alice
 # Your decision? 5
 # gpg> save
 
+
+# 导出 ssh 公钥
+gpg2 -a --output alice.ssh.pub --export-ssh-key 0xF27335A008768136!
+
 # 导出 ssh 私钥
 # https://security.stackexchange.com/a/9635
 mkdir -p /tmp/gpg2ssh
@@ -158,7 +155,9 @@ DISPLAY= gpg2 --homedir /tmp/gpg2ssh --edit-key alice
 # 转换为 SSH 私钥
 gpg2 --homedir /tmp/gpg2ssh --export-secret-subkeys 0xF27335A008768136! | openpgp2ssh F27335A008768136 > alice.ssh.priv
 rm -rf /tmp/gpg2ssh
-
+# 给 SSH 私钥设置密码
+chmod 600 alice.ssh.priv
+ssh-keygen -f alice.ssh.priv -p
 
 ```
 
