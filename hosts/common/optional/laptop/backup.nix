@@ -169,6 +169,10 @@ in
 
     exclude = [
       "${persistPath}/home/${username}/.ssh/config"
+
+      "${persistPath}/home/${username}/.gnupg/gpg-agent.conf"
+      "${persistPath}/home/${username}/.gnupg/gpg.conf"
+      "${persistPath}/home/${username}/.gnupg/scdaemon.conf"
     ];
     paths = [
       "${persistPath}/etc"
@@ -184,6 +188,8 @@ in
       "${persistPath}/home/${username}/.android/adbkey.pub"
 
       "${persistPath}/home/${username}/backups/borged"
+
+      "${persistPath}/home/${username}/.gnupg"
     ];
   };
 
