@@ -1,0 +1,176 @@
+# gpg
+
+```sh
+# 创建主密钥
+DISPLAY= gpg2 --expert --full-generate-key
+#    (8) RSA (set your own capabilities)
+# Your selection? 8
+
+# Current allowed actions: Sign Certify Encrypt
+#    (S) Toggle the sign capability
+# Your selection? S
+# Current allowed actions: Certify Encrypt
+#    (E) Toggle the encrypt capability
+# Your selection? E
+# Current allowed actions: Certify
+#    (Q) Finished
+# Your selection? Q
+
+# What keysize do you want? (3072) 4096
+# Requested keysize is 4096 bits
+
+#       <n>y = key expires in n years
+# Key is valid for? (0) 2y
+
+# Real name: alice
+# Email address:
+# Comment:
+# You selected this USER-ID:
+#     "alice"
+
+# Change (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? O
+
+
+# 创建仅供 A 的子密钥
+DISPLAY= gpg2 --expert --edit-key alice
+# gpg> addkey
+
+#    (8) RSA (set your own capabilities)
+# Your selection? 8
+
+# Current allowed actions: Sign Encrypt
+#    (S) Toggle the sign capability
+# Your selection? S
+# Current allowed actions: Encrypt
+#    (E) Toggle the encrypt capability
+# Your selection? E
+# Current allowed actions:
+#    (A) Toggle the authenticate capability
+# Your selection? A
+# Current allowed actions: Authenticate
+#    (Q) Finished
+# Your selection? Q
+
+# What keysize do you want? (3072) 4096
+# Requested keysize is 4096 bits
+
+# Key is valid for? (0) 1y
+
+# gpg> save
+
+
+# 创建仅供 S 的子密钥
+DISPLAY= gpg2 --expert --edit-key alice
+# gpg> addkey
+
+#    (4) RSA (sign only)
+# Your selection? 4
+
+# What keysize do you want? (3072) 4096
+# Requested keysize is 4096 bits
+
+# Key is valid for? (0) 1y
+
+# gpg> save
+
+
+# 创建仅供 E 的子密钥
+DISPLAY= gpg2 --expert --edit-key alice
+# gpg> addkey
+
+#    (6) RSA (encrypt only)
+# Your selection? 6
+
+# What keysize do you want? (3072) 4096
+# Requested keysize is 4096 bits
+
+# Key is valid for? (0) 1y
+
+# gpg> save
+
+
+# 列出所有
+gpg2 --list-secret-keys
+# sec   rsa4096/0xD52F1CEAA87CFBD8 2023-07-27 [C] [expires: 2025-07-26]
+#       Key fingerprint = 5FD5 E7B3 5ADB 48A4 FF64  7ED6 D52F 1CEA A87C FBD8
+# uid                   [ultimate] alice
+# ssb   rsa4096/0x8F455A76A68FC390 2023-07-27 [S] [expires: 2024-07-26]
+# ssb   rsa4096/0x76DB9E0C4CC24DAA 2023-07-27 [E] [expires: 2024-07-26]
+# ssb   rsa4096/0xF27335A008768136 2023-07-27 [AR] [expires: 2024-07-26]
+
+
+# 确保是 OpenPGPv4
+gpg2 --export-options export-minimal --export alice | gpg2 --list-packets  | grep version
+
+
+# 导出主密钥的公钥
+gpg2 -a --output alice.pub --export alice
+
+
+# 导出主密钥的私钥
+gpg2 -a --output alice.gpg --export-secret-key 0xD52F1CEAA87CFBD8!
+
+
+# 导出所有子密钥
+gpg2 -a --output alice.subkeys.gpg --export-secret-subkeys alice
+
+# 导出 ssh 公钥
+gpg2 -a --output alice.ssh.pub --export-ssh-key 0xF27335A008768136!
+
+# 导出单独的子密钥 (需要带上感叹号，否则会导出所有)
+gpg2  -a --output alice.subkey-s.gpg --export-secret-subkeys 0x8F455A76A68FC390!
+gpg2  -a --output alice.subkey-e.gpg --export-secret-subkeys 0x76DB9E0C4CC24DAA!
+gpg2  -a --output alice.subkey-a.gpg --export-secret-subkeys 0xF27335A008768136!
+
+ls -alh
+#  3429 Jul 27 00:00 alice.gpg
+#  5369 Jul 27 00:00 alice.pub
+#   744 Jul 27 10:54 alice.ssh.pub
+#  4920 Jul 27 10:30 alice.subkey-a.gpg
+#  4932 Jul 27 00:00 alice.subkey-e.gpg
+#  5700 Jul 27 00:00 alice.subkey-s.gpg
+# 12293 Jul 27 00:00 alice.subkeys.gpg
+
+# 导入某个子密钥
+gpg2 --allow-secret-key-import --import alice.subkey-e.gpg
+
+# 导入主密钥
+gpg2 --allow-secret-key-import --import alice.gpg
+# 信任主密钥
+gpg2 --edit-key alice
+# gpg> trust
+#   5 = I trust ultimately
+# Your decision? 5
+# gpg> save
+
+# 导出 ssh 私钥
+# https://security.stackexchange.com/a/9635
+mkdir -p /tmp/gpg2ssh
+chmod 700 /tmp/gpg2ssh
+cat ~/.gnupg/gpg.conf > /tmp/gpg2ssh/gpg.conf
+cat ~/.gnupg/gpg-agent.conf > /tmp/gpg2ssh/gpg-agent.conf
+sudo chmod 777 /tmp/gpg2ssh/gpg*.conf
+# 先导入 ssh gpg
+gpg2 --homedir /tmp/gpg2ssh --allow-secret-key-import --import alice.subkey-a.gpg
+# 再移除密码
+DISPLAY= gpg2 --homedir /tmp/gpg2ssh --edit-key alice
+# gpg> passwd
+# 转换为 SSH 私钥
+gpg2 --homedir /tmp/gpg2ssh --export-secret-subkeys 0xF27335A008768136! | openpgp2ssh F27335A008768136 > alice.ssh.priv
+rm -rf /tmp/gpg2ssh
+
+
+```
+
+---
+
+- https://gist.github.com/Integralist/f7e17034800b65b51eb7e9807720025a
+- https://fvue.nl/wiki/Gpg:_Best_practices
+- https://grimoire.carcano.ch/blog/a-quick-easy-yet-comprehensive-gpg-tutorial/
+- https://riseup.net/zh/security/message-security/openpgp/gpg-best-practices
+- https://unix.stackexchange.com/questions/748747/what-is-ar-for-gpg-gnupg-authentication-keys
+- https://paul.fawkesley.com/gpg-for-humans-why-care-about-cryptography/
+- https://paul.fawkesley.com/gpg-for-humans-public-key-crypto-primer/
+- https://paul.fawkesley.com/gpg-for-humans-protecting-your-primary-key/
+- https://paul.fawkesley.com/gpg-for-humans-preparing-an-offline-machine/
+- https://ulyc.github.io/2021/01/13/2021%E5%B9%B4-%E7%94%A8%E6%9B%B4%E7%8E%B0%E4%BB%A3%E7%9A%84%E6%96%B9%E6%B3%95%E4%BD%BF%E7%94%A8PGP-%E4%B8%8A/

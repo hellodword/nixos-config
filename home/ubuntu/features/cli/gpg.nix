@@ -5,8 +5,6 @@
   services.gpg-agent = {
     enable = true;
     enableBashIntegration = config.programs.bash.enable;
-    enableExtraSocket = false;
-    enableScDaemon = true;
     enableSshSupport = config.programs.ssh.enable;
     extraConfig = '''';
     sshKeys = null;
@@ -19,7 +17,6 @@
     mutableKeys = true;
     mutableTrust = true;
     publicKeys = [ ];
-    scdaemonSettings = { };
     settings = {
       #
       # This is an implementation of the Riseup OpenPGP Best Practices
