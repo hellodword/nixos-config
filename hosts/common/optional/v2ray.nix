@@ -130,6 +130,11 @@ in
 
   # TODO IPv6
 
+  # TODO sops templates
+  #   https://github.com/linyinfeng/dotfiles/blob/3e040c5ebe560bac7e302031b0c0c211f4739df0/nixos/modules/services/portal.nix#L102
+  #   https://github.com/jz8132543/flakes/blob/d538c1ff5ffbec5d89eb08cd839fb55eac4b5da3/nixos/modules/services/tuic.nix#L31
+  #   https://github.com/search?q=%2Fsops%5C.templates%2F+language%3Anix&type=code
+
   environment.systemPackages = with pkgs; [ iproute2 iptables ];
 
   services.v2ray = {
@@ -184,7 +189,7 @@ in
         XRAY_LOCATION_ASSET = "${assets}/share/v2ray";
         # # TODO split config file
         # V2RAY_LOCATION_CONFDIR = "";
-        # X2RAY_LOCATION_CONFDIR = "";
+        # XRAY_LOCATION_CONFDIR = "";
       };
     serviceConfig = {
       LogsDirectory = "v2ray";
