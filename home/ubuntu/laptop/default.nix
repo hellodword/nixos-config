@@ -24,7 +24,7 @@
 
     ../features/desktop/optional/firefox.nix
     ../features/desktop/optional/chromium.nix
-    ../features/desktop/optional/chrome.nix
+    # ../features/desktop/optional/chrome.nix
   ]
   ++
   [
