@@ -22,6 +22,9 @@
 
         # 一些备份文件
         "backups"
+
+        # gpg: WARNING: unsafe permissions on homedir
+        { directory = ".gnupg"; mode = "0700"; }
       ];
     };
   };
