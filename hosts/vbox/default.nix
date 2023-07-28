@@ -36,9 +36,7 @@
 
   boot.kernelPackages = pkgs.linuxPackages_6_1;
 
-  users.users."ubuntu".openssh.authorizedKeys.keys = [
-    "${inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKey}"
-  ];
+  users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
 
   system.stateVersion = "22.11";
 }

@@ -38,9 +38,7 @@
   ];
   boot.kernelModules = [ "lkrg" ];
 
-  users.users."ubuntu".openssh.authorizedKeys.keys = [
-    "${inputs.nixos-privates.ssh."laptop".authorizedKey}"
-  ];
+  users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
 
   system.stateVersion = "22.11";
 }
