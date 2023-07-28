@@ -173,6 +173,7 @@ in
       "${persistPath}/home/${username}/.gnupg/gpg-agent.conf"
       "${persistPath}/home/${username}/.gnupg/gpg.conf"
       "${persistPath}/home/${username}/.gnupg/scdaemon.conf"
+      "${persistPath}/home/${username}/.gnupg/sshcontrol"
     ];
     paths = [
       "${persistPath}/etc"
