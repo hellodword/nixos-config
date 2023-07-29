@@ -42,7 +42,6 @@
     ../../../common/optional/bark.nix
     ../../../common/optional/apkid.nix
 
-    ../../../common/optional/gpg.nix
     ../../../common/optional/adb.nix
 
     ../../../common/optional/ansible.nix

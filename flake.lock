@@ -265,6 +265,26 @@
         "type": "github"
       }
     },
+    "nix-index-database": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1690083300,
+        "narHash": "sha256-xnUtWO/5TuuHkIpmzMXGvHJqS06FSVADnAZ4bvqO4Zo=",
+        "owner": "Mic92",
+        "repo": "nix-index-database",
+        "rev": "c1e6fc40dd5c0d16940bc012421268b94e404b0b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Mic92",
+        "repo": "nix-index-database",
+        "type": "github"
+      }
+    },
     "nixos-hardware": {
       "locked": {
         "lastModified": 1690200740,
@@ -400,11 +420,13 @@
         "impermanence": "impermanence",
         "kitty-gruvbox-themes": "kitty-gruvbox-themes",
         "lanzaboote": "lanzaboote",
+        "nix-index-database": "nix-index-database",
         "nixos-hardware": "nixos-hardware",
         "nixos-privates": "nixos-privates",
         "nixpkgs": "nixpkgs",
         "sops-nix": "sops-nix",
-        "thunderbird-userjs": "thunderbird-userjs"
+        "thunderbird-userjs": "thunderbird-userjs",
+        "you-know-who": "you-know-who"
       }
     },
     "rust-overlay": {
@@ -481,6 +503,23 @@
         "owner": "HorlogeSkynet",
         "repo": "thunderbird-user.js",
         "rev": "ac8a715b067749c9a7845d2fe862764f34bef20f",
+        "type": "github"
+      }
+    },
+    "you-know-who": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1690594324,
+        "narHash": "sha256-xeionJ+BS86ISKZJz+KK5522cW5Tgb+paQsBnFLdN9U=",
+        "owner": "hellodword",
+        "repo": "you-know-who",
+        "rev": "b3fa69edd6927885834dffb0076d32f7e5019774",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hellodword",
+        "ref": "assets",
+        "repo": "you-know-who",
         "type": "github"
       }
     }

@@ -22,7 +22,7 @@ nix repl
 nix-repl> :lf /path/to/flake
 Added 20 variables.
 
-nix-repl> nixosConfigurations.vbox.config.allowedUnfreePkg
+nix-repl> nixosConfigurations.vbox.config.me.allowedUnfreePkg
 [ "Oracle_VM_VirtualBox_Extension_Pack" ]
 ```
 
@@ -150,25 +150,22 @@ nixos-generate-config --root /mnt
 3. 准备文件
 
 ```sh
+# 从 borg 恢复
+mkdir -p /tmp/borg
+borg mount /path/to/borg/repo::<...> /tmp/borg
+# ...
+borg umount /tmp/borg
+```
+
+```sh
 mkdir -p /mnt/persist/home/ubuntu
 chown -R $(id -nu 1000):$(id -ng 1000) /mnt/persist/home/ubuntu
-
-# sudo -u $(id -nu 1000) -g $(id -ng 1000) mkdir -p /mnt/persist/home/ubuntu/.ssh
-# sudo -u $(id -nu 1000) -g $(id -ng 1000) vim /mnt/persist/home/ubuntu/.ssh/authorized_keys
-# chmod 600 /mnt/persist/home/ubuntu/.ssh/authorized_keys
 
 # age key for sops-nix
 mkdir -p /mnt/persist/var/lib/sops-nix
 vim /mnt/persist/var/lib/sops-nix/keys.txt
 chmod 0700 /mnt/persist/var/lib/sops-nix
 chmod 600 /mnt/persist/var/lib/sops-nix/keys.txt
-
-# sudo -u $(id -nu 1000) -g $(id -ng 1000) mkdir -p /mnt/persist/home/ubuntu/.config/sops/age/
-# sudo -u $(id -nu 1000) -g $(id -ng 1000) vim /mnt/persist/home/ubuntu/.config/sops/age/keys_home_manager.txt
-
-mkdir -p /mnt/persist/usr/local/etc/adguard-home
-curl --output /mnt/persist/usr/local/etc/adguard-home/whitelist_full_combine.txt \
-    https://fastly.jsdelivr.net/gh/hellodword/you-know-who@assets/adguard-home/whitelist_full_combine.txt
 
 mkdir -p /mnt/persist/usr/local/etc/openvpn/client
 
@@ -192,14 +189,6 @@ mkdir -p /mnt/persist/etc
 cp -r /etc/secureboot /mnt/persist/etc/
 mkdir -p /mnt/etc/secureboot
 cp -r /mnt/persist/etc/secureboot/* /mnt/etc/secureboot/
-```
-
-```sh
-# 从 borg 恢复
-mkdir -p /tmp/borg
-borg mount /path/to/borg/repo::<...> /tmp/borg
-# ...
-borg umount /tmp/borg
 ```
 
 4. 安装

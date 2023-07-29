@@ -46,6 +46,16 @@
       url = "github:wdomitrz/kitty-gruvbox-theme/b930abcc3a1cdcc763fb65988f07ee0270710f9c";
       flake = false;
     };
+
+    you-know-who = {
+      url = "github:hellodword/you-know-who/assets";
+      flake = false;
+    };
+
+    nix-index-database = {
+      url = "github:Mic92/nix-index-database";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =

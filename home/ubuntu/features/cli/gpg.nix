@@ -1,10 +1,9 @@
 { pkgs, config, ... }:
 
 {
-  # TODO
-
   home.packages = with pkgs; [
     monkeysphere # openpgp2ssh
+    gnupg
   ];
 
   services.gpg-agent = {
