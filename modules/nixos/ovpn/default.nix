@@ -47,8 +47,8 @@ let
 
           iptables -t mangle -I OUTPUT -m set --match-set ${name} dst -j MARK --set-mark ${toString cfg.table}
 
-          iptables -w 3 -t mangle -I V2RAY -m set --match-set ${name} dst -j RETURN || true
-          iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set ${name} dst -j RETURN || true
+          iptables -w 3 -t mangle -C V2RAY -m set --match-set ${name} dst -j RETURN || iptables -w 3 -t mangle -I V2RAY -m set --match-set ${name} dst -j RETURN || true
+          iptables -w 3 -t mangle -C V2RAY_MARK -m set --match-set ${name} dst -j RETURN || iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set ${name} dst -j RETURN || true
 
           iptables -w 3 -t nat -N ${name}_REWRITE
           iptables -w 3 -t nat -I POSTROUTING -m mark --mark ${toString cfg.table} -j ${name}_REWRITE
@@ -122,8 +122,8 @@ in
         (lib.nameValuePair "v2ray" {
           serviceConfig.ExecStartPre = lib.mkAfter (lib.flatten (lib.mapAttrsFlatten
             (name: value: [
-              "+${pkgs.bash}/bin/bash -c 'iptables -w 3 -t mangle -I V2RAY -m set --match-set ${name} dst -j RETURN || true'"
-              "+${pkgs.bash}/bin/bash -c 'iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set ${name} dst -j RETURN || true'"
+              "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY -m set --match-set ${name} dst -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY -m set --match-set ${name} dst -j RETURN || true'"
+              "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m set --match-set ${name} dst -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set ${name} dst -j RETURN || true'"
             ])
             cfg.servers));
         })

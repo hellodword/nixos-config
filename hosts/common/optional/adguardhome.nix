@@ -25,6 +25,10 @@
 
   # ipset
   systemd.services.adguardhome.serviceConfig.AmbientCapabilities = [ "CAP_NET_ADMIN" ];
+  # # 直连
+  # systemd.services.adguardhome.serviceConfig.ExecStartPre = lib.optionals config.services.v2ray.enable [
+  #   "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner adguardhome -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner adguardhome -j RETURN || true'"
+  # ];
 
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
   services.adguardhome = {

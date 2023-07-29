@@ -121,6 +121,9 @@ let
 
       # systemd-resolve
       iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner systemd-resolve -j RETURN
+
+      # # adh
+      # iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner adguardhome -j RETURN || true
     '';
   };
 in

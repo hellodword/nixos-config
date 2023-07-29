@@ -6,9 +6,35 @@
     format = "binary";
   };
 
-  systemd.services."wg-quick-wgcf".after = lib.mkForce ([ "network.target" ]
-    ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
-    ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ]);
+
+  # systemd.services = {
+  #   "wg-quick-wgcf" = {
+  #     after = lib.mkForce ([ "network.target" ]
+  #       ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
+  #       ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ]);
+  #   };
+  # };
+
+  systemd.services = lib.mergeAttrs
+    {
+      "wg-quick-wgcf" = {
+        after = lib.mkForce ([ "network.target" ]
+          ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
+          ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ]);
+      };
+    }
+
+    (
+      lib.optionalAttrs
+        config.services.v2ray.enable
+        {
+          v2ray.serviceConfig.ExecStartPre = lib.mkAfter [
+            "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY -m set --match-set wgcf dst -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY -m set --match-set wgcf dst -j RETURN || true'"
+            "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m set --match-set wgcf dst -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set wgcf dst -j RETURN || true'"
+          ];
+        }
+    )
+  ;
 
   systemd.network.wait-online.ignoredInterfaces = [ "wgcf" ];
 
@@ -56,8 +82,8 @@
 
           iptables -t mangle -I OUTPUT -m set --match-set ${name} dst -j MARK --set-mark ${toString table}
 
-          iptables -w 3 -t mangle -I V2RAY -m set --match-set ${name} dst -j RETURN || true
-          iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set ${name} dst -j RETURN || true
+          iptables -w 3 -t mangle -C V2RAY -m set --match-set ${name} dst -j RETURN || iptables -w 3 -t mangle -I V2RAY -m set --match-set ${name} dst -j RETURN || true
+          iptables -w 3 -t mangle -C V2RAY_MARK -m set --match-set ${name} dst -j RETURN || iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set ${name} dst -j RETURN || true
 
           iptables -w 3 -t nat -N ${name}_REWRITE
           iptables -w 3 -t nat -I POSTROUTING -m mark --mark ${toString table} -j ${name}_REWRITE
@@ -105,4 +131,7 @@
       privateKeyFile = "${config.sops.secrets."wgcf.priv".path}";
       table = "${toString(table)}";
     };
+
+
+
 }
