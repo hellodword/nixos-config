@@ -85,6 +85,9 @@
     };
   };
 
+  # ipset
+  systemd.services.adguardhome.serviceConfig.AmbientCapabilities = [ "CAP_NET_ADMIN" ];
+
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
   services.adguardhome = {
     enable = true;
@@ -120,6 +123,22 @@
           { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
           { domain = "chat.openai.com"; answer = "2606:4700::6812:7b9"; }
         ];
+
+        ipset = [ ]
+          ++ lib.optionals (builtins.hasAttr "wgcf" config.networking.wg-quick.interfaces)
+          [
+            "${lib.concatStringsSep ","
+            [
+              "imgur.com"
+              "*.imgur.com"
+
+              "openai.com"
+              "*.openai.com"
+              "challenges.cloudflare.com"
+
+            ]}/wgcf,wgcf6"
+          ];
+
       };
     };
   };

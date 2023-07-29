@@ -36,7 +36,7 @@ let
 
           ${down}/bin/down
 
-          ipset create ${name} hash:ip || true
+          ipset create ${name} hash:ip family inet || true
           ipset list ${name} > /dev/null
 
           ipv4="$(ip -f inet addr show ${name} | awk '/inet / {print $2}')"

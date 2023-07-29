@@ -44,11 +44,15 @@
 
           ${downCommon}/bin/down
 
-          ipset create ${name} hash:ip || true
+          ipset create ${name} hash:ip family inet || true
           ipset list ${name} > /dev/null
+          ipset create ${name}6 hash:ip family inet6 || true
+          ipset list ${name}6 > /dev/null
 
           ipv4="$(ip -f inet addr show ${name} | awk '/inet / {print $2}')"
           ipv4="$(echo "$ipv4" | grep -oP '\d+\.\d+\.\d+\.\d+')"
+
+          ip -4 rule add fwmark ${toString table} lookup ${toString table}
 
           iptables -t mangle -I OUTPUT -m set --match-set ${name} dst -j MARK --set-mark ${toString table}
 
