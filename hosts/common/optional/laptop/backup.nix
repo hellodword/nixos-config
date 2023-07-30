@@ -84,7 +84,11 @@ let
         # "--keep-yearly 75"
       ];
       timerConfig = {
-        OnCalendar = "daily";
+        OnCalendar = [
+          "*-*-* 02:10:00" # 10:10
+          "*-*-* 07:10:00" # 15:10
+          "*-*-* 13:10:00" # 21:10
+        ];
         Persistent = true;
         RandomizedDelaySec = "10m";
       };
@@ -157,7 +161,8 @@ in
     # };
     user = "root";
     group = "root";
-    startAt = "daily";
+    startAt = "hourly";
+    persistentTimer = true;
     prune = {
       keep = {
         within = "2d"; # Keep all archives from the last day
