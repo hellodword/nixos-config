@@ -4,9 +4,6 @@ let
   username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
 
   # TODO hetzner storage box
-
-  # TODO backblaze b2
-  # TODO cloudflare R2
   # TODO telnyx storage
   resticS3Providers = [
     /*
@@ -55,6 +52,19 @@ let
       2. 创建 User restic https://console.wasabisys.com/users 勾选 Programmatic，创建 group restic，Policy 选择 restic
     */
     "wasabi"
+
+    /*
+      Cloudflare R2
+
+      2023-07-30 无法设置 API Key 的权限
+    */
+    "r2"
+
+    /*
+      Backblaze B2
+      https://www.backblaze.com/docs/cloud-storage-integrate-restic-with-backblaze-b2
+    */
+    "b2"
   ];
 
   mkResticS3 = name:
