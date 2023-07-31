@@ -178,7 +178,8 @@ chmod 600 /mnt/persist/usr/local/etc/openvpn/client/fastestvpn.ovpn
 chmod 0700 /mnt/persist/usr/local/etc/openvpn/client
 
 mkdir -p /mnt/persist/usr/local/etc/v2ray
-vim /mnt/persist/usr/local/etc/v2ray/v2ray.jsonc
+# 注意是 json 不是 jsonc，见 ./hosts/common/optional/v2ray.nix
+vim /mnt/persist/usr/local/etc/v2ray/outbounds.json
 
 mkdir -p /mnt/persist/etc
 

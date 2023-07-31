@@ -206,6 +206,8 @@ in
       "${persistPath}/home/${username}/backups/borged"
 
       "${persistPath}/home/${username}/.gnupg"
+
+      "${persistPath}/usr/local/etc/v2ray/outbounds.json"
     ];
   };
 
