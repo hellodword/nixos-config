@@ -20,6 +20,8 @@
     ../common/optional/router
 
     ../common/optional/netdata.nix
+
+    ../common/optional/discovery.nix
   ]
   ++
   [

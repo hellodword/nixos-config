@@ -45,7 +45,6 @@
     ../../../common/optional/adb.nix
 
     ../../../common/optional/ansible.nix
-
   ]
   ++
   [
