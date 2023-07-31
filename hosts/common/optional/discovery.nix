@@ -15,6 +15,7 @@
       DynamicUser = true;
       ProtectHome = "tmpfs";
       Restart = "on-failure";
+      RestartSec = "30s";
       MemoryMax = "16M";
     };
   };
