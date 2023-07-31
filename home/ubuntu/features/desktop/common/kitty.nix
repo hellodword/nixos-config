@@ -31,7 +31,7 @@
   };
 
   programs.ssh.extraConfig = lib.mkAfter ''
-    SetEnv=TERM=xterm-color
+    SetEnv TERM=xterm-color
   '';
   # programs.ssh.extraOptionOverrides = {
   #   SetEnv = "TERM=xterm-color";

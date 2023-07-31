@@ -18,9 +18,9 @@
     hashKnownHosts = true;
     serverAliveCountMax = 60;
     serverAliveInterval = 30;
-    # extraConfig = ''
-    #   AddKeysToAgent=yes
-    # '';
+    extraConfig = ''
+      IdentitiesOnly yes
+    '';
   };
 
   home.persistence = {
