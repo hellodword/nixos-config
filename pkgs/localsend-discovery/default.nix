@@ -2,15 +2,15 @@
 
 buildGoModule rec {
   pname = "localsend-discovery";
-  # go install github.com/hellodword/localsend-discovery@latest
-  version = "v0.0.0-20230731035253-7dd8e549840a";
+  # go install -v github.com/hellodword/localsend-discovery@master
+  version = "v0.0.0-20230731060059-9ccd548aae05";
 
   src = fetchFromGitHub {
     owner = "hellodword";
     repo = pname;
-    rev = "7dd8e549840a96159fe9de88a3bd79c9b20703ad";
+    rev = "9ccd548aae059f0f9d3e6f836c83cc3b700a8b3a";
     # nix-prefetch-git https://github.com/hellodword/localsend-discovery
-    hash = "sha256-u0Hl7v5JmAOEXgyDqtiLdeo2SGbozwe2nzctruzro4M=";
+    hash = "sha256-pPwE0HpUKmkFdYSUync+DwSktf5MBQe8aNPhKQXijD4=";
   };
 
   vendorSha256 = null;
