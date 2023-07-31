@@ -25,6 +25,13 @@
   networking.useDHCP = true;
   networking.useNetworkd = true;
 
+  systemd.network.wait-online.extraArgs = [
+    "--any"
+    "--interface=enp1s0"
+    "--interface=enp2s0"
+    "--interface=enp3s0"
+  ];
+
   boot.loader = {
     efi.canTouchEfiVariables = true;
     grub = {
