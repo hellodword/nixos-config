@@ -44,6 +44,9 @@
         inputs.nixos-privates.adguardhome.user
       ];
       dns = {
+        # fix: cannot unmarshal !!seq into filtering.BlockedServices
+        blocked_services = { };
+
         # v2ray UDP issue https://github.com/v2fly/v2ray-core/issues/68
         bind_hosts = [
           "127.0.0.1"
