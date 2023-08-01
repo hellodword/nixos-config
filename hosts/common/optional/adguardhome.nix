@@ -91,6 +91,11 @@ in
     settings = {
       bind_host = "127.0.0.1";
       bind_port = 33380;
+      # fix
+      http = {
+        address = "127.0.0.1:33380";
+      };
+
       schema_version = pkgs.adguardhome.schema_version;
       users = [
         inputs.nixos-privates.adguardhome.user
