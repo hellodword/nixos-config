@@ -50,6 +50,7 @@
 
           ip -4 rule flush table ${toString table} || true
           ip -6 rule flush table ${toString table} || true
+          ip -6 rule del fwmark 41820 lookup main || true
 
           iptables -t mangle -D OUTPUT -m set --match-set ${name} dst -j MARK --set-mark ${toString table} || true
 
@@ -59,6 +60,10 @@
           iptables -w 3 -t nat -D POSTROUTING -m mark --mark ${toString table} -j ${name}_REWRITE || true
           iptables -w 3 -t nat -F ${name}_REWRITE || true
           iptables -w 3 -t nat -X ${name}_REWRITE || true
+
+          ip6tables -w 3 -t nat -D POSTROUTING -m mark --mark 41820 -j ${name}_bypass_REWRITE || true
+          ip6tables -w 3 -t nat -F ${name}_bypass_REWRITE || true
+          ip6tables -w 3 -t nat -X ${name}_bypass_REWRITE || true
         '';
       };
 
@@ -67,8 +72,6 @@
         runtimeInputs = with pkgs; [ ipset iptables iproute2 gawk gnugrep ];
         text = ''
           set -x
-
-          ${downCommon}/bin/down
 
           ipset create ${name} hash:ip family inet || true
           ipset list ${name} > /dev/null
@@ -101,6 +104,35 @@
           ip -4 rule add ipproto icmp lookup ${toString table}
         '';
       };
+
+      upBypassIPv6 = pkgs.writeShellApplication {
+        name = "up";
+        runtimeInputs = with pkgs; [ ipset iptables iproute2 gawk gnugrep ];
+        text = ''
+          set -x
+
+          ip6tables -w 3 -t nat -N ${name}_bypass_REWRITE
+          ip6tables -w 3 -t nat -I POSTROUTING -m mark --mark 41820 -j ${name}_bypass_REWRITE
+
+          ip -6 rule add fwmark 41820 lookup main
+
+          ipv6_default_interface=""
+          for (( i=1; i <= 20; ++i ))
+          do
+            ipv6_default_interface="$(ip -6 route list | grep '^default' | grep -oP '(?<= dev )[a-z\-\d]+' || true)"
+            if [ -n "$ipv6_default_interface" ]; then
+              break
+            fi
+            sleep 3s
+          done
+
+          if [ -n "$ipv6_default_interface" ];
+          then
+            ipv6="$(ip -f inet6 addr show "$ipv6_default_interface" | awk '/inet6 / {print $2}' | head -n 1 | grep -oP '^[a-f\d:]+')"
+            ip6tables -t nat -I ${name}_bypass_REWRITE -m mark --mark 41820 -j SNAT --to-source "$ipv6"
+          fi
+        '';
+      };
     in
     {
       address = inputs.nixos-privates.wgcf."laptop".address;
@@ -123,15 +155,15 @@
         ${downCommon}/bin/down
       '';
       postUp = ''
+        ${downCommon}/bin/down
         ${upCommon}/bin/up
         ${upRouteAllIPv6AndICMPv4}/bin/up
+        ${upBypassIPv6}/bin/up
       '';
       preDown = '''';
       preUp = '''';
       privateKeyFile = "${config.sops.secrets."wgcf.priv".path}";
       table = "${toString(table)}";
     };
-
-
 
 }

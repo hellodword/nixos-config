@@ -3,6 +3,9 @@
 
 let
   # https://dns.iui.im/
+  # udp:53
+  # tcp:53
+  # tcp:853 / DoT
   directIP = [
     "114.114.114.114"
     "114.114.115.115"
@@ -42,13 +45,70 @@ let
     "94.140.14.14"
   ];
 
-  startPre = pkgs.writeShellApplication {
-    name = "adguardhome.startPre";
-    runtimeInputs = with pkgs; [ ipset ];
-    text = ''
-      ipset list v2ray_bypass > /dev/null || ipset create v2ray_bypass hash:ip family inet
+  directIPv6 = [
+    # cloudflare
+    "2606:4700:4700:0:0:0:0:1001"
+    # google
+    "2001:4860:4860:0:0:0:0:8844"
+    # quard9
+    "2620:fe::9"
+  ];
 
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! v2ray_bypass "+ip) directIP)}
+  upBypass = pkgs.writeShellApplication {
+    name = "up";
+    runtimeInputs = with pkgs; [ ipset iptables ];
+    text = ''
+      set -x
+
+      ipset list adguardhome_bypass > /dev/null || ipset create adguardhome_bypass hash:ip family inet
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) directIP)}
+
+      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
+
+      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820
+
+      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
+
+      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
+
+      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820
+
+      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
+    '';
+  };
+
+  upBypass6 = pkgs.writeShellApplication {
+    name = "up";
+    runtimeInputs = with pkgs; [ ipset iptables ];
+    text = ''
+      set -x
+
+      ipset list adguardhome_bypass6 > /dev/null || ipset create adguardhome_bypass6 hash:ip family inet6
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) directIPv6)}
+
+      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
+
+      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820
+
+      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
+
+      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
+
+      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820
+
+      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
     '';
   };
 in
@@ -75,12 +135,19 @@ in
     package = lib.mkForce pkgs.openresolv;
   };
 
-  # ipset
-  systemd.services.adguardhome.serviceConfig.AmbientCapabilities = [ "CAP_NET_ADMIN" ];
-  # 直连
-  systemd.services.adguardhome.serviceConfig.ExecStartPre = lib.optionals config.services.v2ray.enable [
-    "+${startPre}/bin/adguardhome.startPre"
-  ];
+  systemd.services = {
+    "adguardhome" = {
+      serviceConfig = {
+        # ipset
+        AmbientCapabilities = [ "CAP_NET_ADMIN" ];
+        ExecStartPre = [
+          # 直连
+          "+${upBypass}/bin/up"
+          "+${upBypass6}/bin/up"
+        ];
+      };
+    };
+  };
 
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
   services.adguardhome = {

@@ -47,9 +47,6 @@ let
       sysctl net.bridge.bridge-nf-call-arptables=0  || true
       ''}
 
-      ipset create v2ray_bypass hash:ip family inet || true
-      ipset list v2ray_bypass > /dev/null
-
       ip rule add fwmark 1 table 100
       ip route add local default dev lo table 100
 
@@ -129,8 +126,9 @@ let
       # iptables -w 3 -t mangle -I V2RAY_MARK -p udp -d 114.114.114.114 --dport 53 -j RETURN
       # iptables -w 3 -t mangle -I V2RAY_MARK -p tcp -d 114.114.114.114 --dport 53 -j RETURN
 
-      iptables -w 3 -t mangle -I V2RAY -m set --match-set v2ray_bypass dst -j RETURN
-      iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set v2ray_bypass dst -j RETURN
+      # for bypass
+      iptables -t mangle -I V2RAY       -m mark --mark 41820 -j RETURN
+      iptables -t mangle -I V2RAY_MARK  -m mark --mark 41820 -j RETURN
 
       # # 自身
       iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner v2ray -j RETURN
