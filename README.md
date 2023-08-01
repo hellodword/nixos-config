@@ -198,7 +198,7 @@ cp -r /mnt/persist/etc/secureboot/* /mnt/etc/secureboot/
 nixos-install --no-root-passwd  --flake ".#${TARGET_HOSTNAME}" --root /mnt
 ```
 
-5. switch
+5. switch & update
 
 ```sh
 nixos-rebuild --use-remote-sudo switch --flake .#laptop3
@@ -206,6 +206,8 @@ nixos-rebuild --use-remote-sudo switch --flake .#laptop3
 # 确定修改后不需要进行网络请求的 switch
 # https://discourse.nixos.org/t/rebuild-nixos-offline/3679/9
 nixos-rebuild --use-remote-sudo switch --option substitute false --flake .#laptop3
+
+nix flake lock --update-input nixos-privates
 ```
 
 ## laptop3
