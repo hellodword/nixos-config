@@ -248,6 +248,11 @@
             // turn off secure DNS
             user_pref("doh-rollout.disable-heuristics", true);
             user_pref("network.trr.mode", 5);
+
+            user_pref("extensions.formautofill.addresses.enabled", false);
+            user_pref("extensions.formautofill.creditCards.enabled", false);
+            user_pref("browser.formfill.enable", false);
+            user_pref("dom.forms.autocomplete.formautofill", false);
           ''
         ];
       };
