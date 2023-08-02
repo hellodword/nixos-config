@@ -213,6 +213,8 @@ in
       "${persistPath}/home/${username}/.mozilla/firefox/default/sessionstore-backups"
       "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite-wal"
       "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite"
+
+      "${persistPath}/usr/local/etc/openvpn/client"
     ];
   };
 
