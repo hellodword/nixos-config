@@ -5,7 +5,7 @@
     ./hardware-configuration.nix
 
     ../common/global
-    ../common/users/ubuntu/ubuntu-without-password.nix # without home-manager and password
+    ../common/users/ubuntu/ubuntu-without-password.nix
 
     ../common/optional/tmp.nix
     ../common/optional/gc.nix
@@ -36,6 +36,8 @@
   users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
 
   security.sudo.wheelNeedsPassword = false;
+
+  home-manager.users."ubuntu" = import ../../home/ubuntu/r86s;
 
   system.stateVersion = "22.11";
 }

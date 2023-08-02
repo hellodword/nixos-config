@@ -19,5 +19,7 @@
 
   users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
 
+  home-manager.users."ubuntu" = import ../../home/ubuntu/laptop;
+
   system.stateVersion = "22.11";
 }

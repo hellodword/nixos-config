@@ -187,8 +187,36 @@ ssh-keygen -f alice.ssh -p
 
 ## known issues
 
+### github
+
 - github 无法真正实现 revoke subkey 的操作，同时只能添加 subkeys 中的一个
 - github 无法真正实现 expire subkey 的操作，只会给所有该 subkey 签的 commits 的二级菜单里添加一个 expired 图标，但一眼望过去全部是 Verified
+
+### nixos to nixos gpg forwarding
+
+```sh
+# connect
+ssh remote
+systemctl --user stop gpg-agent.socket gpg-agent-ssh.socket gpg-agent-extra.socket
+
+# connect
+ssh -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent:/run/user/1000/gnupg/S.gpg-agent.extra" -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent.ssh:/run/user/1000/gnupg/S.gpg-agent.ssh" -o StreamLocalBindUnlink=yes remote
+# Warning: remote port forwarding failed for listen path /run/user/1000/gnupg/S.gpg-agent
+# gpg-connect-agent: no running gpg-agent - starting '/nix/store/zkqjpgs9n10ah0w9xb79lknnh8a58f28-gnupg-2.4.1/bin/gpg-agent'
+# gpg-connect-agent: waiting for the agent to come up ... (5s)
+# gpg-connect-agent: connection to the agent established
+
+# maybe need to restart tproxy related apps
+systemctl --user restart gpg-agent.socket gpg-agent-ssh.socket gpg-agent-extra.socket
+
+# connect again
+ssh -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent:/run/user/1000/gnupg/S.gpg-agent.extra" -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent.ssh:/run/user/1000/gnupg/S.gpg-agent.ssh" -o StreamLocalBindUnlink=yes remote
+# gpg-connect-agent: connection to the agent is in restricted mode
+
+# test
+echo "test" | gpg --encrypt -r $KEY_ID > enc
+gpg --decrypt enc
+```
 
 ---
 

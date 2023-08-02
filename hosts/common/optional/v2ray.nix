@@ -13,7 +13,7 @@ let
     name = "v2ray.generate";
     runtimeInputs = with pkgs; [ jq ];
     text = ''
-      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "${config.sops.templates.v2ray.path}" ${outboundsPath} > ${generatedPath}
+      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "/etc/v2ray/template.json" ${outboundsPath} > ${generatedPath}
     '';
   };
 
@@ -154,7 +154,7 @@ in
   #   https://github.com/jz8132543/flakes/blob/d538c1ff5ffbec5d89eb08cd839fb55eac4b5da3/nixos/modules/services/tuic.nix#L31
   #   https://github.com/search?q=%2Fsops%5C.templates%2F+language%3Anix&type=code
 
-  sops.templates.v2ray.content = builtins.toJSON {
+  environment.etc."v2ray/template.json".text = builtins.toJSON {
     "log" = {
       "access" = "/var/log/v2ray/v2ray.log";
       "error" = "/var/log/v2ray/v2ray.log";
