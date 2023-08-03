@@ -29,6 +29,7 @@
       gnumake
 
       nil
+      nixd
       nixfmt
 
       nix-prefetch
