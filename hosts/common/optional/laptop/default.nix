@@ -30,7 +30,6 @@
 
     ../../../common/optional/auditd.nix
     ../../../common/optional/virtualbox.nix
-    ../../../common/optional/virtualbox-extension.nix
 
     ../../../common/optional/wireless.nix
     ../../../common/optional/ntp.nix
