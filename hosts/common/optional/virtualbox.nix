@@ -1,6 +1,9 @@
 { pkgs, ... }:
 
 {
+  /*
+    wget https://download.virtualbox.org/virtualbox/7.0.10/VBoxGuestAdditions_7.0.10.iso
+  */
   me.allowedUnfreePkg = [
     "Oracle_VM_VirtualBox_Extension_Pack"
   ];

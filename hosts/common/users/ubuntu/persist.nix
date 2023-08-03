@@ -1,4 +1,4 @@
-{ persistPath, ... }:
+{ lib, config, persistPath, ... }:
 
 {
   # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -23,8 +23,15 @@
         # 一些备份文件
         "backups"
 
+        # 例如和 virtualbox guest 共享
+        "share"
+
         # gpg: WARNING: unsafe permissions on homedir
         { directory = ".gnupg"; mode = "0700"; }
+      ]
+      ++ lib.optionals config.virtualisation.virtualbox.host.enable [
+        ".config/VirtualBox"
+        "VirtualBox VMs"
       ];
     };
   };
