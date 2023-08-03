@@ -225,10 +225,10 @@ in
             "type" = "leastping";
             "settings" = {
               "baselines" = [
-                "400ms"
-                "600ms"
+                "4000ms"
+                "6000ms"
               ];
-              "expected" = 1;
+              "expected" = 2;
               "maxRTT" = "7000ms";
               "tolerance" = 0.5;
             };
