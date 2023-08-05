@@ -225,11 +225,11 @@ in
             "type" = "leastping";
             "settings" = {
               "baselines" = [
-                "4000ms"
-                "6000ms"
+                "400ms"
+                "600ms"
               ];
               "expected" = 2;
-              "maxRTT" = "7000ms";
+              "maxRTT" = "1500ms";
               "tolerance" = 0.5;
             };
           };
@@ -295,7 +295,7 @@ in
         "connectivity" = "http://www.msftncsi.com/ncsi.txt";
         "interval" = "60s";
         "samplingCount" = 10;
-        "timeout" = "7000ms";
+        "timeout" = "1500ms";
       };
     };
 
