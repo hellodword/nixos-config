@@ -181,28 +181,44 @@ in
         ];
         upstream_dns = [
           # cloudflare
+          # x509: certificate is valid for 1.0.0.1, 1.1.1.1, 162.159.36.1, 162.159.46.1, 2606:4700:4700::1001, 2606:4700:4700::1111, 2606:4700:4700::64, 2606:4700:4700::6400
           "tls://1.0.0.1"
+          "tls://1.1.1.1"
+          "tls://162.159.36.1"
+          "tls://162.159.46.1"
+          "tls://[2606:4700:4700:0:0:0:0:1001]"
+          "tls://[2606:4700:4700::1111]"
+          "tls://[2606:4700:4700::64]"
+          "tls://[2606:4700:4700::6400]"
+          # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
+          "h3://cloudflare-dns.com/dns-query"
           # google
           "tls://8.8.4.4"
+          "tls://[2001:4860:4860:0:0:0:0:8844]"
           # quard9
           "tls://9.9.9.10"
+          "tls://[2620:fe::9]"
           # opendns
           "tls://208.67.222.222"
           # adguardhome
+          # h3://dns-unfiltered.adguard.com/dns-query
           "tls://94.140.14.14"
-          # cloudflare
-          "tls://[2606:4700:4700:0:0:0:0:1001]"
-          # google
-          "tls://[2001:4860:4860:0:0:0:0:8844]"
-          # quard9
-          "tls://[2620:fe::9]"
-        ];
-        upstream_dns_file = "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt";
+          "tls://94.140.14.141"
+          "tls://94.140.14.141"
+          "h3://94.140.14.14"
+          "h3://94.140.14.141"
+          "h3://94.140.14.141"
+        ] ++ (
+          builtins.filter
+            (x: builtins.typeOf x == "string" && x != "")
+            (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
+        );
+        # upstream_dns_file = "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt";
         rewrites = [
           { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
           { domain = "chat.openai.com"; answer = "2606:4700::6812:7b9"; }
         ];
-
+        # 
         ipset = [ ]
           ++ lib.optionals (builtins.hasAttr "wgcf" config.networking.wg-quick.interfaces)
           [
