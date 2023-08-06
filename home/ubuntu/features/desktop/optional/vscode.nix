@@ -30,6 +30,15 @@
       "update.mode" = "none";
       "extensions.autoCheckUpdates" = false;
       "extensions.autoUpdate" = false;
+      "[json]" = {
+        "editor.defaultFormatter" = "vscode.json-language-features";
+      };
+      "[jsonc]" = {
+        "editor.defaultFormatter" = "vscode.json-language-features";
+      };
+      "[javascript]" = {
+        "editor.defaultFormatter" = "vscode.typescript-language-features";
+      };
     };
     extensions = (with pkgs.vscode-extensions; [
       esbenp.prettier-vscode
