@@ -3,10 +3,13 @@
 
 let
   # https://dns.iui.im/
+
   # udp:53
   # tcp:53
   # tcp:853 / DoT
-  directIP = [
+  # udp:443 / DoH3
+
+  ChinaDNS = [
     "114.114.114.114"
     "114.114.115.115"
     "114.114.114.119"
@@ -28,31 +31,64 @@ let
     "182.254.118.118"
     "120.53.53.53"
     "1.12.12.12"
+  ];
 
+  ChinaDNS6 = [
+    # ali
+    "2400:3200::1"
+    "2400:3200:baba::1"
+  ];
+
+  DoT = [
     # google
     "8.8.4.4"
 
     # cloudflare
+    # x509: certificate is valid for 1.0.0.1, 1.1.1.1, 162.159.36.1, 162.159.46.1, 2606:4700:4700::1001, 2606:4700:4700::1111, 2606:4700:4700::64, 2606:4700:4700::6400
     "1.0.0.1"
+    # "1.1.1.1"
+    "162.159.36.1"
+    "162.159.46.1"
 
     # quard9
     "9.9.9.10"
 
     # opendns
-    "208.67.222.222"
+    # "208.67.222.222"
 
     # adguardhome
+    # h3://dns-unfiltered.adguard.com/dns-query
     "94.140.14.14"
+    # "94.140.14.141"
+    # "94.140.14.141"
   ];
 
-  directIPv6 = [
+  DoT6 = [
     # cloudflare
     "2606:4700:4700:0:0:0:0:1001"
+    # "2606:4700:4700::1111"
+    "2606:4700:4700::64"
+    # "2606:4700:4700::6400"
     # google
     "2001:4860:4860:0:0:0:0:8844"
     # quard9
     "2620:fe::9"
+    # adguardhome
+    "2a00:5a60::ad1:0ff"
+    "2a00:5a60::ad2:0ff"
   ];
+
+  DoQ = [ ];
+  DoQ6 = [ ];
+
+  DoH3 = [
+    # adguardhome
+    # h3://dns-unfiltered.adguard.com/dns-query
+    "94.140.14.14"
+    # "94.140.14.141"
+    # "94.140.14.141"
+  ];
+  DoH36 = [ ];
 
   upBypass = pkgs.writeShellApplication {
     name = "up";
@@ -61,7 +97,9 @@ let
       set -x
 
       ipset list adguardhome_bypass > /dev/null || ipset create adguardhome_bypass hash:ip family inet
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) directIP)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) ChinaDNS)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) DoT)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) DoH3)}
 
       iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
       iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
@@ -72,6 +110,9 @@ let
       iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
       iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
 
+      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820
+
       iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
       iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
 
@@ -80,6 +121,9 @@ let
 
       iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
       iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
+
+      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820
     '';
   };
 
@@ -90,7 +134,9 @@ let
       set -x
 
       ipset list adguardhome_bypass6 > /dev/null || ipset create adguardhome_bypass6 hash:ip family inet6
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) directIPv6)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) ChinaDNS6)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) DoT6)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) DoH36)}
 
       ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
       ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
@@ -101,6 +147,9 @@ let
       ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
       ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
 
+      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
+
       ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
       ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
 
@@ -109,6 +158,9 @@ let
 
       ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
       ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
+
+      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
     '';
   };
 in
@@ -120,6 +172,7 @@ in
     curl
     coreutils
     iproute2
+    q
   ];
 
   services.resolved.enable = lib.mkForce false;
@@ -179,36 +232,18 @@ in
         bootstrap_dns = [
           "tls://120.53.53.53"
         ];
-        upstream_dns = [
-          # cloudflare
-          # x509: certificate is valid for 1.0.0.1, 1.1.1.1, 162.159.36.1, 162.159.46.1, 2606:4700:4700::1001, 2606:4700:4700::1111, 2606:4700:4700::64, 2606:4700:4700::6400
-          "tls://1.0.0.1"
-          "tls://1.1.1.1"
-          "tls://162.159.36.1"
-          "tls://162.159.46.1"
-          "tls://[2606:4700:4700:0:0:0:0:1001]"
-          "tls://[2606:4700:4700::1111]"
-          "tls://[2606:4700:4700::64]"
-          "tls://[2606:4700:4700::6400]"
+        upstream_dns = [ ]
+          ++ (map (x: "tls://" + x) DoT)
+          ++ (map (x: "quic://" + x) DoQ)
+          ++ (map (x: "h3://" + x) DoH3)
+          ++ (map (x: "tls://[" + x + "]") DoT6)
+          ++ (map (x: "quic://[" + x + "]") DoQ6)
+          ++ (map (x: "h3://[" + x + "]") DoH36)
+          ++ [
           # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
           "h3://cloudflare-dns.com/dns-query"
-          # google
-          "tls://8.8.4.4"
-          "tls://[2001:4860:4860:0:0:0:0:8844]"
-          # quard9
-          "tls://9.9.9.10"
-          "tls://[2620:fe::9]"
-          # opendns
-          "tls://208.67.222.222"
-          # adguardhome
-          # h3://dns-unfiltered.adguard.com/dns-query
-          "tls://94.140.14.14"
-          "tls://94.140.14.141"
-          "tls://94.140.14.141"
-          "h3://94.140.14.14"
-          "h3://94.140.14.141"
-          "h3://94.140.14.141"
-        ] ++ (
+        ]
+          ++ (
           builtins.filter
             (x: builtins.typeOf x == "string" && x != "")
             (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
