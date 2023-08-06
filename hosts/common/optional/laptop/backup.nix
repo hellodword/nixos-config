@@ -4,7 +4,6 @@ let
   username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
 
   # TODO hetzner storage box
-  # TODO telnyx storage
   resticS3Providers = [
     /*
       idrive
@@ -65,6 +64,13 @@ let
       https://www.backblaze.com/docs/cloud-storage-integrate-restic-with-backblaze-b2
     */
     "b2"
+
+    /*
+      telnyx
+      https://support.telnyx.com/en/articles/8047928-use-dragondisk-with-telnyx-storage
+      the secret key is not used by Telnyx Storage, you can type out anything you want here
+    */
+    "telnyx"
   ];
 
   mkResticS3 = name:
