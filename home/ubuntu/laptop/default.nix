@@ -46,7 +46,7 @@
   [
     ../features/desktop/optional/vscode.nix
     ../features/dev/optional/go.nix
-    ../features/dev/optional/dart.nix
+    ../features/dev/optional/flutter.nix
     ../features/desktop/optional/android-studio.nix
   ]
   ;
