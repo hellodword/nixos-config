@@ -14,6 +14,7 @@
     gomodifytags
     impl
     gotests
+    go-tools # installing staticcheck (technically available in golangci-lint, but for use in lsp)
   ];
 
   programs.vscode.extensions = lib.optionals
@@ -21,4 +22,12 @@
     [
       pkgs.vscode-extensions.golang.go
     ];
+
+  programs.vscode.userSettings = lib.optionalAttrs
+    config.programs.vscode.enable
+    {
+      "go.toolsManagement.checkForUpdates" = "off";
+      "go.toolsManagement.autoUpdate" = false;
+      "go.logging.level" = "verbose";
+    };
 }

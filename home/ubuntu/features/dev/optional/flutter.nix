@@ -31,9 +31,11 @@
     )
   ];
 
-  programs.vscode.userSettings = {
-    "dart.checkForSdkUpdates" = "false";
-  };
+  programs.vscode.userSettings = lib.optionalAttrs
+    config.programs.vscode.enable
+    {
+      "dart.checkForSdkUpdates" = "false";
+    };
 
   # https://github.com/NixOS/nixpkgs/pull/76420#issuecomment-615344955
   programs.vscode.extensions = lib.optionals
