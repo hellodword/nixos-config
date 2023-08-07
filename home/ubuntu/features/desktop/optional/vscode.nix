@@ -39,6 +39,9 @@
       "[javascript]" = {
         "editor.defaultFormatter" = "vscode.typescript-language-features";
       };
+      # https://stackoverflow.com/a/74909302
+      # https://github.com/microsoft/vscode/issues/113175
+      "window.titleBarStyle" = "custom";
     };
     extensions = (with pkgs.vscode-extensions; [
       esbenp.prettier-vscode
