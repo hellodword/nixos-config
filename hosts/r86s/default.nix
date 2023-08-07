@@ -39,5 +39,8 @@
 
   home-manager.users."ubuntu" = import ../../home/ubuntu/r86s;
 
+  # gpg forwarding
+  services.openssh.settings.StreamLocalBindUnlink = "yes";
+
   system.stateVersion = "22.11";
 }

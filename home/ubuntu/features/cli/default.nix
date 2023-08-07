@@ -5,7 +5,6 @@
     ./bash.nix
     ./git.nix
     ./ssh.nix
-    ./gpg.nix
     ./screen.nix
   ];
 

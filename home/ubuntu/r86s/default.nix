@@ -7,6 +7,9 @@
   ++
   [
     ../features/cli
+
+    ../features/cli/optional/gpg.nix
+    ../features/cli/optional/gpg-forwarding.nix
   ]
   ;
 

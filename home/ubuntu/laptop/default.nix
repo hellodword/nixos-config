@@ -8,6 +8,9 @@
   [
     ../features/cli
 
+    ../features/cli/optional/gpg.nix
+    ../features/cli/optional/gpg-agent.nix
+
     ../features/cli/optional/bat.nix
     ../features/cli/optional/nix-index.nix
     ../features/cli/optional/ffmpeg.nix

@@ -6,20 +6,6 @@
     gnupg
   ];
 
-  services.gpg-agent = {
-    enable = true;
-    enableBashIntegration = config.programs.bash.enable;
-    enableSshSupport = config.programs.ssh.enable;
-    enableExtraSocket = true;
-    extraConfig = '''';
-    /*
-      gpg --list-keys --with-keygrip | grep -A 1 '\[A'
-      ~/.gnupg/sshcontrol
-    */
-    # sshKeys = inputs.privates.gpg."<...>".sshKeys;
-    verbose = false;
-  };
-
   # programs.git.aliases."signing" = "!git config commit.gpgsign true && git config user.signingkey ${inputs.privates.gpg."<...>".git-signingkey}";
 
   programs.gpg = {

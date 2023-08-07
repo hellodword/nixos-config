@@ -194,25 +194,13 @@ ssh-keygen -f alice.ssh -p
 
 ### nixos to nixos gpg forwarding
 
+> 远程需要 `gpgconf --create-socketdir`
+> 远程要设置 SSH_AUTH_SOCK `export SSH_AUTH_SOCK=/run/user/1000/gnupg/S.gpg-agent.ssh`
+> 远程不要运行 gpg-agent 服务
+> 远程的 sshd 需要 `StreamLocalBindUnlink=yes`，否则下次连接异常
+> 远程如果 ssh 退出时还是没有停止 gpg-agent，那就停止后再连接 `pkill gpg-agent`
+
 ```sh
-# connect
-ssh remote
-systemctl --user stop gpg-agent.socket gpg-agent-ssh.socket gpg-agent-extra.socket
-
-# connect
-ssh -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent:/run/user/1000/gnupg/S.gpg-agent.extra" -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent.ssh:/run/user/1000/gnupg/S.gpg-agent.ssh" -o StreamLocalBindUnlink=yes remote
-# Warning: remote port forwarding failed for listen path /run/user/1000/gnupg/S.gpg-agent
-# gpg-connect-agent: no running gpg-agent - starting '/nix/store/zkqjpgs9n10ah0w9xb79lknnh8a58f28-gnupg-2.4.1/bin/gpg-agent'
-# gpg-connect-agent: waiting for the agent to come up ... (5s)
-# gpg-connect-agent: connection to the agent established
-
-# maybe need to restart tproxy related apps
-systemctl --user restart gpg-agent.socket gpg-agent-ssh.socket gpg-agent-extra.socket
-
-# connect again
-ssh -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent:/run/user/1000/gnupg/S.gpg-agent.extra" -o "RemoteForward /run/user/1000/gnupg/S.gpg-agent.ssh:/run/user/1000/gnupg/S.gpg-agent.ssh" -o StreamLocalBindUnlink=yes remote
-# gpg-connect-agent: connection to the agent is in restricted mode
-
 # test
 echo "test" | gpg --encrypt -r $KEY_ID > enc
 gpg --decrypt enc
