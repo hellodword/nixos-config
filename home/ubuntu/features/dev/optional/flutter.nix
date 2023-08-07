@@ -1,6 +1,9 @@
-{ pkgs, config, persistPath, ... }:
+{ pkgs, lib, config, persistPath, ... }:
 
 {
+  # 插件会报错，而且没办法调试，用 nix develop 或者 devcontainer 代替
+  # 外部 bash 可以正常运行和调试
+
   home.packages = [
     # flutter
 
@@ -28,15 +31,17 @@
     )
   ];
 
+  programs.vscode.userSettings = {
+    "dart.checkForSdkUpdates" = "false";
+  };
 
-  # # https://github.com/NixOS/nixpkgs/pull/76420#issuecomment-615344955
-  # # 会报错，用 nix develop 或者 devcontainer 代替
-  # programs.vscode.extensions = lib.optionals
-  #   config.programs.vscode.enable
-  #   [
-  #     pkgs.vscode-extensions.dart-code.dart-code
-  #     pkgs.vscode-extensions.dart-code.flutter
-  #   ];
+  # https://github.com/NixOS/nixpkgs/pull/76420#issuecomment-615344955
+  programs.vscode.extensions = lib.optionals
+    config.programs.vscode.enable
+    [
+      pkgs.vscode-extensions.dart-code.dart-code
+      pkgs.vscode-extensions.dart-code.flutter
+    ];
 
   # /home/ubuntu/.config/flutter/tool_state
   home = {
