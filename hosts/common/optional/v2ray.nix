@@ -220,18 +220,18 @@ in
           "selector" = [
             "proxy:us:"
           ];
-          "observerTag" = "observe-default";
+          # "observerTag" = "observe-default";
           "strategy" = {
             "type" = "leastping";
-            "settings" = {
-              "baselines" = [
-                "400ms"
-                "600ms"
-              ];
-              "expected" = 2;
-              "maxRTT" = "1500ms";
-              "tolerance" = 0.5;
-            };
+            # "settings" = {
+            #   "baselines" = [
+            #     "400ms"
+            #     "600ms"
+            #   ];
+            #   "expected" = 2;
+            #   "maxRTT" = "700ms";
+            #   "tolerance" = 0.5;
+            # };
           };
         }
       ];
@@ -288,14 +288,14 @@ in
     "burstObservatory" = {
       "tag" = "observe-default";
       "subjectSelector" = [
-        "proxy:us:"
+        "proxy:"
       ];
       "pingConfig" = {
         "destination" = "http://www.google.com/gen_204";
         "connectivity" = "http://www.msftncsi.com/ncsi.txt";
-        "interval" = "60s";
+        "interval" = "10s";
         "samplingCount" = 10;
-        "timeout" = "1500ms";
+        "timeout" = "700ms";
       };
     };
 

@@ -42,6 +42,10 @@
       # https://stackoverflow.com/a/74909302
       # https://github.com/microsoft/vscode/issues/113175
       "window.titleBarStyle" = "custom";
+      "files.associations" = {
+        "cspell.json" = "jsonc";
+        "v2ray.json" = "jsonc";
+      };
     };
     extensions = (with pkgs.vscode-extensions; [
       esbenp.prettier-vscode
