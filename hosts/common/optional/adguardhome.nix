@@ -9,58 +9,66 @@ let
   # tcp:853 / DoT
   # udp:443 / DoH3
 
-  ChinaDNS = [
-    "114.114.114.114"
-    "114.114.115.115"
-    "114.114.114.119"
-    "114.114.115.119"
-    "114.114.114.110"
-    "114.114.115.110"
+  # 策略
+  # bootstrap 直连国内 DoT
+  # 直连海外的选择不支持 ECS 的
+  #   https://community.cloudflare.com/t/1-1-1-1-supports-ecs/17424/1
+  # 其余全是代理请求海外
+
+  ChinaDoT = [
+    # "114.114.114.114"
+    # "114.114.115.115"
+    # "114.114.114.119"
+    # "114.114.115.119"
+    # "114.114.114.110"
+    # "114.114.115.110"
 
     # ali
     "223.5.5.5"
     "223.6.6.6"
 
-    # baidu
-    "180.76.76.76"
+    # # baidu
+    # "180.76.76.76"
 
     # dnspod
-    "119.29.29.29"
-    "182.254.116.116"
-    "119.28.28.28"
-    "182.254.118.118"
+    # "119.29.29.29"
+    # "182.254.116.116"
+    # "119.28.28.28"
+    # "182.254.118.118"
     "120.53.53.53"
     "1.12.12.12"
   ];
 
-  ChinaDNS6 = [
-    # ali
-    "2400:3200::1"
-    "2400:3200:baba::1"
+  ChinaDoT6 = [
+    # # ali
+    # "2400:3200::1"
+    # "2400:3200:baba::1"
   ];
 
   DoT = [
-    # google
-    "8.8.4.4"
-
     # cloudflare
     # x509: certificate is valid for 1.0.0.1, 1.1.1.1, 162.159.36.1, 162.159.46.1, 2606:4700:4700::1001, 2606:4700:4700::1111, 2606:4700:4700::64, 2606:4700:4700::6400
     "1.0.0.1"
     # "1.1.1.1"
     "162.159.36.1"
     "162.159.46.1"
+  ];
 
-    # quard9
-    "9.9.9.10"
+  DoTProxy = [
+    # google
+    "8.8.4.4"
 
-    # opendns
-    # "208.67.222.222"
+    # # quard9
+    # "9.9.9.10"
 
-    # adguardhome
-    # h3://dns-unfiltered.adguard.com/dns-query
-    "94.140.14.14"
-    # "94.140.14.141"
-    # "94.140.14.141"
+    # # opendns
+    # # "208.67.222.222"
+
+    # # adguardhome
+    # # h3://dns-unfiltered.adguard.com/dns-query
+    # "94.140.14.14"
+    # # "94.140.14.141"
+    # # "94.140.14.141"
   ];
 
   DoT6 = [
@@ -69,25 +77,22 @@ let
     # "2606:4700:4700::1111"
     "2606:4700:4700::64"
     # "2606:4700:4700::6400"
+  ];
+
+  DoT6Proxy = [
     # google
     "2001:4860:4860:0:0:0:0:8844"
-    # quard9
-    "2620:fe::9"
-    # adguardhome
-    "2a00:5a60::ad1:0ff"
-    "2a00:5a60::ad2:0ff"
+    # # quard9
+    # "2620:fe::9"
+    # # adguardhome
+    # "2a00:5a60::ad1:0ff"
+    # "2a00:5a60::ad2:0ff"
   ];
 
   DoQ = [ ];
   DoQ6 = [ ];
 
-  DoH3 = [
-    # adguardhome
-    # h3://dns-unfiltered.adguard.com/dns-query
-    "94.140.14.14"
-    # "94.140.14.141"
-    # "94.140.14.141"
-  ];
+  DoH3 = [ ];
   DoH36 = [ ];
 
   upBypass = pkgs.writeShellApplication {
@@ -97,7 +102,7 @@ let
       set -x
 
       ipset list adguardhome_bypass > /dev/null || ipset create adguardhome_bypass hash:ip family inet
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) ChinaDNS)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) ChinaDoT)}
       ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) DoT)}
       ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) DoH3)}
 
@@ -134,7 +139,7 @@ let
       set -x
 
       ipset list adguardhome_bypass6 > /dev/null || ipset create adguardhome_bypass6 hash:ip family inet6
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) ChinaDNS6)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) ChinaDoT6)}
       ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) DoT6)}
       ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) DoH36)}
 
@@ -224,14 +229,21 @@ in
         # fix: cannot unmarshal !!seq into filtering.BlockedServices
         blocked_services = { };
 
+        edns_client_subnet = {
+          enabled = true;
+          use_custom = true;
+          custom_ip = "";
+        };
+
         # v2ray UDP issue https://github.com/v2fly/v2ray-core/issues/68
         bind_hosts = [
           "127.0.0.1"
           "::1"
         ];
-        bootstrap_dns = [
-          "tls://120.53.53.53"
-        ];
+        bootstrap_dns = [ ]
+          ++ (map (x: "tls://" + x) ChinaDoT)
+          ++ (map (x: "tls://[" + x + "]") ChinaDoT6)
+        ;
         upstream_dns = [ ]
           ++ (map (x: "tls://" + x) DoT)
           ++ (map (x: "quic://" + x) DoQ)
@@ -239,13 +251,15 @@ in
           ++ (map (x: "tls://[" + x + "]") DoT6)
           ++ (map (x: "quic://[" + x + "]") DoQ6)
           ++ (map (x: "h3://[" + x + "]") DoH36)
-          ++ [
-          # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
-          "h3://cloudflare-dns.com/dns-query"
-        ]
+          ++ (map (x: "tls://" + x) DoTProxy)
+          ++ (map (x: "tls://[" + x + "]") DoT6Proxy)
+          #   ++ [
+          #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
+          #   "h3://cloudflare-dns.com/dns-query"
+          # ]
           ++ (
           builtins.filter
-            (x: builtins.typeOf x == "string" && x != "")
+            (x: builtins.typeOf x == "string" && x != "" && (builtins.substring 0 1 x) == "[")
             (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
         );
         # upstream_dns_file = "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt";
