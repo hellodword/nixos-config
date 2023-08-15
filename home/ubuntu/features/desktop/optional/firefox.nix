@@ -135,7 +135,7 @@
           engines = {
             "Github Actions" = {
               urls = [{
-                template = "https://github.com/search?l=&p=1&q={searchTerms}+extension:yml+extension:yaml+path:.github/workflows&type=Code";
+                template = "https://github.com/search?q={searchTerms}+%28path%3A.github%2Fworkflows%2F*.yml+OR+path%3A.github%2Fworkflows%2F*.yaml%29&type=code";
               }];
               definedAliases = [ "@actions" "@ci" ];
               iconUpdateURL = "https://github.com/favicon.ico";
