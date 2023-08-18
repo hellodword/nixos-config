@@ -55,7 +55,7 @@ let
     /*
       Cloudflare R2
 
-      2023-07-30 无法设置 API Key 的权限
+      2023-08-16 支持设置 API Key 只对特定 bucket 生效 https://github.com/cloudflare/cloudflare-docs/commit/f4386f52f42359b48c531a1fc47cbc6cfbbcfa35
     */
     "r2"
 
