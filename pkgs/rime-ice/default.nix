@@ -14,6 +14,8 @@ stdenvNoCC.mkDerivation rec {
   };
 
   installPhase = ''
+    sed -i 's/- Control+grave/# - Control+grave/' default.yaml 
+
     mkdir -p $out/share/rime-data
 
     install -Dm644 *.{schema,dict}.yaml   $out/share/rime-data
