@@ -50,7 +50,7 @@
     extensions = (with pkgs.vscode-extensions; [
       esbenp.prettier-vscode
       jnoortheen.nix-ide
-      ms-python.python
+      # ms-python.python
       # ms-vscode.makefile-tools
       # ms-vscode.cmake-tools
       ms-vscode.cpptools
@@ -67,6 +67,12 @@
         publisher = "ms-vscode-remote";
         version = "0.298.0";
         sha256 = "19bylhfr1qzp79z9vflqrcrlr45x66w5pxgfvzkm51c9hzm3fr8i";
+      }
+      {
+        name = "python";
+        publisher = "ms-python";
+        version = "2023.15.12341006";
+        sha256 = "0vvyrqk2ym2r7hfvv8g0cn2r699ww0wk93vqisy7f92w1csjbyzg";
       }
     ];
   };
