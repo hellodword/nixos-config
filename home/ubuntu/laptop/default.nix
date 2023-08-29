@@ -39,6 +39,7 @@
     ../features/desktop/optional/bitwarden.nix
     ../features/desktop/optional/libreoffice.nix
     ../features/desktop/optional/zathura.nix
+    ../features/desktop/optional/scrcpy.nix
   ]
   ++
   [
