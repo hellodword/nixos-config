@@ -12,11 +12,14 @@ let
       POWER_SUPPLY_ENERGY_FULL_DESIGN="$(grep -oP '(?<=POWER_SUPPLY_ENERGY_FULL_DESIGN=)\d+$' /sys/class/power_supply/BAT0/uevent)"
       POWER_SUPPLY_STATUS="$(grep -oP '(?<=POWER_SUPPLY_STATUS=)[^\n]+$' /sys/class/power_supply/BAT0/uevent | tr '[:upper:]' '[:lower:]')"
 
+      POWER_SUPPLY_ONLINE="$(grep -oP '(?<=POWER_SUPPLY_ONLINE=)[^\n]+$' /sys/class/power_supply/AC0/uevent || true)"
+
       [ -n "$POWER_SUPPLY_CAPACITY" ]
       [ -n "$POWER_SUPPLY_ENERGY_NOW" ]
       [ -n "$POWER_SUPPLY_ENERGY_FULL_DESIGN" ]
+      [ -n "$POWER_SUPPLY_ONLINE" ]
 
-      if [ "$POWER_SUPPLY_STATUS" != "charging" ]; then
+      if [ "$POWER_SUPPLY_ONLINE" != "1" ] && [ "$POWER_SUPPLY_STATUS" != "charging" ]; then
 
         # 低于 10% 或者少于设计容量的 8% 关机
         if [ "$POWER_SUPPLY_CAPACITY" -le "10" ] || [ "$POWER_SUPPLY_ENERGY_NOW" -le "$(("$POWER_SUPPLY_ENERGY_FULL_DESIGN" * 8 / 100))" ]; then
