@@ -96,12 +96,12 @@
         ];
         extensions = [
           (inputs.firefox-addons.lib.${pkgs.system}.buildFirefoxXpiAddon {
-            pname = "tampermonkey";
-            addonId = "firefox@tampermonkey.net";
-            version = "4.19.0";
+            pname = "violentmonkey";
+            addonId = "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}";
+            version = "2.15.0";
             url =
-              "https://addons.mozilla.org/firefox/downloads/file/4115771/tampermonkey-4.19.0.xpi";
-            sha256 = "0f6v853mccj2rkmjy3g9r1gvgk7yfad7mjh1wqzdhhws7imiysi2";
+              "https://addons.mozilla.org/firefox/downloads/file/4142251/violentmonkey-2.15.0.xpi";
+            sha256 = "0ljkqmhv3hj94bafnmp1zsdfspwmi8kbjm7hmvg3blnwx75m8kl9";
             meta = { };
           })
           (inputs.firefox-addons.lib.${pkgs.system}.buildFirefoxXpiAddon {
