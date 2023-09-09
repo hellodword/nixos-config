@@ -219,6 +219,7 @@ in
       # fix
       http = {
         address = "127.0.0.1:33380";
+        session_ttl = "719h";
       };
 
       schema_version = pkgs.adguardhome.schema_version;
