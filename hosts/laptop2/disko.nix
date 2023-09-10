@@ -2,7 +2,7 @@
 
 let
   device0 = "/dev/disk/by-id/${inputs.nixos-privates.disk."${config.networking.hostName}".id.disk0}";
-  swapSize = "16GiB";
+  swapSize = "64GiB";
 in
 {
   imports = [

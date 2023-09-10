@@ -54,7 +54,7 @@ echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf
 mkdir -p /tmp/tmp
 export TMPDIR=/tmp/tmp
 
-nix-shell -p git sbctl
+nix-shell -p git sbctl gnupg knot-dns
 
 mkdir -p ~/.ssh
 vim ~/.ssh/<private key for nix-privates>
