@@ -13,6 +13,9 @@ let
       POWER_SUPPLY_STATUS="$(grep -oP '(?<=POWER_SUPPLY_STATUS=)[^\n]+$' /sys/class/power_supply/BAT0/uevent | tr '[:upper:]' '[:lower:]')"
 
       POWER_SUPPLY_ONLINE="$(grep -oP '(?<=POWER_SUPPLY_ONLINE=)[^\n]+$' /sys/class/power_supply/AC0/uevent || true)"
+      if [ -z "$POWER_SUPPLY_ONLINE" ]; then
+        POWER_SUPPLY_ONLINE="$(grep -oP '(?<=POWER_SUPPLY_ONLINE=)[^\n]+$' /sys/class/power_supply/AC/uevent || true)"
+      fi
 
       [ -n "$POWER_SUPPLY_CAPACITY" ]
       [ -n "$POWER_SUPPLY_ENERGY_NOW" ]
