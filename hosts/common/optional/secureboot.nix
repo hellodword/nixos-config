@@ -6,12 +6,12 @@
   ];
 
   boot = {
-    # This should already be here from switching to bootspec earlier.
-    # It's not required anymore, but also doesn't do any harm.
-    bootspec = {
-      enable = true;
-      enableValidation = true;
-    };
+    # # This should already be here from switching to bootspec earlier.
+    # # It's not required anymore, but also doesn't do any harm.
+    # bootspec = {
+    #   enable = true;
+    #   enableValidation = true;
+    # };
     lanzaboote = {
       enable = true;
       pkiBundle = "/etc/secureboot";
@@ -21,7 +21,7 @@
     # generated at installation time. So we force it to false
     # for now.
     loader.systemd-boot.enable = lib.mkForce false;
-    loader.grub.enable = lib.mkForce false;
+    # loader.grub.enable = lib.mkForce false;
   };
 
   environment.systemPackages = with pkgs; [
