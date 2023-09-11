@@ -158,71 +158,81 @@ in
     [ (lib.nameValuePair "borgbackup" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) ]
   ));
 
-  # system.activationScripts.make-borgbackup-base-public.text = ''
-  #   mkdir -p "${persistPath}/borgbackup"
-  #   chown 1000 "${persistPath}/borgbackup"
-  # '';
+  services.borgbackup.jobs =
+    let
+      commonOptions = {
+        appendFailedSuffix = true;
+        compression = "auto,zstd,3";
+        doInit = true;
+        encryption = {
+          mode = "repokey";
+          passCommand = "cat ${config.sops.secrets."borgbackup".path}";
+        };
 
-  services.borgbackup.jobs."${config.networking.hostName}" = {
-    repo = "${persistPath}/borgbackup/${config.networking.hostName}";
-    appendFailedSuffix = true;
-    compression = "auto,zstd,3";
-    doInit = true;
-    encryption = {
-      mode = "repokey";
-      passCommand = "cat ${config.sops.secrets."borgbackup".path}";
-    };
-    # environment = {
-    #   BORG_RSH = "ssh -i /path/to/key";
-    # };
-    user = "root";
-    group = "root";
-    startAt = "hourly";
-    persistentTimer = true;
-    prune = {
-      keep = {
-        within = "2d"; # Keep all archives from the last day
-        daily = 7;
-        weekly = 4;
-        monthly = -1; # Keep at least one archive for each month
+        # environment = {
+        #   BORG_RSH = "ssh -i /path/to/key";
+        # };
+        user = "root";
+        group = "root";
+        startAt = "hourly";
+        persistentTimer = true;
+        prune = {
+          keep = {
+            within = "2d"; # Keep all archives from the last day
+            daily = 7;
+            weekly = 4;
+            monthly = -1; # Keep at least one archive for each month
+          };
+        };
+      };
+
+      commonExclude = [
+        "${persistPath}/home/${username}/.ssh/config"
+        "${persistPath}/home/${username}/.ssh/gpg.*"
+
+        "${persistPath}/home/${username}/.gnupg/gpg-agent.conf"
+        "${persistPath}/home/${username}/.gnupg/gpg.conf"
+        "${persistPath}/home/${username}/.gnupg/scdaemon.conf"
+        "${persistPath}/home/${username}/.gnupg/sshcontrol"
+        "${persistPath}/home/${username}/.gnupg/S.*"
+      ];
+    in
+    {
+      "${config.networking.hostName}" = commonOptions // {
+        repo = "${persistPath}/borgbackup/${config.networking.hostName}";
+
+        exclude = [
+
+        ] ++ commonExclude;
+
+        paths = [
+          "${persistPath}/etc"
+
+          "${persistPath}/home/${username}/.ssh"
+          "${persistPath}/home/${username}/.bash_history"
+
+          "${persistPath}/home/${username}/.config/kdeconnect"
+          "${persistPath}/home/${username}/.config/joplin-desktop"
+          "${persistPath}/home/${username}/.config/Bitwarden"
+
+          "${persistPath}/home/${username}/.android/adbkey"
+          "${persistPath}/home/${username}/.android/adbkey.pub"
+
+          "${persistPath}/home/${username}/backups/borged"
+
+          "${persistPath}/home/${username}/.gnupg"
+
+          "${persistPath}/usr/local/etc/v2ray/outbounds.json"
+
+          # firefox cookies
+          "${persistPath}/home/${username}/.mozilla/firefox/default/sessionstore-backups"
+          # "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite-wal"
+          "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite"
+
+          "${persistPath}/usr/local/etc/openvpn/client"
+        ];
       };
     };
-
-    exclude = [
-      "${persistPath}/home/${username}/.ssh/config"
-
-      "${persistPath}/home/${username}/.gnupg/gpg-agent.conf"
-      "${persistPath}/home/${username}/.gnupg/gpg.conf"
-      "${persistPath}/home/${username}/.gnupg/scdaemon.conf"
-      "${persistPath}/home/${username}/.gnupg/sshcontrol"
-    ];
-    paths = [
-      "${persistPath}/etc"
-
-      "${persistPath}/home/${username}/.ssh"
-      "${persistPath}/home/${username}/.bash_history"
-
-      "${persistPath}/home/${username}/.config/kdeconnect"
-      "${persistPath}/home/${username}/.config/joplin-desktop"
-      "${persistPath}/home/${username}/.config/Bitwarden"
-
-      "${persistPath}/home/${username}/.android/adbkey"
-      "${persistPath}/home/${username}/.android/adbkey.pub"
-
-      "${persistPath}/home/${username}/backups/borged"
-
-      "${persistPath}/home/${username}/.gnupg"
-
-      "${persistPath}/usr/local/etc/v2ray/outbounds.json"
-
-      # firefox cookies
-      "${persistPath}/home/${username}/.mozilla/firefox/default/sessionstore-backups"
-      # "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite-wal"
-      "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite"
-
-      "${persistPath}/usr/local/etc/openvpn/client"
-    ];
-  };
 
   services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "borgbackup-${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
 
