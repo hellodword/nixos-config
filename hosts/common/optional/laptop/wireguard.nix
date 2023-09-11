@@ -119,7 +119,7 @@
           ipv6_default_interface=""
           for (( i=1; i <= 20; ++i ))
           do
-            ipv6_default_interface="$(ip -6 route list | grep '^default' | grep -oP '(?<= dev )[a-z\-\d]+' || true)"
+            ipv6_default_interface="$(ip -6 route list | grep '^default' | head -n 1 | grep -oP '(?<= dev )[a-z\-\d]+' || true)"
             if [ -n "$ipv6_default_interface" ]; then
               break
             fi
