@@ -40,6 +40,11 @@
         profile = "${pkgs.firejail}/etc/firejail/qrencode.profile";
         executable = "${lib.getBin pkgs.qrencode}/bin/qrencode";
       };
+      thunar = {
+        profile = "${pkgs.firejail}/etc/firejail/thunar.profile";
+        executable = "${lib.getBin pkgs.xfce.thunar}/bin/thunar";
+        desktop = "${pkgs.xfce.thunar}/share/applications/thunar.desktop";
+      };
     };
   };
 
