@@ -45,6 +45,20 @@
         executable = "${lib.getBin pkgs.xfce.thunar}/bin/thunar";
         desktop = "${pkgs.xfce.thunar}/share/applications/thunar.desktop";
       };
+      feh = {
+        profile = "${pkgs.firejail}/etc/firejail/feh.profile";
+        executable = "${lib.getBin pkgs.feh}/bin/feh";
+      };
+      sqlitebrowser = {
+        profile = "${pkgs.firejail}/etc/firejail/sqlitebrowser.profile";
+        executable = "${lib.getBin pkgs.sqlitebrowser}/bin/sqlitebrowser";
+        desktop = "${pkgs.sqlitebrowser}/share/applications/sqlitebrowser.desktop";
+      };
+      zathura = {
+        profile = "${pkgs.firejail}/etc/firejail/zathura.profile";
+        executable = "${lib.getBin pkgs.zathura}/bin/zathura";
+        desktop = "${pkgs.zathura}/share/applications/org.pwmt.zathura.desktop";
+      };
     };
   };
 
