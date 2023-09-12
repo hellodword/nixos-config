@@ -1,6 +1,8 @@
 { pkgs, lib, ... }:
 
 {
+  # TODO hm 条件开启
+
   programs.firejail = {
     enable = true;
     wrappedBinaries = {
@@ -23,6 +25,11 @@
         profile = "${pkgs.firejail}/etc/firejail/bitwarden.profile";
         executable = "${lib.getBin pkgs.bitwarden}/bin/bitwarden";
         desktop = "${pkgs.bitwarden}/share/applications/bitwarden.desktop";
+      };
+      flameshot = {
+        profile = "${pkgs.firejail}/etc/firejail/flameshot.profile";
+        executable = "${lib.getBin pkgs.flameshot}/bin/flameshot";
+        desktop = "${pkgs.flameshot}/share/applications/org.flameshot.Flameshot.desktop";
       };
     };
   };
