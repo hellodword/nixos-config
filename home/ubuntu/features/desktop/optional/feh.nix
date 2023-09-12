@@ -1,13 +1,17 @@
 { pkgs, nixosConfig, ... }:
 
+let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+in
 {
   programs.feh = {
     enable = true;
     package =
       if nixosConfig.programs.firejail.enable then
-        (builtins.elemAt
-          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
-          0)
+        (mkJailed {
+          originalPkg = pkgs.feh;
+          profile = "${pkgs.firejail}/etc/firejail/feh.profile";
+        })
       else
         pkgs.feh;
     buttons = { };

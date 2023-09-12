@@ -11,11 +11,6 @@
       #   executable = "${lib.getBin pkgs.firefox}/bin/firefox";
       #   desktop = "${pkgs.firefox}/share/applications/firefox.desktop";
       # };
-      mpv = {
-        profile = "${pkgs.firejail}/etc/firejail/mpv.profile";
-        executable = "${lib.getBin pkgs.mpv}/bin/mpv";
-        desktop = "${pkgs.mpv}/share/applications/mpv.desktop";
-      };
       chromium = {
         profile = "${pkgs.firejail}/etc/firejail/chromium.profile";
         executable = "${lib.getBin pkgs.chromium}/bin/chromium";
@@ -45,10 +40,10 @@
         executable = "${lib.getBin pkgs.xfce.thunar}/bin/thunar";
         desktop = "${pkgs.xfce.thunar}/share/applications/thunar.desktop";
       };
-      feh = {
-        profile = "${pkgs.firejail}/etc/firejail/feh.profile";
-        executable = "${lib.getBin pkgs.feh}/bin/feh";
-      };
+      # feh = {
+      #   profile = "${pkgs.firejail}/etc/firejail/feh.profile";
+      #   executable = "${lib.getBin pkgs.feh}/bin/feh";
+      # };
       sqlitebrowser = {
         profile = "${pkgs.firejail}/etc/firejail/sqlitebrowser.profile";
         executable = "${lib.getBin pkgs.sqlitebrowser}/bin/sqlitebrowser";
