@@ -31,6 +31,11 @@
         executable = "${lib.getBin pkgs.flameshot}/bin/flameshot";
         desktop = "${pkgs.flameshot}/share/applications/org.flameshot.Flameshot.desktop";
       };
+      peek = {
+        profile = "${pkgs.firejail}/etc/firejail/peek.profile";
+        executable = "${lib.getBin pkgs.peek}/bin/peek";
+        desktop = "${pkgs.peek}/share/applications/com.uploadedlobster.peek.desktop";
+      };
     };
   };
 

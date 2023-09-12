@@ -1,7 +1,19 @@
-{ pkgs, ... }:
+{ pkgs, nixosConfig, lib, ... }:
 
 {
-  home.packages = with pkgs; [
-    peek
+  home.file = lib.optionalAttrs nixosConfig.programs.firejail.enable {
+    ".local/share/icons/hicolor/scalable/apps/com.uploadedlobster.peek.svg".source = "${pkgs.bitwarden}/share/icons/hicolor/scalable/apps/com.uploadedlobster.peek.svg";
+    ".local/share/icons/hicolor/symbolic/apps/com.uploadedlobster.peek-symbolic.svg".source = "${pkgs.bitwarden}/share/icons/hicolor/symbolic/apps/com.uploadedlobster.peek-symbolic.svg";
+  };
+
+  home.packages = [
+    (
+      if nixosConfig.programs.firejail.enable then
+        (builtins.elemAt
+          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
+          0)
+      else
+        pkgs.peek
+    )
   ];
 }
