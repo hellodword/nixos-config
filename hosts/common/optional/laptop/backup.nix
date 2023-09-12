@@ -230,6 +230,8 @@ in
           "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite"
 
           "${persistPath}/usr/local/etc/openvpn/client"
+
+          "${persistPath}/home/${username}/.cache/rofi3.druncache"
         ];
       };
     };
