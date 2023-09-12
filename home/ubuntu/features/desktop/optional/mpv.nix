@@ -18,7 +18,7 @@
           (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
           0)
       else
-        null;
+        pkgs.mpv;
     bindings = { };
   };
 

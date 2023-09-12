@@ -14,6 +14,11 @@
         executable = "${lib.getBin pkgs.mpv}/bin/mpv";
         desktop = "${pkgs.mpv}/share/applications/mpv.desktop";
       };
+      chromium = {
+        profile = "${pkgs.firejail}/etc/firejail/chromium.profile";
+        executable = "${lib.getBin pkgs.chromium}/bin/chromium";
+        desktop = "${pkgs.chromium}/share/applications/chromium-browser.desktop";
+      };
     };
   };
 
