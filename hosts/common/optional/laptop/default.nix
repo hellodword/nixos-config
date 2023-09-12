@@ -4,6 +4,7 @@
     ./openvpn.nix
     ./wireguard.nix
     ./packages.nix
+    ./firejail.nix
   ] ++
   [
     ../../../common/global
