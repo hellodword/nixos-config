@@ -36,6 +36,10 @@
         executable = "${lib.getBin pkgs.peek}/bin/peek";
         desktop = "${pkgs.peek}/share/applications/com.uploadedlobster.peek.desktop";
       };
+      qrencode = {
+        profile = "${pkgs.firejail}/etc/firejail/qrencode.profile";
+        executable = "${lib.getBin pkgs.qrencode}/bin/qrencode";
+      };
     };
   };
 
