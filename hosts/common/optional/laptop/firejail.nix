@@ -19,6 +19,11 @@
         executable = "${lib.getBin pkgs.chromium}/bin/chromium";
         desktop = "${pkgs.chromium}/share/applications/chromium-browser.desktop";
       };
+      bitwarden = {
+        profile = "${pkgs.firejail}/etc/firejail/bitwarden.profile";
+        executable = "${lib.getBin pkgs.bitwarden}/bin/bitwarden";
+        desktop = "${pkgs.bitwarden}/share/applications/bitwarden.desktop";
+      };
     };
   };
 
