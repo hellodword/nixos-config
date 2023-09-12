@@ -193,11 +193,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1694134858,
-        "narHash": "sha256-fG/ESauOGmiojKlpJG8gB62dJa5Wd+ZIuiDMKK/HD3g=",
+        "lastModified": 1694469544,
+        "narHash": "sha256-eqZng5dZnAUyb7xXyFk5z871GY/++KVv3Gyld5mVh20=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "19c6a4081b14443420358262f8416149bd79561a",
+        "rev": "5171f5ef654425e09d9c2100f856d887da595437",
         "type": "github"
       },
       "original": {
@@ -272,11 +272,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1694316990,
-        "narHash": "sha256-ql9bLSR+9rE3mJ/8sle1KUGMvPhjhtsVefRb1Ah3juk=",
+        "lastModified": 1694430658,
+        "narHash": "sha256-8+OZ98kD63e/GaOiJimXHR/VYiTYwr25jTYGEHHOfq4=",
         "owner": "Mic92",
         "repo": "nix-index-database",
-        "rev": "71d840d865b03ab1330d9b7f030a263991ee04e9",
+        "rev": "9a5c4996d0918a151269600dfdf6ad3b3748f6a4",
         "type": "github"
       },
       "original": {
@@ -287,11 +287,11 @@
     },
     "nixos-hardware": {
       "locked": {
-        "lastModified": 1693718952,
-        "narHash": "sha256-+nGdJlgTk0MPN7NygopipmyylVuAVi7OItIwTlwtGnw=",
+        "lastModified": 1694432324,
+        "narHash": "sha256-bo3Gv6Cp40vAXDBPi2XiDejzp/kyz65wZg4AnEWxAcY=",
         "owner": "NixOS",
         "repo": "nixos-hardware",
-        "rev": "793de77d9f83418b428e8ba70d1e42c6507d0d35",
+        "rev": "ca41b8a227dd235b1b308217f116c7e6e84ad779",
         "type": "github"
       },
       "original": {
@@ -303,11 +303,11 @@
     },
     "nixos-privates": {
       "locked": {
-        "lastModified": 1690955481,
-        "narHash": "sha256-hWkFzAkz+RBDs8csLOPDGIm/c0lF6mmz7g8Y7apa+f4=",
+        "lastModified": 1694483527,
+        "narHash": "sha256-z0aJ4/ybiSCUDid/Q90N5uYdBWPBArdFZbVNR7ADRIA=",
         "ref": "refs/heads/master",
-        "rev": "2b688236fea0b0e9fe58d290c877b2b80ef0203f",
-        "revCount": 25,
+        "rev": "985e916c812fa3a23ea0d244fbf6cdae53efb8db",
+        "revCount": 26,
         "type": "git",
         "url": "ssh://git@hellodword.github.com/hellodword/nixos-privates.git"
       },
@@ -509,11 +509,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1694309301,
-        "narHash": "sha256-nBfQPL+kmaUOw+n/RXf0MQGI4AkhF5tlV3HpivJEQwU=",
+        "lastModified": 1694481911,
+        "narHash": "sha256-rmvuK6GT7jl/LfZi/baKUxKOKL/2qk4RQS+F9OSM+ns=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "356731228c0f129d4709a43da55e2e007d9a82b7",
+        "rev": "5a83a3b8cd4fcb458499ce180b50f03200180848",
         "type": "github"
       },
       "original": {
