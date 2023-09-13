@@ -65,6 +65,10 @@
                 name = "CyberChef";
                 url = "https://gchq.github.io/CyberChef/";
               }
+              {
+                name = "Anna’s Archive";
+                url = "https://annas-archive.org";
+              }
             ];
           }
           {
