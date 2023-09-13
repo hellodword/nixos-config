@@ -1,22 +1,17 @@
-{ pkgs, config, persistPath, nixosConfig, lib, ... }:
+{ pkgs, config, persistPath, nixosConfig, ... }:
 
+let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+in
 {
-  home.file = lib.optionalAttrs nixosConfig.programs.firejail.enable {
-    ".local/share/icons/hicolor/128x128/apps/org.pwmt.zathura.png".source = "${pkgs.zathura}/share/icons/hicolor/128x128/apps/org.pwmt.zathura.png";
-    ".local/share/icons/hicolor/16x16/apps/org.pwmt.zathura.png".source = "${pkgs.zathura}/share/icons/hicolor/16x16/apps/org.pwmt.zathura.png";
-    ".local/share/icons/hicolor/256x256/apps/org.pwmt.zathura.png".source = "${pkgs.zathura}/share/icons/hicolor/256x256/apps/org.pwmt.zathura.png";
-    ".local/share/icons/hicolor/32x32/apps/org.pwmt.zathura.png".source = "${pkgs.zathura}/share/icons/hicolor/32x32/apps/org.pwmt.zathura.png";
-    ".local/share/icons/hicolor/64x64/apps/org.pwmt.zathura.png".source = "${pkgs.zathura}/share/icons/hicolor/64x64/apps/org.pwmt.zathura.png";
-    ".local/share/icons/hicolor/scalable/apps/org.pwmt.zathura.svg".source = "${pkgs.zathura}/share/icons/hicolor/scalable/apps/org.pwmt.zathura.svg";
-  };
-
   programs.zathura = {
     enable = true;
     package =
       if nixosConfig.programs.firejail.enable then
-        (builtins.elemAt
-          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
-          0)
+        (mkJailed {
+          originalPkg = pkgs.zathura;
+          profile = "${pkgs.firejail}/etc/firejail/zathura.profile";
+        })
       else
         pkgs.zathura;
   };

@@ -1,22 +1,16 @@
-{ config, pkgs, persistPath, lib, nixosConfig, ... }:
+{ config, pkgs, persistPath, nixosConfig, ... }:
 
+let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+in
 {
-  home.file = lib.optionalAttrs nixosConfig.programs.firejail.enable {
-    ".local/share/icons/hicolor/16x16/apps/bitwarden.png".source = "${pkgs.bitwarden}/share/icons/hicolor/16x16/apps/bitwarden.png";
-    ".local/share/icons/hicolor/32x32/apps/bitwarden.png".source = "${pkgs.bitwarden}/share/icons/hicolor/32x32/apps/bitwarden.png";
-    ".local/share/icons/hicolor/64x64/apps/bitwarden.png".source = "${pkgs.bitwarden}/share/icons/hicolor/64x64/apps/bitwarden.png";
-    ".local/share/icons/hicolor/128x128/apps/bitwarden.png".source = "${pkgs.bitwarden}/share/icons/hicolor/128x128/apps/bitwarden.png";
-    ".local/share/icons/hicolor/256x256/apps/bitwarden.png".source = "${pkgs.bitwarden}/share/icons/hicolor/256x256/apps/bitwarden.png";
-    ".local/share/icons/hicolor/512x512/apps/bitwarden.png".source = "${pkgs.bitwarden}/share/icons/hicolor/512x512/apps/bitwarden.png";
-    ".local/share/icons/hicolor/1024x1024/apps/bitwarden.png".source = "${pkgs.bitwarden}/share/icons/hicolor/1024x1024/apps/bitwarden.png";
-  };
-
   home.packages = [
     (
       if nixosConfig.programs.firejail.enable then
-        (builtins.elemAt
-          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
-          0)
+        (mkJailed {
+          originalPkg = pkgs.bitwarden;
+          profile = "${pkgs.firejail}/etc/firejail/bitwarden.profile";
+        })
       else
         pkgs.bitwarden
     )

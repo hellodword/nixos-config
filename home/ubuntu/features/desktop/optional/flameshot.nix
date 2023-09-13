@@ -1,22 +1,17 @@
 { pkgs, lib, nixosConfig, ... }:
 
+let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+in
 {
-  home.file = lib.optionalAttrs nixosConfig.programs.firejail.enable {
-    ".local/share/icons/hicolor/48x48/apps/flameshot.png".source = "${pkgs.flameshot}/share/icons/hicolor/48x48/apps/flameshot.png";
-    ".local/share/icons/hicolor/128x128/apps/flameshot.png".source = "${pkgs.flameshot}/share/icons/hicolor/128x128/apps/flameshot.png";
-    ".local/share/icons/hicolor/scalable/apps/flameshot.svg".source = "${pkgs.flameshot}/share/icons/hicolor/scalable/apps/flameshot.svg";
-    ".local/share/icons/hicolor/48x48/apps/org.flameshot.Flameshot.png".source = "${pkgs.flameshot}/share/icons/hicolor/48x48/apps/org.flameshot.Flameshot.png";
-    ".local/share/icons/hicolor/128x128/apps/org.flameshot.Flameshot.png".source = "${pkgs.flameshot}/share/icons/hicolor/128x128/apps/org.flameshot.Flameshot.png";
-    ".local/share/icons/hicolor/scalable/apps/org.flameshot.Flameshot.svg".source = "${pkgs.flameshot}/share/icons/hicolor/scalable/apps/org.flameshot.Flameshot.svg";
-  };
-
   services.flameshot = {
     enable = true;
     package =
       if nixosConfig.programs.firejail.enable then
-        (builtins.elemAt
-          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
-          0)
+        (mkJailed {
+          originalPkg = pkgs.flameshot;
+          profile = "${pkgs.firejail}/etc/firejail/flameshot.profile";
+        })
       else
         pkgs.flameshot;
     settings = {

@@ -1,25 +1,21 @@
 { lib, config, pkgs, persistPath, nixosConfig, ... }:
 
+let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+in
 {
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/chromium" ];
-  };
-
-  home.file = lib.optionalAttrs nixosConfig.programs.firejail.enable {
-    ".local/share/icons/hicolor/16x16/apps/chromium.png".source = "${pkgs.chromium}/share/icons/hicolor/16x16/apps/chromium.png";
-    ".local/share/icons/hicolor/32x32/apps/chromium.png".source = "${pkgs.chromium}/share/icons/hicolor/32x32/apps/chromium.png";
-    ".local/share/icons/hicolor/64x64/apps/chromium.png".source = "${pkgs.chromium}/share/icons/hicolor/64x64/apps/chromium.png";
-    ".local/share/icons/hicolor/128x128/apps/chromium.png".source = "${pkgs.chromium}/share/icons/hicolor/128x128/apps/chromium.png";
-    ".local/share/icons/hicolor/256x256/apps/chromium.png".source = "${pkgs.chromium}/share/icons/hicolor/256x256/apps/chromium.png";
   };
 
   programs.chromium = {
     enable = true;
     package =
       if nixosConfig.programs.firejail.enable then
-        (builtins.elemAt
-          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
-          0)
+        (mkJailed {
+          originalPkg = pkgs.chromium;
+          profile = "${pkgs.firejail}/etc/firejail/chromium.profile";
+        })
       else
         pkgs.chromium;
     commandLineArgs = [ ];

@@ -1,16 +1,16 @@
-{ pkgs, nixosConfig, lib, ... }:
+{ pkgs, nixosConfig, ... }:
 
+let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+in
 {
-  home.file = lib.optionalAttrs nixosConfig.programs.firejail.enable {
-    ".local/share/icons/hicolor/256x256/apps/sqlitebrowser.png".source = "${pkgs.sqlitebrowser}/share/icons/hicolor/256x256/apps/sqlitebrowser.png";
-  };
-
   home.packages = [
     (
       if nixosConfig.programs.firejail.enable then
-        (builtins.elemAt
-          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
-          0)
+        (mkJailed {
+          originalPkg = pkgs.sqlitebrowser;
+          profile = "${pkgs.firejail}/etc/firejail/sqlitebrowser.profile";
+        })
       else
         pkgs.sqlitebrowser
     )

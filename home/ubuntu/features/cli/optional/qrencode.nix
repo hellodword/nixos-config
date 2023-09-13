@@ -1,12 +1,16 @@
 { pkgs, nixosConfig, ... }:
 
+let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+in
 {
   home.packages = [
     (
       if nixosConfig.programs.firejail.enable then
-        (builtins.elemAt
-          (builtins.filter (x: x.meta.name == "firejail-wrapped-binaries") nixosConfig.environment.systemPackages)
-          0)
+        (mkJailed {
+          originalPkg = pkgs.qrencode;
+          profile = "${pkgs.firejail}/etc/firejail/qrencode.profile";
+        })
       else
         pkgs.qrencode
     )
