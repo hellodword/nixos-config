@@ -1,6 +1,8 @@
-{ lib, persistPath, ... }:
+{ pkgs, lib, persistPath, ... }:
 
 {
+  environment.systemPackages = with pkgs; [ dive ];
+
   virtualisation.docker = {
     enable = true;
     enableOnBoot = true;
