@@ -5,17 +5,22 @@
 ### VM
 
 - https://github.com/jollheef/appvm
-- https://spectrum-os.org/
 - https://github.com/astro/microvm.nix
 - https://www.genode.org/about/index
 - https://forum.qubes-os.org/t/how-to-install-nix-in-a-qubes-os-appvm/18698
+
+- https://spectrum-os.org/
 - https://roscidus.com/blog/blog/2021/03/07/qubes-lite-with-kvm-and-wayland/
+- https://alyssa.is/using-virtio-wl/
 
 ---
 
 ## display
 
 - https://wayland-book.com/ | [src](https://git.sr.ht/~sircmpwn/wayland-book)
+- https://en.wikibooks.org/wiki/Guide_to_X11
+- https://alyssa.is/using-virtio-wl/
+- https://chromium.googlesource.com/chromiumos/third_party/kernel/+/refs/heads/chromeos-6.1/drivers/virtio/virtio_wl.c
 
 ---
 
