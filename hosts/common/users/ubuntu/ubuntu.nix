@@ -10,5 +10,5 @@
     neededForUsers = true;
   };
 
-  users.users."ubuntu".passwordFile = config.sops.secrets."ubuntu-password".path;
+  users.users."ubuntu".hashedPasswordFile = config.sops.secrets."ubuntu-password".path;
 }
