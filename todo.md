@@ -5,7 +5,12 @@
 ### VM
 
 - https://github.com/jollheef/appvm
+
 - https://github.com/astro/microvm.nix
+- https://github.com/polygon/dotfiles/tree/35dfe70009bf8ead6c2dc3546a7a9acf646a88d6/systems/microvms
+- https://github.com/oxapentane/nix-config/tree/7b866effefccc43a99c65660a8a00b54609ace0a/microvms
+- https://github.com/GTrunSec/hive/blob/726eeb464259d0ec6409634850de00f95cdf6eaa/nixos/microvmProfiles/dev.nix
+
 - https://www.genode.org/about/index
 - https://forum.qubes-os.org/t/how-to-install-nix-in-a-qubes-os-appvm/18698
 
@@ -35,6 +40,8 @@
 
 ## router
 
+- https://github.com/Mic92/dotfiles/tree/9db6d03c503131ce3a4d4ae4f51efd9f6f8e6110/openwrt
+- https://github.com/astro/nix-openwrt-imagebuilder
 - https://github.com/disassembler/network/blob/453af8f8467a04a6a9b31dbaa21e8961c7dd32b6/nixos/portal/configuration.nix
 - https://nixos.wiki/wiki/Workgroup:Router
 
