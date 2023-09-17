@@ -3,11 +3,11 @@
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
-        "lastModified": 1693196107,
-        "narHash": "sha256-t6qvPFJIF+De2KqMfCI5DEA40BwWeu4AFRWOzKeEVE0=",
+        "lastModified": 1694935060,
+        "narHash": "sha256-mvQwK11nhZ9yiP9ONeHrP2by5h1UgFSABWkI25YjlN4=",
         "owner": "arkenfox",
         "repo": "user.js",
-        "rev": "ba173d49205ee927ed62e81e606569d98f531d38",
+        "rev": "1e6e211a061b592a176087fe9f6843249852cad2",
         "type": "github"
       },
       "original": {
@@ -272,11 +272,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1694430658,
-        "narHash": "sha256-8+OZ98kD63e/GaOiJimXHR/VYiTYwr25jTYGEHHOfq4=",
+        "lastModified": 1694921880,
+        "narHash": "sha256-yU36cs5UdzhTwsM9bUWUz43N//ELzQ1ro69C07pU/8E=",
         "owner": "Mic92",
         "repo": "nix-index-database",
-        "rev": "9a5c4996d0918a151269600dfdf6ad3b3748f6a4",
+        "rev": "9d2bcc47110b3b6217dfebd6761ba20bc78aedf2",
         "type": "github"
       },
       "original": {
@@ -509,11 +509,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1694741222,
+        "lastModified": 1694914107,
         "narHash": "sha256-at+6Y++qNeVRkzEguE/C+lJGdXHH2Xky1+VpXulTbgg=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "2c63fcdac043ac8667846483a59b84192c04ef8d",
+        "rev": "dbabfec5f0069f25641422db9d6af13ef42baeb9",
         "type": "github"
       },
       "original": {
