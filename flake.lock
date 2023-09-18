@@ -3,11 +3,11 @@
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
-        "lastModified": 1694935060,
-        "narHash": "sha256-mvQwK11nhZ9yiP9ONeHrP2by5h1UgFSABWkI25YjlN4=",
+        "lastModified": 1695037669,
+        "narHash": "sha256-IHZWranZ1lfEKCf9P8TxCfKJwiwsPHjEVPviDGBtk7w=",
         "owner": "arkenfox",
         "repo": "user.js",
-        "rev": "1e6e211a061b592a176087fe9f6843249852cad2",
+        "rev": "bd2e5b8d1d477951d929ea7d79ceb7a13fc322a4",
         "type": "github"
       },
       "original": {
@@ -287,11 +287,11 @@
     },
     "nixos-hardware": {
       "locked": {
-        "lastModified": 1694710316,
-        "narHash": "sha256-uRh46iIC86D8BD1wCDA5gRrt+hslUXiD0kx/UjnjBcs=",
+        "lastModified": 1695033975,
+        "narHash": "sha256-GIUxbgLBhVyaKRxQw/NWYFLx7/jbKW3+U0HoSsMLPAs=",
         "owner": "NixOS",
         "repo": "nixos-hardware",
-        "rev": "570256327eb6ca6f7bebe8d93af49459092a0c43",
+        "rev": "161b027169b19d3a0ad6bd0a8948edf0c0fb0f64",
         "type": "github"
       },
       "original": {
@@ -509,11 +509,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1694914107,
-        "narHash": "sha256-at+6Y++qNeVRkzEguE/C+lJGdXHH2Xky1+VpXulTbgg=",
+        "lastModified": 1695000406,
+        "narHash": "sha256-K1Oj4xIN2k3Ez2mUbLBvyZwXLlZTTkV2ks+T4kLO1mo=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "dbabfec5f0069f25641422db9d6af13ef42baeb9",
+        "rev": "2c9e707b5ad28f3fbf84c5efbaae75cab26cf8ac",
         "type": "github"
       },
       "original": {
