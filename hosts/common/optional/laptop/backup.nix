@@ -158,6 +158,8 @@ in
     [ (lib.nameValuePair "borgbackup" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) ]
   ));
 
+  # TODO notify on failure
+
   services.borgbackup.jobs =
     let
       commonOptions = {
