@@ -47,6 +47,12 @@ export http_proxy=$HTTP_PROXY
 export https_proxy=$HTTP_PROXY
 export CURL_NIX_FLAGS="-x $HTTP_PROXY"
 
+# 或者指向旁路由
+route add default gw <gateway ip>
+
+# 修改DNS
+echo "nameserver <dns>" > /etc/resolv.conf
+
 mkdir -p ~/.config/nix
 echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf
 
