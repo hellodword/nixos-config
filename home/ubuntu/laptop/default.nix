@@ -113,10 +113,10 @@
         "change-dpi" = ''
           case "$AUTORANDR_CURRENT_PROFILE" in
             default)
-              DPI=120
+              DPI=${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".dpi}
               ;;
             with-dell-1)
-              DPI=110
+              DPI=${inputs.nixos-privates.monitors."dell-1".dpi}
               ;;
             *)
               echo "Unknown profile: $AUTORANDR_CURRENT_PROFILE"
