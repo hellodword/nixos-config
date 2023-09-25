@@ -28,7 +28,11 @@
   networking.useDHCP = true;
   networking.useNetworkd = true;
 
-  systemd.network.wait-online.extraArgs = [ "--interface=enp2s0" "--interface=wlp0s20f3" ];
+  systemd.network.wait-online.extraArgs = [
+    "--any"
+    "--interface=enp2s0"
+    "--interface=wlp0s20f3"
+  ];
 
   nixpkgs.hostPlatform = lib.mkDefault "x86_64-linux";
   powerManagement.cpuFreqGovernor = lib.mkDefault "powersave";
