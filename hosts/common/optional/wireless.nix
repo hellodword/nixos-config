@@ -16,6 +16,9 @@
       "@HOME_SSID@" = {
         psk = "@HOME_PSK@";
       };
+      "@TRAVEL_SSID@" = {
+        psk = "@TRAVEL_PSK@";
+      };
     };
 
 
