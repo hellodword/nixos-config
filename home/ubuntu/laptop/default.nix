@@ -61,7 +61,7 @@
   programs.ssh.matchBlocks = lib.mergeAttrs
     inputs.nixos-privates.ssh."common".matchBlocks
     inputs.nixos-privates.ssh."laptop".matchBlocks;
-  programs.firefox.profiles.default.bookmarks = inputs.nixos-privates.firefox."laptop".bookmarks;
+  programs.firefox.profiles.default.bookmarks = lib.mkAfter inputs.nixos-privates.firefox."laptop".bookmarks;
   programs.gpg.publicKeys = lib.mkAfter inputs.nixos-privates.gpg."laptop".publicKeys;
   services.gpg-agent.sshKeys = lib.mkForce inputs.nixos-privates.gpg."laptop".sshKeys;
   programs.git.aliases."signing" = "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${inputs.nixos-privates.gpg."laptop".git-signingkey}";
