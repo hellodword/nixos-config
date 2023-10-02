@@ -125,9 +125,10 @@
           而在 ff 中则以 git+空格 开头永远是识别为 alias。
         */
         search = {
-          default = "Google";
+          default = "presearch";
           force = true;
           order = [
+            "presearch"
             "Google"
             "Hacker News"
             "Github"
@@ -174,17 +175,24 @@
             };
             "Hacker News" = {
               urls = [{
-                template = "https://www.google.com/search?q=site%3Anews.ycombinator.com+{searchTerms}";
+                template = "https://presearch.com/search?q=site%3Anews.ycombinator.com+{searchTerms}";
               }];
               definedAliases = [ "@hn" "hn" ];
               iconUpdateURL = "https://www.ycombinator.com/favicon.ico";
             };
             "V2ex" = {
               urls = [{
-                template = "https://www.google.com/search?q={searchTerms}+site:v2ex.com";
+                template = "https://presearch.com/search?q={searchTerms}+site:v2ex.com";
               }];
               definedAliases = [ "@v2ex" ];
               iconUpdateURL = "https://www.v2ex.com/favicon.ico";
+            };
+            "presearch" = {
+              urls = [{
+                template = "https://presearch.com/search?q={searchTerms}";
+              }];
+              definedAliases = [ "@presearch" "@p" ];
+              iconUpdateURL = "https://presearch.com/favicon.ico";
             };
 
             "Bing".metaData.hidden = true;
