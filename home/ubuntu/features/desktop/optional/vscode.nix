@@ -1,4 +1,4 @@
-{ config, pkgs, persistPath, ... }:
+{ config, lib, pkgs, persistPath, ... }:
 
 {
   me.allowedUnfreePkg = [
@@ -83,4 +83,8 @@
       ".cache/vscode-cpptools"
     ];
   };
+
+  home.activation.fix-issue-244742-vscode = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+    rm -rf "${persistPath}${config.home.homeDirectory}/.config/Code/GPUCache" || true
+  '';
 }

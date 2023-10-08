@@ -30,7 +30,7 @@ in
 
   # https://github.com/NixOS/nixpkgs/issues/242113#issuecomment-1628379807
   # rm -rf ~/.config/chromium/Default/GPUCache/
-  home.activation.fix-issue-244742 = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.fix-issue-244742-chromium = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     rm -rf "${persistPath}${config.home.homeDirectory}/.config/chromium/Default/GPUCache" || true
   '';
 }
