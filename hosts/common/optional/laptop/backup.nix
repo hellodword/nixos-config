@@ -91,7 +91,7 @@ let
       repositoryFile = config.sops.secrets."restic-repo-${name}".path;
       environmentFile = config.sops.secrets."restic-s3-${name}".path;
       paths = [
-        config.services.borgbackup.jobs."${config.networking.hostName}".repo
+        config.services.borgbackup2.jobs."${config.networking.hostName}".repo
       ];
       pruneOpts = [
         # "--keep-daily 7"
@@ -160,7 +160,7 @@ in
 
   # TODO notify on failure
 
-  services.borgbackup.jobs =
+  services.borgbackup2.jobs =
     let
       commonOptions = {
         appendFailedSuffix = true;
