@@ -48,13 +48,21 @@ let
     (
       set -o pipefail
       ${optionalString (cfg.dumpCommand != null) ''${escapeShellArg cfg.dumpCommand} | \''}
+      ALL_PATH=()
+      ${concatMapStrings (path: ''
+      if [ -d "${path}" ] || [ -f "${path}" ]; then
+        ALL_PATH+=(${escapeShellArg path})
+      fi
+      '') cfg.paths}
+
+      ${''echo "$''+''{ALL_PATH[@]}"''}
       borg create $extraArgs \
         --compression ${cfg.compression} \
         --exclude-from ${mkExcludeFile cfg} \
         --patterns-from ${mkPatternsFile cfg} \
         $extraCreateArgs \
         "::$archiveName$archiveSuffix" \
-        ${if cfg.paths == null then "-" else escapeShellArgs cfg.paths}
+        ${if cfg.paths == null then "-" else ''"$''+''{ALL_PATH[@]}"''}
     )
   '' + optionalString cfg.appendFailedSuffix ''
     borg rename $extraArgs \
@@ -234,7 +242,7 @@ let
 in
 {
   meta.maintainers = with maintainers; [ dotlambda ];
-  meta.doc = ./borgbackup.md;
+  # meta.doc = ./borgbackup.md;
 
   ###### interface
 
