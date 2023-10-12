@@ -303,11 +303,11 @@
     },
     "nixos-privates": {
       "locked": {
-        "lastModified": 1697011535,
-        "narHash": "sha256-C+z4xZjHSCyNk4pC47SLN7QECjmsCwewYp739gDh/Gk=",
+        "lastModified": 1697085627,
+        "narHash": "sha256-+v0zCAMXauS0vNHrTunc2RF69yLmsyrzRTW1Jt48lug=",
         "ref": "refs/heads/master",
-        "rev": "34545ffd4a293f39b8a46e89180ab31a6dda9a62",
-        "revCount": 33,
+        "rev": "ce07c3d9db27201721940cab4aff59a9cb5d9eaf",
+        "revCount": 34,
         "type": "git",
         "url": "ssh://git@hellodword.github.com/hellodword/nixos-privates.git"
       },
