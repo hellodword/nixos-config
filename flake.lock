@@ -285,6 +285,27 @@
         "type": "github"
       }
     },
+    "nix-vscode-ext": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1697272545,
+        "narHash": "sha256-n3HCm2DGs6rxuPUY1IJ87QqpOKOt8u/lznmdA/wgwx0=",
+        "owner": "hellodword",
+        "repo": "nix-vscode-ext",
+        "rev": "9ede1420f9bdcb5c1907fe56b3c8615d66e2e86b",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hellodword",
+        "ref": "master",
+        "repo": "nix-vscode-ext",
+        "type": "github"
+      }
+    },
     "nixos-hardware": {
       "locked": {
         "lastModified": 1697100850,
@@ -421,6 +442,7 @@
         "kitty-gruvbox-themes": "kitty-gruvbox-themes",
         "lanzaboote": "lanzaboote",
         "nix-index-database": "nix-index-database",
+        "nix-vscode-ext": "nix-vscode-ext",
         "nixos-hardware": "nixos-hardware",
         "nixos-privates": "nixos-privates",
         "nixpkgs": "nixpkgs",

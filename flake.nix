@@ -56,6 +56,11 @@
       url = "github:Mic92/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    nix-vscode-ext = {
+      url = "github:hellodword/nix-vscode-ext/master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
