@@ -62,9 +62,9 @@
       ms-python.vscode-pylance
       # ms-vscode-remote.remote-ssh
     ]) ++ pkgs.vscode-utils.extensionsFromVscodeMarketplace [
-      inputs.nix-vscode-ext.vscode-extensions."ms-vscode-remote.remote-ssh"
-      inputs.nix-vscode-ext.vscode-extensions."ms-vscode-remote.remote-containers"
-      inputs.nix-vscode-ext.vscode-extensions."ms-python.python"
+      inputs.nix-vscode-ext.vscode-extensions.ms-vscode-remote.remote-ssh
+      inputs.nix-vscode-ext.vscode-extensions.ms-vscode-remote.remote-containers
+      inputs.nix-vscode-ext.vscode-extensions.ms-python.python
     ];
   };
 
