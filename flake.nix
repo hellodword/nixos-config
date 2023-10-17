@@ -59,7 +59,6 @@
 
     nix-vscode-ext = {
       url = "github:hellodword/nix-vscode-ext/master";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
