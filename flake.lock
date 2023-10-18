@@ -3,11 +3,11 @@
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
-        "lastModified": 1696674829,
-        "narHash": "sha256-t+BQGAghYqDaTE2UdU2t8/oYmebBJ2DRi2GAva5agFw=",
+        "lastModified": 1697641173,
+        "narHash": "sha256-YuGEgJ4bSwvlfSgsUR2s6r1L3ZCdD8pvyU+pY4q+DMk=",
         "owner": "arkenfox",
         "repo": "user.js",
-        "rev": "f54d632da585a08185c6164017d79315c331181f",
+        "rev": "35e8def0b1e5ecf1198e7efe41cfe6aa0415b320",
         "type": "github"
       },
       "original": {
@@ -193,11 +193,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1697555443,
-        "narHash": "sha256-nsq8A+adEdN7bvVdz09LFyrHkTW5GtOzo/ctlHhyaaE=",
+        "lastModified": 1697662575,
+        "narHash": "sha256-fVtd4Le9edB831xyGWu0aqSfg6YVbkCNMX/IE3SUIdk=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "b3acf1dc78b38a2fe03b287fead44d7ad25ac7c5",
+        "rev": "3433206e51766b4164dad368a81325efbf343fbe",
         "type": "github"
       },
       "original": {
