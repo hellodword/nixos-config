@@ -25,7 +25,7 @@
       "git.enableStatusBarSync" = false;
       "git.openRepositoryInParentFolders" = "always";
       "diffEditor.wordWrap" = "on";
-      "editor.formatOnSave" = true;
+      "editor.formatOnSave" = false;
       "editor.formatOnType" = false;
       "editor.wordWrap" = "on";
       "workbench.localHistory.enabled" = false;
