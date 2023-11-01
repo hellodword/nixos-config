@@ -295,7 +295,7 @@ in
         "connectivity" = "http://www.msftncsi.com/ncsi.txt";
         "interval" = "10s";
         "samplingCount" = 10;
-        "timeout" = "700ms";
+        "timeout" = "1400ms";
       };
     };
 
