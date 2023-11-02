@@ -3,11 +3,11 @@
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
-        "lastModified": 1697641173,
-        "narHash": "sha256-YuGEgJ4bSwvlfSgsUR2s6r1L3ZCdD8pvyU+pY4q+DMk=",
+        "lastModified": 1698876175,
+        "narHash": "sha256-IfQNepLwoG9qygeDGj5egnLQUR47LOjBV1PFJtt0Z64=",
         "owner": "arkenfox",
         "repo": "user.js",
-        "rev": "35e8def0b1e5ecf1198e7efe41cfe6aa0415b320",
+        "rev": "e2681baec38e7ad09fe1f81c6da5ff84c81b7117",
         "type": "github"
       },
       "original": {
@@ -193,11 +193,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1698670511,
-        "narHash": "sha256-jQIu3UhBMPHXzVkHQO1O2gg8SVo5lqAVoC6mOaLQcLQ=",
+        "lastModified": 1698873617,
+        "narHash": "sha256-FfGFcfbULwbK1vD+H0rslIOfmy4g8f2hXiPkQG3ZCTk=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "8e5416b478e465985eec274bc3a018024435c106",
+        "rev": "48b0a30202516e25d9885525fbb200a045f23f26",
         "type": "github"
       },
       "original": {
@@ -287,11 +287,11 @@
     },
     "nix-vscode-ext": {
       "locked": {
-        "lastModified": 1697505834,
-        "narHash": "sha256-MEpZ9PIRpRPEoT45ardPgakc8qiTMB8k4fvzWCKlOSo=",
+        "lastModified": 1698886587,
+        "narHash": "sha256-58I033DkEo5Qmeqp7dtEhWLUiF3H+tjUVib6IJvZBRA=",
         "owner": "hellodword",
         "repo": "nix-vscode-ext",
-        "rev": "978bc80f7fbfa9289a83fec97f125ac4f30ee419",
+        "rev": "aaa7c5aaa6d23fdd0169b128220563372606ef72",
         "type": "github"
       },
       "original": {
@@ -303,11 +303,11 @@
     },
     "nixos-hardware": {
       "locked": {
-        "lastModified": 1698053470,
-        "narHash": "sha256-sP8D/41UiwC2qn0X40oi+DfuVzNHMROqIWdSdCI/AYA=",
+        "lastModified": 1698853384,
+        "narHash": "sha256-/FQ2WeCjdjdNo9eGTO7JruGAjO2Ccime8y1OU4/Aesk=",
         "owner": "NixOS",
         "repo": "nixos-hardware",
-        "rev": "80d98a7d55c6e27954a166cb583a41325e9512d7",
+        "rev": "11d50c5d52472ed40d3cb109daad03c836d2b328",
         "type": "github"
       },
       "original": {
@@ -526,11 +526,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1698715664,
+        "lastModified": 1698802210,
         "narHash": "sha256-aQcVqTYrYqCTAOgl8re2kmMLGs1RSGyBehJSwVjvDLA=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "2513f66fdebe2cbb8b9cdff88902f98efd12844a",
+        "rev": "03953f26ed03ff4bb52dcfe21e4388c4cab0e365",
         "type": "github"
       },
       "original": {
