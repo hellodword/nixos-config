@@ -58,7 +58,7 @@
     };
 
     nix-vscode-ext = {
-      url = "github:hellodword/nix-vscode-ext/master";
+      url = "github:hellodword/nix-vscode-ext/nixos-unstable";
     };
   };
 

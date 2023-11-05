@@ -287,16 +287,16 @@
     },
     "nix-vscode-ext": {
       "locked": {
-        "lastModified": 1699066651,
-        "narHash": "sha256-e6Wnoh/OeKAzgwYv3l4ULXl5i53Jt+EC2gOl+WxCgoY=",
+        "lastModified": 1699195528,
+        "narHash": "sha256-C+BMpVlEtkJ4cWFFMeWzCUzGLs97ifl+xlXt6WQKrW8=",
         "owner": "hellodword",
         "repo": "nix-vscode-ext",
-        "rev": "ab503a48925e8aaabe9e5d5501aae8a7289c0152",
+        "rev": "2fbcd4e7d0074a6bc79355f6c293e0dde371cad4",
         "type": "github"
       },
       "original": {
         "owner": "hellodword",
-        "ref": "master",
+        "ref": "nixos-unstable",
         "repo": "nix-vscode-ext",
         "type": "github"
       }
