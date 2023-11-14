@@ -14,6 +14,7 @@
     ./inetutils.nix
     ./p7zip.nix
     ./openssh-client.nix
+    ./fhs.nix
   ] ++ (builtins.attrValues outputs.nixosModules);
 
   system.configurationRevision = inputs.self.rev or "dirty";
