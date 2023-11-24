@@ -40,5 +40,7 @@
         allowOther = true;
       };
     };
+
+    enableNixpkgsReleaseCheck = false; # FIXME: remove this
   };
 }
