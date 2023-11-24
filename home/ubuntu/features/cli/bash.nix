@@ -34,8 +34,8 @@
       "7zaencrypt" = "7za -tzip -mem=AES256 -mx9 -p a";
       "emcc" = "docker run --rm -v $(pwd):/src -u $(id -u):$(id -g) emscripten/emsdk emcc";
       "gobuild" = "go build -trimpath -ldflags '-s -w -buildid='";
-      "nixos-rebuild-switch" = "sudo echo; sudo chown ubuntu /var/cache/nix && env TMPDIR=/var/cache/nix nixos-rebuild --use-remote-sudo switch --flake .#${nixosConfig.networking.hostName}";
-      "nixos-rebuild-switch-offline" = "sudo echo; sudo chown ubuntu /var/cache/nix && env TMPDIR=/var/cache/nix nixos-rebuild --use-remote-sudo switch --option substitute false --flake .#${nixosConfig.networking.hostName}";
+      "nixos-rebuild-boot" = "sudo echo; sudo chown ubuntu /var/cache/nix && env TMPDIR=/var/cache/nix nixos-rebuild --use-remote-sudo boot --flake .#${nixosConfig.networking.hostName}";
+      "nixos-rebuild-boot-offline" = "sudo echo; sudo chown ubuntu /var/cache/nix && env TMPDIR=/var/cache/nix nixos-rebuild --use-remote-sudo boot --option substitute false --flake .#${nixosConfig.networking.hostName}";
       "sops-clone-keys" = "sudo cat ${persistPath}/var/lib/sops-nix/keys.txt > ${config.home.homeDirectory}/.config/sops/age/keys.txt";
     };
     shellOptions = [
