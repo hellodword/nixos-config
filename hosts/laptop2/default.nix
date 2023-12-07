@@ -14,7 +14,7 @@
 
   networking.hostName = "laptop2";
 
-  boot.kernelPackages = pkgs.linuxPackages_6_1;
+  boot.kernelPackages = pkgs.linuxPackages_6_6;
   boot.kernelModules = [ "lkrg" ];
 
   users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
