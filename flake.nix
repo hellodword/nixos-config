@@ -60,6 +60,12 @@
     nix-vscode-ext = {
       url = "github:hellodword/nix-vscode-ext/nixos-unstable";
     };
+
+    # use this fork for git repository
+    flake-compat = {
+      url = "github:inclyc/flake-compat/70e56389c58bbd300d11778913b255477ebbae22";
+      flake = false;
+    };
   };
 
   outputs =

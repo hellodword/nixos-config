@@ -97,6 +97,23 @@
     "flake-compat": {
       "flake": false,
       "locked": {
+        "lastModified": 1687265871,
+        "narHash": "sha256-P8AOiQk/XN8/ia4289hDHlTfWB70cRQ5pc9GRfmEdpc=",
+        "owner": "inclyc",
+        "repo": "flake-compat",
+        "rev": "70e56389c58bbd300d11778913b255477ebbae22",
+        "type": "github"
+      },
+      "original": {
+        "owner": "inclyc",
+        "repo": "flake-compat",
+        "rev": "70e56389c58bbd300d11778913b255477ebbae22",
+        "type": "github"
+      }
+    },
+    "flake-compat_2": {
+      "flake": false,
+      "locked": {
         "lastModified": 1673956053,
         "narHash": "sha256-4gtG9iQuiKITOjNQQeQIpoIB6b16fm+504Ch3sNKLd8=",
         "owner": "edolstra",
@@ -241,7 +258,7 @@
     "lanzaboote": {
       "inputs": {
         "crane": "crane",
-        "flake-compat": "flake-compat",
+        "flake-compat": "flake-compat_2",
         "flake-parts": "flake-parts",
         "flake-utils": "flake-utils_2",
         "nixpkgs": [
@@ -432,6 +449,7 @@
         "arkenfox-userjs": "arkenfox-userjs",
         "disko": "disko",
         "firefox-addons": "firefox-addons",
+        "flake-compat": "flake-compat",
         "home-manager": "home-manager",
         "impermanence": "impermanence",
         "kitty-gruvbox-themes": "kitty-gruvbox-themes",
