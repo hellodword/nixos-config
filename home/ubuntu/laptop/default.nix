@@ -41,6 +41,7 @@
     ../features/desktop/optional/libreoffice.nix
     ../features/desktop/optional/zathura.nix
     ../features/desktop/optional/scrcpy.nix
+    ../features/desktop/optional/remmina.nix
   ]
   ++
   [
