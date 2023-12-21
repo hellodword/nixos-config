@@ -59,3 +59,11 @@
 - `nix copy`
 - https://github.com/tfc/nixos-offline-installer
 - https://www.reddit.com/r/NixOS/comments/10dobnn/comment/j4mfvu2
+
+---
+
+## programming
+
+- Android SDK: https://github.com/tadfisher/android-nixpkgs
+- devenv Android https://github.com/cachix/devenv/issues/310
+- devenv Flutter https://github.com/cachix/devenv/issues/781
