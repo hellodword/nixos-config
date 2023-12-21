@@ -6,6 +6,9 @@
   ];
 
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".config/remmina" ];
+    "${persistPath}${config.home.homeDirectory}".directories = [
+      ".config/remmina"
+      ".local/share/remmina"
+    ];
   };
 }
