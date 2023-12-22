@@ -50,6 +50,7 @@
         "cspell.json" = "jsonc";
         "v2ray.json" = "jsonc";
       };
+      "remote.autoForwardPortsSource" = "hybrid";
     };
     extensions = (with pkgs.vscode-extensions; [
       esbenp.prettier-vscode
