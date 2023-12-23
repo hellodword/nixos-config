@@ -9,6 +9,7 @@
     "${persistPath}${config.home.homeDirectory}".directories = [
       ".config/remmina"
       ".local/share/remmina"
+      ".config/freerdp"
     ];
   };
 }
