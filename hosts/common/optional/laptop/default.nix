@@ -45,6 +45,8 @@
     ../../../common/optional/adb.nix
 
     ../../../common/optional/ansible.nix
+
+    ../../../common/optional/tailscale.nix
   ]
   ++
   [
