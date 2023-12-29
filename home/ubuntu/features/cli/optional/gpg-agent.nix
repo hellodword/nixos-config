@@ -13,5 +13,7 @@
     */
     # sshKeys = inputs.privates.gpg."<...>".sshKeys;
     verbose = false;
+    # https://github.com/nix-community/home-manager/issues/4804#issuecomment-1871272189
+    pinentryFlavor = "qt";
   };
 }
