@@ -81,7 +81,7 @@
               }
               {
                 name = "home-manager options";
-                url = "https://nix-community.github.io/home-manager/options.html";
+                url = "https://nix-community.github.io/home-manager/options.xhtml";
               }
               {
                 name = "Nixpkgs Pull Request Tracker";
