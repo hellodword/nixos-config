@@ -67,8 +67,6 @@
   services.gpg-agent.sshKeys = lib.mkForce inputs.nixos-privates.gpg."laptop".sshKeys;
   programs.git.aliases."signing" = "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${inputs.nixos-privates.gpg."laptop".git-signingkey}";
 
-  home.file = inputs.nixos-privates.home.file."laptop";
-
   programs.autorandr = {
     enable = true;
     profiles = {

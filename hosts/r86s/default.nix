@@ -1,4 +1,4 @@
-{ config, pkgs, inputs, ... }:
+{ config, pkgs, inputs, lib, ... }:
 
 {
   imports = [
@@ -34,6 +34,23 @@
   boot.kernelPackages = pkgs.linuxPackages_6_1;
 
   users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
+
+
+  environment.etc =
+    let
+      username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
+    in
+    (builtins.listToAttrs (map
+      (x: {
+        name = "ssh/${x.path}";
+        value = {
+          text = x.pub;
+          user = username;
+          group = config.users.users."${username}".group;
+          mode = "0600";
+        };
+      })
+      inputs.nixos-privates.ssh."laptop".keys));
 
   security.sudo.wheelNeedsPassword = false;
 

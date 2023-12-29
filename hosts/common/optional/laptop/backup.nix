@@ -189,6 +189,7 @@ in
       };
 
       commonExclude = [
+        "${persistPath}/etc/ssh/gpg.*"
         "${persistPath}/home/${username}/.ssh/config"
         "${persistPath}/home/${username}/.ssh/gpg.*"
 

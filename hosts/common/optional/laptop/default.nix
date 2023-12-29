@@ -1,3 +1,5 @@
+{ lib, config, inputs, ... }:
+
 {
   imports = [
     ./backup.nix
@@ -56,4 +58,20 @@
     ../../../common/optional/thermald.nix
     ../../../common/optional/fwupd.nix
   ];
+
+  environment.etc =
+    let
+      username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
+    in
+    (builtins.listToAttrs (map
+      (x: {
+        name = "ssh/${x.path}";
+        value = {
+          text = x.pub;
+          user = username;
+          group = config.users.users."${username}".group;
+          mode = "0600";
+        };
+      })
+      inputs.nixos-privates.ssh."laptop".keys));
 }
