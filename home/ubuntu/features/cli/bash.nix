@@ -37,6 +37,12 @@
       "nixos-rebuild-boot" = "sudo echo; sudo chown ubuntu /var/cache/nix && env TMPDIR=/var/cache/nix nixos-rebuild --use-remote-sudo boot --flake .#${nixosConfig.networking.hostName}";
       "nixos-rebuild-boot-offline" = "sudo echo; sudo chown ubuntu /var/cache/nix && env TMPDIR=/var/cache/nix nixos-rebuild --use-remote-sudo boot --option substitute false --flake .#${nixosConfig.networking.hostName}";
       "sops-clone-keys" = "sudo cat ${persistPath}/var/lib/sops-nix/keys.txt > ${config.home.homeDirectory}/.config/sops/age/keys.txt";
+
+      # https://unix.stackexchange.com/a/493065
+      "sha3-224sum" = "openssl dgst -sha3-224";
+      "sha3-256sum" = "openssl dgst -sha3-256";
+      "sha3-384sum" = "openssl dgst -sha3-384";
+      "sha3-512sum" = "openssl dgst -sha3-512";
     };
     shellOptions = [
       "histappend"
