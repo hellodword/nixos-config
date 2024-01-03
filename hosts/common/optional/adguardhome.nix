@@ -178,6 +178,7 @@ in
     coreutils
     iproute2
     q
+    dogdns
   ];
 
   services.resolved.enable = lib.mkForce false;
