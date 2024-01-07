@@ -71,8 +71,8 @@
         };
       };
 
-      "ethernet fastestvpn" = {
-        enable = builtins.hasAttr "fastestvpn" nixosConfig.services.openvpn.servers;
+      "ethernet fastest" = {
+        enable = builtins.hasAttr "fastest" nixosConfig.services.openvpn.servers;
         position = 24;
         settings = {
           format_up = "fastest";

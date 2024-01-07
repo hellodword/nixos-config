@@ -23,11 +23,11 @@
     format = "binary";
   };
 
-  ovpn.servers."fastestvpn" = {
+  ovpn.servers."fastest" = {
     table = 51822;
     auth = "${config.sops.secrets."fastestvpn.auth".path}";
     extraConfig = "/usr/local/etc/openvpn/client/fastestvpn.ovpn";
   };
 
-  systemd.network.wait-online.ignoredInterfaces = [ "goose" "fastestvpn" ];
+  systemd.network.wait-online.ignoredInterfaces = [ "goose" "fastest" ];
 }
