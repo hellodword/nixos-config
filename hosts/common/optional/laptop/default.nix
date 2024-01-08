@@ -23,6 +23,7 @@
     ../../../common/optional/vfat.nix
     ../../../common/optional/ext4.nix
 
+    ../../../common/optional/prefer-ipv4.nix
     ../../../common/optional/adguardhome.nix
     ../../../common/optional/v2ray.nix
 
