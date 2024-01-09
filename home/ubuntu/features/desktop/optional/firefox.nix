@@ -265,6 +265,14 @@
             user_pref("extensions.formautofill.creditCards.enabled", false);
             user_pref("browser.formfill.enable", false);
             user_pref("dom.forms.autocomplete.formautofill", false);
+
+            user_pref("signon.rememberSignons", true);
+            user_pref("signon.autofillForms", true);
+            user_pref("signon.management.page.breach-alerts.enabled", false);
+            user_pref("signon.firefoxRelay.feature", "disabled");
+            user_pref("signon.generation.enabled", false);
+
+            user_pref("browser.search.suggest.enabled", false);
           ''
         ];
       };
