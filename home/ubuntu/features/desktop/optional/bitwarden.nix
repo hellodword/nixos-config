@@ -16,6 +16,10 @@ in
     )
   ];
 
+  me.exitProcess = [
+    "bitwarden"
+  ];
+
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/Bitwarden" ];
   };

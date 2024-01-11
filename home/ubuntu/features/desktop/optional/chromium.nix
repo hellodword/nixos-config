@@ -8,6 +8,10 @@ in
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/chromium" ];
   };
 
+  me.exitProcess = [
+    "chromium"
+  ];
+
   programs.chromium = {
     enable = true;
     package =

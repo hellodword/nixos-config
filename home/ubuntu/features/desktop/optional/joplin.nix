@@ -5,6 +5,10 @@
     joplin-desktop
   ];
 
+  me.exitProcess = [
+    "@joplinapp-desktop"
+  ];
+
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/joplin-desktop" ];
   };

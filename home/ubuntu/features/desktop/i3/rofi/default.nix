@@ -2,12 +2,11 @@
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
-  # TODO dynamic list
   rofi-power-menu-with-check = pkgs.writeShellApplication {
     name = "rofi-power-menu-with-check";
     text = ''
-      if [ "$(pgrep -x "VBoxSVC")" ] || [ "$(pgrep -x "VirtualBoxVM")" ]; then
-        ${pkgs.libnotify}/bin/notify-send "关机提示:" "你应该先关闭重要进程!"
+      if ${lib.concatStringsSep " || " (map (x: "[ \"$(pgrep -x \"${x}\")\" ]") config.me.exitProcess)}; then
+        ${pkgs.libnotify}/bin/notify-send --urgency critical --expire-time=10000 "关机提示:" "你应该先关闭重要进程!"
       else
         rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'Jetbrains Mono 16'
       fi
@@ -18,6 +17,11 @@ in
   home.packages = with pkgs; [
     # rofi
     rofi-power-menu
+  ];
+
+  me.exitProcess = [
+    "VBoxSVC"
+    "VirtualBoxVM"
   ];
 
   programs.rofi = {

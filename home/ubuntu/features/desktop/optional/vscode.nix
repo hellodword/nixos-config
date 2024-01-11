@@ -15,6 +15,10 @@
 
   me.mimeApps.defApps.editor = "code.desktop";
 
+  me.exitProcess = [
+    "code"
+  ];
+
   programs.vscode = {
     enable = true;
     package = pkgs.vscode;

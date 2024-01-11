@@ -11,6 +11,9 @@
 
   me.mimeApps.defApps.webBrowser = "firefox.desktop";
 
+  me.exitProcess = [
+    "firefox"
+  ];
 
   /*
     TODO ff sync self-hosted
