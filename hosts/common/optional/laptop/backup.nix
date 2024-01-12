@@ -25,6 +25,7 @@ let
 
     /*
       wasabi
+      # 不要选择这种会突然告知要填写信息并且三天不提交就让账户 inactive 的服务
       https://status.wasabi.com/uptime/5w7g77w19r8z?page=1
 
       1. 创建 policy restic https://console.wasabisys.com/policies
@@ -50,7 +51,7 @@ let
 
       2. 创建 User restic https://console.wasabisys.com/users 勾选 Programmatic，创建 group restic，Policy 选择 restic
     */
-    "wasabi"
+    # "wasabi"
 
     /*
       Cloudflare R2
