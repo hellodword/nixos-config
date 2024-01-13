@@ -162,6 +162,13 @@
               definedAliases = [ "@gitnix" "gitnix" ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
+            "Nix Noogle" = {
+              urls = [{
+                template = "https://noogle.dev/q?term={searchTerms}";
+              }];
+              definedAliases = [ "@noogle" "noogle" "@nix" ];
+              iconUpdateURL = "https://noogle.dev/favicon.png";
+            };
             "Nixpkgs" = {
               urls = [{
                 template = "https://github.com/search?q=repo%3ANixOS%2Fnixpkgs+{searchTerms}+language%3Anix&type=code";
