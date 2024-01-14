@@ -1,7 +1,11 @@
-{ pkgs, config, lib, persistPath, ... }:
+{ pkgs, config, lib, nixosConfig, persistPath, ... }:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
+  keybindings = {
+    # 输入法切换冲突
+    "${mod}+space" = null;
+  };
 in
 {
   home.persistence = {
@@ -30,8 +34,6 @@ in
     force = true;
   };
 
-  xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault {
-    # 输入法切换冲突
-    "${mod}+space" = null;
-  };
+  xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault keybindings;
+  wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault keybindings;
 }

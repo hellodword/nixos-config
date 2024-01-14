@@ -1,4 +1,4 @@
-{ pkgs, config, persistPath, lib, ... }:
+{ pkgs, config, persistPath, lib, nixosConfig, ... }:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
@@ -11,6 +11,11 @@ let
         rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'Jetbrains Mono 16'
       fi
     '';
+  };
+  keybindings = {
+    "${mod}+d" = "exec rofi -modi drun -show drun -drun-show-actions -font 'Jetbrains Mono 16'";
+    "${mod}+Shift+d" = "exec rofi -show run -font 'Jetbrains Mono 16'";
+    "${mod}+Shift+p" = "exec ${rofi-power-menu-with-check}/bin/rofi-power-menu-with-check";
   };
 in
 {
@@ -56,9 +61,6 @@ in
     "${persistPath}${config.home.homeDirectory}".files = [ ".cache/rofi3.druncache" ];
   };
 
-  xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault {
-    "${mod}+d" = "exec rofi -modi drun -show drun -drun-show-actions -font 'Jetbrains Mono 16'";
-    "${mod}+Shift+d" = "exec rofi -show run -font 'Jetbrains Mono 16'";
-    "${mod}+Shift+p" = "exec ${rofi-power-menu-with-check}/bin/rofi-power-menu-with-check";
-  };
+  xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault keybindings;
+  wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault keybindings;
 }

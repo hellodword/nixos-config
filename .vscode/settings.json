@@ -88,5 +88,8 @@
                 }
             }
         }
+    },
+    "files.associations": {
+        "**/waybar/config": "jsonc"
     }
 }

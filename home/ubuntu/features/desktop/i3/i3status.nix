@@ -1,21 +1,28 @@
-{ pkgs, nixosConfig, ... }:
+{ pkgs, config, lib, nixosConfig, ... }:
 
+let
+  X = nixosConfig.services.xserver.windowManager.i3.enable;
+  bars = [{
+    position = "top";
+    statusCommand = "i3status";
+    extraConfig = ''
+      bindsym button2 exec rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'Jetbrains Mono 16'
+    '';
+    fonts = {
+      names = [ "Jetbrains Mono" ];
+      style = "Bold Semi-Condensed";
+      size = 10.0;
+    };
+  }];
+in
 {
   home.packages = with pkgs; [
     i3status # gives you the default i3 status bar
     i3blocks #if you are planning on using i3blocks over i3status
   ];
 
-
-  xsession.windowManager.i3.config.bars = [
-    {
-      position = "top";
-      statusCommand = "i3status";
-      extraConfig = ''
-        bindsym button2 exec rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'Jetbrains Mono 16'
-      '';
-    }
-  ];
+  xsession.windowManager.i3.config.bars = (lib.optionals (X) bars);
+  wayland.windowManager.sway.config.bars = (lib.optionals (!X) bars);
 
   # https://github.com/xtruder/nix-profiles/blob/6f9527124187af7e3d0efaa835712fb08df80fc2/home-manager/profiles/i3status.nix#L7
   programs.i3status = {

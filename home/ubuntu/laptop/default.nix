@@ -1,5 +1,8 @@
 { lib, inputs, pkgs, nixosConfig, ... }:
 
+let
+  X = nixosConfig.services.xserver.windowManager.i3.enable;
+in
 {
   imports = [
     ../global
@@ -20,7 +23,7 @@
   ++
   [
     ../features/desktop/i3
-    ../features/desktop/optional/flameshot.nix
+    (if X then ../features/desktop/optional/flameshot.nix else ../features/desktop/optional/grimshot.nix)
     ../features/desktop/optional/thunar.nix
     ../features/desktop/optional/mpv.nix
     ../features/desktop/optional/feh.nix
@@ -70,7 +73,35 @@
   # https://github.com/nix-community/home-manager/issues/4804#issuecomment-1871272189
   services.gpg-agent.pinentryFlavor = "qt";
 
-  programs.autorandr = {
+  services.kanshi = lib.optionalAttrs (!X) {
+    enable = true;
+    profiles = {
+      default = {
+        outputs = [
+          {
+            criteria = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}";
+            status = "enable";
+          }
+        ];
+      };
+      "with-dell-1" = {
+        # 如果没有哪个 ws 有窗口，就切换到 ws1
+        exec = [ ''[ "''$(${pkgs.sway}/bin/swaymsg -t get_tree | ${lib.getExe pkgs.jq} -r '.. | select(.nodes? and .id? and .idle_inhibitors?) | .id' | ${pkgs.coreutils}/bin/wc -l)" -ne "0" ] || ${pkgs.sway}/bin/swaymsg workspace 1'' ];
+        outputs = [
+          {
+            criteria = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}";
+            status = "disable";
+          }
+          {
+            criteria = "${inputs.nixos-privates.monitors."dell-1".kanshi}";
+            status = "enable";
+          }
+        ];
+      };
+    };
+  };
+
+  programs.autorandr = lib.optionalAttrs X {
     enable = true;
     profiles = {
       default = {

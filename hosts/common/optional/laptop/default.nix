@@ -38,7 +38,7 @@
     ../../../common/optional/wireless.nix
     ../../../common/optional/ntp.nix
 
-    ../../../common/optional/xrdp.nix
+    # ../../../common/optional/xrdp.nix
     ../../../common/optional/audio.nix
     ../../../common/optional/brightless.nix
 
@@ -54,7 +54,8 @@
   ++
   [
     ../../../common/optional/fonts.nix
-    ../../../common/optional/i3.nix
+    ../../../common/optional/sway.nix
+    ../../../common/optional/qt.nix
     ../../../common/optional/touchpad.nix
     ../../../common/optional/thermald.nix
     ../../../common/optional/fwupd.nix

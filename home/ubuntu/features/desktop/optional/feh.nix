@@ -16,7 +16,7 @@ in
         pkgs.feh;
     buttons = { };
     keybindings = {
-      quit = [ "C-q" "C-w" ];
+      quit = [ "C-q" "C-w" "Escape" ];
     };
   };
 

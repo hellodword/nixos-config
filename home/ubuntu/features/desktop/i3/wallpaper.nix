@@ -1,7 +1,7 @@
-{ lib, pkgs, config, ... }:
+{ lib, pkgs, config, nixosConfig, ... }:
 
 let
-  out = "${config.home.homeDirectory}/Pictures/wallpaper";
+  wallpapers = "${config.home.homeDirectory}/Pictures/wallpaper";
   fetch-bing-wallpaper = pkgs.writeShellApplication {
     name = "fetch-bing-wallpaper";
     runtimeInputs = with pkgs; [ curl coreutils gnugrep ];
@@ -9,13 +9,23 @@ let
       result="$(curl -s -f 'http://www.bing.com/HPImageArchive.aspx?format=xml&idx=0&n=1&mkt=en-WW')"
       fullstartdate="$(echo "$result" | grep -oP '(?<=<fullstartdate>)\d+(?=</fullstartdate>)')"
       filename="$fullstartdate"".jpg"
-      if [ ! -f "${out}/$filename" ]; then
+      if [ ! -f "${wallpapers}/$filename" ]; then
         url="$(echo "$result" | grep -oP '(?<=<url>)[^<]+(?=</url>)')"
         curl -f --output "/tmp/$filename" "http://www.bing.com$url"
-        mv "/tmp/$filename" "${out}/$filename"
+        mv "/tmp/$filename" "${wallpapers}/$filename"
       fi
     '';
   };
+  random-background-sway = pkgs.writeShellApplication {
+    name = "random-background-sway";
+    runtimeInputs = with pkgs; [ jq sway findutils ];
+    # https://forum.manjaro.org/t/is-there-a-simple-way-to-set-up-dynamic-wallpaper-switching-in-sway-for-dual-displays/85568/4
+    text = ''
+      Display=(${wallpapers}/*)
+      swaymsg -t get_outputs | jq -r '.[] | select(.active == true) | .name' | xargs -I {} swaymsg output "{}" bg "''${Display[''$((0 + RANDOM % ''${#Display[@]}))]}" fill
+    '';
+  };
+  X = nixosConfig.services.xserver.windowManager.i3.enable;
 in
 {
   services.random-background = {
@@ -39,13 +49,17 @@ in
     imageDirectory = "${config.home.homeDirectory}/Pictures/wallpaper";
   };
 
+  systemd.user.services.random-background.Service = if X then { } else {
+    ExecStart = lib.mkForce "${lib.getExe random-background-sway}";
+  };
+
   home.activation.copyWallpapers = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    mkdir -p "${out}"
+    mkdir -p "${wallpapers}"
 
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: value: lib.optionalString
           (lib.hasAttrByPath ["kdeFilePath"] value)
-          ''cp -f ${value.kdeFilePath} ${out}/'')
+          ''cp -f ${value.kdeFilePath} ${wallpapers}/'')
         pkgs.nixos-artwork.wallpapers)};
   '';
 
