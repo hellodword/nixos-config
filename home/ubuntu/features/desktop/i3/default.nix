@@ -32,7 +32,7 @@ let
     workspaceLayout = "tabbed";
 
     fonts = {
-      names = [ "Jetbrains Mono" ];
+      names = [ "JetBrainsMono Nerd Font" ];
       size = 10.0;
     };
 

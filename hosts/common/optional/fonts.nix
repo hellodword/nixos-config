@@ -1,86 +1,155 @@
-# https://github.com/GTrunSec/hive/blob/37b3bb48973ab792b3ead93a8604e663093eae1e/cells/guangtao/nixosModules/fonts.nix
-{ pkgs, ... }:
+{ pkgs, lib, ... }:
 
 {
-  # fonts = {
-  #   enableDefaultFonts = true;
-  #   fonts = with pkgs;
-  #     [
-  #       fantasque-sans-mono
-  #       noto-fonts
-  #       noto-fonts-cjk-sans
-  #       noto-fonts-cjk-serif
-  #       noto-fonts-emoji
-  #       emojione
-  #       twemoji-color-font
-  #       siji
-  #       unifont
-  #       unifont_upper
-  #       liberation_ttf
-  #       fira-code
-  #       fira-code-symbols
-  #       dina-font
-  #       proggyfonts
-  #       source-han-sans-simplified-chinese
-  #       source-han-sans-traditional-chinese
-  #       material-icons
-  #       weather-icons
-  #       iosevka
-  #       (nerdfonts.override { fonts = [ "JetBrainsMono" "RobotoMono" "FiraCode" ]; })
-  #     ]
-  #     ++ [
-  #       material-symbols
-  #     ];
-
-  #   fontconfig = {
-  #     defaultFonts = {
-  #       serif = [ "FantasqueSansMono Nerd Font Mono" "Weibei SC" ];
-  #       sansSerif = [ "FantasqueSansMono Nerd Font Mono" "Weibei SC" ];
-  #       monospace = [ "FantasqueSansMono Nerd Font Mono" ];
-  #     };
-  #   };
-  # };
-
-  # https://github.com/alacritty/alacritty/issues/153
+  me.allowedUnfreePkg = [
+    # "corefonts"
+    # "hanyi-wenhei"
+    # "vista-fonts"
+    # "vista-fonts-chs"
+    # "vista-fonts-cht"
+  ];
 
   fonts = {
     # enableDefaultFonts = false;
     fontDir.enable = true;
     packages = with pkgs; [
+      (nerdfonts.override {
+        fonts = [
+          "JetBrainsMono"
+          # "RobotoMono"
+          # "FiraCode"
+          # "Noto"
+          # "FiraMono"
+          # "Terminus"
+          # "Ubuntu"
+          # "UbuntuMono"
+          # "Iosevka"
+          # "NerdFontsSymbolsOnly"
+        ];
+      })
+
+      jigmo
+
+      # roboto
+      # roboto-slab
+      # sarasa-gothic
+
+      # corefonts
+      # fira-code
+      # fira-code-novf
+      # fira-code-symbols
+      # font-awesome
+      # kaixinsong-fonts
+      # hanazono
+      # hanyi-wenhei
+      # # hoyo-glyphs
+      # liberation_ttf
+
       noto-fonts
-      noto-fonts-cjk-sans
-      noto-fonts-cjk-serif
+      # noto-fonts-cjk-sans
+      # noto-fonts-cjk-serif
+      noto-fonts-cjk-novf.sans
+      noto-fonts-cjk-novf.serif
+
       noto-fonts-emoji
-      jetbrains-mono
-      roboto
-      roboto-slab
-      sarasa-gothic
-      (nerdfonts.override { fonts = [ "JetBrainsMono" "RobotoMono" "FiraCode" "Noto" ]; })
+      noto-fonts-emoji-blob-bin
+      noto-fonts-extra
+      # plangothic-fonts.allideo
+      # source-code-pro
+      # source-han-code-jp
+      # source-han-mono
+      # source-han-sans
+      # source-han-serif
+      # source-sans
+      # source-sans-pro
+      # source-serif
+      # source-serif-pro
+      # terminus_font_ttf
+      # ubuntu_font_family
+      # vistafonts
+      # vistafonts-chs
+      # vistafonts-cht
+      # wqy_microhei
+      # wqy_zenhei
+
+      lxgw-wenkai
+      lxgw-neoxihei
+      lxgw-fusion-kai
+
+      # rubik
+      # # https://github.com/pmihaly/nix-config/blob/0396f88cf26519659700eea77759e0a9fe4c1132/overlays/default.nix#L27
+      # (iosevka.override {
+      #   privateBuildPlan = ''
+      #     [buildPlans.iosevka-custom]
+      #     family = "Iosevka Custom"
+      #     spacing = "fontconfig-mono"
+      #     serifs = "slab"
+      #     no-cv-ss = true
+      #     export-glyph-names = true
+
+      #       [buildPlans.iosevka-custom.ligations]
+      #       inherits = "dlig"
+
+      #     [buildPlans.iosevka-custom.weights.regular]
+      #     shape = 400
+      #     menu = 400
+      #     css = 400
+
+      #     [buildPlans.iosevka-custom.weights.bold]
+      #     shape = 700
+      #     menu = 700
+      #     css = 700
+
+      #     [buildPlans.iosevka-custom.weights.extrabold]
+      #     shape = 800
+      #     menu = 800
+      #     css = 800
+
+      #     [buildPlans.iosevka-custom.weights.heavy]
+      #     shape = 900
+      #     menu = 900
+      #     css = 900
+
+      #     [buildPlans.iosevka-custom.slopes.upright]
+      #     angle = 0
+      #     shape = "upright"
+      #     menu = "upright"
+      #     css = "normal"
+
+      #     [buildPlans.iosevka-custom.slopes.italic]
+      #     angle = 9.4
+      #     shape = "italic"
+      #     menu = "italic"
+      #     css = "italic"
+      #   '';
+      #   set = "custom";
+      # })
+
+      # twemoji-color-font
+
+      # harmonyos-sans
+
+      # material-design-icons
+
+      # jetbrains-mono
+      # cascadia-code
     ];
-    # fontconfig.defaultFonts = pkgs.lib.mkForce {
-    #   serif = [
-    #     "Noto Serif"
-    #     "Noto Serif CJK SC"
-    #     "Noto Color Emoji"
-    #   ];
-    #   sansSerif = [
-    #     "Noto Sans"
-    #     "Noto Sans CJK SC"
-    #     "Noto Color Emoji"
-    #   ];
-    #   monospace = [
-    #     "JetBrains Mono"
-    #     "Noto Color Emoji"
-    #   ];
-    #   emoji = [
-    #     "Noto Color Emoji"
-    #   ];
-    # };
-    fontconfig.defaultFonts = {
-      monospace = [ "RobotoMono Nerd Font" "Noto Sans Mono CJK SC" ];
-      sansSerif = [ "Roboto" "Sarasa Gothic SC" "NotoSans Nerd Font" ];
-      serif = [ "Roboto Slab" "Noto Serif CJK SC" "NotoSerif Nerd Font" ];
-      emoji = [ "Noto Color Emoji" ];
-    };
+
+    fontconfig =
+      let
+        jigmo = [
+          "Jigmo"
+          "Jigmo2"
+          "Jigmo3"
+        ];
+      in
+      {
+        defaultFonts = {
+          serif = [ "Noto Serif" "LXGW Neo XiHei" "Noto Color Emoji" ] ++ jigmo;
+          sansSerif = [ "Noto Sans" "LXGW WenKai" "Noto Color Emoji" ] ++ jigmo;
+          monospace = [ "Noto Sans Mono" "LXGW WenKai" "Noto Color Emoji" ] ++ jigmo;
+          emoji = [ "Noto Color Emoji" ];
+        };
+      };
   };
 }

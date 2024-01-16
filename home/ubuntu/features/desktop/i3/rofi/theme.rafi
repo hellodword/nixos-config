@@ -12,7 +12,7 @@
     green:            rgba ( 134, 175, 128, 100 % );
     background-color: rgba ( 0, 0, 0, 0 % );
     lightred:         rgba ( 204, 85, 51, 100 % );
-    font:             "JetBrainsMono Nerd Font 24";
+    font:             "FiraMono Nerd Font 24";
     tlightblack:      rgba ( 85, 68, 68, 80 % );
     lightmagenta:     rgba ( 153, 102, 0, 100 % );
     dark:             rgba ( 28, 28, 28, 100 % );
@@ -50,7 +50,7 @@ message {
     padding:          5;
     background-color: var(tcyan);
     border-color:     var(foreground);
-    font:             "JetBrainsMono Nerd Font 20";
+    font:             "FiraMono Nerd Font 20";
     border:           0px 2px 2px ;
     text-color:       var(black);
 }
@@ -58,7 +58,7 @@ inputbar {
     padding:          11px ;
     background-color: var(tlightblack);
     border:           2px ;
-    font:             "JetBrainsMono Nerd Font 30";
+    font:             "FiraMono Nerd Font 30";
     border-color:     var(foreground);
     border-radius:    15px 15px 0px 0px ;
     text-color:       var(lightgreen);

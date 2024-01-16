@@ -55,6 +55,7 @@
         "v2ray.json" = "jsonc";
       };
       "remote.autoForwardPortsSource" = "hybrid";
+      "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";
     };
     extensions = (with pkgs.vscode-extensions; [
       esbenp.prettier-vscode

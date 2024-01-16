@@ -5,7 +5,6 @@ let
 in
 {
   imports = [
-    ./alacritty.nix
     ./kitty.nix
     ./autolock.nix
   ] ++ (lib.optionals X [ ./autorandr.nix ]);

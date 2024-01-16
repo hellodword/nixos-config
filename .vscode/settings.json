@@ -90,6 +90,7 @@
         }
     },
     "files.associations": {
-        "**/waybar/config": "jsonc"
+        "**/waybar/config": "jsonc",
+        "**/fonts/conf.d/*.conf": "xml"
     }
 }

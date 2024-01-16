@@ -239,7 +239,7 @@
     style = ''
       * {
           /* `otf-font-awesome` is required to be installed for icons */
-          font-family: FiraCode Nerd Font, Roboto, Helvetica, Arial, sans-serif;
+          font-family: JetBrainsMono Nerd Font;
           font-size: 13px;
       }
 

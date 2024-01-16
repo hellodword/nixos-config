@@ -8,13 +8,13 @@ let
       if ${lib.concatStringsSep " || " (map (x: "[ \"$(pgrep -x \"${x}\")\" ]") config.me.exitProcess)}; then
         ${pkgs.libnotify}/bin/notify-send --urgency critical --expire-time=10000 "关机提示:" "你应该先关闭重要进程!"
       else
-        rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'Jetbrains Mono 16'
+        rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'monospace 16'
       fi
     '';
   };
   keybindings = {
-    "${mod}+d" = "exec rofi -modi drun -show drun -drun-show-actions -font 'Jetbrains Mono 16'";
-    "${mod}+Shift+d" = "exec rofi -show run -font 'Jetbrains Mono 16'";
+    "${mod}+d" = "exec rofi -modi drun -show drun -drun-show-actions -font 'monospace 16'";
+    "${mod}+Shift+d" = "exec rofi -show run -font 'monospace 16'";
     "${mod}+Shift+p" = "exec ${rofi-power-menu-with-check}/bin/rofi-power-menu-with-check";
   };
 in

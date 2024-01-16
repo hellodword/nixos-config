@@ -7,7 +7,7 @@
     enable = true;
     package = pkgs.kitty;
     font = {
-      name = "FiraCode Nerd Font";
+      name = "monospace";
       size = 11.0;
     };
     # theme = "Catppuccin-Macchiato";
@@ -17,8 +17,23 @@
       tab_title_template =
         "{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.tab}{index}:{title}";
     };
+    # https://stackoverflow.com/a/1366113
     extraConfig = ''
-      symbol_map U+4E00–U+9FFF Noto Serif CJK SC
+      symbol_map U+4E00-U+9FFF LXGW WenKai
+      symbol_map U+3400-U+4DBF LXGW WenKai
+
+      symbol_map U+F900-U+FAFF Jigmo
+
+      symbol_map U+20000-U+2A6DF Jigmo2
+      symbol_map U+2A700-U+2B73F Jigmo2
+      symbol_map U+2B740-U+2B81F Jigmo2
+      symbol_map U+2B820-U+2CEAF Jigmo2
+      symbol_map U+2CEB0-U+2EBEF Jigmo2
+      symbol_map U+2EBF0-U+2EE5F Jigmo2
+
+      symbol_map U+30000-U+3134F Jigmo3
+      symbol_map U+31350-U+323AF Jigmo3
+
       modify_font underline_position +3
       modify_font underline_thickness 150%
 
