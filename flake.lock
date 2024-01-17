@@ -298,6 +298,38 @@
         "type": "github"
       }
     },
+    "localsend-discovery": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1690783259,
+        "narHash": "sha256-pPwE0HpUKmkFdYSUync+DwSktf5MBQe8aNPhKQXijD4=",
+        "owner": "hellodword",
+        "repo": "localsend-discovery",
+        "rev": "9ccd548aae059f0f9d3e6f836c83cc3b700a8b3a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hellodword",
+        "repo": "localsend-discovery",
+        "type": "github"
+      }
+    },
+    "lxgw-fusion-kai": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1696689635,
+        "narHash": "sha256-aqEGMFlAzis8w5YWJQuWdgRK9gIWaiRW3wZIUA5ri7M=",
+        "owner": "lxgw",
+        "repo": "FusionKai",
+        "rev": "0bd3ae7ffcd1f290b8db5047ef31b74573368407",
+        "type": "github"
+      },
+      "original": {
+        "owner": "lxgw",
+        "repo": "FusionKai",
+        "type": "github"
+      }
+    },
     "nix-index-database": {
       "inputs": {
         "nixpkgs": [
@@ -460,6 +492,23 @@
         "type": "github"
       }
     },
+    "rime-ice": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1687181253,
+        "narHash": "sha256-5cyETX/UrZ+2xutHtpzGkutkWwBB/pMI6jIO6UM0IdQ=",
+        "owner": "iDvel",
+        "repo": "rime-ice",
+        "rev": "c02bbe61ce148e15397089e891a21fd14258ade2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "iDvel",
+        "repo": "rime-ice",
+        "rev": "c02bbe61ce148e15397089e891a21fd14258ade2",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "arkenfox-userjs": "arkenfox-userjs",
@@ -471,11 +520,14 @@
         "impermanence": "impermanence",
         "kitty-gruvbox-themes": "kitty-gruvbox-themes",
         "lanzaboote": "lanzaboote",
+        "localsend-discovery": "localsend-discovery",
+        "lxgw-fusion-kai": "lxgw-fusion-kai",
         "nix-index-database": "nix-index-database",
         "nix-vscode-ext": "nix-vscode-ext",
         "nixos-hardware": "nixos-hardware",
         "nixos-privates": "nixos-privates",
         "nixpkgs": "nixpkgs",
+        "rime-ice": "rime-ice",
         "sops-nix": "sops-nix",
         "thunderbird-userjs": "thunderbird-userjs",
         "you-know-who": "you-know-who"

@@ -1,20 +1,19 @@
 # https://github.com/ironman820/flake/blob/4067262ecee52d92a2e295076076c48e17f156e2/packages/sddm-catppuccin/default.nix
-{ stdenvNoCC, qt5, catppuccin-sddm }:
+{ stdenvNoCC, qt5, inputs }:
 # let
 #   inherit (pkgs.stdenvNoCC) mkDerivation;
 #   inherit (pkgs.qt5)
 #     qtbase qtgraphicaleffects qtquickcontrols2 qtsvg wrapQtAppsHook;
 # in
-stdenvNoCC.mkDerivation {
+stdenvNoCC.mkDerivation rec {
   dontBuild = true;
   pname = "catppuccin-sddm";
-  version = "1.0";
+  version = "v0.0.0-${inputs."${pname}".lastModifiedDate}-${inputs."${pname}".shortRev}";
+  src = inputs."${pname}";
 
   nativeBuildInputs = [ qt5.wrapQtAppsHook ];
 
   propagatedUserEnvPkgs = [ qt5.qtbase qt5.qtgraphicaleffects qt5.qtquickcontrols2 qt5.qtsvg ];
-
-  src = catppuccin-sddm;
 
   installPhase = ''
     mkdir -p $out/share/sddm/themes

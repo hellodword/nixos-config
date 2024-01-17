@@ -1,17 +1,11 @@
 # https://github.com/zendo/nsworld/blob/369247cb4520c689781f1bc3874b5b3ec8b10679/overlays/rime-ice/default.nix
 
-{ lib, stdenvNoCC, fetchFromGitHub, ... }:
+{ lib, stdenvNoCC, inputs, ... }:
 
 stdenvNoCC.mkDerivation rec {
   pname = "rime-ice";
-  version = "2023-03-13";
-
-  src = fetchFromGitHub {
-    owner = "iDvel";
-    repo = pname;
-    rev = "c02bbe61ce148e15397089e891a21fd14258ade2";
-    hash = "sha256-5cyETX/UrZ+2xutHtpzGkutkWwBB/pMI6jIO6UM0IdQ=";
-  };
+  version = "v0.0.0-${inputs."${pname}".lastModifiedDate}-${inputs."${pname}".shortRev}";
+  src = inputs."${pname}";
 
   installPhase = ''
     sed -i 's/- Control+grave/# - Control+grave/' default.yaml 

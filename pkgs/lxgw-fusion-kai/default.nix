@@ -1,15 +1,9 @@
-{ lib, stdenvNoCC, fetchFromGitHub, ... }:
+{ lib, stdenvNoCC, inputs, ... }:
 
 stdenvNoCC.mkDerivation rec {
   pname = "lxgw-fusion-kai";
-  version = "3.313";
-
-  src = fetchFromGitHub {
-    owner = "lxgw";
-    repo = "FusionKai";
-    rev = "v${version}";
-    sha256 = "sha256-aqEGMFlAzis8w5YWJQuWdgRK9gIWaiRW3wZIUA5ri7M=";
-  };
+  version = "v0.0.0-${inputs."${pname}".lastModifiedDate}-${inputs."${pname}".shortRev}";
+  src = inputs."${pname}";
 
   installPhase = ''
     runHook preInstall

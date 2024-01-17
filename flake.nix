@@ -71,6 +71,21 @@
       url = "github:catppuccin/sddm";
       flake = false;
     };
+
+    localsend-discovery = {
+      url = "github:hellodword/localsend-discovery";
+      flake = false;
+    };
+
+    lxgw-fusion-kai = {
+      url = "github:lxgw/FusionKai";
+      flake = false;
+    };
+
+    rime-ice = {
+      url = "github:iDvel/rime-ice/c02bbe61ce148e15397089e891a21fd14258ade2";
+      flake = false;
+    };
   };
 
   outputs =

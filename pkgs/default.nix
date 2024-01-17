@@ -2,7 +2,7 @@
 
 rec {
   rime-ice = pkgs.callPackage ./rime-ice { };
-  localsend-discovery = pkgs.callPackage ./localsend-discovery { };
+  localsend-discovery = pkgs.callPackage ./localsend-discovery { inherit inputs; };
   eww-tray = pkgs.callPackage ./eww-tray { };
 
   # fonts
@@ -13,8 +13,8 @@ rec {
   noto-fonts-cjk-novf = pkgs.callPackage ./noto-fonts-cjk-novf { };
   fira-code-novf = pkgs.callPackage ./fira-code-novf { };
   harmonyos-sans = pkgs.callPackage ./harmonyos-sans { };
-  lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { };
+  lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { inherit inputs; };
 
   # catppuccin
-  catppuccin-sddm = pkgs.callPackage ./catppuccin-sddm { catppuccin-sddm = inputs.catppuccin-sddm; };
+  catppuccin-sddm = pkgs.callPackage ./catppuccin-sddm { inherit inputs; };
 }
