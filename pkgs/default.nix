@@ -1,4 +1,4 @@
-{ pkgs ? import <nixpkgs> { } }:
+{ pkgs ? import <nixpkgs> { }, inputs ? { }, ... }:
 
 rec {
   rime-ice = pkgs.callPackage ./rime-ice { };
@@ -14,4 +14,7 @@ rec {
   fira-code-novf = pkgs.callPackage ./fira-code-novf { };
   harmonyos-sans = pkgs.callPackage ./harmonyos-sans { };
   lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { };
+
+  # catppuccin
+  catppuccin-sddm = pkgs.callPackage ./catppuccin-sddm { catppuccin-sddm = inputs.catppuccin-sddm; };
 }

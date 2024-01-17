@@ -66,6 +66,11 @@
       url = "github:inclyc/flake-compat/70e56389c58bbd300d11778913b255477ebbae22";
       flake = false;
     };
+
+    catppuccin-sddm = {
+      url = "github:catppuccin/sddm";
+      flake = false;
+    };
   };
 
   outputs =
