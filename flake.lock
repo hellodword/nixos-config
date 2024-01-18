@@ -16,6 +16,22 @@
         "type": "github"
       }
     },
+    "auditd-rules": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1704833586,
+        "narHash": "sha256-Wpn+4yZFqq9a9dub3WUpOdsF1EYA/WFfwbMHcF4phLA=",
+        "owner": "Neo23x0",
+        "repo": "auditd",
+        "rev": "dfb7898b1e8bbfe6c57920121a0ddf5a4676a57e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "Neo23x0",
+        "repo": "auditd",
+        "type": "github"
+      }
+    },
     "catppuccin-sddm": {
       "flake": false,
       "locked": {
@@ -512,6 +528,7 @@
     "root": {
       "inputs": {
         "arkenfox-userjs": "arkenfox-userjs",
+        "auditd-rules": "auditd-rules",
         "catppuccin-sddm": "catppuccin-sddm",
         "disko": "disko",
         "firefox-addons": "firefox-addons",

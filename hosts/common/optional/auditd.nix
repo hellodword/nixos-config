@@ -1,17 +1,8 @@
-{ pkgs, ... }:
-let
-  rules = pkgs.fetchurl {
-    url = "https://github.com/Neo23x0/auditd/raw/8173f0b425ab79059ba8e81735a99449d54173f6/audit.rules";
-    sha256 = "0in55z0r528mxdkw7ldc46c9n9g4nippzsyxdrfn1zzj43fzny47";
-  };
-in
+{ pkgs, inputs, ... }:
+
 {
   security.auditd.enable = true;
   security.audit.enable = true;
-
-  # environment.systemPackages = with pkgs; [
-  #   auditd-rules
-  # ];
 
   # http://security-plus-data-science.blogspot.com/2017/05/a-suggested-change-for-rhel-7-disa-stig.html
   # fix audit: kauditd hold queue overflow
@@ -20,7 +11,7 @@ in
   environment.etc = {
     "audit/audit.rules" = {
       enable = true;
-      source = "${rules}";
+      source = "${inputs.auditd-rules}/audit.rules";
     };
     "audit/auditd.conf" = {
       enable = true;

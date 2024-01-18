@@ -86,6 +86,11 @@
       url = "github:iDvel/rime-ice/4c69722470e7ed6a27cb6f1f1633ceb03487a893";
       flake = false;
     };
+
+    auditd-rules = {
+      url = "github:Neo23x0/auditd";
+      flake = false;
+    };
   };
 
   outputs =
