@@ -21,7 +21,10 @@ in
     # fcitx.engines = with pkgs.fcitx-engines; [ rime ];
     # fcitx5.enableRimeData = true;
     fcitx5.addons = with pkgs; [
-      (fcitx5-rime.override {
+      # https://github.com/wuliuqii/nixos-config/blob/87a5d8552973d30b11b800334e816e16dbda0a31/system/configuration.nix#L25-L27
+      ((pkgs.librime.overrideAttrs (old: {
+        buildInputs = old.buildInputs ++ [ lua5_4 ];
+      })).override {
         rimeDataPkgs = [ pkgs.rime-ice ];
       })
     ];
