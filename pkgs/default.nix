@@ -15,7 +15,4 @@ rec {
   fira-code-novf = pkgs.callPackage ./fira-code-novf { };
   harmonyos-sans = pkgs.callPackage ./harmonyos-sans { };
   lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { inherit inputs; };
-
-  # catppuccin
-  catppuccin-sddm = pkgs.callPackage ./catppuccin-sddm { inherit inputs; };
 }

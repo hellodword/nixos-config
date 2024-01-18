@@ -1,4 +1,4 @@
-{ pkgs, lib, config, persistPath, ... }:
+{ pkgs, lib, config, persistPath, inputs, ... }:
 
 let
   user = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
@@ -58,7 +58,7 @@ in
         wayland.enable = true;
         theme = "catppuccin-mocha";
         settings = {
-          Theme.ThemeDir = "${pkgs.catppuccin-sddm}/share/sddm/themes";
+          Theme.ThemeDir = "${inputs.catppuccin-sddm}/src";
           # Last.User = user;
         };
       })
