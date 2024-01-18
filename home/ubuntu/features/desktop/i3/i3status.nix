@@ -6,9 +6,6 @@ let
   bars = [{
     position = "top";
     statusCommand = "i3status";
-    extraConfig = ''
-      bindsym button2 exec rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'monospace 16'
-    '';
     fonts = {
       names = [ "JetBrainsMono Nerd Font" ];
       style = "Bold Semi-Condensed";
