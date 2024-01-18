@@ -37,13 +37,13 @@ let
     };
 
     startup = [
-      (
-        {
-          command = "env XMODIFIERS=@im=fcitx QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx fcitx5 -d";
-          always = true;
+      # (
+      #   {
+      #     command = "env XMODIFIERS=@im=fcitx QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx fcitx5 -d";
+      #     always = true;
 
-        } // i3ConfigStartupExtra
-      )
+      #   } // i3ConfigStartupExtra
+      # )
     ] ++ (
       lib.optionals X
         [
