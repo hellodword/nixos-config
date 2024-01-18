@@ -495,17 +495,17 @@
     "rime-ice": {
       "flake": false,
       "locked": {
-        "lastModified": 1687181253,
-        "narHash": "sha256-5cyETX/UrZ+2xutHtpzGkutkWwBB/pMI6jIO6UM0IdQ=",
+        "lastModified": 1705559012,
+        "narHash": "sha256-wy5Y0v5FLNvJmxE3z0wIaSmNvlLG+71W/5N4Cd4noF4=",
         "owner": "iDvel",
         "repo": "rime-ice",
-        "rev": "c02bbe61ce148e15397089e891a21fd14258ade2",
+        "rev": "4c69722470e7ed6a27cb6f1f1633ceb03487a893",
         "type": "github"
       },
       "original": {
         "owner": "iDvel",
         "repo": "rime-ice",
-        "rev": "c02bbe61ce148e15397089e891a21fd14258ade2",
+        "rev": "4c69722470e7ed6a27cb6f1f1633ceb03487a893",
         "type": "github"
       }
     },
