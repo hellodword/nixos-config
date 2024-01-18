@@ -243,4 +243,16 @@ in
   services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "borgbackup-${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
 
   systemd.services = (lib.listToAttrs (map (name: lib.nameValuePair "restic-backups-borgbackup-${config.networking.hostName}-${name}" (setResticS3 name)) resticS3Providers));
+
+
+  environment.persistence = {
+    "${persistPath}".directories = (map
+      (name: {
+        directory = "/var/cache/restic-backups-borgbackup-laptop2-${name}";
+        user = "root";
+        group = "root";
+        mode = "0700";
+      })
+      resticS3Providers);
+  };
 }

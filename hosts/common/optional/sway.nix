@@ -1,24 +1,24 @@
 { pkgs, lib, config, persistPath, ... }:
 
 let
-  # user = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
-  # bash script to let dbus know about important env variables and
-  # propagate them to relevent services run at the end of sway config
-  # see
-  # https://github.com/emersion/xdg-desktop-portal-wlr/wiki/"It-doesn't-work"-Troubleshooting-Checklist
-  # note: this is pretty much the same as  /etc/sway/config.d/nixos.conf but also restarts
-  # some user services to make sure they have the correct environment variables
-  dbus-sway-environment = pkgs.writeTextFile {
-    name = "dbus-sway-environment";
-    destination = "/bin/dbus-sway-environment";
-    executable = true;
+  user = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
+  # # bash script to let dbus know about important env variables and
+  # # propagate them to relevent services run at the end of sway config
+  # # see
+  # # https://github.com/emersion/xdg-desktop-portal-wlr/wiki/"It-doesn't-work"-Troubleshooting-Checklist
+  # # note: this is pretty much the same as  /etc/sway/config.d/nixos.conf but also restarts
+  # # some user services to make sure they have the correct environment variables
+  # dbus-sway-environment = pkgs.writeTextFile {
+  #   name = "dbus-sway-environment";
+  #   destination = "/bin/dbus-sway-environment";
+  #   executable = true;
 
-    text = ''
-      dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=sway
-      systemctl --user stop pipewire pipewire-media-session xdg-desktop-portal xdg-desktop-portal-wlr
-      systemctl --user start pipewire pipewire-media-session xdg-desktop-portal xdg-desktop-portal-wlr
-    '';
-  };
+  #   text = ''
+  #     dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=sway
+  #     systemctl --user stop pipewire pipewire-media-session xdg-desktop-portal xdg-desktop-portal-wlr
+  #     systemctl --user start pipewire pipewire-media-session xdg-desktop-portal xdg-desktop-portal-wlr
+  #   '';
+  # };
 
   # # currently, there is some friction between sway and gtk:
   # # https://github.com/swaywm/sway/wiki/GTK-3-settings-on-Wayland
@@ -43,67 +43,77 @@ let
   # };
 in
 {
-
-  services.xserver = {
+  services.greetd = {
     enable = true;
-    displayManager = {
-      defaultSession = "sway";
-      # https://github.com/NixOS/nixpkgs/issues/146912
-      # lightdm.enable = true;
-      sddm = {
-        enable = true;
-        wayland.enable = true;
-        theme = "catppuccin-mocha";
-        settings = {
-          Theme.ThemeDir = "${pkgs.catppuccin-sddm}/share/sddm/themes";
-          # Last.User = user;
-        };
+    settings = rec {
+      initial_session = {
+        command = "${pkgs.sway}/bin/sway";
+        inherit user;
       };
+      default_session = initial_session;
     };
   };
 
-  environment.persistence = {
-    "${persistPath}".directories = [
-      "/var/lib/sddm"
-    ];
-  };
-
-  programs.sway = {
-    enable = true;
-    # wrapperFeatures.gtk = true;
-  };
-
-  # # xdg-desktop-portal works by exposing a series of D-Bus interfaces
-  # # known as portals under a well-known name
-  # # (org.freedesktop.portal.Desktop) and object path
-  # # (/org/freedesktop/portal/desktop).
-  # # The portal interfaces include APIs for file access, opening URIs,
-  # # printing and others.
-  services.dbus.enable = true;
-  # xdg.portal = {
+  # services.xserver = {
   #   enable = true;
-  #   wlr.enable = true;
-  #   # gtk portal needed to make gtk apps happy
-  #   extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
-  #   config = {
-  #     common =
-  #       {
-  #         # for flameshot to work
-  #         # https://github.com/flameshot-org/flameshot/issues/3363#issuecomment-1753771427
-  #         default = "gtk";
-  #         "org.freedesktop.impl.portal.Screencast" = "wlr";
-  #         "org.freedesktop.impl.portal.Screenshot" = "wlr";
+  #   displayManager = {
+  #     defaultSession = "sway";
+  #     # https://github.com/NixOS/nixpkgs/issues/146912
+  #     # lightdm.enable = true;
+  #     sddm = {
+  #       enable = true;
+  #       wayland.enable = true;
+  #       theme = "catppuccin-mocha";
+  #       settings = {
+  #         Theme.ThemeDir = "${pkgs.catppuccin-sddm}/share/sddm/themes";
+  #         # Last.User = user;
   #       };
+  #     };
   #   };
   # };
 
+  # environment.persistence = {
+  #   "${persistPath}".directories = [
+  #     "/var/lib/sddm"
+  #   ];
+  # };
 
-  environment.systemPackages = with pkgs; [
-    dbus # make dbus-update-activation-environment available in the path
-    dbus-sway-environment
-    # configure-gtk
-    # wayland
-    # xdg-utils # for opening default programs when clicking links
-    # grim # screenshot functionality
-  ];
+  # programs.sway = {
+  #   enable = true;
+  #   # wrapperFeatures.gtk = true;
+  # };
+
+  # # # xdg-desktop-portal works by exposing a series of D-Bus interfaces
+  # # # known as portals under a well-known name
+  # # # (org.freedesktop.portal.Desktop) and object path
+  # # # (/org/freedesktop/portal/desktop).
+  # # # The portal interfaces include APIs for file access, opening URIs,
+  # # # printing and others.
+  # services.dbus.enable = true;
+  # # xdg.portal = {
+  # #   enable = true;
+  # #   wlr.enable = true;
+  # #   # gtk portal needed to make gtk apps happy
+  # #   extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+  # #   config = {
+  # #     common =
+  # #       {
+  # #         # for flameshot to work
+  # #         # https://github.com/flameshot-org/flameshot/issues/3363#issuecomment-1753771427
+  # #         default = "gtk";
+  # #         "org.freedesktop.impl.portal.Screencast" = "wlr";
+  # #         "org.freedesktop.impl.portal.Screenshot" = "wlr";
+  # #       };
+  # #   };
+  # # };
+
+
+  # environment.systemPackages = with pkgs; [
+  #   dbus # make dbus-update-activation-environment available in the path
+  #   dbus-sway-environment
+  #   # configure-gtk
+  #   # wayland
+  #   # xdg-utils # for opening default programs when clicking links
+  #   # grim # screenshot functionality
+  # ];
 }

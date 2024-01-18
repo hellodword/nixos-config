@@ -26,10 +26,10 @@
         "/etc/machine-id"
       ];
       directories = [
-        "/var/backup"
-        "/var/cache"
-        "/var/log"
-        "/var/www"
+        # "/var/backup"
+        # "/var/cache"
+        # "/var/log" # btmp / lastlog / wtmp
+        # "/var/www"
 
         "/var/lib/systemd"
 
@@ -41,13 +41,20 @@
 
         "/var/lib/nixos"
 
-        "/srv"
+        # "/srv"
 
         {
           directory = "/etc/nixos";
           user = "1000";
           group = "root";
           mode = "0755";
+        }
+
+        {
+          directory = "/var/log/journal";
+          user = "root";
+          group = "systemd-journal";
+          mode = "u=rwx,g=rs,o=rx";
         }
 
         "/var/db/sudo/lectured"

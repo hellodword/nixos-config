@@ -399,6 +399,7 @@ in
   environment.persistence = {
     "${persistPath}".directories = [
       "/usr/local/etc/v2ray"
+      "/var/log/private/v2ray"
     ];
   };
 }

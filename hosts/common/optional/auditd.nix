@@ -1,4 +1,4 @@
-{ pkgs, inputs, ... }:
+{ pkgs, inputs, persistPath, ... }:
 
 {
   security.auditd.enable = true;
@@ -58,10 +58,15 @@
     };
   };
 
-  # /var/log
-  # environment.persistence = {
-  #   "${persistPath}".directories = [
-  #     "/var/log/audit/audit"
-  #   ];
-  # };
+
+  environment.persistence = {
+    "${persistPath}".directories = [
+      {
+        directory = "/var/log/audit";
+        user = "root";
+        group = "adm";
+        mode = "0750";
+      }
+    ];
+  };
 }
