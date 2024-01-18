@@ -36,7 +36,9 @@
       patch = ./0002-hdmi.patch;
     }
   ];
-  boot.kernelModules = [ "lkrg" ];
+  boot.kernelModules = [
+    # "lkrg" 
+  ];
 
   users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
 
