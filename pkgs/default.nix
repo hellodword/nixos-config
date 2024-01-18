@@ -1,7 +1,7 @@
 { pkgs ? import <nixpkgs> { }, inputs ? { }, ... }:
 
 rec {
-  rime-ice = pkgs.callPackage ./rime-ice { };
+  rime-ice = pkgs.callPackage ./rime-ice { inherit inputs; };
   localsend-discovery = pkgs.callPackage ./localsend-discovery { inherit inputs; };
   eww-tray = pkgs.callPackage ./eww-tray { };
 
