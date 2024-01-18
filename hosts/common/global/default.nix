@@ -12,7 +12,6 @@
     ./sops.nix
     ./systemd-initrd.nix
     ./inetutils.nix
-    ./p7zip.nix
     ./openssh-client.nix
     ./fhs.nix
   ] ++ (builtins.attrValues outputs.nixosModules);
@@ -32,7 +31,6 @@
 
   environment.systemPackages = with pkgs; [
     wget
-    nix-prefetch-scripts
     file
     tree
     unzip
@@ -44,10 +42,6 @@
     git
     screen
     openssl_legacy
-    sysstat
-    aria
-    usbutils
-    brotli
   ];
 
   # # https://github.com/mcdonc/.nixconfig/blob/bb1d1458f2558c16d1451f30a619fa9e14733996/videos/stopdhcp/script.rst

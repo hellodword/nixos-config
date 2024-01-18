@@ -50,6 +50,8 @@
     ../../../common/optional/ansible.nix
 
     ../../../common/optional/tailscale.nix
+
+    ../../../common/optional/extra-cli.nix
   ]
   ++
   [
