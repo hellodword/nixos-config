@@ -55,6 +55,7 @@
   ]
   ++
   [
+    ../../../common/optional/opengl.nix
     ../../../common/optional/fonts.nix
     ../../../common/optional/sway.nix
     ../../../common/optional/qt.nix
