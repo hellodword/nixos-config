@@ -2,118 +2,103 @@
 
 let
   user = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
-  # # bash script to let dbus know about important env variables and
-  # # propagate them to relevent services run at the end of sway config
-  # # see
-  # # https://github.com/emersion/xdg-desktop-portal-wlr/wiki/"It-doesn't-work"-Troubleshooting-Checklist
-  # # note: this is pretty much the same as  /etc/sway/config.d/nixos.conf but also restarts
-  # # some user services to make sure they have the correct environment variables
-  # dbus-sway-environment = pkgs.writeTextFile {
-  #   name = "dbus-sway-environment";
-  #   destination = "/bin/dbus-sway-environment";
-  #   executable = true;
-
-  #   text = ''
-  #     dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP=sway
-  #     systemctl --user stop pipewire pipewire-media-session xdg-desktop-portal xdg-desktop-portal-wlr
-  #     systemctl --user start pipewire pipewire-media-session xdg-desktop-portal xdg-desktop-portal-wlr
-  #   '';
-  # };
-
-  # # currently, there is some friction between sway and gtk:
-  # # https://github.com/swaywm/sway/wiki/GTK-3-settings-on-Wayland
-  # # the suggested way to set gtk settings is with gsettings
-  # # for gsettings to work, we need to tell it where the schemas are
-  # # using the XDG_DATA_DIR environment variable
-  # # run at the end of sway config
-  # configure-gtk = pkgs.writeTextFile {
-  #   name = "configure-gtk";
-  #   destination = "/bin/configure-gtk";
-  #   executable = true;
-  #   text =
-  #     let
-  #       schema = pkgs.gsettings-desktop-schemas;
-  #       datadir = "${schema}/share/gsettings-schemas/${schema.name}";
-  #     in
-  #     ''
-  #       export XDG_DATA_DIRS=${datadir}:$XDG_DATA_DIRS
-  #       gnome_schema=org.gnome.desktop.interface
-  #       gsettings set $gnome_schema gtk-theme 'Dracula'
-  #     '';
-  # };
+  greetd = false;
 in
 {
-  services.greetd = {
+  programs.sway = {
     enable = true;
-    settings = rec {
-      initial_session = {
-        command = "${pkgs.sway}/bin/sway";
-        inherit user;
-      };
-      default_session = initial_session;
-    };
   };
 
-  # services.xserver = {
-  #   enable = true;
-  #   displayManager = {
-  #     defaultSession = "sway";
-  #     # https://github.com/NixOS/nixpkgs/issues/146912
-  #     # lightdm.enable = true;
-  #     sddm = {
-  #       enable = true;
-  #       wayland.enable = true;
-  #       theme = "catppuccin-mocha";
-  #       settings = {
-  #         Theme.ThemeDir = "${pkgs.catppuccin-sddm}/share/sddm/themes";
-  #         # Last.User = user;
-  #       };
-  #     };
-  #   };
-  # };
+  ##############################
+  ########### greetd ###########
+  ##############################
 
-  # environment.persistence = {
-  #   "${persistPath}".directories = [
-  #     "/var/lib/sddm"
-  #   ];
-  # };
+  # require programs.sway.enable for session Sway
 
-  # programs.sway = {
-  #   enable = true;
-  #   # wrapperFeatures.gtk = true;
-  # };
+  programs.regreet = {
+    enable = greetd;
+  };
 
-  # # # xdg-desktop-portal works by exposing a series of D-Bus interfaces
-  # # # known as portals under a well-known name
-  # # # (org.freedesktop.portal.Desktop) and object path
-  # # # (/org/freedesktop/portal/desktop).
-  # # # The portal interfaces include APIs for file access, opening URIs,
-  # # # printing and others.
-  # services.dbus.enable = true;
-  # # xdg.portal = {
-  # #   enable = true;
-  # #   wlr.enable = true;
-  # #   # gtk portal needed to make gtk apps happy
-  # #   extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
-  # #   config = {
-  # #     common =
-  # #       {
-  # #         # for flameshot to work
-  # #         # https://github.com/flameshot-org/flameshot/issues/3363#issuecomment-1753771427
-  # #         default = "gtk";
-  # #         "org.freedesktop.impl.portal.Screencast" = "wlr";
-  # #         "org.freedesktop.impl.portal.Screenshot" = "wlr";
-  # #       };
-  # #   };
-  # # };
+  services.greetd =
+    if greetd then
+      (
+        let
+          swayConfig = pkgs.writeText "greetd-sway-config" ''
+            # `-l` activates layer-shell mode. Notice that `swaymsg exit` will run after gtkgreet.
+            exec "${lib.getExe pkgs.greetd.regreet} -l; swaymsg exit"
+            bindsym Mod4+shift+e exec swaynag \
+              -t warning \
+              -m 'What do you want to do?' \
+              -b 'Poweroff' 'systemctl poweroff' \
+              -b 'Reboot' 'systemctl reboot'
+          '';
+        in
+        {
+          enable = true;
+          settings = {
+            default_session = {
+              command = "${lib.getExe pkgs.sway} --config ${swayConfig}";
+            };
+          };
+        }
+      )
+    else
+      { };
 
+  ##############################
+  ############ sddm ############
+  ##############################
 
-  # environment.systemPackages = with pkgs; [
-  #   dbus # make dbus-update-activation-environment available in the path
-  #   dbus-sway-environment
-  #   # configure-gtk
-  #   # wayland
-  #   # xdg-utils # for opening default programs when clicking links
-  #   # grim # screenshot functionality
-  # ];
+  # services.xserver.displayManager.defaultSession = "sway";
+  services.xserver.enable = !greetd;
+  services.xserver.displayManager.sddm =
+    if (!greetd) then
+      ({
+        enable = true;
+        wayland.enable = true;
+        theme = "catppuccin-mocha";
+        settings = {
+          Theme.ThemeDir = "${pkgs.catppuccin-sddm}/share/sddm/themes";
+          # Last.User = user;
+        };
+      })
+    else
+      { };
+
+  environment.persistence = {
+    "${persistPath}".directories =
+      if greetd then
+        [
+          {
+            directory = "/var/cache/regreet";
+            user = "greeter";
+            group = config.users.users."${user}".group;
+            mode = "0775";
+          }
+          {
+            directory = "/var/log/regreet";
+            user = "greeter";
+            group = config.users.users."${user}".group;
+            mode = "0775";
+          }
+
+          # {
+          #   directory = "/var/cache/tuigreet";
+          #   user = "greeter";
+          #   group = config.users.users."${user}".group;
+          #   mode = "0775";
+          # }
+          # {
+          #   directory = "/var/log/tuigreet";
+          #   user = "greeter";
+          #   group = config.users.users."${user}".group;
+          #   mode = "0775";
+          # }
+        ]
+      else
+        [
+          "/var/lib/sddm"
+        ];
+  };
+
 }
