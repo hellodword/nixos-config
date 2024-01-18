@@ -2,6 +2,7 @@
 
 rec {
   rime-ice = pkgs.callPackage ./rime-ice { inherit inputs; };
+  librime-lua = pkgs.callPackage ./librime-lua { };
   localsend-discovery = pkgs.callPackage ./localsend-discovery { inherit inputs; };
   eww-tray = pkgs.callPackage ./eww-tray { };
 
