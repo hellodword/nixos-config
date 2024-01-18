@@ -15,6 +15,7 @@ let
       lib.optionalString (!X) ''
         for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
         for_window [app_id="wpa_gui"] floating enable
+        for_window [app_id="mpv"] floating enable
         for_window [app_id="deadd-notification-center"] move position 1px 1px
         for_window [class="feh"] floating enable
       ''
