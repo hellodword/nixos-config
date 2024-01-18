@@ -82,14 +82,14 @@
         "/var/lib/portables"
         "/etc/portables"
         "/usr/local/lib/portables"
-        "/usr/lib/portables"
+        # "/usr/lib/portables"
       ]
       ++ [
         # machinectl systemd-nspawn
         # https://www.freedesktop.org/software/systemd/man/machinectl.html#Files%20and%20Directories
         "/var/lib/machines"
         "/usr/local/lib/machines"
-        "/usr/lib/machines"
+        # "/usr/lib/machines"
       ];
     };
   };
