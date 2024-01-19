@@ -21,4 +21,11 @@
       x11 = true;
     };
   };
+
+  # https://discourse.nixos.org/t/how-to-adjust-the-timeout-of-a-systemd-device/12620
+  # Timed out waiting for device /dev/vboxguest
+  systemd.units."dev-vboxguest.device".text = ''
+    [Unit]
+    ConditionVirtualization=oracle
+  '';
 }
