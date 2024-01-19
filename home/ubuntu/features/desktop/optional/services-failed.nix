@@ -14,7 +14,9 @@ in
 {
   # TODO database / cache
   # TODO email / bark
+  # TODO journalctl -b -p 3 / dmesg -l err
   # TODO replace with logwatch
+  # TODO https://github.com/NickCao/flakes/blob/2621b9e71123bb49cca051d69ff767432a15e6de/nixos/vultr/lax0/prometheus.nix
   systemd.user.services.services-failed = {
     Service = {
       Type = "oneshot";
