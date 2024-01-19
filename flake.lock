@@ -32,6 +32,40 @@
         "type": "github"
       }
     },
+    "catppuccin-fcitx5": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1664946380,
+        "narHash": "sha256-uFaCbyrEjv4oiKUzLVFzw+UY54/h7wh2cntqeyYwGps=",
+        "owner": "catppuccin",
+        "repo": "fcitx5",
+        "rev": "ce244cfdf43a648d984719fdfd1d60aab09f5c97",
+        "type": "github"
+      },
+      "original": {
+        "owner": "catppuccin",
+        "repo": "fcitx5",
+        "rev": "ce244cfdf43a648d984719fdfd1d60aab09f5c97",
+        "type": "github"
+      }
+    },
+    "catppuccin-kitty": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1704898305,
+        "narHash": "sha256-mRFa+40fuJCUrR1o4zMi7AlgjRtFmii4fNsQyD8hIjM=",
+        "owner": "catppuccin",
+        "repo": "kitty",
+        "rev": "d7d61716a83cd135344cbb353af9d197c5d7cec1",
+        "type": "github"
+      },
+      "original": {
+        "owner": "catppuccin",
+        "repo": "kitty",
+        "rev": "d7d61716a83cd135344cbb353af9d197c5d7cec1",
+        "type": "github"
+      }
+    },
     "catppuccin-sddm": {
       "flake": false,
       "locked": {
@@ -45,6 +79,7 @@
       "original": {
         "owner": "catppuccin",
         "repo": "sddm",
+        "rev": "95bfcba80a3b0cb5d9a6fad422a28f11a5064991",
         "type": "github"
       }
     },
@@ -267,23 +302,6 @@
       "original": {
         "owner": "nix-community",
         "repo": "impermanence",
-        "type": "github"
-      }
-    },
-    "kitty-gruvbox-themes": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1673178094,
-        "narHash": "sha256-fWRVd/ZsuQ7obX4ZDBqfbPEE9s+p5Ls2hqI6JY92/3U=",
-        "owner": "wdomitrz",
-        "repo": "kitty-gruvbox-theme",
-        "rev": "b930abcc3a1cdcc763fb65988f07ee0270710f9c",
-        "type": "github"
-      },
-      "original": {
-        "owner": "wdomitrz",
-        "repo": "kitty-gruvbox-theme",
-        "rev": "b930abcc3a1cdcc763fb65988f07ee0270710f9c",
         "type": "github"
       }
     },
@@ -529,13 +547,14 @@
       "inputs": {
         "arkenfox-userjs": "arkenfox-userjs",
         "auditd-rules": "auditd-rules",
+        "catppuccin-fcitx5": "catppuccin-fcitx5",
+        "catppuccin-kitty": "catppuccin-kitty",
         "catppuccin-sddm": "catppuccin-sddm",
         "disko": "disko",
         "firefox-addons": "firefox-addons",
         "flake-compat": "flake-compat",
         "home-manager": "home-manager",
         "impermanence": "impermanence",
-        "kitty-gruvbox-themes": "kitty-gruvbox-themes",
         "lanzaboote": "lanzaboote",
         "localsend-discovery": "localsend-discovery",
         "lxgw-fusion-kai": "lxgw-fusion-kai",

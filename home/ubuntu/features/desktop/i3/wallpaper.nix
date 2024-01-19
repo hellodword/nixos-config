@@ -61,6 +61,9 @@ in
           (lib.hasAttrByPath ["kdeFilePath"] value)
           ''cp -f ${value.kdeFilePath} ${wallpapers}/'')
         pkgs.nixos-artwork.wallpapers)};
+
+    rm -f ${wallpapers}/nix-wallpaper-simple-dark-gray_bootloader.png
+    rm -f ${wallpapers}/nix-wallpaper-simple-red.png
   '';
 
   systemd.user.services.fetch-bing-wallpaper = {

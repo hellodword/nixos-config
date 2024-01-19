@@ -37,7 +37,7 @@
       modify_font underline_position +3
       modify_font underline_thickness 150%
 
-      ${builtins.readFile (inputs.kitty-gruvbox-themes + "/gruvbox_dark.conf")}
+      include ${inputs.catppuccin-kitty}/themes/mocha.conf
     '';
     keybindings = {
       "kitty_mod+n" = "new_os_window_with_cwd";

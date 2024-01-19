@@ -42,11 +42,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    kitty-gruvbox-themes = {
-      url = "github:wdomitrz/kitty-gruvbox-theme/b930abcc3a1cdcc763fb65988f07ee0270710f9c";
-      flake = false;
-    };
-
     you-know-who = {
       url = "github:hellodword/you-know-who/assets";
       flake = false;
@@ -68,7 +63,7 @@
     };
 
     catppuccin-sddm = {
-      url = "github:catppuccin/sddm";
+      url = "github:catppuccin/sddm/95bfcba80a3b0cb5d9a6fad422a28f11a5064991";
       flake = false;
     };
 
@@ -89,6 +84,16 @@
 
     auditd-rules = {
       url = "github:Neo23x0/auditd";
+      flake = false;
+    };
+
+    catppuccin-kitty = {
+      url = "github:catppuccin/kitty/d7d61716a83cd135344cbb353af9d197c5d7cec1";
+      flake = false;
+    };
+
+    catppuccin-fcitx5 = {
+      url = "github:catppuccin/fcitx5/ce244cfdf43a648d984719fdfd1d60aab09f5c97";
       flake = false;
     };
   };

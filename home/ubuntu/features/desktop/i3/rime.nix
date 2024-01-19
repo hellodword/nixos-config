@@ -1,4 +1,4 @@
-{ pkgs, config, lib, nixosConfig, persistPath, ... }:
+{ pkgs, config, lib, nixosConfig, persistPath, inputs, ... }:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
@@ -6,6 +6,12 @@ let
     # 输入法切换冲突
     "${mod}+space" = null;
   };
+  fcitx5Theme = ''
+    # Theme
+    Theme=catppuccin-latte
+    # Dark Theme
+    DarkTheme=catppuccin-latte
+  '';
 in
 {
   home.persistence = {
@@ -30,6 +36,10 @@ in
         };
         rimeDataPkgs = [ pkgs.rime-ice ];
       })
+
+      pkgs.fcitx5-configtool
+      pkgs.fcitx5-gtk
+      pkgs.fcitx5-with-addons
     ];
   };
 
@@ -38,6 +48,13 @@ in
     recursive = true;
     # https://github.com/nix-community/home-manager/issues/1213#issuecomment-626240819
     force = true;
+  };
+
+  xdg.configFile."fcitx5/conf/classicui.conf".text = fcitx5Theme;
+  home.file.".local/share/fcitx5/conf/classicui.conf".text = fcitx5Theme;
+  home.file.".local/share/fcitx5/themes/catppuccin-latte" = {
+    source = inputs.catppuccin-fcitx5 + /src/catppuccin-latte;
+    recursive = true;
   };
 
   xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault keybindings;
