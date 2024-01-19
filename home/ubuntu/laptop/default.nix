@@ -28,6 +28,7 @@ in
     ../features/desktop/optional/mpv.nix
     ../features/desktop/optional/feh.nix
     ../features/desktop/optional/low-battery.nix
+    ../features/desktop/optional/services-failed.nix
 
     ../features/desktop/optional/firefox.nix
     ../features/desktop/optional/chromium.nix
