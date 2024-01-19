@@ -8,9 +8,9 @@ let
   };
   fcitx5Theme = ''
     # Theme
-    Theme=catppuccin-latte
+    Theme=catppuccin-mocha
     # Dark Theme
-    DarkTheme=catppuccin-latte
+    DarkTheme=catppuccin-mocha
   '';
 in
 {
@@ -52,8 +52,8 @@ in
 
   xdg.configFile."fcitx5/conf/classicui.conf".text = fcitx5Theme;
   home.file.".local/share/fcitx5/conf/classicui.conf".text = fcitx5Theme;
-  home.file.".local/share/fcitx5/themes/catppuccin-latte" = {
-    source = inputs.catppuccin-fcitx5 + /src/catppuccin-latte;
+  home.file.".local/share/fcitx5/themes/catppuccin-mocha" = {
+    source = inputs.catppuccin-fcitx5 + /src/catppuccin-mocha;
     recursive = true;
   };
 

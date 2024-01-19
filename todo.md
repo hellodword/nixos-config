@@ -67,3 +67,13 @@
 - Android SDK: https://github.com/tadfisher/android-nixpkgs
 - devenv Android https://github.com/cachix/devenv/issues/310
 - devenv Flutter https://github.com/cachix/devenv/issues/781
+
+---
+
+## others
+
+- https://github.com/rfjakob/systembus-notify
+- https://github.com/taffybar/taffybar
+- https://github.com/ErikReider/SwayNotificationCenter
+- https://github.com/coldfix/udiskie
+- https://wiki.archlinux.org/title/Logwatch
