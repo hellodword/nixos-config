@@ -1,61 +1,89 @@
-# 日志设置
 log:
-  level: error # 日志级别。可选 "debug" "info" "warn" "error"。默认 "info"。
-  production: false # 纯 json 输出。
-  # file:
-  #   "/var/log/mosdns/mosdns.log" # (实验性) 记录日志到文件。默认输出至 stderr。
-  # 注意: 日志应由守护进程处理而不是直接写入文件。
-  # 此选项仅用于调试。panic 日志不会被记录，其内容仍会
-  # 输出至 stderr 。
+  level: error
+  production: false
 
-# (实验性) API 入口设置
-# api:
-# http: "127.0.0.1:8080" # 在该地址启动 api 接口。
-
-# []string, 从其他配置文件载入 plugins 插件设置。
-# include 的插件会比本配置文件中的插件先初始化。
 include: []
 
-# 插件设置
 plugins:
-  - args:
+  - tag: forward_clean
+    type: forward
+    args:
+      concurrent: 3
       upstreams:
+        # - tag: demo
+        #   addr: "https://dns.google/dns-query"
+        #   dial_addr: "8.8.8.8"
+        #   bootstrap: "8.8.8.8"
+        #   bootstrap_version: 4
+        #   socks5: "127.0.0.1:1080"
+        #   idle_timeout: 30
+        #   enable_pipeline: false
+        #   enable_http3: false
+        #   max_conns: 2
+        #   insecure_skip_verify: false
+        #   so_mark: 0
+        #   bind_to_device: ""
+
+        # DoH3 穿墙能力很好，但现有工具不方便测试，可能需要写点代码
         # - addr: https://
         #   enable_http3: true
+
         # google
+        # 8.8.8.8 更可能被墙，dns.google 的所有 DoH 一般也被墙
         - addr: tls://8.8.4.4
+          enable_pipeline: true
         - addr: tls://2001:4860:4860:0:0:0:0:8844
+          enable_pipeline: true
         - addr: tls://2001:4860:4860:0:0:0:0:6464
+          enable_pipeline: true
         - addr: tls://2001:4860:4860:0:0:0:0:8888
+          enable_pipeline: true
         - addr: tls://2001:4860:4860:0:0:0:0:64
+          enable_pipeline: true
         # Quard9
+        # - addr: https://9.9.9.12
+        # - addr: https://149.112.112.12
+        # - addr: https://2620:fe::11
+        # - addr: https://2620:fe::12
+        # - addr: https://2620:fe::fe:11
+        # - addr: https://2620:fe::fe:12
         - addr: tls://9.9.9.11
+          enable_pipeline: true
+        - addr: tls://9.9.9.12
+          enable_pipeline: true
         - addr: tls://149.112.112.11
+          enable_pipeline: true
+        - addr: tls://149.112.112.12
+          enable_pipeline: true
         - addr: tls://2620:fe::11
+          enable_pipeline: true
+        - addr: tls://2620:fe::12
+          enable_pipeline: true
         - addr: tls://2620:fe::fe:11
-    tag: forward_clean
-    type: forward
+          enable_pipeline: true
+        - addr: tls://2620:fe::fe:12
+          enable_pipeline: true
   - tag: ecs_us
     type: ecs_handler
     args:
-      forward: false # 是否转发来自下游的 ecs
-      preset: 1.1.1.1 # 发送预设 ecs
-      send: true # 是否发送 ecs
-      mask4: 24 # ipv4 掩码。默认 24
-      mask6: 48 # ipv6 掩码。默认 48  2001:b000:168::/48
+      forward: false
+      preset: 140.82.112.3
+      send: true
+      mask4: 24
+      mask6: 48
   - tag: main_sequence
     type: sequence
     args:
       - exec: prefer_ipv4
       - exec: $ecs_us
       - exec: $forward_clean
-  - args:
-      entry: main_sequence
-      listen: 127.0.0.1:55553
-    tag: udp_server
+  - tag: udp_server
     type: udp_server
-  - args:
+    args:
       entry: main_sequence
       listen: 127.0.0.1:55553
-    tag: tcp_server
+  - tag: tcp_server
     type: tcp_server
+    args:
+      entry: main_sequence
+      listen: 127.0.0.1:55553
