@@ -332,22 +332,6 @@
         "type": "github"
       }
     },
-    "localsend-discovery": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1690783259,
-        "narHash": "sha256-pPwE0HpUKmkFdYSUync+DwSktf5MBQe8aNPhKQXijD4=",
-        "owner": "hellodword",
-        "repo": "localsend-discovery",
-        "rev": "9ccd548aae059f0f9d3e6f836c83cc3b700a8b3a",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hellodword",
-        "repo": "localsend-discovery",
-        "type": "github"
-      }
-    },
     "lxgw-fusion-kai": {
       "flake": false,
       "locked": {
@@ -556,7 +540,6 @@
         "home-manager": "home-manager",
         "impermanence": "impermanence",
         "lanzaboote": "lanzaboote",
-        "localsend-discovery": "localsend-discovery",
         "lxgw-fusion-kai": "lxgw-fusion-kai",
         "nix-index-database": "nix-index-database",
         "nix-vscode-ext": "nix-vscode-ext",

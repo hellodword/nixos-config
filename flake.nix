@@ -67,11 +67,6 @@
       flake = false;
     };
 
-    localsend-discovery = {
-      url = "github:hellodword/localsend-discovery";
-      flake = false;
-    };
-
     lxgw-fusion-kai = {
       url = "github:lxgw/FusionKai";
       flake = false;

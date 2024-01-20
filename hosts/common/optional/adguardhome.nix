@@ -2,12 +2,15 @@
 
 
 let
-  # https://dns.iui.im/
-
   # udp:53
   # tcp:53
   # tcp:853 / DoT
   # udp:443 / DoH3
+
+  # ECS (Y=支持，N=不支持，P=部分服务器支持)
+  # - Google      Y
+  # - Cloudflare  N
+  # - Quard9      P   https://www.quad9.net/support/faq/#edns
 
   # 策略
   # bootstrap 直连国内 DoT
@@ -46,47 +49,48 @@ let
   ];
 
   DoT = [
-    # cloudflare
-    # x509: certificate is valid for 1.0.0.1, 1.1.1.1, 162.159.36.1, 162.159.46.1, 2606:4700:4700::1001, 2606:4700:4700::1111, 2606:4700:4700::64, 2606:4700:4700::6400
-    "1.0.0.1"
-    # "1.1.1.1"
-    "162.159.36.1"
-    "162.159.46.1"
+    # # cloudflare
+    # # timeout 3s openssl s_client -connect 1.0.0.1:443 2>/dev/null | openssl x509 -noout -text | grep -P 'DNS:|IP Address:'
+    # # x509: certificate is valid for 1.0.0.1, 1.1.1.1, 162.159.36.1, 162.159.46.1, 2606:4700:4700::1001, 2606:4700:4700::1111, 2606:4700:4700::64, 2606:4700:4700::6400
+    # "1.0.0.1"
+    # # "1.1.1.1"
+    # "162.159.36.1"
+    # "162.159.46.1"
   ];
 
   DoTProxy = [
-    # google
-    "8.8.4.4"
+    # # google
+    # "8.8.4.4"
 
-    # # quard9
-    # "9.9.9.10"
+    # # # quard9
+    # # "9.9.9.10"
 
-    # # opendns
-    # # "208.67.222.222"
+    # # # opendns
+    # # # "208.67.222.222"
 
-    # # adguardhome
-    # # h3://dns-unfiltered.adguard.com/dns-query
-    # "94.140.14.14"
-    # # "94.140.14.141"
-    # # "94.140.14.141"
+    # # # adguardhome
+    # # # h3://dns-unfiltered.adguard.com/dns-query
+    # # "94.140.14.14"
+    # # # "94.140.14.141"
+    # # # "94.140.14.141"
   ];
 
   DoT6 = [
-    # cloudflare
-    "2606:4700:4700:0:0:0:0:1001"
-    # "2606:4700:4700::1111"
-    "2606:4700:4700::64"
-    # "2606:4700:4700::6400"
+    # # cloudflare
+    # "2606:4700:4700:0:0:0:0:1001"
+    # # "2606:4700:4700::1111"
+    # "2606:4700:4700::64"
+    # # "2606:4700:4700::6400"
   ];
 
   DoT6Proxy = [
-    # google
-    "2001:4860:4860:0:0:0:0:8844"
-    # # quard9
-    # "2620:fe::9"
-    # # adguardhome
-    # "2a00:5a60::ad1:0ff"
-    # "2a00:5a60::ad2:0ff"
+    # # google
+    # "2001:4860:4860:0:0:0:0:8844"
+    # # # quard9
+    # # "2620:fe::9"
+    # # # adguardhome
+    # # "2a00:5a60::ad1:0ff"
+    # # "2a00:5a60::ad2:0ff"
   ];
 
   DoQ = [ ];
@@ -179,6 +183,7 @@ in
     iproute2
     q
     dogdns
+    mosdns
   ];
 
   services.resolved.enable = lib.mkForce false;
@@ -194,8 +199,34 @@ in
     package = lib.mkForce pkgs.openresolv;
   };
 
+  systemd.services."mosdns" = {
+    description = "mosdns: 一个 DNS 转发器 ";
+    after = [ "network.target" ];
+    wantedBy = [ "multi-user.target" ];
+    unitConfig = {
+      StartLimitIntervalSec = 5;
+      StartLimitBurst = 10;
+    };
+
+    serviceConfig = {
+      DynamicUser = true;
+      ExecStart = "${pkgs.mosdns}/bin/mosdns start --config ${./mosdns.yaml} --dir /var/lib/mosdns";
+      # AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ] ++ optionals cfg.allowDHCP [ "CAP_NET_RAW" ];
+      Restart = "always";
+      RestartSec = 10;
+      RuntimeDirectory = "mosdns";
+      StateDirectory = "mosdns";
+      LogDirectory = "mosdns";
+      # 直连
+      ExecStartPre = lib.optionals config.services.v2ray.enable [
+        "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || true'"
+      ];
+    };
+  };
+
   systemd.services = {
     "adguardhome" = {
+      after = [ "mosdns.service" ];
       serviceConfig = {
         # ipset
         AmbientCapabilities = [ "CAP_NET_ADMIN" ];
@@ -231,11 +262,11 @@ in
         # fix: cannot unmarshal !!seq into filtering.BlockedServices
         blocked_services = { };
 
-        edns_client_subnet = {
-          enabled = true;
-          use_custom = true;
-          custom_ip = "";
-        };
+        # edns_client_subnet = {
+        #   enabled = true;
+        #   use_custom = true;
+        #   custom_ip = "";
+        # };
 
         # v2ray UDP issue https://github.com/v2fly/v2ray-core/issues/68
         bind_hosts = [
@@ -246,20 +277,24 @@ in
           ++ (map (x: "tls://" + x) ChinaDoT)
           ++ (map (x: "tls://[" + x + "]") ChinaDoT6)
         ;
-        upstream_dns = [ ]
-          ++ (map (x: "tls://" + x) DoT)
-          ++ (map (x: "quic://" + x) DoQ)
-          ++ (map (x: "h3://" + x) DoH3)
-          ++ (map (x: "tls://[" + x + "]") DoT6)
-          ++ (map (x: "quic://[" + x + "]") DoQ6)
-          ++ (map (x: "h3://[" + x + "]") DoH36)
-          ++ (map (x: "tls://" + x) DoTProxy)
-          ++ (map (x: "tls://[" + x + "]") DoT6Proxy)
-          #   ++ [
-          #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
-          #   "h3://cloudflare-dns.com/dns-query"
-          # ]
-          ++ (
+        upstream_dns = [
+          # mosdns
+          "udp://127.0.0.1:55553"
+          "tcp://127.0.0.1:55553"
+        ]
+        ++ (map (x: "tls://" + x) DoT)
+        ++ (map (x: "quic://" + x) DoQ)
+        ++ (map (x: "h3://" + x) DoH3)
+        ++ (map (x: "tls://[" + x + "]") DoT6)
+        ++ (map (x: "quic://[" + x + "]") DoQ6)
+        ++ (map (x: "h3://[" + x + "]") DoH36)
+        ++ (map (x: "tls://" + x) DoTProxy)
+        ++ (map (x: "tls://[" + x + "]") DoT6Proxy)
+        #   ++ [
+        #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
+        #   "h3://cloudflare-dns.com/dns-query"
+        # ]
+        ++ (
           builtins.filter
             (x: builtins.typeOf x == "string" && x != "" && (builtins.substring 0 1 x) == "[")
             (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))

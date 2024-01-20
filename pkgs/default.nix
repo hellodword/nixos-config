@@ -3,7 +3,7 @@
 rec {
   rime-ice = pkgs.callPackage ./rime-ice { inherit inputs; };
   librime-lua = pkgs.callPackage ./librime-lua { };
-  localsend-discovery = pkgs.callPackage ./localsend-discovery { inherit inputs; };
+  localsend-discovery = pkgs.callPackage ./localsend-discovery { };
   eww-tray = pkgs.callPackage ./eww-tray { };
 
   # fonts
@@ -15,4 +15,6 @@ rec {
   fira-code-novf = pkgs.callPackage ./fira-code-novf { };
   harmonyos-sans = pkgs.callPackage ./harmonyos-sans { };
   lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { inherit inputs; };
+
+  mosdns = pkgs.callPackage ./mosdns { };
 }

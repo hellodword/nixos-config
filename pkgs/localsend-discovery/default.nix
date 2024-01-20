@@ -1,11 +1,19 @@
-{ lib, buildGoModule, makeWrapper, inputs, ... }:
+{ lib, buildGoModule, makeWrapper, fetchFromGitHub, ... }:
 
 buildGoModule rec {
   pname = "localsend-discovery";
-  version = "v0.0.0-${inputs."${pname}".lastModifiedDate}-${inputs."${pname}".shortRev}";
-  src = inputs."${pname}";
+  # go install -v github.com/hellodword/localsend-discovery@master
+  version = "v0.0.0-20230731060059-9ccd548aae05";
 
-  vendorSha256 = null;
+  src = fetchFromGitHub {
+    owner = "hellodword";
+    repo = pname;
+    rev = "9ccd548aae059f0f9d3e6f836c83cc3b700a8b3a";
+    # nix-prefetch-git https://github.com/hellodword/localsend-discovery
+    hash = "sha256-pPwE0HpUKmkFdYSUync+DwSktf5MBQe8aNPhKQXijD4=";
+  };
+
+  vendorHash = null;
 
   ldflags = [ "-s" "-w" "-buildid=" ];
 
