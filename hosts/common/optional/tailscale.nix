@@ -39,6 +39,7 @@
   };
 
   systemd.services.tailscaled = {
+    after = lib.optionals config.services.v2ray.enable [ "v2ray.service" ];
     serviceConfig = {
       AmbientCapabilities = [ "CAP_NET_ADMIN" ];
       DynamicUser = true;
