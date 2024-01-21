@@ -9,7 +9,11 @@
     enable = true;
     package = pkgs.tailscale;
     authKeyFile = config.sops.secrets."tailscale-auth-key".path;
-    # extraUpFlags = [ ];
+    extraUpFlags = [
+      # https://tailscale.com/kb/1072/client-preferences#in-the-cli
+      # block incoming connections
+      "--shields-up"
+    ];
     interfaceName = "tailscale";
     openFirewall = false;
     # permitCertUid = null;
