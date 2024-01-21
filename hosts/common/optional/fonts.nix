@@ -18,7 +18,7 @@
           "JetBrainsMono"
           # "RobotoMono"
           # "FiraCode"
-          # "Noto"
+          "Noto"
           # "FiraMono"
           # "Terminus"
           # "Ubuntu"
@@ -46,10 +46,10 @@
       # liberation_ttf
 
       noto-fonts
-      # noto-fonts-cjk-sans
-      # noto-fonts-cjk-serif
-      noto-fonts-cjk-novf.sans
-      noto-fonts-cjk-novf.serif
+      noto-fonts-cjk-sans
+      noto-fonts-cjk-serif
+      # noto-fonts-cjk-novf.sans
+      # noto-fonts-cjk-novf.serif
 
       noto-fonts-emoji
       noto-fonts-emoji-blob-bin
@@ -142,13 +142,16 @@
           "Jigmo2"
           "Jigmo3"
         ];
+        emoji = [
+          "Noto Color Emoji"
+        ];
       in
       {
         defaultFonts = {
-          serif = [ "Noto Serif" "LXGW Neo XiHei" "Noto Color Emoji" "Symbols Nerd Font" ] ++ jigmo;
-          sansSerif = [ "Noto Sans" "LXGW WenKai" "Noto Color Emoji" "Symbols Nerd Font" ] ++ jigmo;
-          monospace = [ "Noto Sans Mono" "LXGW WenKai" "Noto Color Emoji" "Symbols Nerd Font Mono" ] ++ jigmo;
-          emoji = [ "Noto Color Emoji" ];
+          serif = [ "NotoSerif Nerd Font" ] ++ emoji ++ [ "LXGW Neo XiHei" ] ++ jigmo;
+          sansSerif = [ "NotoSans Nerd Font" ] ++ emoji ++ [ "LXGW WenKai" ] ++ jigmo;
+          monospace = [ "NotoMono Nerd Font" ] ++ emoji ++ [ "LXGW WenKai" ] ++ jigmo;
+          emoji = emoji;
         };
       };
   };

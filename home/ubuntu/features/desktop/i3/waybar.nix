@@ -283,7 +283,7 @@
     style = ''
       * {
           /* `otf-font-awesome` is required to be installed for icons */
-          font-family: monospace;
+          font-family: sans-serif;
           font-size: 13px;
       }
 
