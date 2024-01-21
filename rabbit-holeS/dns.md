@@ -78,12 +78,12 @@ function handle_ip() {
 
     ecs="N"
     if [ "$($kdig +$ecs_checker @$ip_final github.com +subnet=1.1.1.0/24 2>/dev/null | grep 'CLIENT-SUBNET: 1.1.1.0/24' | wc -l)" -ne "0" ]; then
-        if [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=140.82.112.3/32 +short 2>/dev/null | head -1)" =~ ^140.82.* ]] && \
-           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=20.27.177.113/32 +short 2>/dev/null | head -1)" =~ ^20.27.* ]] && \
-           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=140.82.112.3/32 +short 2>/dev/null | head -1)" =~ ^140.82.* ]] && \
-           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=20.27.177.113/32 +short 2>/dev/null | head -1)" =~ ^20.27.* ]] && \
-           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=140.82.112.3/32 +short 2>/dev/null | head -1)" =~ ^140.82.* ]] && \
-           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=20.27.177.113/32 +short 2>/dev/null | head -1)" =~ ^20.27.* ]]; then
+        if [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=140.82.112.3/24 +short 2>/dev/null | head -1)" =~ ^140.82.* ]] && \
+           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=20.27.177.113/24 +short 2>/dev/null | head -1)" =~ ^20.27.* ]] && \
+           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=140.82.112.3/24 +short 2>/dev/null | head -1)" =~ ^140.82.* ]] && \
+           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=20.27.177.113/24 +short 2>/dev/null | head -1)" =~ ^20.27.* ]] && \
+           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=140.82.112.3/24 +short 2>/dev/null | head -1)" =~ ^140.82.* ]] && \
+           [[ "$($kdig +$ecs_checker @$ip_final github.com +subnet=20.27.177.113/24 +short 2>/dev/null | head -1)" =~ ^20.27.* ]]; then
             ecs="Y"
         fi
     fi

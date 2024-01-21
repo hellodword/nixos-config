@@ -279,6 +279,7 @@ in
           ++ (map (x: "tls://" + x) ChinaDoT)
           ++ (map (x: "tls://[" + x + "]") ChinaDoT6)
         ;
+        upstream_mode = "parallel";
         upstream_dns = [
           # mosdns
           "udp://127.0.0.1:55553"

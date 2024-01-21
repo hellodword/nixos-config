@@ -10,9 +10,11 @@
 - hardwares
 - username / uid / group
 - networking
+  - v2ray
+  - kill-switch
   - dhcp
   - ipv6
   - dns adguardhome
-  - v2ray / ovpn / wireguard / tailscale
+  - ovpn / wireguard / tailscale
 - headless / X / Wayland
 - hm
