@@ -1,3 +1,5 @@
+{ persistPath, ... }:
+
 {
   # https://lantian.pub/article/modify-computer/nixos-impermanence.lantian/#%E7%A7%BB%E5%8A%A8-nix-daemon-%E7%9A%84%E4%B8%B4%E6%97%B6%E6%96%87%E4%BB%B6%E5%A4%B9
   boot.tmp.useTmpfs = true;
@@ -20,4 +22,10 @@
   system.activationScripts.clean-tmpdir.text = ''
     rm -rf /var/cache/nix/*
   '';
+
+  environment.persistence = {
+    "${persistPath}".directories = [
+      "/var/cache/nix"
+    ];
+  };
 }
