@@ -24,7 +24,7 @@
           # "Ubuntu"
           # "UbuntuMono"
           # "Iosevka"
-          # "NerdFontsSymbolsOnly"
+          "NerdFontsSymbolsOnly"
         ];
       })
 
@@ -145,9 +145,9 @@
       in
       {
         defaultFonts = {
-          serif = [ "Noto Serif" "LXGW Neo XiHei" "Noto Color Emoji" ] ++ jigmo;
-          sansSerif = [ "Noto Sans" "LXGW WenKai" "Noto Color Emoji" ] ++ jigmo;
-          monospace = [ "Noto Sans Mono" "LXGW WenKai" "Noto Color Emoji" ] ++ jigmo;
+          serif = [ "Noto Serif" "LXGW Neo XiHei" "Noto Color Emoji" "Symbols Nerd Font" ] ++ jigmo;
+          sansSerif = [ "Noto Sans" "LXGW WenKai" "Noto Color Emoji" "Symbols Nerd Font" ] ++ jigmo;
+          monospace = [ "Noto Sans Mono" "LXGW WenKai" "Noto Color Emoji" "Symbols Nerd Font Mono" ] ++ jigmo;
           emoji = [ "Noto Color Emoji" ];
         };
       };
