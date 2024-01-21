@@ -32,14 +32,14 @@ plugins:
         # 8.8.8.8 更可能被墙，dns.google 的所有 DoH 一般也被墙
         - addr: tls://8.8.4.4
           enable_pipeline: true
-        - addr: tls://2001:4860:4860:0:0:0:0:8844
-          enable_pipeline: true
-        - addr: tls://2001:4860:4860:0:0:0:0:6464
-          enable_pipeline: true
-        - addr: tls://2001:4860:4860:0:0:0:0:8888
-          enable_pipeline: true
-        - addr: tls://2001:4860:4860:0:0:0:0:64
-          enable_pipeline: true
+        # - addr: tls://2001:4860:4860:0:0:0:0:8844
+        #   enable_pipeline: true
+        # - addr: tls://2001:4860:4860:0:0:0:0:6464
+        #   enable_pipeline: true
+        # - addr: tls://2001:4860:4860:0:0:0:0:8888
+        #   enable_pipeline: true
+        # - addr: tls://2001:4860:4860:0:0:0:0:64
+        #   enable_pipeline: true
         # Quard9
         # - addr: https://9.9.9.12
         # - addr: https://149.112.112.12
@@ -51,18 +51,18 @@ plugins:
           enable_pipeline: true
         - addr: tls://9.9.9.12
           enable_pipeline: true
-        - addr: tls://149.112.112.11
-          enable_pipeline: true
-        - addr: tls://149.112.112.12
-          enable_pipeline: true
-        - addr: tls://2620:fe::11
-          enable_pipeline: true
-        - addr: tls://2620:fe::12
-          enable_pipeline: true
-        - addr: tls://2620:fe::fe:11
-          enable_pipeline: true
-        - addr: tls://2620:fe::fe:12
-          enable_pipeline: true
+        # - addr: tls://149.112.112.11
+        #   enable_pipeline: true
+        # - addr: tls://149.112.112.12
+        #   enable_pipeline: true
+        # - addr: tls://2620:fe::11
+        #   enable_pipeline: true
+        # - addr: tls://2620:fe::12
+        #   enable_pipeline: true
+        # - addr: tls://2620:fe::fe:11
+        #   enable_pipeline: true
+        # - addr: tls://2620:fe::fe:12
+        #   enable_pipeline: true
   - tag: ecs_us
     type: ecs_handler
     args:
