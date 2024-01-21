@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, lib, nixosConfig, ... }:
 
 {
   # xdg.configFile."waybar" = {
@@ -19,7 +19,7 @@
 
         # "layer"="top", // Waybar at top layer
         # "position"="bottom", // Waybar position (top|bottom|left|right)
-        # "height"=30, // Waybar height (to be removed for auto height)
+        "height" = 24; # // Waybar height (to be removed for auto height)
         # "width"=1280, // Waybar width
         "spacing" = 4; # // Gaps between modules (4px)
         # Choose the order of the modules
@@ -27,26 +27,31 @@
           "sway/workspaces"
           "sway/mode"
           "sway/scratchpad"
-          "custom/media"
+          # "custom/media"
         ];
         "modules-center" = [
           "sway/window"
         ];
         "modules-right" = [
-          "mpd"
+          "systemd-failed-units"
+          # "mpd"
           "idle_inhibitor"
           "pulseaudio"
-          "wireless"
-          "network"
+          "network#ethernet"
+          "network#wireless"
+          "network#wgcf"
+          "network#goose"
+          "network#fastest"
           "cpu"
           "memory"
           "temperature"
           "backlight"
-          "keyboard-state"
-          "sway/language"
+          # // "keyboard-state",// https://www.reddit.com/r/linuxquestions/comments/bh4ex1/is_adding_a_user_to_input_group_secure/
+          # // "sway/language",
           "battery"
           "battery#bat2"
           "clock"
+          "clock#china"
           "tray"
         ];
         # Modules configuration
@@ -66,6 +71,13 @@
         #         "default"=""
         #     }
         # },
+        "systemd-failed-units" = {
+          "hide-on-ok" = false; # // Do not hide if there is zero failed units.
+          "format" = "✗ {nr_failed}";
+          "format-ok" = "✓";
+          "system" = true; # // Monitor failed systemwide units.
+          "user" = false; # // Ignore failed user units.
+        };
         "keyboard-state" = {
           "numlock" = true;
           "capslock" = true;
@@ -126,9 +138,14 @@
           "spacing" = 10;
         };
         "clock" = {
-          # "timezone"="America/New_York",
+          "timezone" = nixosConfig.time.timeZone;
           "tooltip-format" = "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>";
-          "format-alt" = "{:%Y-%m-%d}";
+          "format" = "{:%Y-%m-%d %H:%M:%S}";
+        };
+        "clock#china" = {
+          "timezone" = "Asia/Shanghai";
+          "format" = "🇨🇳 {:%H:%M}";
+          "tooltip-format" = "{:%Y-%m-%d}";
         };
         "cpu" = {
           "format" = "{usage}% ";
@@ -167,8 +184,8 @@
         "battery" = {
           "states" = {
             # "good"=95,
-            "warning" = 30;
-            "critical" = 15;
+            "warning" = 60;
+            "critical" = 40;
           };
           "format" = "{capacity}% {icon}";
           "format-charging" = "{capacity}% ";
@@ -187,15 +204,42 @@
         "battery#bat2" = {
           "bat" = "BAT2";
         };
-        "network" = {
-          # "interface"="wlp2*", // (Optional) To force the use of this interface
-          "format-wifi" = "{essid} ({signalStrength}%) ";
-          "format-ethernet" = "{ipaddr}/{cidr} ";
-          "tooltip-format" = "{ifname} via {gwaddr} ";
-          "format-linked" = "{ifname} (No IP) ";
-          "format-disconnected" = "Disconnected ⚠";
-          # "format-alt"="{ifname}: {ipaddr}/{cidr}",
-          "on-click" = "${pkgs.wpa_supplicant_gui}/bin/wpa_gui";
+        "network#ethernet" = {
+          "interface" = "enp*";
+          "format-ethernet" = "{ifname} 🖧";
+          "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
+          "format-linked" = "{ifname} (No IP) 🖧";
+          # // "format-alt": "{ifname}: {ipaddr}/{cidr}";
+          "format-disconnected" = "{ifname} 🖧";
+        };
+        "network#wireless" = {
+          "interface" = "wlp*";
+          "format-wifi" = "({signalStrength}%) ";
+          "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} {essid} ";
+          "format-linked" = "{ifname} (No IP) ";
+          "format-disconnected" = "{ifname} ";
+          "on-click" = "pidof wpa_gui || ${pkgs.wpa_supplicant_gui}/bin/wpa_gui";
+        };
+        "network#wgcf" = {
+          "interface" = "wgcf*";
+          "format-ethernet" = "{ifname}";
+          "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
+          "format-linked" = "{ifname} (No IP)";
+          "format-disconnected" = "{ifname}";
+        };
+        "network#goose" = {
+          "interface" = "goose*";
+          "format-ethernet" = "{ifname}";
+          "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
+          "format-linked" = "{ifname} (No IP)";
+          "format-disconnected" = "{ifname}";
+        };
+        "network#fastest" = {
+          "interface" = "fastest*";
+          "format-ethernet" = "{ifname}";
+          "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
+          "format-linked" = "{ifname} (No IP)";
+          "format-disconnected" = "{ifname}";
         };
         "pulseaudio" = {
           # "scroll-step"=1, // %, can be a float
@@ -218,7 +262,7 @@
               ""
             ];
           };
-          "on-click" = "pavucontrol";
+          "on-click" = "${lib.getExe pkgs.pavucontrol}";
         };
         "custom/media" = {
           "format" = "{icon} {}";
@@ -239,7 +283,7 @@
     style = ''
       * {
           /* `otf-font-awesome` is required to be installed for icons */
-          font-family: JetBrainsMono Nerd Font;
+          font-family: monospace;
           font-size: 13px;
       }
 
