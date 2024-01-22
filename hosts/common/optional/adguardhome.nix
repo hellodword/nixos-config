@@ -58,6 +58,11 @@ let
     # "162.159.46.1"
   ];
 
+  PlainProxy = [
+    # "1.1.1.1"
+    "8.8.8.8"
+  ];
+
   DoTProxy = [
     "1.1.1.1"
 
@@ -280,33 +285,34 @@ in
           ++ (map (x: "tls://[" + x + "]") ChinaDoT6)
         ;
         upstream_mode = "parallel";
-        upstream_dns = [
+        upstream_dns = [ ]
+          ++ (map (x: "tls://" + x) DoT)
+          ++ (map (x: "quic://" + x) DoQ)
+          ++ (map (x: "h3://" + x) DoH3)
+          ++ (map (x: "tls://[" + x + "]") DoT6)
+          ++ (map (x: "quic://[" + x + "]") DoQ6)
+          ++ (map (x: "h3://[" + x + "]") DoH36)
+          ++ PlainProxy
+          ++ (map (x: "tls://" + x) DoTProxy)
+          ++ (map (x: "tls://[" + x + "]") DoT6Proxy)
+          ++ [
           # mosdns
-          "udp://127.0.0.1:55553"
-          "tcp://127.0.0.1:55553"
+          "127.0.0.1:55553"
         ]
-        ++ (map (x: "tls://" + x) DoT)
-        ++ (map (x: "quic://" + x) DoQ)
-        ++ (map (x: "h3://" + x) DoH3)
-        ++ (map (x: "tls://[" + x + "]") DoT6)
-        ++ (map (x: "quic://[" + x + "]") DoQ6)
-        ++ (map (x: "h3://[" + x + "]") DoH36)
-        ++ (map (x: "tls://" + x) DoTProxy)
-        ++ (map (x: "tls://[" + x + "]") DoT6Proxy)
-        #   ++ [
-        #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
-        #   "h3://cloudflare-dns.com/dns-query"
-        # ]
-        ++ (
+          #   ++ [
+          #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
+          #   "h3://cloudflare-dns.com/dns-query"
+          # ]
+          ++ (
           builtins.filter
             (x: builtins.typeOf x == "string" && x != "" && (builtins.substring 0 1 x) == "[")
             (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
         );
         # upstream_dns_file = "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt";
-        rewrites = [
-          { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
-          { domain = "chat.openai.com"; answer = "2606:4700::6812:7b9"; }
-        ];
+        # rewrites = [
+        #   { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
+        #   { domain = "chat.openai.com"; answer = "2606:4700::6812:7b9"; }
+        # ];
         # 
         ipset = [ ]
           ++ lib.optionals (builtins.hasAttr "wgcf" config.networking.wg-quick.interfaces)
