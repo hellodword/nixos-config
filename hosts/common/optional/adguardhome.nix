@@ -1,4 +1,4 @@
-{ lib, inputs, config, pkgs, ... }:
+{ lib, inputs, config, pkgs, persistPath, ... }:
 
 
 let
@@ -179,6 +179,21 @@ let
       ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
     '';
   };
+
+  pr247828 = pkgs.writeShellApplication {
+    name = "pr247828-fix";
+    runtimeInputs = with pkgs; [ ipset iptables ];
+    text = ''
+      set -e
+      set -x
+
+      cat ${./AdGuardHome.yaml} > "$STATE_DIRECTORY/AdGuardHome.yaml"
+      # echo "  upstream_dns_file: \"${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt\"" >> "$STATE_DIRECTORY/AdGuardHome.yaml"
+      echo "  upstream_dns:" >> "$STATE_DIRECTORY/AdGuardHome.yaml"
+      set +x
+      echo '${lib.concatStringsSep "\n" (map (x: "    - \"${x}\"") config.services.adguardhome2.settings.dns.upstream_dns)}' >> "$STATE_DIRECTORY/AdGuardHome.yaml"
+    '';
+  };
 in
 {
 
@@ -233,35 +248,60 @@ in
 
   systemd.services = {
     "adguardhome" = {
-      after = [ "mosdns.service" ];
-      serviceConfig = {
-        # ipset
-        AmbientCapabilities = [ "CAP_NET_ADMIN" ];
-        ExecStartPre = [
-          # 直连
-          "+${upBypass}/bin/up"
-          "+${upBypass6}/bin/up"
-        ];
+      description = "AdGuard Home: Network-level blocker";
+      after = [ "network.target" "mosdns.service" ];
+      wantedBy = [ "multi-user.target" ];
+      unitConfig = {
+        StartLimitIntervalSec = 5;
+        StartLimitBurst = 10;
       };
+
+
+      serviceConfig =
+        let
+          myArgs = lib.concatStringsSep " " ([
+            "--no-check-update"
+            "--pidfile /run/AdGuardHome/AdGuardHome.pid"
+            "--work-dir /var/lib/AdGuardHome/"
+            "--config /var/lib/AdGuardHome/AdGuardHome.yaml"
+          ] ++ config.services.adguardhome2.extraArgs);
+        in
+        {
+          DynamicUser = true;
+          ExecStart = "${pkgs.adguardhome2}/bin/adguardhome ${myArgs}";
+          AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" "CAP_NET_ADMIN" "CAP_NET_RAW" ];
+          Restart = "always";
+          RestartSec = 10;
+          RuntimeDirectory = "AdGuardHome";
+          StateDirectory = "AdGuardHome";
+
+          ExecStartPre = [
+            "${pr247828}/bin/pr247828-fix"
+            # 直连
+            "+${upBypass}/bin/up"
+            "+${upBypass6}/bin/up"
+          ];
+        };
     };
   };
 
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
-  services.adguardhome = {
-    enable = true;
+  services.adguardhome2 = {
+    enable = false;
+    package = pkgs.adguardhome2;
     extraArgs = [ ];
-    mutableSettings = true;
+    mutableSettings = false;
     openFirewall = false;
+    host = "127.0.0.1";
+    port = 33380;
     settings = {
-      bind_host = "127.0.0.1";
-      bind_port = 33380;
       # fix
       http = {
         address = "127.0.0.1:33380";
         session_ttl = "719h";
       };
 
-      schema_version = pkgs.adguardhome.schema_version;
+      # schema_version = pkgs.adguardhome.schema_version;
       users = [
         inputs.nixos-privates.adguardhome.user
       ];
@@ -284,7 +324,7 @@ in
           ++ (map (x: "tls://" + x) ChinaDoT)
           ++ (map (x: "tls://[" + x + "]") ChinaDoT6)
         ;
-        upstream_mode = "parallel";
+        # upstream_mode = "parallel";
         upstream_dns = [ ]
           ++ (map (x: "tls://" + x) DoT)
           ++ (map (x: "quic://" + x) DoQ)
@@ -299,10 +339,10 @@ in
           # mosdns
           "127.0.0.1:55553"
         ]
-          #   ++ [
-          #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
-          #   "h3://cloudflare-dns.com/dns-query"
-          # ]
+          #   #   ++ [
+          #   #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
+          #   #   "h3://cloudflare-dns.com/dns-query"
+          #   # ]
           ++ (
           builtins.filter
             (x: builtins.typeOf x == "string" && x != "" && (builtins.substring 0 1 x) == "[")
@@ -333,5 +373,16 @@ in
 
       };
     };
+  };
+
+  environment.persistence = {
+    "${persistPath}".directories = [
+      {
+        directory = "/var/lib/private/AdGuardHome";
+        user = "adguardhome";
+        group = "adguardhome";
+        mode = "0755";
+      }
+    ];
   };
 }

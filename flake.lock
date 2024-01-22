@@ -632,11 +632,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1705800754,
-        "narHash": "sha256-+zqvvKSREm1AD4WDNV0SodmgoAl5bnHTFzCnIiBg0Yk=",
+        "lastModified": 1705932095,
+        "narHash": "sha256-TmuNQmtEw34i45S6I5faYBb/jJluooDaw1YChPpMcNE=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "4cfb9c7f5aabbafdb37a0936d83112c3154f92c2",
+        "rev": "a1b179fd4818907166f146a89b4fb8ebebc41668",
         "type": "github"
       },
       "original": {
