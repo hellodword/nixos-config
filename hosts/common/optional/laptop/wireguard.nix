@@ -29,6 +29,8 @@
         config.services.v2ray.enable
         {
           v2ray.serviceConfig.ExecStartPre = lib.mkAfter [
+            # v2ray 直接的 ipv6 请求只是隧道
+            "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/ip6tables -t mangle -C POSTROUTING -m owner --uid-owner v2ray -j MARK --set-mark 41820 || ${pkgs.iptables}/bin/ip6tables -t mangle -I POSTROUTING -m owner --uid-owner v2ray -j MARK --set-mark 41820 || true'"
             "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY -m set --match-set wgcf dst -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY -m set --match-set wgcf dst -j RETURN || true'"
             "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m set --match-set wgcf dst -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m set --match-set wgcf dst -j RETURN || true'"
           ];

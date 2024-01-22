@@ -215,10 +215,10 @@ in
       "domainMatcher" = "mph";
       "balancers" = [
         {
-          "tag" = "balancer-default";
+          "tag" = "balancer-proxy";
           "fallbackTag" = "special:block";
           "selector" = [
-            "proxy:us:"
+            "proxy:"
           ];
           # "observerTag" = "observe-default";
           "strategy" = {
@@ -232,6 +232,16 @@ in
             #   "maxRTT" = "700ms";
             #   "tolerance" = 0.5;
             # };
+          };
+        }
+        {
+          "tag" = "balancer-hideme";
+          "fallbackTag" = "special:block";
+          "selector" = [
+            "hideme:"
+          ];
+          "strategy" = {
+            "type" = "leastping";
           };
         }
       ];
@@ -279,7 +289,7 @@ in
             "in-http"
             "in-tproxy"
           ];
-          "balancerTag" = "balancer-default";
+          "balancerTag" = "balancer-proxy";
         }
       ];
     };
@@ -289,6 +299,7 @@ in
       "tag" = "observe-default";
       "subjectSelector" = [
         "proxy:"
+        "hideme:"
       ];
       "pingConfig" = {
         "destination" = "http://www.google.com/gen_204";
