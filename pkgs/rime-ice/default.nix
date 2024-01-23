@@ -10,6 +10,8 @@ stdenvNoCC.mkDerivation rec {
   installPhase = ''
     mkdir -p $out/share/rime-data
     cp -r * $out/share/rime-data/
+    # https://github.com/iDvel/rime-ice/issues/634
+    sed -i 's/- Control+grave/# - Control+grave/' $out/share/rime-data/default.yaml
   '';
 
   meta = with lib; {
