@@ -359,18 +359,19 @@ in
         ipset = [ ]
           ++ lib.optionals (builtins.hasAttr "wgcf" config.networking.wg-quick.interfaces)
           [
-            "${lib.concatStringsSep ","
-            [
-              "imgur.com"
-              "*.imgur.com"
-              "imgur.io"
-              "*.imgur.io"
+            # # do this with v2ray
+            # "${lib.concatStringsSep ","
+            # [
+            #   "imgur.com"
+            #   "*.imgur.com"
+            #   "imgur.io"
+            #   "*.imgur.io"
 
-              "openai.com"
-              "*.openai.com"
-              "challenges.cloudflare.com"
+            #   "openai.com"
+            #   "*.openai.com"
+            #   "challenges.cloudflare.com"
 
-            ]}/wgcf,wgcf6"
+            # ]}/wgcf,wgcf6"
           ];
 
       };
