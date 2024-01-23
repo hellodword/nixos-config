@@ -1,5 +1,9 @@
 # UDP: https://github.com/v2fly/v2ray-core/issues/68
 
+# https://github.com/Loyalsoldier/v2ray-rules-dat/issues/146#issuecomment-940664130
+# geoip 类别： https://github.com/Loyalsoldier/v2ray-rules-dat/issues/146#issuecomment-940664130
+# geosite 类别： https://github.com/v2fly/domain-list-community/tree/master/data
+
 { lib, config, pkgs, persistPath, inputs, ... }:
 
 let
@@ -277,11 +281,56 @@ in
             "in-tproxy"
           ];
           "domain" = [
-            "geosite:private"
-            "geosite:cn"
+            "223.5.5.5/32"
+            "119.29.29.29/32"
+            "180.76.76.76/32"
+            "114.114.114.114/32"
+            "ext:cn.dat:cn"
+            "ext:private.dat:private"
+            "ext:geoip-only-cn-private.dat:cn"
+            "ext:geoip-only-cn-private.dat:private"
           ];
           "outboundTag" = "special:direct";
         }
+        {
+          "type" = "field";
+          "inboundTag" = [
+            "in-tproxy"
+          ];
+          "domain" = [
+            "geosite:protonmail"
+            "geosite:telegram"
+            "geosite:imgur"
+            "geosite:paypal"
+            "geosite:pixiv"
+            "geosite:category-cryptocurrency"
+            "geosite:category-novel"
+            "geosite:category-porn"
+            "domain:cloudflare.com"
+            "domain:openai.com"
+            "domain:reddit.com"
+            "domain:redd.it"
+            "domain:redditmedia.com"
+            "domain:redditstatic.com"
+          ];
+          "outboundTag" = "balancer-hideme";
+        }
+        # {
+        #   "type" = "field";
+        #   "inboundTag" = [
+        #     "in-tproxy"
+        #   ];
+        #   "ip" = [
+        #     "geoip:telegram"
+        #     "geoip:cloudflare"
+        #     "geoip:fastly"
+        #     "geoip:cloudfront"
+        #     "geoip:facebook"
+        #     "geoip:netflix"
+        #     "geoip:twitter"
+        #   ];
+        #   "outboundTag" = "balancer-hideme";
+        # }
         {
           "type" = "field";
           "inboundTag" = [
@@ -347,8 +396,7 @@ in
       let
         assets = pkgs.symlinkJoin {
           name = "v2ray-assets";
-          # TODO use Loyalsoldier/geoip
-          paths = with pkgs; [ v2ray-geoip v2ray-domain-list-community ];
+          paths = with pkgs; [ loyalsoldier-v2ray-rules-dat ];
         };
       in
       {

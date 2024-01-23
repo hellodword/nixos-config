@@ -91,6 +91,11 @@
       url = "github:catppuccin/fcitx5/ce244cfdf43a648d984719fdfd1d60aab09f5c97";
       flake = false;
     };
+
+    loyalsoldier-v2ray-rules-dat = {
+      url = "github:Loyalsoldier/v2ray-rules-dat/release";
+      flake = false;
+    };
   };
 
   outputs =
