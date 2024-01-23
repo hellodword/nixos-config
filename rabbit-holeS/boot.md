@@ -1,5 +1,0 @@
-# boot
-
-## grub
-
-## secureboot

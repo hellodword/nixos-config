@@ -61,7 +61,7 @@
     ../../../common/optional/qt.nix
     ../../../common/optional/touchpad.nix
     ../../../common/optional/thermald.nix
-    ../../../common/optional/fwupd.nix
+    # ../../../common/optional/fwupd.nix
   ];
 
   environment.etc =

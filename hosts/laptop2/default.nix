@@ -14,7 +14,7 @@
 
   networking.hostName = "laptop2";
 
-  boot.kernelPackages = pkgs.linuxPackages_6_6;
+  boot.kernelPackages = pkgs.linuxPackages_6_6_hardened;
   boot.kernelModules = [
     # "lkrg"
   ];
