@@ -9,6 +9,7 @@
   ++
   [
     ../common/optional/laptop
+    ../common/optional/chromium-based-security-issue.nix
   ]
   ;
 
