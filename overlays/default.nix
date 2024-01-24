@@ -41,5 +41,24 @@ in
       # })
       ./sway-tray-d-bus-menu.patch
     ];
+
+    electron_27 = prev.electron_27.overrideAttrs (oldAttrs: {
+      buildCommand = prev.lib.replaceStrings
+        [ "CHROME_DEVEL_SANDBOX $out/libexec/electron/chrome-sandbox" ]
+        [ "CHROME_DEVEL_SANDBOX /run/wrappers/bin/__${prev.electron_27.pname}-${prev.lib.replaceStrings ["."] ["_"] prev.electron_27.version}-chrome-sandbox" ]
+        oldAttrs.buildCommand;
+    });
+
+    vscode = prev.vscode.overrideAttrs (oldAttrs: {
+      installPhase = prev.lib.replaceStrings
+        [ "runHook postInstall" ]
+        [
+          (prev.lib.concatStringsSep "\n" [
+            "sed -i \"/ELECTRON=/iVSCODE_PATH='/usr/local/etc/dirty-chrome-sandbox/__${prev.vscode.pname}/lib/vscode'\" \"$out/bin/${prev.vscode.executableName}\""
+            "runHook postInstall"
+          ])
+        ]
+        oldAttrs.installPhase;
+    });
   };
 }
