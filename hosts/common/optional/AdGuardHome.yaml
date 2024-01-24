@@ -155,8 +155,8 @@ dns:
     use_custom: false
   max_goroutines: 300
   handle_ddr: true
-  ipset:
-    - imgur.com,*.imgur.com,imgur.io,*.imgur.io,openai.com,*.openai.com,challenges.cloudflare.com/wgcf,wgcf6
+  # ipset:
+  #   - imgur.com,*.imgur.com,imgur.io,*.imgur.io,openai.com,*.openai.com,challenges.cloudflare.com/wgcf,wgcf6
   ipset_file: ""
   bootstrap_prefer_ipv6: false
   upstream_timeout: 10s

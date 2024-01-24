@@ -7,6 +7,14 @@ in
   # never do this, FIX IN THE FUTURE
   boot.kernel.sysctl."kernel.unprivileged_userns_clone" = 1;
 
+  # https://ubuntu.com/blog/ubuntu-23-10-restricted-unprivileged-user-namespaces
+  # > In a report from Google, 44% of the exploits they saw required unprivileged user namespaces as part of their exploit chain.
+  # https://security.stackexchange.com/a/209533
+  # https://lwn.net/Articles/673597/
+  # https://github.com/input-output-hk/daedalus/issues/2025
+  # https://github.com/canonical/lxd/issues/11920
+  # https://github.com/brave/brave-browser/issues/3420#issuecomment-567222855
+
   # # https://web.archive.org/web/20200724202300/https://forum.mxlinux.org/viewtopic.php?t=54591
 
   # # chromium： 在 chromiumSuidSandbox.enable 后主要是修改一下权限为 755
