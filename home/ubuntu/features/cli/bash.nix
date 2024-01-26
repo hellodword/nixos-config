@@ -43,6 +43,8 @@
       "sha3-256sum" = "openssl dgst -sha3-256";
       "sha3-384sum" = "openssl dgst -sha3-384";
       "sha3-512sum" = "openssl dgst -sha3-512";
+
+      "rp" = "rp() { realpath \"\$(which \"\$1\")\" ;}; rp";
     };
     shellOptions = [
       "histappend"

@@ -13,9 +13,10 @@
     # theme = "Catppuccin-Macchiato";
     settings = {
       # term = "xterm-256color";
-      tab_fade = "1 1 1";
-      tab_title_template =
-        "{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.tab}{index}:{title}";
+      # 似乎让 tab 变卡
+      # tab_fade = "1 1 1";
+      # tab_title_template =
+      #   "{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.tab}{index}:{title}";
     };
     extraConfig = ''
       # https://stackoverflow.com/a/1366113
