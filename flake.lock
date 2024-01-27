@@ -633,17 +633,17 @@
     "thunderbird-userjs": {
       "flake": false,
       "locked": {
-        "lastModified": 1689441186,
-        "narHash": "sha256-Y6JlmiRM1lj7c9NDQOSAjadLb4I1r+IYyhk+RNuAPvA=",
+        "lastModified": 1700316150,
+        "narHash": "sha256-yf5oXzqrFFkQj06rEpBgWbT0qhUHSSCOWgfq+K/Setg=",
         "owner": "HorlogeSkynet",
         "repo": "thunderbird-user.js",
-        "rev": "ac8a715b067749c9a7845d2fe862764f34bef20f",
+        "rev": "d6b18302e46349d9924c8a76951bae6efca51501",
         "type": "github"
       },
       "original": {
         "owner": "HorlogeSkynet",
         "repo": "thunderbird-user.js",
-        "rev": "ac8a715b067749c9a7845d2fe862764f34bef20f",
+        "rev": "d6b18302e46349d9924c8a76951bae6efca51501",
         "type": "github"
       }
     },

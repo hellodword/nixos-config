@@ -31,7 +31,7 @@
       flake = false;
     };
     thunderbird-userjs = {
-      url = "github:HorlogeSkynet/thunderbird-user.js/ac8a715b067749c9a7845d2fe862764f34bef20f";
+      url = "github:HorlogeSkynet/thunderbird-user.js/d6b18302e46349d9924c8a76951bae6efca51501";
       flake = false;
     };
 
