@@ -183,6 +183,16 @@ rm -rf /tmp/gpg2ssh
 chmod 600 alice.ssh
 ssh-keygen -f alice.ssh -p
 
+
+# 续期
+gpg --list-keys
+# 注意 expire 信息
+gpg --edit-key alice
+# gpg> key 1
+# gpg> expire
+# gpg>  1y
+# gpg> save
+
 ```
 
 ## known issues

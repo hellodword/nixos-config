@@ -218,7 +218,7 @@
           "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} {essid} ";
           "format-linked" = "{ifname} (No IP) ";
           "format-disconnected" = "{ifname} ";
-          "on-click" = "pidof wpa_gui || ${pkgs.wpa_supplicant_gui}/bin/wpa_gui";
+          "on-click-middle" = "pidof wpa_gui || ${pkgs.wpa_supplicant_gui}/bin/wpa_gui";
         };
         "network#wgcf" = {
           "interface" = "wgcf*";
@@ -262,7 +262,7 @@
               ""
             ];
           };
-          "on-click" = "${lib.getExe pkgs.pavucontrol}";
+          "on-click-middle" = "${lib.getExe pkgs.pavucontrol}";
         };
         "custom/media" = {
           "format" = "{icon} {}";
