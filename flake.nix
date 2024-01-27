@@ -14,7 +14,7 @@
     sops-nix.url = "github:Mic92/sops-nix/36b062a2c85a0efb37de1300c79c54602a094fab";
 
     lanzaboote = {
-      url = "github:nix-community/lanzaboote/e9003f12e63588736dde12acf95a4d0361b215e5";
+      url = "github:nix-community/lanzaboote/3c3f6d1b0f13a0e30d192838e233107182dec032";
 
       # Optional but recommended to limit the size of your system closure.
       inputs.nixpkgs.follows = "nixpkgs";
