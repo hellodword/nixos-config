@@ -650,11 +650,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1705973479,
-        "narHash": "sha256-YddPiT3xhLcu4AM9/h695s3Hx4yHDxPeOTdRH4wq7Fk=",
+        "lastModified": 1706326754,
+        "narHash": "sha256-Tic18AtaO3H4ya0C5D+cuP7h+DICLfXiyhYwVYX4Frc=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "224ceb6893b6d09cea96ef9ca29c225196f9df84",
+        "rev": "af6906282450ab307595d7705d24a2a4d2f7ab6a",
         "type": "github"
       },
       "original": {
