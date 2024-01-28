@@ -349,7 +349,13 @@ in
           builtins.filter
             (x: builtins.typeOf x == "string" && x != "" && (builtins.substring 0 1 x) == "[")
             (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
-        );
+        )
+          # 直连
+          ++ ([
+          ''[/${lib.concatStringsSep "/" [
+              "swcdn.apple.com"
+            ]}/]https://120.53.53.53:443/dns-query''
+        ]);
         # upstream_dns_file = "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt";
         # rewrites = [
         #   { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
