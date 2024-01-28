@@ -1,4 +1,4 @@
-{ lib, pkgs, ... }:
+{ lib, pkgs, persistPath, userName, ... }:
 
 {
   # https://github.com/balsoft/nixos-config/blob/a0f28267b8e3b822ce8dc673b13a1862ee49e0cb/profiles/sound.nix#L4
@@ -32,4 +32,8 @@
     # # To configure Card Profiles, default devices, ports and other settings, we recommend to use pavucontrol.
     pavucontrol
   ];
+
+  home-manager.users."${userName}".home.persistence = {
+    "${persistPath}/home/${userName}".directories = [ ".local/state/wireplumber" ];
+  };
 }
