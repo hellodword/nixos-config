@@ -15,7 +15,7 @@ buildGoModule rec {
 
   vendorHash = null;
 
-  ldflags = [ "-s" "-w" "-buildid=" ];
+  ldflags = [ "-s" "-w" ];
 
   # subPackages = [ "main" ];
 

@@ -13,7 +13,7 @@ buildGoModule rec {
 
   vendorHash = "sha256-0J5hXb1W8UruNG0KFaJBOQwHl2XiWg794A6Ktgv+ObM=";
 
-  ldflags = [ "-s" "-w" "-buildid=" ];
+  ldflags = [ "-s" "-w" ];
 
   # subPackages = [ "main" ];
 
