@@ -1,4 +1,4 @@
-{ lib, config, inputs, ... }:
+{ lib, config, inputs, userName, ... }:
 
 {
   imports = [
@@ -10,8 +10,8 @@
   ] ++
   [
     ../../../common/global
-    ../../../common/users/ubuntu
-    ../../../common/users/ubuntu/persist.nix
+    ../../../common/users/common
+    ../../../common/users/common/persist.nix
 
     ../../../common/optional/secureboot.nix
     ../../../common/optional/tmp.nix
@@ -65,16 +65,13 @@
   ];
 
   environment.etc =
-    let
-      username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
-    in
     (builtins.listToAttrs (map
       (x: {
         name = "ssh/${x.path}";
         value = {
           text = x.pub;
-          user = username;
-          group = config.users.users."${username}".group;
+          user = userName;
+          group = config.users.users."${userName}".group;
           mode = "0600";
         };
       })

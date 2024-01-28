@@ -1,8 +1,6 @@
-{ lib, pkgs, config, persistPath, ... }:
+{ lib, pkgs, config, persistPath, userName, ... }:
 
 let
-  username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
-
   # TODO hetzner storage box
   resticS3Providers = [
     /*
@@ -191,14 +189,14 @@ in
 
       commonExclude = [
         "${persistPath}/etc/ssh/gpg.*"
-        "${persistPath}/home/${username}/.ssh/config"
-        "${persistPath}/home/${username}/.ssh/gpg.*"
+        "${persistPath}/home/${userName}/.ssh/config"
+        "${persistPath}/home/${userName}/.ssh/gpg.*"
 
-        "${persistPath}/home/${username}/.gnupg/gpg-agent.conf"
-        "${persistPath}/home/${username}/.gnupg/gpg.conf"
-        "${persistPath}/home/${username}/.gnupg/scdaemon.conf"
-        "${persistPath}/home/${username}/.gnupg/sshcontrol"
-        "${persistPath}/home/${username}/.gnupg/S.*"
+        "${persistPath}/home/${userName}/.gnupg/gpg-agent.conf"
+        "${persistPath}/home/${userName}/.gnupg/gpg.conf"
+        "${persistPath}/home/${userName}/.gnupg/scdaemon.conf"
+        "${persistPath}/home/${userName}/.gnupg/sshcontrol"
+        "${persistPath}/home/${userName}/.gnupg/S.*"
       ];
     in
     {
@@ -212,30 +210,30 @@ in
         paths = [
           "${persistPath}/etc"
 
-          "${persistPath}/home/${username}/.ssh"
-          "${persistPath}/home/${username}/.bash_history"
+          "${persistPath}/home/${userName}/.ssh"
+          "${persistPath}/home/${userName}/.bash_history"
 
-          "${persistPath}/home/${username}/.config/kdeconnect"
-          "${persistPath}/home/${username}/.config/joplin-desktop"
-          "${persistPath}/home/${username}/.config/Bitwarden"
+          "${persistPath}/home/${userName}/.config/kdeconnect"
+          "${persistPath}/home/${userName}/.config/joplin-desktop"
+          "${persistPath}/home/${userName}/.config/Bitwarden"
 
-          "${persistPath}/home/${username}/.android/adbkey"
-          "${persistPath}/home/${username}/.android/adbkey.pub"
+          "${persistPath}/home/${userName}/.android/adbkey"
+          "${persistPath}/home/${userName}/.android/adbkey.pub"
 
-          "${persistPath}/home/${username}/backups/borged"
+          "${persistPath}/home/${userName}/backups/borged"
 
-          "${persistPath}/home/${username}/.gnupg"
+          "${persistPath}/home/${userName}/.gnupg"
 
           "${persistPath}/usr/local/etc/v2ray/outbounds.json"
 
           # firefox cookies
-          "${persistPath}/home/${username}/.mozilla/firefox/default/sessionstore-backups"
-          # "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite-wal"
-          "${persistPath}/home/${username}/.mozilla/firefox/default/cookies.sqlite"
+          "${persistPath}/home/${userName}/.mozilla/firefox/default/sessionstore-backups"
+          # "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite-wal"
+          "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite"
 
           "${persistPath}/usr/local/etc/openvpn/client"
 
-          "${persistPath}/home/${username}/.cache/rofi3.druncache"
+          "${persistPath}/home/${userName}/.cache/rofi3.druncache"
         ];
       };
     };

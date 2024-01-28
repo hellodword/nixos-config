@@ -1,4 +1,4 @@
-{ pkgs, inputs, ... }:
+{ pkgs, inputs, userName, ... }:
 
 {
   imports = [
@@ -20,9 +20,9 @@
     # "lkrg"
   ];
 
-  users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
+  users.users."${userName}".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
 
-  home-manager.users."ubuntu" = import ../../home/ubuntu/laptop;
+  home-manager.users."${userName}" = import ../../home/common/laptop;
 
   system.stateVersion = "22.11";
 }

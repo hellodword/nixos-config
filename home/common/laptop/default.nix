@@ -1,4 +1,4 @@
-{ lib, inputs, pkgs, nixosConfig, ... }:
+{ lib, inputs, pkgs, nixosConfig, userName, ... }:
 
 let
   X = nixosConfig.services.xserver.windowManager.i3.enable;
@@ -62,7 +62,7 @@ in
   ]
   ;
 
-  home.username = lib.mkDefault "ubuntu";
+  home.username = lib.mkDefault "${userName}";
 
   programs.ssh.matchBlocks = lib.mergeAttrs
     inputs.nixos-privates.ssh."common".matchBlocks

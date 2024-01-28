@@ -1,11 +1,11 @@
-{ config, pkgs, inputs, ... }:
+{ config, pkgs, inputs, userName, ... }:
 
 {
   imports = [
     ./hardware-configuration.nix
 
     ../common/global
-    ../common/users/ubuntu
+    ../common/users/common
 
     ../common/optional/secureboot.nix
     ../common/optional/tmp.nix
@@ -36,7 +36,7 @@
 
   boot.kernelPackages = pkgs.linuxPackages_6_1;
 
-  users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
+  users.users."${userName}".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
 
   system.stateVersion = "22.11";
 }

@@ -1,4 +1,4 @@
-{ inputs, lib, ... }:
+{ inputs, lib, userName, ... }:
 
 {
   imports = [
@@ -11,7 +11,7 @@
   ]
   ;
 
-  home.username = lib.mkDefault "ubuntu";
+  home.username = lib.mkDefault "${userName}";
 
   /*
     # in nixos-privates

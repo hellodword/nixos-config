@@ -1,8 +1,8 @@
-{ config, lib, ... }:
+{ config, lib, userName, ... }:
 
 {
   users.mutableUsers = false;
-  users.users."ubuntu" = {
+  users.users."${userName}" = {
     isNormalUser = true;
     uid = 1000;
     extraGroups = [
@@ -22,8 +22,8 @@
   services.openssh.settings.PermitRootLogin = lib.mkForce "no";
 
   services.openssh.settings.PasswordAuthentication =
-    if builtins.length config.users.users."ubuntu".openssh.authorizedKeys.keyFiles == 0 &&
-      builtins.length config.users.users."ubuntu".openssh.authorizedKeys.keys == 0
+    if builtins.length config.users.users."${userName}".openssh.authorizedKeys.keyFiles == 0 &&
+      builtins.length config.users.users."${userName}".openssh.authorizedKeys.keys == 0
     then
       true
     else

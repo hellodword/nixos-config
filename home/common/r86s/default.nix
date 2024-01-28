@@ -1,4 +1,4 @@
-{ lib, inputs, ... }:
+{ lib, inputs, userName, ... }:
 
 {
   imports = [
@@ -13,7 +13,7 @@
   ]
   ;
 
-  home.username = lib.mkDefault "ubuntu";
+  home.username = lib.mkDefault "${userName}";
 
   programs.ssh.matchBlocks = inputs.nixos-privates.ssh."common".matchBlocks;
   programs.gpg.publicKeys = lib.mkAfter inputs.nixos-privates.gpg."r86s".publicKeys;

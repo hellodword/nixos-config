@@ -1,4 +1,4 @@
-{ lib, config, persistPath, ... }:
+{ lib, config, persistPath, userName, ... }:
 
 {
   # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -7,7 +7,7 @@
   # e.g. volume in docker, ulimit -Hn and ulimt -Sn is ok, but the real ulimit will be 1024
   environment.persistence = {
     "${persistPath}" = {
-      users."ubuntu".directories = [
+      users."${userName}".directories = [
         # 临时/只读的项目
         "dev/park"
 

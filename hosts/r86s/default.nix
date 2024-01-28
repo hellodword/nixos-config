@@ -1,11 +1,11 @@
-{ config, pkgs, inputs, lib, ... }:
+{ config, pkgs, inputs, lib, userName, ... }:
 
 {
   imports = [
     ./hardware-configuration.nix
 
     ../common/global
-    ../common/users/ubuntu/ubuntu-without-password.nix
+    ../common/users/common/without-password.nix
 
     ../common/optional/tmp.nix
     ../common/optional/gc.nix
@@ -34,20 +34,17 @@
 
   boot.kernelPackages = pkgs.linuxPackages_6_6;
 
-  users.users."ubuntu".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
+  users.users."${userName}".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
 
 
   environment.etc =
-    let
-      username = builtins.elemAt (builtins.attrNames (lib.filterAttrs (n: v: (builtins.hasAttr "uid" v) && v.uid == 1000) config.users.users)) 0;
-    in
     (builtins.listToAttrs (map
       (x: {
         name = "ssh/${x.path}";
         value = {
           text = x.pub;
-          user = username;
-          group = config.users.users."${username}".group;
+          user = userName;
+          group = config.users.users."${userName}".group;
           mode = "0600";
         };
       })
@@ -55,7 +52,7 @@
 
   security.sudo.wheelNeedsPassword = false;
 
-  home-manager.users."ubuntu" = import ../../home/ubuntu/r86s;
+  home-manager.users."${userName}" = import ../../home/common/r86s;
 
   # gpg forwarding
   services.openssh.settings.StreamLocalBindUnlink = "yes";
