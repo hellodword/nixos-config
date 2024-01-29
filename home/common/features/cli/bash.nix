@@ -45,6 +45,7 @@
       "sha3-512sum" = "openssl dgst -sha3-512";
 
       "rp" = "rp() { realpath \"\$(which \"\$1\")\" ;}; rp";
+      "fb" = "touch /home/${userName}/Downloads/fb.db; mkdir -p /home/${userName}/Downloads/fb; docker run --name filebrowser --rm -u `id -u`:`id -g` -p 8000:80 -v /home/${userName}/Downloads/fb.db:/database.db -v /home/${userName}/Downloads/fb:/srv filebrowser/filebrowser";
     };
     shellOptions = [
       "histappend"

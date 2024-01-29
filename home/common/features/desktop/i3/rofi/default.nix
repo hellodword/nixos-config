@@ -27,6 +27,7 @@ in
   me.exitProcess = [
     "VBoxSVC"
     "VirtualBoxVM"
+    ".qemu-system-x8" # qemu-system-x86_64
   ];
 
   programs.rofi = {
