@@ -60,5 +60,9 @@ in
     #     ]
     #     oldAttrs.installPhase;
     # });
+
+    feh = prev.feh.overrideDerivation (oldAttrs: {
+      postInstall = "sed -i 's/Exec=feh/Exec=feh --scale-down --auto-zoom/' $out/share/applications/feh.desktop";
+    });
   };
 }

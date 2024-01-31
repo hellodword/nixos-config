@@ -21,4 +21,8 @@ in
   };
 
   me.mimeApps.defApps.imageViewer = "feh.desktop";
+
+  programs.bash.shellAliases = {
+    "feh" = "feh --scale-down --auto-zoom";
+  };
 }
