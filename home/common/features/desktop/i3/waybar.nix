@@ -1,4 +1,4 @@
-{ pkgs, lib, nixosConfig, ... }:
+{ pkgs, lib, nixosConfig, persistPath, ... }:
 
 {
   # xdg.configFile."waybar" = {
@@ -44,6 +44,7 @@
           "network#fastest"
           "cpu"
           "memory"
+          "disk"
           "temperature"
           "backlight"
           # // "keyboard-state",// https://www.reddit.com/r/linuxquestions/comments/bh4ex1/is_adding_a_user_to_input_group_secure/
@@ -71,6 +72,11 @@
         #         "default"=""
         #     }
         # },
+        "disk" = {
+          "interval" = 30;
+          "format" = "{used}/{total}";
+          "path" = persistPath;
+        };
         "systemd-failed-units" = {
           "hide-on-ok" = false; # // Do not hide if there is zero failed units.
           "format" = "✗ {nr_failed}";
