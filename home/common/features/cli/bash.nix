@@ -46,6 +46,25 @@
 
       "rp" = "rp() { realpath \"\$(which \"\$1\")\" ;}; rp";
       "fb" = "touch /home/${userName}/Downloads/fb.db; mkdir -p /home/${userName}/Downloads/fb; docker run --name filebrowser --rm -u `id -u`:`id -g` -p 8000:80 -v /home/${userName}/Downloads/fb.db:/database.db -v /home/${userName}/Downloads/fb:/srv filebrowser/filebrowser";
+
+      /*
+        # httpserver_arg1="$1"
+        # if [ -n "$httpserver_arg1" ]; then
+        #     httpserver_arg1="$(readlink -f "$httpserver_arg1")"
+        # else
+        #     httpserver_arg1="$(pwd)"
+        # fi
+
+        # if [ -d "$httpserver_arg1" ]; then
+        #     docker run --rm -v "$httpserver_arg1":/w:ro -w /w -p 8000:8000 -it python python -m http.server
+        # elif [ -f "$httpserver_arg1" ]; then
+        #     docker run --rm -v "$httpserver_arg1":/w/"$(basename "$httpserver_arg1")":ro -w /w -p 8000:8000 -it python python -m http.server
+        # else
+        #     echo "$httpserver_arg1"
+        #     exit 1
+        # fi
+      */
+      "httpserver" = ''httpserver() { httpserver_arg1="$1"; if [ -n "$httpserver_arg1" ]; then httpserver_arg1="$(readlink -f "$httpserver_arg1")"; else httpserver_arg1="$(pwd)"; fi; if [ -d "$httpserver_arg1" ]; then docker run --rm -v "$httpserver_arg1":/w:ro -w /w -p 8000:8000 -it python python -m http.server; elif [ -f "$httpserver_arg1" ]; then docker run --rm -v "$httpserver_arg1":/w/"$(basename "$httpserver_arg1")":ro -w /w -p 8000:8000 -it python python -m http.server; else ( echo "$httpserver_arg1"; exit 1; ) fi; }; httpserver'';
     };
     shellOptions = [
       "histappend"

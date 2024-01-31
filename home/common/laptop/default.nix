@@ -20,6 +20,7 @@ in
     ../features/cli/optional/ranger.nix
     ../features/cli/optional/qrencode.nix
     ../features/cli/optional/starship.nix
+    ../features/cli/optional/zoxide.nix
   ]
   ++
   [
