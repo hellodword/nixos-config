@@ -11,15 +11,15 @@
   virtualisation.virtualbox = {
     host = {
       enable = true;
-      enableHardening = true;
-      enableWebService = false;
-      package = pkgs.virtualbox;
-      enableExtensionPack = true;
+      # enableHardening = false;
+      # enableWebService = false;
+      # package = pkgs.virtualbox;
+      # enableExtensionPack = false;
     };
-    guest = {
-      enable = true;
-      x11 = true;
-    };
+    # guest = {
+    #   enable = true;
+    #   x11 = true;
+    # };
   };
 
   # https://discourse.nixos.org/t/how-to-adjust-the-timeout-of-a-systemd-device/12620

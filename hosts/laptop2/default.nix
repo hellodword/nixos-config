@@ -9,13 +9,13 @@
   ++
   [
     ../common/optional/laptop
-    ../common/optional/chromium-based-security-issue.nix
+    # ../common/optional/chromium-based-security-issue.nix
   ]
   ;
 
   networking.hostName = "laptop2";
 
-  boot.kernelPackages = pkgs.linuxPackages_6_6_hardened;
+  boot.kernelPackages = pkgs.linuxPackages_6_6; # _hardened;
   boot.kernelModules = [
     # "lkrg"
   ];
