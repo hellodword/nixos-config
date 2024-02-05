@@ -24,3 +24,13 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl restart nix-daemon
 ```
+
+## json2nix
+
+- https://gist.github.com/Scoder12/0538252ed4b82d65e59115075369d34d
+- https://haseebmajid.dev/posts/2023-11-06-a-simple-way-to-convert-json-to-nix-attribute-sets/
+  - https://gitlab.com/-/snippets/3613708
+
+```sh
+nix eval --expr 'builtins.fromJSON (builtins.readFile ./data.json)' --impure | nixfmt
+```
