@@ -63,7 +63,7 @@
       # ms-python.python
       # ms-vscode.makefile-tools
       # ms-vscode.cmake-tools
-      ms-vscode.cpptools
+      # ms-vscode.cpptools
       ms-azuretools.vscode-docker
       ms-python.vscode-pylance
       # ms-vscode-remote.remote-ssh
