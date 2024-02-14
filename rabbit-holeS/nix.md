@@ -34,3 +34,15 @@ sudo systemctl restart nix-daemon
 ```sh
 nix eval --expr 'builtins.fromJSON (builtins.readFile ./data.json)' --impure | nixfmt
 ```
+
+## locate source file of function
+
+```sh
+❯ nix repl -f '<nixpkgs>'
+Welcome to Nix 2.18.1. Type :? for help.
+
+Loading installable ''...
+Added 20435 variables.
+nix-repl> builtins.unsafeGetAttrPos "buildGoModule" pkgs
+{ column = 3; file = "/nix/store/599wy5snf00pn1apmsnzmiy0ysdpds03-source/pkgs/top-level/all-packages.nix"; line = 25777; }
+```
