@@ -11,10 +11,11 @@
       dates = "weekly";
       flags = [ ];
     };
-    # daemon.settings = {
-    #   fixed-cidr-v6 = "fd00::/80";
-    #   ipv6 = true;
-    # };
+    daemon.settings = {
+      fixed-cidr-v6 = "fd00::/80";
+      ipv6 = true;
+      runtimes.runsc.path = "${pkgs.gvisor}/bin/runsc";
+    };
     # extraOptions = ''
     #   --default-ulimit nofile=104857600:104857600
     # '';
