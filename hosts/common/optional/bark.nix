@@ -58,7 +58,7 @@
         fi
 
         # https://github.com/Finb/bark-server/blob/3aa064e5d98eaaed7e1f28f79510586109347e1e/apns/apns.go#L98
-        curl "$BARK_ARGS" -s --header "apns-topic: $TOPIC" \
+        curl -s --header "apns-topic: $TOPIC" \
              --header "apns-push-type: alert" \
              --header "authorization: bearer $AUTHENTICATION_TOKEN" \
              --http2 "https://$APNS_HOST_NAME/3/device/$DEVICE_TOKEN" \
