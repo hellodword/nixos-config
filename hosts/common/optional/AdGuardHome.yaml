@@ -87,6 +87,10 @@ filtering:
   rewrites:
     - "domain": chat.openai.com
       "answer": "2606:4700:4400::ac40:961c"
+    - "domain": www.msftncsi.com
+      "answer": "104.117.182.8"
+    - "domain": connectivitycheck.gstatic.com
+      "answer": "142.251.40.163"
   safebrowsing_cache_size: 1048576
   safesearch_cache_size: 1048576
   parental_cache_size: 1048576

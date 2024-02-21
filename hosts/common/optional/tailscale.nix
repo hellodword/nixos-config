@@ -50,6 +50,10 @@
     };
   };
 
+  systemd.services.v2ray.serviceConfig.ExecStartPre = lib.mkAfter [
+    "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner tailscaled -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner tailscaled -j RETURN || true'"
+  ];
+
   environment.persistence = {
     "${persistPath}".directories = [
       # https://www.reddit.com/r/NixOS/comments/14w1404/every_nixos_rebuild_creates_a_new_tailscale/

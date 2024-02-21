@@ -248,6 +248,10 @@ in
     };
   };
 
+  systemd.services.v2ray.serviceConfig.ExecStartPre = lib.mkAfter [
+    "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || true'"
+  ];
+
   systemd.services = {
     "adguardhome" = {
       description = "AdGuard Home: Network-level blocker";

@@ -351,7 +351,7 @@ in
         "hideme:"
       ];
       "pingConfig" = {
-        "destination" = "http://www.google.com/gen_204";
+        "destination" = "http://connectivitycheck.gstatic.com/generate_204";
         "connectivity" = "http://www.msftncsi.com/ncsi.txt";
         "interval" = "10s";
         "samplingCount" = 10;
