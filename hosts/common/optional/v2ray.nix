@@ -150,7 +150,9 @@ in
 
   services.v2ray = {
     enable = true;
-    package = pkgs.v2ray;
+    package = pkgs.v2ray.override {
+      assets = with pkgs; [ loyalsoldier-v2ray-rules-dat ];
+    };
     configFile = generatedPath;
   };
 
@@ -159,10 +161,18 @@ in
   #   https://github.com/search?q=%2Fsops%5C.templates%2F+language%3Anix&type=code
 
   environment.etc."v2ray/template.json".text = builtins.toJSON {
+    "$schema" = "https://github.com/EHfive/v2ray-jsonschema/raw/main/v5-config.schema.json";
     "log" = {
-      "access" = "/var/log/v2ray/v2ray.log";
-      "error" = "/var/log/v2ray/v2ray.log";
-      "loglevel" = "debug";
+      "access" = {
+        "level" = "Debug";
+        "type" = "File";
+        "path" = "/var/log/v2ray/v2ray.log";
+      };
+      "error" = {
+        "level" = "Debug";
+        "type" = "File";
+        "path" = "/var/log/v2ray/v2ray.log";
+      };
     };
 
     "inbounds" = [
@@ -172,18 +182,23 @@ in
         "protocol" = "dokodemo-door";
         "settings" = {
           "address" = "0.0.0.0";
-          "network" = "tcp,udp";
           "followRedirect" = true;
-        };
-        "sniffing" = {
-          "enabled" = false;
-          "destOverride" = [
-            "http"
-            "tls"
+          "networks" = [
+            "TCP"
+            "UDP"
           ];
         };
+        "sniffing" = {
+          # "destOverride" = [
+          #   "http"
+          #   "tls"
+          #   "quic"
+          # ];
+          "enabled" = true;
+          # "metadataOnly" = false;
+        };
         "streamSettings" = {
-          "sockopt" = {
+          "socketSettings" = {
             "tproxy" = "tproxy";
           };
         };
@@ -193,13 +208,13 @@ in
         "port" = inputs.nixos-privates.v2ray.inbounds.socks5Port;
         "listen" = "0.0.0.0";
         "protocol" = "socks";
-        "sniffing" = {
-          "enabled" = false;
-        };
         "settings" = {
-          "auth" = "noauth";
-          "udp" = true;
-          "allowTransparent" = false;
+          "udpEnabled" = true;
+          "address" = "0.0.0.0";
+          "packetEncoding" = "Packet";
+        };
+        "sniffing" = {
+          "enabled" = true;
         };
       }
       {
@@ -207,155 +222,284 @@ in
         "port" = inputs.nixos-privates.v2ray.inbounds.httpPort;
         "listen" = "0.0.0.0";
         "protocol" = "http";
-        "settings" = {
-          "udp" = false;
-          "allowTransparent" = false;
-        };
       }
     ];
 
-    "routing" = {
-      "domainStrategy" = "IPIfNonMatch";
-      "domainMatcher" = "mph";
-      "balancers" = [
+    router = {
+      domainStrategy = "IpIfNonMatch";
+      balancingRule = [
         {
-          "tag" = "balancer-proxy";
-          "fallbackTag" = "special:block";
-          "selector" = [
+          tag = "balancer-proxy";
+          fallback_tag = "special:block";
+          outbound_selector = [
             "proxy:"
           ];
-          # "observerTag" = "observe-default";
-          "strategy" = {
-            "type" = "leastping";
-            # "settings" = {
-            #   "baselines" = [
-            #     "400ms"
-            #     "600ms"
-            #   ];
-            #   "expected" = 2;
-            #   "maxRTT" = "700ms";
-            #   "tolerance" = 0.5;
-            # };
-          };
+          strategy = "leastping";
         }
         {
-          "tag" = "balancer-hideme";
-          "fallbackTag" = "special:block";
-          "selector" = [
+          tag = "balancer-hideme";
+          fallback_tag = "special:block";
+          outbound_selector = [
             "hideme:"
           ];
-          "strategy" = {
-            "type" = "leastping";
-          };
+          strategy = "leastping";
         }
       ];
-
-      "rules" = [
+      rule = [
         {
-          "type" = "field";
-          "inboundTag" = [
+          geoip = [
+            { code = "private"; }
+            { code = "cn"; }
+          ];
+          inboundTag = [
             "in-socks"
             "in-http"
             "in-tproxy"
           ];
-          "ip" = [
-            "geoip:private"
-          ];
-          "outboundTag" = "special:direct";
+          tag = "special:direct";
         }
         {
-          "type" = "field";
-          "inboundTag" = [
+          geoDomain = [
+            { code = "protonmail"; }
+            { code = "telegram"; }
+            { code = "imgur"; }
+            { code = "paypal"; }
+            { code = "pixiv"; }
+            { code = "category-cryptocurrency"; }
+            { code = "category-novel"; }
+            { code = "category-porn"; }
+            {
+              domain = [
+                {
+                  type = "RootDomain";
+                  value = "cloudflare.com";
+                }
+                {
+                  type = "RootDomain";
+                  value = "openai.com";
+                }
+                {
+                  type = "RootDomain";
+                  value = "reddit.com";
+                }
+                {
+                  type = "RootDomain";
+                  value = "redditmedia.com";
+                }
+                {
+                  type = "RootDomain";
+                  value = "redditstatic.com";
+                }
+                {
+                  type = "RootDomain";
+                  value = "redd.it";
+                }
+              ];
+            }
+          ];
+          inboundTag = [
             "in-socks"
             "in-http"
             "in-tproxy"
           ];
-          "ip" = [
-            "geoip:cn"
-          ];
-          "outboundTag" = "special:direct";
+          balancingTag = "balancer-hideme";
         }
         {
-          "type" = "field";
-          "inboundTag" = [
-            "in-tproxy"
+          geoip = [
+            { code = "telegram"; }
+            { code = "cloudflare"; }
+            { code = "fastly"; }
+            { code = "cloudfront"; }
+            { code = "facebook"; }
+            { code = "netflix"; }
+            { code = "twitter"; }
           ];
-          "domain" = [
-            "223.5.5.5/32"
-            "119.29.29.29/32"
-            "180.76.76.76/32"
-            "114.114.114.114/32"
-            "ext:cn.dat:cn"
-            "ext:private.dat:private"
-            "ext:geoip-only-cn-private.dat:cn"
-            "ext:geoip-only-cn-private.dat:private"
-          ];
-          "outboundTag" = "special:direct";
-        }
-        {
-          "type" = "field";
-          "inboundTag" = [
-            "in-tproxy"
-          ];
-          "domain" = [
-            "geosite:protonmail"
-            "geosite:telegram"
-            "geosite:imgur"
-            "geosite:paypal"
-            "geosite:pixiv"
-            "geosite:category-cryptocurrency"
-            "geosite:category-novel"
-            "geosite:category-porn"
-            "domain:cloudflare.com"
-            "domain:openai.com"
-            "domain:reddit.com"
-            "domain:redd.it"
-            "domain:redditmedia.com"
-            "domain:redditstatic.com"
-          ];
-          "outboundTag" = "balancer-hideme";
-        }
-        # {
-        #   "type" = "field";
-        #   "inboundTag" = [
-        #     "in-tproxy"
-        #   ];
-        #   "ip" = [
-        #     "geoip:telegram"
-        #     "geoip:cloudflare"
-        #     "geoip:fastly"
-        #     "geoip:cloudfront"
-        #     "geoip:facebook"
-        #     "geoip:netflix"
-        #     "geoip:twitter"
-        #   ];
-        #   "outboundTag" = "balancer-hideme";
-        # }
-        {
-          "type" = "field";
-          "inboundTag" = [
+          inboundTag = [
             "in-socks"
             "in-http"
             "in-tproxy"
           ];
-          "balancerTag" = "balancer-proxy";
+          balancingTag = "balancer-hideme";
+        }
+        {
+          inboundTag = [
+            "in-socks"
+            "in-http"
+            "in-tproxy"
+          ];
+          balancingTag = "balancer-proxy";
         }
       ];
     };
 
+    # "routing" = {
+    #   "domainStrategy" = "IPIfNonMatch";
+    #   "domainMatcher" = "mph";
+    #   "balancers" = [
+    #     {
+    #       "tag" = "balancer-proxy";
+    #       "fallbackTag" = "proxy:us:cf:de..frm-hostaris"; # "special:block";
+    #       "selector" = [
+    #         "proxy:"
+    #       ];
+    #       # "observerTag" = "observe-default";
+    #       "strategy" = {
+    #         "type" = "leastping";
+    #         # "settings" = {
+    #         #   "baselines" = [
+    #         #     "400ms"
+    #         #     "600ms"
+    #         #   ];
+    #         #   "expected" = 2;
+    #         #   "maxRTT" = "700ms";
+    #         #   "tolerance" = 0.5;
+    #         # };
+    #       };
+    #     }
+    #     {
+    #       "tag" = "balancer-hideme";
+    #       "fallbackTag" = "proxy:us:cf:de..frm-hostaris"; # "special:block";
+    #       "selector" = [
+    #         "hideme:"
+    #       ];
+    #       "strategy" = {
+    #         "type" = "leastping";
+    #       };
+    #     }
+    #   ];
 
-    "burstObservatory" = {
-      "tag" = "observe-default";
-      "subjectSelector" = [
-        "proxy:"
-        "hideme:"
-      ];
-      "pingConfig" = {
-        "destination" = "http://connectivitycheck.gstatic.com/generate_204";
-        "connectivity" = "http://www.msftncsi.com/ncsi.txt";
-        "interval" = "10s";
-        "samplingCount" = 10;
-        "timeout" = "1400ms";
+    #   "rules" = [
+    #     {
+    #       "type" = "field";
+    #       "inboundTag" = [
+    #         "in-socks"
+    #         "in-http"
+    #         "in-tproxy"
+    #       ];
+    #       "ip" = [
+    #         "geoip:private"
+    #       ];
+    #       "outboundTag" = "special:direct";
+    #     }
+    #     {
+    #       "type" = "field";
+    #       "inboundTag" = [
+    #         "in-socks"
+    #         "in-http"
+    #         "in-tproxy"
+    #       ];
+    #       "ip" = [
+    #         "geoip:cn"
+    #       ];
+    #       "outboundTag" = "special:direct";
+    #     }
+    #     {
+    #       "type" = "field";
+    #       "inboundTag" = [
+    #         "in-tproxy"
+    #       ];
+    #       "ip" = [
+    #         "223.5.5.5/32"
+    #         "119.29.29.29/32"
+    #         "180.76.76.76/32"
+    #         "114.114.114.114/32"
+    #         "ext:cn.dat:cn"
+    #         "ext:private.dat:private"
+    #         "ext:geoip-only-cn-private.dat:cn"
+    #         "ext:geoip-only-cn-private.dat:private"
+    #       ];
+    #       "outboundTag" = "special:direct";
+    #     }
+    #     {
+    #       "type" = "field";
+    #       "inboundTag" = [
+    #         "in-tproxy"
+    #       ];
+    #       "domain" = [
+    #         "geosite:protonmail"
+    #         "geosite:telegram"
+    #         "geosite:imgur"
+    #         "geosite:paypal"
+    #         "geosite:pixiv"
+    #         "geosite:category-cryptocurrency"
+    #         "geosite:category-novel"
+    #         "geosite:category-porn"
+    #         "domain:cloudflare.com"
+    #         "domain:openai.com"
+    #         "domain:reddit.com"
+    #         "domain:redd.it"
+    #         "domain:redditmedia.com"
+    #         "domain:redditstatic.com"
+    #       ];
+    #       "outboundTag" = "balancer-hideme";
+    #     }
+    #     # {
+    #     #   "type" = "field";
+    #     #   "inboundTag" = [
+    #     #     "in-tproxy"
+    #     #   ];
+    #     #   "ip" = [
+    #     #     "geoip:telegram"
+    #     #     "geoip:cloudflare"
+    #     #     "geoip:fastly"
+    #     #     "geoip:cloudfront"
+    #     #     "geoip:facebook"
+    #     #     "geoip:netflix"
+    #     #     "geoip:twitter"
+    #     #   ];
+    #     #   "outboundTag" = "balancer-hideme";
+    #     # }
+    #     {
+    #       "type" = "field";
+    #       "inboundTag" = [
+    #         "in-socks"
+    #         "in-http"
+    #         "in-tproxy"
+    #       ];
+    #       "balancerTag" = "balancer-proxy";
+    #     }
+    #   ];
+    # };
+
+
+    # "burstObservatory" = {
+    #   "tag" = "observe-default";
+    #   "subjectSelector" = [
+    #     "proxy:"
+    #     "hideme:"
+    #   ];
+    #   "pingConfig" = {
+    #     "destination" = "http://connectivitycheck.gstatic.com/generate_204";
+    #     "connectivity" = "http://www.msftncsi.com/ncsi.txt";
+    #     "interval" = "10s";
+    #     "samplingCount" = 10;
+    #     "timeout" = "1400ms";
+    #   };
+    # };
+
+
+    services = {
+      # burstObservatory = {
+      #   pingConfig = {
+      #     connectivity = "http://www.msftncsi.com/ncsi.txt";
+      #     destination = "http://connectivitycheck.gstatic.com/generate_204";
+      #     interval = 10000000000;
+      #     samplingCount = 10;
+      #     timeout = 1400000000;
+      #   };
+      #   subjectSelector = [
+      #     "proxy:"
+      #     "hideme:"
+      #   ];
+      # };
+
+      backgroundObservatory = {
+        subjectSelector = [
+          "proxy:"
+          "hideme:"
+        ];
+        probeInterval = 3000000000; # "3s
+        probeUrl = "http://connectivitycheck.gstatic.com/generate_204";
       };
     };
 
@@ -367,45 +511,56 @@ in
         落地: block 或者 direct 或者落地服务器代号
         协议: cf / hy / tuic
         中转: 代号或者 IP
-    */
-    "outbounds" = [
+      */
+    # "outbounds" = [
 
+    #   {
+    #     "tag" = "special:block";
+    #     "protocol" = "blackhole";
+    #   }
+    #   {
+    #     "tag" = "special:direct";
+    #     "protocol" = "freedom";
+    #     "settings" = {
+    #       "domainStrategy" = "UseIPv4";
+    #     };
+    #     "streamSettings" = {
+    #       # "sockopt" = {
+    #       #   "mark" = 2;
+    #       # };
+    #     };
+    #   }
+    # ];
+
+    outbounds = [
       {
-        "tag" = "special:block";
-        "protocol" = "blackhole";
+        protocol = "blackhole";
+        tag = "special:block";
       }
       {
-        "tag" = "special:direct";
-        "protocol" = "freedom";
-        "settings" = {
-          "domainStrategy" = "UseIPv4";
-        };
-        "streamSettings" = {
-          # "sockopt" = {
-          #   "mark" = 2;
-          # };
-        };
+        domainStrategy = "UseIP4";
+        protocol = "freedom";
+        tag = "special:direct";
       }
     ];
-
   };
 
   systemd.services."v2ray" = {
     path = with pkgs; [ iproute2 iptables ipset ];
-    environment =
-      let
-        assets = pkgs.symlinkJoin {
-          name = "v2ray-assets";
-          paths = with pkgs; [ loyalsoldier-v2ray-rules-dat ];
-        };
-      in
-      {
-        V2RAY_LOCATION_ASSET = "${assets}/share/v2ray";
-        XRAY_LOCATION_ASSET = "${assets}/share/v2ray";
-        # # TODO split config file
-        # V2RAY_LOCATION_CONFDIR = "";
-        # XRAY_LOCATION_CONFDIR = "";
-      };
+    # environment =
+    #   let
+    #     assets = pkgs.symlinkJoin {
+    #       name = "v2ray-assets";
+    #       paths = with pkgs; [ loyalsoldier-v2ray-rules-dat ];
+    #     };
+    #   in
+    #   {
+    #     V2RAY_LOCATION_ASSET = "${assets}/share/v2ray";
+    #     XRAY_LOCATION_ASSET = "${assets}/share/v2ray";
+    #     # # TODO split config file
+    #     # V2RAY_LOCATION_CONFDIR = "";
+    #     # XRAY_LOCATION_CONFDIR = "";
+    #   };
     serviceConfig = {
       RestartSec = "10s";
       LogsDirectory = "v2ray";
@@ -432,9 +587,9 @@ in
   ];
 
   /*
-    https://github.com/springzfx/cgproxy/issues/10#issuecomment-673264483
-    https://hackerl.github.io/2020/09/11/%E8%BD%AF%E8%B7%AF%E7%94%B1%E6%8A%98%E8%85%BE%E8%AE%B0%E5%BD%95%E4%BA%8C/
-  */
+      https://github.com/springzfx/cgproxy/issues/10#issuecomment-673264483
+      https://hackerl.github.io/2020/09/11/%E8%BD%AF%E8%B7%AF%E7%94%B1%E6%8A%98%E8%85%BE%E8%AE%B0%E5%BD%95%E4%BA%8C/
+    */
 
   # # Options for routing
   # # maybe not loaded yet

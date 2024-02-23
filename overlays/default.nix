@@ -64,5 +64,15 @@ in
     feh = prev.feh.overrideDerivation (oldAttrs: {
       postInstall = "sed -i 's/Exec=feh/Exec=feh --scale-down --auto-zoom/' $out/share/applications/feh.desktop";
     });
+
+    v2ray = prev.v2ray.overrideDerivation (oldAttrs: {
+      postInstall = "sed -i 's@v2ray run@v2ray run -format jsonv5@' $out/lib/systemd/system/v2ray.service";
+      patches = (oldAttrs.patches or [ ]) ++ [
+        (prev.fetchpatch {
+          url = "https://github.com/v2fly/v2ray-core/commit/f421129efb2c27f9294e74fdeba4f9c5c45d271f.patch";
+          sha256 = "1qn0p8xkkynmb1957l00cdlfbca8jkrkmy62dy7p4pknnxkiv26h";
+        })
+      ];
+    });
   };
 }
