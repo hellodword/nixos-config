@@ -229,7 +229,8 @@ in
           "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite"
 
           "${persistPath}/home/${userName}/.cache/rofi3.druncache"
-        ];
+        ]
+        ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "/usr/local/etc/sing-box/outbounds.json" ];
       };
     };
 
