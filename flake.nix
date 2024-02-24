@@ -73,7 +73,7 @@
     };
 
     rime-ice = {
-      url = "github:iDvel/rime-ice/2a2f956cc66eaf49c3068ecbd8102fdab3087e9e";
+      url = "github:iDvel/rime-ice/10dbeb4a4d5f7b9e6ea511ced442f34bdc529142";
       flake = false;
     };
 
