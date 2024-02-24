@@ -38,7 +38,7 @@
     nixos-privates.url = "git+ssh://git@hellodword.github.com/hellodword/nixos-privates.git";
 
     firefox-addons = {
-      url = "gitlab:rycee/nur-expressions/24985136f4a5f98254e88c26d428114d206c2565?dir=pkgs/firefox-addons";
+      url = "gitlab:rycee/nur-expressions/19101fae468c9773b99925eae619ebb24fc247da?dir=pkgs/firefox-addons";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
