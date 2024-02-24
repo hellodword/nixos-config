@@ -53,6 +53,7 @@
       "files.associations" = {
         "cspell.json" = "jsonc";
         "v2ray.json" = "jsonc";
+        "sing-box.json" = "jsonc";
       };
       "remote.autoForwardPortsSource" = "hybrid";
       "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";

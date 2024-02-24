@@ -19,6 +19,4 @@ rec {
   mosdns = pkgs.callPackage ./mosdns { };
 
   adguardhome2 = pkgs.callPackage ./adguardhome2 { };
-
-  loyalsoldier-v2ray-rules-dat = pkgs.callPackage ./loyalsoldier-v2ray-rules-dat { inherit inputs; };
 }

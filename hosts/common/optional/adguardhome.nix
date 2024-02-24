@@ -196,6 +196,47 @@ let
       echo '${lib.concatStringsSep "\n" (map (x: "    - \"${x}\"") config.services.adguardhome2.settings.dns.upstream_dns)}' >> "$STATE_DIRECTORY/AdGuardHome.yaml"
     '';
   };
+
+  sbBypassUserDel = pkgs.writeShellApplication {
+    name = "exe";
+    runtimeInputs = with pkgs; [ iproute2 findutils gnugrep bash ];
+    excludeShellChecks = [ "SC2086" ];
+    text = ''
+      set -x
+
+      _USER_NAME="$1"
+      [ -n "$_USER_NAME" ]
+
+      _USER_ID="$(id -u "$_USER_NAME" || true)"
+      if [ -n "$_USER_ID" ]; then
+          ip -4 rule list | grep -oP "(?<=\d:\t)from all uidrange $_USER_ID-$_USER_ID goto \d+" | xargs -I {} bash -xc 'ip -4 rule del {}' || true
+          ip -6 rule list | grep -oP "(?<=\d:\t)from all uidrange $_USER_ID-$_USER_ID goto \d+" | xargs -I {} bash -xc 'ip -6 rule del {}' || true
+      fi
+    '';
+  };
+  sbBypassUserAdd = pkgs.writeShellApplication {
+    name = "exe";
+    runtimeInputs = with pkgs; [ iproute2 gnugrep ];
+    excludeShellChecks = [ "SC2086" ];
+    text = ''
+      set -x
+
+      _USER_NAME="$1"
+      [ -n "$_USER_NAME" ]
+
+      _IPV4_ID="$(ip -4 rule list | grep -oP '^\d+(?=:\tfrom all nop$)' || true)"
+      _IPV6_ID="$(ip -6 rule list | grep -oP '^\d+(?=:\tfrom all nop$)' || true)"
+      _USER_ID="$(id -u "$_USER_NAME" || true)"
+      if [ -n "$_USER_ID" ]; then
+          if [ -n "$_IPV4_ID" ]; then
+              ip -4 rule add from all uidrange $_USER_ID-$_USER_ID goto "$_IPV4_ID"
+          fi
+          if [ -n "$_IPV6_ID" ]; then
+              ip -6 rule add from all uidrange $_USER_ID-$_USER_ID goto "$_IPV6_ID"
+          fi
+      fi
+    '';
+  };
 in
 {
 
@@ -223,73 +264,95 @@ in
     package = lib.mkForce pkgs.openresolv;
   };
 
-  systemd.services."mosdns" = {
-    description = "mosdns: 一个 DNS 转发器 ";
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-    unitConfig = {
-      StartLimitIntervalSec = 5;
-      StartLimitBurst = 10;
-    };
+  systemd.services = lib.mergeAttrs
+    ({
+      adguardhome = {
+        description = "AdGuard Home: Network-level blocker";
+        after = [ "network.target" "mosdns.service" ];
+        wantedBy = [ "multi-user.target" ];
+        unitConfig = {
+          StartLimitIntervalSec = 5;
+          StartLimitBurst = 10;
+        };
 
-    serviceConfig = {
-      DynamicUser = true;
-      ExecStart = "${pkgs.mosdns}/bin/mosdns start --config ${./mosdns.yaml} --dir /var/lib/mosdns";
-      # AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ] ++ optionals cfg.allowDHCP [ "CAP_NET_RAW" ];
-      Restart = "always";
-      RestartSec = 10;
-      RuntimeDirectory = "mosdns";
-      StateDirectory = "mosdns";
-      LogDirectory = "mosdns";
-      # 直连
-      ExecStartPre = lib.optionals config.services.v2ray.enable [
-        "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || true'"
-      ];
-    };
-  };
 
-  systemd.services.v2ray.serviceConfig.ExecStartPre = lib.mkAfter [
-    "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner mosdns -j RETURN || true'"
-  ];
+        serviceConfig =
+          let
+            myArgs = lib.concatStringsSep " " ([
+              "--no-check-update"
+              "--pidfile /run/AdGuardHome/AdGuardHome.pid"
+              "--work-dir /var/lib/AdGuardHome/"
+              "--config /var/lib/AdGuardHome/AdGuardHome.yaml"
+            ] ++ config.services.adguardhome2.extraArgs);
+          in
+          {
+            DynamicUser = true;
+            ExecStart = "${pkgs.adguardhome2}/bin/adguardhome ${myArgs}";
+            AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" "CAP_NET_ADMIN" "CAP_NET_RAW" ];
+            Restart = "always";
+            RestartSec = 10;
+            RuntimeDirectory = "AdGuardHome";
+            StateDirectory = "AdGuardHome";
 
-  systemd.services = {
-    "adguardhome" = {
-      description = "AdGuard Home: Network-level blocker";
-      after = [ "network.target" "mosdns.service" ];
-      wantedBy = [ "multi-user.target" ];
-      unitConfig = {
-        StartLimitIntervalSec = 5;
-        StartLimitBurst = 10;
+            ExecStartPre = [
+              "${pr247828}/bin/pr247828-fix"
+              # 直连
+              "+${upBypass}/bin/up"
+              "+${upBypass6}/bin/up"
+            ];
+          };
       };
 
+      mosdns = {
+        description = "mosdns: 一个 DNS 转发器 ";
+        after = [ "network.target" ];
+        wantedBy = [ "multi-user.target" ];
+        unitConfig = {
+          StartLimitIntervalSec = 5;
+          StartLimitBurst = 10;
+        };
 
-      serviceConfig =
-        let
-          myArgs = lib.concatStringsSep " " ([
-            "--no-check-update"
-            "--pidfile /run/AdGuardHome/AdGuardHome.pid"
-            "--work-dir /var/lib/AdGuardHome/"
-            "--config /var/lib/AdGuardHome/AdGuardHome.yaml"
-          ] ++ config.services.adguardhome2.extraArgs);
-        in
-        {
+        serviceConfig = {
           DynamicUser = true;
-          ExecStart = "${pkgs.adguardhome2}/bin/adguardhome ${myArgs}";
-          AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" "CAP_NET_ADMIN" "CAP_NET_RAW" ];
+          ExecStart = "${pkgs.mosdns}/bin/mosdns start --config ${./mosdns.yaml} --dir /var/lib/mosdns";
+          # AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ] ++ optionals cfg.allowDHCP [ "CAP_NET_RAW" ];
           Restart = "always";
           RestartSec = 10;
-          RuntimeDirectory = "AdGuardHome";
-          StateDirectory = "AdGuardHome";
-
-          ExecStartPre = [
-            "${pr247828}/bin/pr247828-fix"
-            # 直连
-            "+${upBypass}/bin/up"
-            "+${upBypass6}/bin/up"
+          RuntimeDirectory = "mosdns";
+          StateDirectory = "mosdns";
+          LogDirectory = "mosdns";
+          # 直连
+          ExecStartPre = lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
+            "+${sbBypassUserDel}/bin/exe mosdns"
+            "+${sbBypassUserAdd}/bin/exe mosdns"
+          ];
+          ExecStop = lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
+            "+${sbBypassUserDel}/bin/exe mosdns"
           ];
         };
-    };
-  };
+      };
+    })
+    (
+      # avoid infinite recursion
+      lib.optionalAttrs
+        (builtins.length (builtins.filter (x: builtins.typeOf x == "set" && lib.hasAttr "directory" x && x.directory == "/var/lib/private/sing-box") config.environment.persistence."${persistPath}".directories) == 1)
+        {
+          sing-box =
+            {
+              serviceConfig = {
+                ExecStartPre = lib.mkBefore [
+                  "+${sbBypassUserDel}/bin/exe mosdns"
+                ];
+                ExecStop = lib.mkBefore [
+                  "+${sbBypassUserDel}/bin/exe mosdns"
+                ];
+              };
+            };
+        }
+    );
+
+
+
 
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
   services.adguardhome2 = {
@@ -321,7 +384,6 @@ in
         #   custom_ip = "";
         # };
 
-        # v2ray UDP issue https://github.com/v2fly/v2ray-core/issues/68
         bind_hosts = [
           "127.0.0.1"
           "::1"
@@ -365,25 +427,6 @@ in
         #   { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
         #   { domain = "chat.openai.com"; answer = "2606:4700::6812:7b9"; }
         # ];
-        # 
-        ipset = [ ]
-          ++ lib.optionals (builtins.hasAttr "wgcf" config.networking.wg-quick.interfaces)
-          [
-            # # do this with v2ray
-            # "${lib.concatStringsSep ","
-            # [
-            #   "imgur.com"
-            #   "*.imgur.com"
-            #   "imgur.io"
-            #   "*.imgur.io"
-
-            #   "openai.com"
-            #   "*.openai.com"
-            #   "challenges.cloudflare.com"
-
-            # ]}/wgcf,wgcf6"
-          ];
-
       };
     };
   };

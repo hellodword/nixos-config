@@ -13,14 +13,6 @@
     enable = false;
   };
 
-  # 直连
-  systemd.services.systemd-timesyncd.serviceConfig.ExecStartPre = lib.optionals config.services.v2ray.enable [
-    "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner systemd-timesync -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner systemd-timesync -j RETURN || true'"
-  ];
-  systemd.services.v2ray.serviceConfig.ExecStartPre = lib.mkAfter [
-    "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner systemd-timesync -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner systemd-timesync -j RETURN || true'"
-  ];
-
   services.timesyncd = {
     enable = true;
     servers = [

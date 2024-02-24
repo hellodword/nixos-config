@@ -320,23 +320,6 @@
         "type": "github"
       }
     },
-    "loyalsoldier-v2ray-rules-dat": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1708380632,
-        "narHash": "sha256-iUUIr8iYMVct9ymm2U3CJ5XJu2hOxOziYfOC9/BWNK0=",
-        "owner": "Loyalsoldier",
-        "repo": "v2ray-rules-dat",
-        "rev": "a2b28cdeccd0ff67b75320b1cf7da84513f5ba22",
-        "type": "github"
-      },
-      "original": {
-        "owner": "Loyalsoldier",
-        "ref": "release",
-        "repo": "v2ray-rules-dat",
-        "type": "github"
-      }
-    },
     "lxgw-fusion-kai": {
       "flake": false,
       "locked": {
@@ -545,7 +528,6 @@
         "home-manager": "home-manager",
         "impermanence": "impermanence",
         "lanzaboote": "lanzaboote",
-        "loyalsoldier-v2ray-rules-dat": "loyalsoldier-v2ray-rules-dat",
         "lxgw-fusion-kai": "lxgw-fusion-kai",
         "nix-index-database": "nix-index-database",
         "nix-vscode-ext": "nix-vscode-ext",

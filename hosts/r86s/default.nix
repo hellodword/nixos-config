@@ -13,7 +13,6 @@
     ../common/optional/openssh-server.nix
 
     ../common/optional/adguardhome.nix
-    ../common/optional/v2ray.nix
 
     ../common/optional/wireguard-server.nix
 

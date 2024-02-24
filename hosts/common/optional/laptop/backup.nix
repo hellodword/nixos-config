@@ -113,8 +113,7 @@ let
   setResticS3 = cfg: name:
     let
       require = [ "network.target" ]
-        ++ lib.optionals config.services.v2raya.enable [ "v2raya.service" ]
-        ++ lib.optionals config.services.v2ray.enable [ "v2ray.service" ];
+        ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
     in
     {
       # requires = lib.mkForce require;
@@ -224,14 +223,10 @@ in
 
           "${persistPath}/home/${userName}/.gnupg"
 
-          "${persistPath}/usr/local/etc/v2ray/outbounds.json"
-
           # firefox cookies
           "${persistPath}/home/${userName}/.mozilla/firefox/default/sessionstore-backups"
           # "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite-wal"
           "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite"
-
-          "${persistPath}/usr/local/etc/openvpn/client"
 
           "${persistPath}/home/${userName}/.cache/rofi3.druncache"
         ];

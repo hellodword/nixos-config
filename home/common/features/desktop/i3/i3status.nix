@@ -84,24 +84,6 @@ in
         };
       };
 
-      "ethernet goose" = {
-        enable = builtins.hasAttr "goose" nixosConfig.services.openvpn.servers;
-        position = 23;
-        settings = {
-          format_up = "goose";
-          format_down = "goose";
-        };
-      };
-
-      "ethernet fastest" = {
-        enable = builtins.hasAttr "fastest" nixosConfig.services.openvpn.servers;
-        position = 24;
-        settings = {
-          format_up = "fastest";
-          format_down = "fastest";
-        };
-      };
-
       # load = {
       #   position = 31;
       #   settings = {

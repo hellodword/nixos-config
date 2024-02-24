@@ -3,8 +3,6 @@
 {
   imports = [
     ./backup.nix
-    ./openvpn.nix
-    ./wireguard.nix
     ./packages.nix
     ./firejail.nix
   ] ++
@@ -24,8 +22,8 @@
     ../../../common/optional/ext4.nix
 
     ../../../common/optional/prefer-ipv4.nix
+    ../../../common/optional/sing-box.nix
     ../../../common/optional/adguardhome.nix
-    ../../../common/optional/v2ray.nix
 
     ../../../common/optional/docker.nix
     ../../../common/optional/podman.nix
