@@ -64,5 +64,10 @@ in
     feh = prev.feh.overrideDerivation (oldAttrs: {
       postInstall = "sed -i 's/Exec=feh/Exec=feh --scale-down --auto-zoom/' $out/share/applications/feh.desktop";
     });
+
+    sing-box = addPatches prev.sing-box [
+      # https://github.com/SagerNet/sing-box/issues/1494
+      ./sing-box-http2ping.patch
+    ];
   };
 }

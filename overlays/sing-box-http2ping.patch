@@ -1,0 +1,246 @@
+diff --git a/common/urltest/urltest.go b/common/urltest/urltest.go
+index 001f2e1..2a47e54 100644
+--- a/common/urltest/urltest.go
++++ b/common/urltest/urltest.go
+@@ -2,6 +2,8 @@ package urltest
+ 
+ import (
+ 	"context"
++	"crypto/tls"
++	"fmt"
+ 	"net"
+ 	"net/http"
+ 	"net/url"
+@@ -11,6 +13,7 @@ import (
+ 	"github.com/sagernet/sing/common"
+ 	M "github.com/sagernet/sing/common/metadata"
+ 	N "github.com/sagernet/sing/common/network"
++	"golang.org/x/net/http2"
+ )
+ 
+ type History struct {
+@@ -123,3 +126,103 @@ func URLTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err e
+ 	t = uint16(time.Since(start) / time.Millisecond)
+ 	return
+ }
++
++var h2pool sync.Map
++
++type HTTP2Ping struct {
++	Tag       string
++	tcpConn   net.Conn
++	tlsConn   *tls.Conn
++	http2Conn *http2.ClientConn
++}
++
++func (h2 *HTTP2Ping) Destroy() {
++	if h2 == nil {
++		return
++	}
++	if h2.http2Conn != nil {
++		h2.http2Conn.Close()
++		h2.http2Conn = nil
++	}
++	if h2.tcpConn != nil {
++		h2.tcpConn.Close()
++		h2.tcpConn = nil
++	}
++	h2pool.Delete(h2.Tag)
++}
++
++func (h2 *HTTP2Ping) Ping(ctx context.Context, deadline time.Time) error {
++	h2.tlsConn.SetDeadline(deadline)
++	defer h2.tlsConn.SetDeadline(time.Time{})
++	return h2.http2Conn.Ping(ctx)
++}
++
++func getHttp2Conn(ctx context.Context, hostname, port string, detour N.Dialer, tag string) (h2 *HTTP2Ping, err error) {
++
++	v, ok := h2pool.Load(tag)
++	if !ok {
++		h2 = &HTTP2Ping{Tag: tag}
++
++		h2.tcpConn, err = detour.DialContext(ctx, "tcp", M.ParseSocksaddrHostPortStr(hostname, port))
++		if err != nil {
++			h2 = nil
++			return
++		}
++
++		h2.tlsConn = tls.Client(h2.tcpConn, &tls.Config{
++			ServerName: hostname,
++			NextProtos: []string{"h2"},
++		})
++
++		tr := http2.Transport{}
++		h2.http2Conn, err = tr.NewClientConn(h2.tlsConn)
++		if err != nil {
++			h2.Destroy()
++			h2 = nil
++			return
++		}
++
++		// FIXME close when program exit
++		h2pool.Store(tag, h2)
++	} else {
++		h2 = v.(*HTTP2Ping)
++	}
++
++	return h2, nil
++}
++
++func URLTestH2(ctx context.Context, link string, detour N.Dialer, tag string, interval time.Duration) (t uint16, err error) {
++	if link == "" {
++		link = "https://1.1.1.1"
++	}
++	linkURL, err := url.Parse(link)
++	if err != nil {
++		return
++	}
++	hostname := linkURL.Hostname()
++	port := linkURL.Port()
++	if port == "" {
++		switch linkURL.Scheme {
++		case "https":
++			port = "443"
++		default:
++			err = fmt.Errorf("wrong protocol scheme: %s", linkURL.Scheme)
++			return
++		}
++	}
++
++	// FIXME limit creations with frequent failures
++	h2, err := getHttp2Conn(ctx, hostname, port, detour, tag)
++	if err != nil {
++		return
++	}
++
++	start := time.Now()
++	err = h2.Ping(ctx, start.Add(interval))
++	if err != nil {
++		h2.Destroy()
++		return
++	}
++	return uint16(time.Since(start) / time.Millisecond), nil
++
++}
+diff --git a/outbound/urltest.go b/outbound/urltest.go
+index f6366c0..640c4a8 100644
+--- a/outbound/urltest.go
++++ b/outbound/urltest.go
+@@ -3,6 +3,7 @@ package outbound
+ import (
+ 	"context"
+ 	"net"
++	"os"
+ 	"sync"
+ 	"time"
+ 
+@@ -204,6 +205,9 @@ type URLTestGroup struct {
+ 	close      chan struct{}
+ 	started    bool
+ 	lastActive atomic.TypedValue[time.Time]
++
++	useHttp2Ping             bool
++	currentSelectedOutBounds sync.Map
+ }
+ 
+ func NewURLTestGroup(
+@@ -250,6 +254,7 @@ func NewURLTestGroup(
+ 		pauseManager:                 service.FromContext[pause.Manager](ctx),
+ 		interruptGroup:               interrupt.NewGroup(),
+ 		interruptExternalConnections: interruptExternalConnections,
++		useHttp2Ping:                 os.Getenv("USE_HTTP2PING") != "",
+ 	}, nil
+ }
+ 
+@@ -257,6 +262,7 @@ func (g *URLTestGroup) PostStart() {
+ 	g.started = true
+ 	g.lastActive.Store(time.Now())
+ 	go g.CheckOutbounds(false)
++	g.Touch()
+ }
+ 
+ func (g *URLTestGroup) Touch() {
+@@ -289,6 +295,7 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+ 	var minDelay uint16
+ 	var minTime time.Time
+ 	var minOutbound adapter.Outbound
++	current := g.getCurrentSelectedOutBound(network)
+ 	for _, detour := range g.outbounds {
+ 		if !common.Contains(detour.Network(), network) {
+ 			continue
+@@ -297,6 +304,10 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+ 		if history == nil {
+ 			continue
+ 		}
++		if g.useHttp2Ping && !g.interruptExternalConnections && current != nil && current.Tag == detour.Tag() {
++			g.logger.Debug("[http2ping] reuse outbound ", current.Tag, " network: ", network)
++			return current.Detour, true
++		}
+ 		if minDelay == 0 || minDelay > history.Delay+g.tolerance || minDelay > history.Delay-g.tolerance && minTime.Before(history.Time) {
+ 			minDelay = history.Delay
+ 			minTime = history.Time
+@@ -304,6 +315,9 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+ 		}
+ 	}
+ 	if minOutbound == nil {
++		if g.useHttp2Ping {
++			g.logger.Debug("[http2ping] not found for network: ", network)
++		}
+ 		for _, detour := range g.outbounds {
+ 			if !common.Contains(detour.Network(), network) {
+ 				continue
+@@ -312,6 +326,10 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+ 		}
+ 		return nil, false
+ 	}
++	if g.useHttp2Ping {
++		current = g.storeCurrentSelectedOutBound(network, minOutbound)
++		g.logger.Debug("[http2ping] new outbound ", current.Tag, " network: ", network)
++	}
+ 	return minOutbound, true
+ }
+ 
+@@ -373,7 +391,13 @@ func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint
+ 		b.Go(realTag, func() (any, error) {
+ 			ctx, cancel := context.WithTimeout(context.Background(), C.TCPTimeout)
+ 			defer cancel()
+-			t, err := urltest.URLTest(ctx, g.link, p)
++			var t uint16
++			var err error
++			if g.useHttp2Ping {
++				t, err = urltest.URLTestH2(ctx, g.link, p, realTag, g.interval)
++			} else {
++				t, err = urltest.URLTest(ctx, g.link, p)
++			}
+ 			if err != nil {
+ 				g.logger.Debug("outbound ", tag, " unavailable: ", err)
+ 				g.history.DeleteURLTestHistory(realTag)
+@@ -409,3 +433,27 @@ func (g *URLTestGroup) performUpdateCheck() {
+ 		g.interruptGroup.Interrupt(g.interruptExternalConnections)
+ 	}
+ }
++
++type selectedOutBound struct {
++	Network string
++	Tag     string
++	Detour  adapter.Outbound
++}
++
++func (g *URLTestGroup) getCurrentSelectedOutBound(network string) *selectedOutBound {
++	v, ok := g.currentSelectedOutBounds.Load(network)
++	if ok {
++		return v.(*selectedOutBound)
++	}
++	return nil
++}
++
++func (g *URLTestGroup) storeCurrentSelectedOutBound(network string, detour adapter.Outbound) *selectedOutBound {
++	v := &selectedOutBound{
++		Network: network,
++		Tag:     detour.Tag(),
++		Detour:  detour,
++	}
++	g.currentSelectedOutBounds.Store(network, v)
++	return v
++}

@@ -142,11 +142,12 @@ in
         serviceConfig = {
           Type = "simple";
 
+          Environment = "USE_HTTP2PING=true";
           ExecStartPre = [
             "+${sbGenerate}/bin/exe"
           ];
           ExecStop = (map (x: "+${sbBypassUserDel}/bin/exe ${x.user}") config.me.sing-box-bypass-services);
-          ExecStart = "${pkgs.sing-box}/bin/sing-box run -D ${sbBase} -c ${sbConfigFile}";
+          ExecStart = "${pkgs.sing-box}/bin/sing-box run --disable-color -D ${sbBase} -c ${sbConfigFile}";
 
           # Sing-box Auto Update
           Restart = "on-failure";
@@ -278,27 +279,27 @@ in
       }
       {
         idle_timeout = "30m";
-        interrupt_exist_connections = true;
-        interval = "3m";
+        interrupt_exist_connections = false;
+        interval = "1s";
         # _outbounds = [
         #   "proxy:"
         # ];
         tag = "auto:proxy";
-        tolerance = 50;
+        tolerance = 25;
         type = "urltest";
-        url = "https://connectivitycheck.gstatic.com/generate_204";
+        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
       {
         idle_timeout = "30m";
-        interrupt_exist_connections = true;
-        interval = "3m";
+        interrupt_exist_connections = false;
+        interval = "1s";
         # _outbounds = [
         #   "hideme:"
         # ];
         tag = "auto:hideme";
-        tolerance = 50;
+        tolerance = 25;
         type = "urltest";
-        url = "https://connectivitycheck.gstatic.com/generate_204";
+        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
     ];
     route = {
