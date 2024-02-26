@@ -131,6 +131,17 @@ in
         config.me.sing-box-bypass-services)
     )
     {
+      sing-box-cloudflare-yes = {
+        enable = true;
+        description = "Sing-box cloudflare yes";
+        after = [ "network-online.target" "sing-box.service" ];
+        path = with pkgs; [ curl iproute2 gnugrep jq coreutils gawk systemd ];
+        script = "${pkgs.bash}/bin/bash ${./sing-box-cloudflare-yes.sh}";
+        serviceConfig = {
+          Type = "oneshot";
+        };
+      };
+
       sing-box = {
         enable = true;
         description = "Sing-box networking service";
@@ -196,6 +207,19 @@ in
         };
       };
     };
+
+  systemd.timers = {
+    sing-box-cloudflare-yes = {
+      enable = true;
+      description = "Sing-box cloudflare yes";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnUnitInactiveSec = 3600;
+        OnBootSec = 900;
+        AccuracySec = 300;
+      };
+    };
+  };
 
   environment.etc."sing-box/template.json".text = builtins.toJSON {
     "$schema" =
