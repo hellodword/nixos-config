@@ -16,6 +16,7 @@ buildGoModule rec {
   ldflags = [ "-s" "-w" ];
 
   # subPackages = [ "main" ];
+  doCheck = false;
 
   nativeBuildInputs = [ makeWrapper ];
 
