@@ -225,7 +225,12 @@ in
         }
       ];
     };
-    experimental = { cache_file = { enabled = true; }; };
+    experimental = {
+      cache_file = {
+        enabled = true;
+        store_fakeip = true;
+      };
+    };
     inbounds = [
       {
         auto_route = true;
