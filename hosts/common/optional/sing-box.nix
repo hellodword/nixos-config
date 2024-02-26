@@ -158,12 +158,12 @@ in
           # MemoryMax = "200M";
 
           DynamicUser = "yes";
-          LogDirectory = "sing-box";
+          LogsDirectory = "sing-box";
           RuntimeDirectory = "sing-box";
           StateDirectory = "sing-box";
           # Capabilities
-          CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE";
-          AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE";
+          CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+          AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
           # # Proc filesystem
           # ProcSubset = "pid";
           # ProtectProc = "invisible";
@@ -237,8 +237,18 @@ in
         tag = "in:tun";
         type = "tun";
       }
+      # listen on ipv4 all and ipv6 local
+      # curl ip.sb --proxy socks5h://localhost:10800 -4
+      # curl ip.sb --proxy socks5h://localhost:10800 -6
       {
-        listen = "127.0.0.1";
+        listen = "0.0.0.0";
+        listen_port = 10800;
+        sniff = true;
+        tag = "in:mixed";
+        type = "mixed";
+      }
+      {
+        listen = "::1";
         listen_port = 10800;
         sniff = true;
         tag = "in:mixed";
@@ -248,7 +258,7 @@ in
     log = {
       disabled = false;
       level = "trace";
-      output = "/var/lib/sing-box/log";
+      output = "/var/log/sing-box/log";
       timestamp = true;
     };
     outbounds = [
@@ -486,7 +496,7 @@ in
         }
         {
           ip_version = 6;
-          outbound = "wgcf";
+          outbound = "auto:hideme"; # "wgcf";
         }
         {
           outbound = "auto:hideme";
@@ -579,6 +589,7 @@ in
   environment.persistence = {
     "${persistPath}".directories = [
       sbBaseReal
+      "/var/log/private/sing-box"
       "/usr/local/etc/sing-box"
     ];
   };
