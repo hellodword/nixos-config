@@ -134,7 +134,6 @@ in
       sing-box-cloudflare-yes = {
         enable = true;
         description = "Sing-box cloudflare yes";
-        after = [ "network-online.target" "sing-box.service" ];
         path = with pkgs; [ curl iproute2 gnugrep jq coreutils gawk systemd ];
         script = "${pkgs.bash}/bin/bash ${./sing-box-cloudflare-yes.sh}";
         serviceConfig = {
@@ -147,7 +146,10 @@ in
         description = "Sing-box networking service";
         wantedBy = [ "multi-user.target" ];
         requires = [ "network-online.target" ];
-        after = [ "network-online.target" ];
+        after = [
+          "network-online.target"
+          # "nss-lookup.target"
+        ];
         path = with pkgs; [ curl sing-box ];
 
         serviceConfig = {
@@ -212,6 +214,7 @@ in
     sing-box-cloudflare-yes = {
       enable = true;
       description = "Sing-box cloudflare yes";
+      after = [ "sing-box.service" ];
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnUnitInactiveSec = 3600;
@@ -235,9 +238,11 @@ in
       rules = [ ];
       servers = [
         {
-          address = "local";
+          # adguardhome
+          address = "udp://127.0.0.1";
           address_strategy = "prefer_ipv4";
-          detour = "direct";
+          # https://github.com/SagerNet/sing-box/issues/1320#issuecomment-1881237086
+          detour = "out:direct:default";
           strategy = "prefer_ipv4";
           tag = "dns:global";
         }
@@ -303,6 +308,12 @@ in
         tag = "out:dns";
         type = "dns";
       }
+      # {
+      #   tag = "out:dns:local";
+      #   type = "direct";
+      #   override_address = "127.0.0.1";
+      #   override_port = 53;
+      # }
       {
         detour = "auto:proxy";
         interface_name = "wgcf";
@@ -511,6 +522,14 @@ in
           ip_is_private = true;
           outbound = "out:direct:default";
         }
+        # {
+        #   outbound = "out:dns:local";
+        #   protocol = "dns";
+        #   source_ip_cidr = [
+        #     # docker bridge network
+        #     "172.17.0.1/16"
+        #   ];
+        # }
         {
           outbound = "out:dns";
           protocol = "dns";
