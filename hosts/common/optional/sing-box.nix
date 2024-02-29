@@ -217,7 +217,7 @@ in
       after = [ "sing-box.service" ];
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnUnitInactiveSec = 3600;
+        OnUnitInactiveSec = 3600 * 6;
         OnBootSec = 900;
         AccuracySec = 300;
       };
