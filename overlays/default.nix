@@ -23,22 +23,44 @@ in
   # https://nixos.wiki/wiki/Overlays
   modifications = final: prev: {
 
-    # sway-unwrapped = addPatches prev.sway-unwrapped [
-    #   # # text_input: Implement input-method popups
-    #   # # https://github.com/swaywm/sway/pull/7226
-    #   # (prev.fetchpatch {
-    #   #   url = "https://github.com/swaywm/sway/commit/d1c6e44886d1047b3aa6ff6aaac383eadd72f36a.patch";
-    #   #   hash = "sha256-LsCoK60FKp3d8qopGtrbCFXofxHT+kOv1e1PiLSyvsA=";
-    #   # })
+    # https://github.com/Guanran928/flake/blob/32524d8f91f85936616bb7f0859113dfc3cf46a5/overlays/sway/default.nix
+    sway-unwrapped = prev.sway-unwrapped.overrideAttrs (oldAttrs: {
+      version = "1.10-unstable-2024-02-23";
+      src = prev.fetchFromGitHub {
+        owner = "swaywm";
+        repo = "sway";
+        rev = "fc640d5f6c82883c35e90a64f0098486e6091293";
+        hash = "sha256-n0U1RoSv3fuOkey2gXPX+O4mRA2PCASpkRrIE5069BI";
+      };
 
-    #   # Tray D-Bus Menu
-    #   # https://github.com/swaywm/sway/pull/6249
-    #   # (prev.fetchpatch {
-    #   #   url = "https://github.com/swaywm/sway/commit/2f304ef0532a45d00b2ec2c7fc63adef0aec7607.patch";
-    #   #   hash = "sha256-nd+Z6A7GE5Go7QxXOI+hiLWQiXegsQatcNfxEsXgamI=";
-    #   # })
-    #   ./sway-tray-d-bus-menu.patch
-    # ];
+      buildInputs = with prev; [
+        (wlroots.overrideAttrs {
+          version = "1.18.0-unstable-2024-02-23";
+          src = prev.fetchFromGitLab {
+            domain = "gitlab.freedesktop.org";
+            owner = "wlroots";
+            repo = "wlroots";
+            rev = "54e1fefd2e29cb00dff7c02801913d793ceab7d6";
+            hash = "sha256-VX2AAzcYl255yF43+uetcOS+uYzAVfk7WccWONpjmYU=";
+          };
+        })
+
+        cairo
+        gdk-pixbuf
+        json_c
+        libGL
+        libdrm
+        libevdev
+        libinput
+        librsvg
+        libxkbcommon
+        pango
+        pcre2
+        wayland
+        wayland-protocols
+        xorg.xcbutilwm
+      ];
+    });
 
     # electron_27 = prev.electron_27.overrideAttrs (oldAttrs: {
     #   buildCommand = prev.lib.replaceStrings
