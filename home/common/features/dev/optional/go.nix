@@ -30,4 +30,7 @@
       "go.toolsManagement.autoUpdate" = false;
       "go.logging.level" = "verbose";
     };
+
+  # https://github.com/void-linux/void-packages/issues/44578
+  home.sessionVariables.GOTOOLCHAIN = "local";
 }
