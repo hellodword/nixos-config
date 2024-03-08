@@ -354,7 +354,7 @@ in
     ];
     route = {
       auto_detect_interface = true;
-      final = "auto:hideme";
+      final = "auto:proxy"; # "auto:hideme";
       rule_set = [
         {
           download_detour = "auto:proxy";
