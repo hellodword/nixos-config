@@ -31,6 +31,20 @@ in
         url = "https://github.com/swaywm/sway/compare/1.9...NickHu:sway:feature/tray-dbus-menu-1.9.patch";
         hash = "sha256-JhVqMmXbtmGbM3GmTidrQ/UMSjXRR2wX6sgv3kdUYIQ=";
       })
+
+      # https://aur.archlinux.org/cgit/aur.git/tree/?h=sway-im
+      (prev.fetchpatch {
+        url = "https://aur.archlinux.org/cgit/aur.git/plain/0001-text_input-Implement-input-method-popups.patch?h=sway-im";
+        hash = "sha256-h7bEROEoKtCaA+SsMljaai40dDzkEjJvdTa6vQInOD8=";
+      })
+      (prev.fetchpatch {
+        url = "https://aur.archlinux.org/cgit/aur.git/plain/0002-chore-fractal-scale-handle.patch?h=sway-im";
+        hash = "sha256-J2ju91MyNbtelXpe+aO+sa3EP/AC+n9G+xpk0ErmMAE=";
+      })
+      (prev.fetchpatch {
+        url = "https://aur.archlinux.org/cgit/aur.git/plain/0003-chore-left_pt-on-method-popup.patch?h=sway-im";
+        hash = "sha256-d0apIshL/o0oKMrs+bIBxKwKhrYwpbXIpakPngtZL/g=";
+      })
     ];
 
     # electron_27 = prev.electron_27.overrideAttrs (oldAttrs: {
