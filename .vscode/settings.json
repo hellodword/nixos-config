@@ -5,7 +5,7 @@
         "EDITOR": "code --wait"
     },
     "nix.enableLanguageServer": true,
-    "nix.serverPath": "nixd",
+    "nix.serverPath": "nil",
     // Uncomment these to tweak settings.
     "nix.serverSettings": {
         "nil": {
