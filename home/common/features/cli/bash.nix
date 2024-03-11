@@ -69,6 +69,7 @@
       "sing-box-log" = "sudo tail -f /var/log/sing-box/log";
 
       "nix-prefetch-url-sha256" = "nix-prefetch-url-sha256() { nix hash to-sri --type sha256 \"$(nix-prefetch-url $1)\"; }; nix-prefetch-url-sha256";
+      "nix-prefetch-patch" = ''nix-prefetch-patch() { nix build --impure --expr "(import <nixpkgs> {}).fetchpatch { url = \"$1\"; }"; }; nix-prefetch-patch'';
     };
     shellOptions = [
       "histappend"

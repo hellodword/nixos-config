@@ -28,22 +28,26 @@ in
       # https://github.com/swaywm/sway/compare/1.9...NickHu:sway:feature/tray-dbus-menu-1.9.patch
       # https://github.com/swaywm/sway/pull/6249#issuecomment-1974771913
       (prev.fetchpatch {
+        name = "tray-dbus-menu-1.9.patch";
         url = "https://github.com/swaywm/sway/compare/1.9...NickHu:sway:feature/tray-dbus-menu-1.9.patch";
-        hash = "sha256-JhVqMmXbtmGbM3GmTidrQ/UMSjXRR2wX6sgv3kdUYIQ=";
+        hash = "sha256-P7ede/4csFycKq5dW9Z5PrqVg+8if3xIm+T8dT4Z7b0=";
       })
 
-      # https://aur.archlinux.org/cgit/aur.git/tree/?h=sway-im
+      # https://aur.archlinux.org/cgit/aur.git/tree/?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94
       (prev.fetchpatch {
-        url = "https://aur.archlinux.org/cgit/aur.git/plain/0001-text_input-Implement-input-method-popups.patch?h=sway-im";
-        hash = "sha256-h7bEROEoKtCaA+SsMljaai40dDzkEjJvdTa6vQInOD8=";
+        name = "0001-text_input-Implement-input-method-popups.patch";
+        url = "https://aur.archlinux.org/cgit/aur.git/plain/0001-text_input-Implement-input-method-popups.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
+        hash = "sha256-A+rBaWMWs616WllVoo21AJaf9lxg/oCG0b9tHLfuJII=";
       })
       (prev.fetchpatch {
-        url = "https://aur.archlinux.org/cgit/aur.git/plain/0002-chore-fractal-scale-handle.patch?h=sway-im";
-        hash = "sha256-J2ju91MyNbtelXpe+aO+sa3EP/AC+n9G+xpk0ErmMAE=";
+        name = "0002-chore-fractal-scale-handle.patch";
+        url = "https://aur.archlinux.org/cgit/aur.git/plain/0002-chore-fractal-scale-handle.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
+        hash = "sha256-YOFm0A4uuRSuiwnvF9xbp8Wl7oGicFGnq61vLegqJ0E=";
       })
       (prev.fetchpatch {
-        url = "https://aur.archlinux.org/cgit/aur.git/plain/0003-chore-left_pt-on-method-popup.patch?h=sway-im";
-        hash = "sha256-d0apIshL/o0oKMrs+bIBxKwKhrYwpbXIpakPngtZL/g=";
+        name = "0003-chore-left_pt-on-method-popup.patch";
+        url = "https://aur.archlinux.org/cgit/aur.git/plain/0003-chore-left_pt-on-method-popup.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
+        hash = "sha256-PzhQBRpyB1WhErn05UBtBfaDW5bxnQLRKWu8jy7dEiM=";
       })
     ];
 
