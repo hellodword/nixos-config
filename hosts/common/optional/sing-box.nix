@@ -5,6 +5,7 @@ let
   sbBaseReal = "/var/lib/private/sing-box";
   sbTemplateFile = "/etc/sing-box/template.json";
   sbOutboundsFile = "/usr/local/etc/sing-box/outbounds.json";
+  sbRulesFile = "/usr/local/etc/sing-box/rules.json";
   sbConfigFile = "${sbBase}/sing-box.json";
   sbGenerate = pkgs.writeShellApplication {
     name = "exe";
@@ -39,7 +40,9 @@ let
       jq "(.outbounds[] | select(.tag == \"auto:proxy\")).outbounds = [$proxy_tags]" config.json.tmp.1 > config.json.tmp.2
       jq "(.outbounds[] | select(.tag == \"auto:hideme\")).outbounds = [$hideme_tags]" config.json.tmp.2 > config.json.tmp.3
 
-      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.3" ${sbOutboundsFile} > ${sbConfigFile}
+      PRE_RULES="$(jq -c '.route.rules' ${sbRulesFile} | sed -E 's@^\[@@' | sed -E 's@\]$@,@')"
+      sed -E "/\"rules\": ?\[/a\\$PRE_RULES" "config.json.tmp.3" | jq > "config.json.tmp.4"
+      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.4" ${sbOutboundsFile} > ${sbConfigFile}
       rm -rf config.json.tmp.*
     '';
   };
@@ -235,7 +238,7 @@ in
         inet6_range = "fc00::/18";
       };
       final = "dns:global";
-      rules = [ ];
+      # rules = [ ];
       servers = [
         {
           # adguardhome

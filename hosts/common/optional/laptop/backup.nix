@@ -230,7 +230,10 @@ in
 
           "${persistPath}/home/${userName}/.cache/rofi3.druncache"
         ]
-        ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "/usr/local/etc/sing-box/outbounds.json" ];
+        ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
+          "/usr/local/etc/sing-box/outbounds.json"
+          "/usr/local/etc/sing-box/rules.json"
+        ];
       };
     };
 
