@@ -37,6 +37,7 @@
                 // Type: string
                 // Example: "/run/current-system/sw/bin/nix"
                 "binary": "nix",
+                "maxMemoryMB": 2560,
                 "flake": {
                     // Auto-archiving behavior which may use network.
                     //
@@ -45,14 +46,14 @@
                     // - false: Do not archive. Only load inputs that are already on disk.
                     // Type: null | boolean
                     // Example: true
-                    "autoArchive": true,
+                    "autoArchive": false,
                     // Whether to auto-eval flake inputs.
                     // The evaluation result is used to improve completion, but may cost
                     // lots of time and/or memory.
                     //
                     // Type: boolean
                     // Example: true
-                    "autoEvalInputs": true,
+                    "autoEvalInputs": false,
                     // The input name of nixpkgs for NixOS options evaluation.
                     //
                     // The options hierarchy is used to improve completion, but may cost
