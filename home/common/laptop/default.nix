@@ -74,7 +74,8 @@ in
   programs.git.aliases."signing" = "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${inputs.nixos-privates.gpg."laptop".git-signingkey}";
 
   # https://github.com/nix-community/home-manager/issues/4804#issuecomment-1871272189
-  services.gpg-agent.pinentryFlavor = "qt";
+  # services.gpg-agent.pinentryFlavor = "qt";
+  services.gpg-agent.pinentryPackage = pkgs.pinentry-qt;
 
   services.kanshi = lib.optionalAttrs (!X) {
     enable = true;
