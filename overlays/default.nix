@@ -77,6 +77,12 @@ in
     sing-box = addPatches prev.sing-box [
       # https://github.com/SagerNet/sing-box/issues/1494
       ./sing-box-http2ping.patch
+
+      (prev.fetchpatch {
+        name = "f61b272cbf3732ac7d8307ee787963ba78ca5945.patch";
+        url = "https://github.com/SagerNet/sing-box/commit/f61b272cbf3732ac7d8307ee787963ba78ca5945.patch";
+        hash = "sha256-UGfj9emFYoPnD0/X/yF4rz430Ts2LYrAeajNx04PBpE=";
+      })
     ];
   };
 }
