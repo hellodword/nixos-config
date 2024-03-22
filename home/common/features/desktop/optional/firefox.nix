@@ -72,6 +72,10 @@
                 name = "Anna’s Archive";
                 url = "https://annas-archive.org";
               }
+              {
+                name = "Google Translate";
+                url = "https://translate.google.com/?sl=auto&tl=zh-CN&op=translate";
+              }
             ];
           }
           {
@@ -139,6 +143,7 @@
             "Github Nix"
             "Nixpkgs"
             "home-manager"
+            "Google Translate"
           ];
           engines = {
             "Github Actions" = {
@@ -203,6 +208,13 @@
               }];
               definedAliases = [ "@presearch" "@p" ];
               iconUpdateURL = "https://presearch.com/favicon.ico";
+            };
+            "Google Translate" = {
+              urls = [{
+                template = "https://translate.google.com/?sl=auto&tl=zh-CN&op=translate&text={searchTerms}";
+              }];
+              definedAliases = [ "@translate" ];
+              iconUpdateURL = "https://translate.google.com/favicon.ico";
             };
 
             "Bing".metaData.hidden = true;
