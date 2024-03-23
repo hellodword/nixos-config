@@ -1,4 +1,4 @@
-{ inputs, lib, config, pkgs, persistPath, ... }:
+{ config, pkgs, persistPath, ... }:
 
 {
   home.persistence = {
@@ -24,11 +24,11 @@
         # userChrome = "";
         # userContent = "";
         # https://github.com/Baitinq/nixos-config/blob/1ab479c29c7dc2629664ffb80653616666019b9e/hosts/home.nix#L200
-        extraConfig = lib.strings.concatStrings [
-          (builtins.readFile "${inputs.thunderbird-userjs}/user.js")
-          ''
-          ''
-        ];
+        # extraConfig = lib.strings.concatStrings [
+        #   (builtins.readFile "${inputs.thunderbird-userjs}/user.js")
+        #   ''
+        #   ''
+        # ];
       };
     };
   };

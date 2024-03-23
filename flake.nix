@@ -11,10 +11,10 @@
     };
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
     impermanence.url = "github:nix-community/impermanence";
-    sops-nix.url = "github:Mic92/sops-nix/4606d9b1595e42ffd9b75b9e69667708c70b1d68";
+    sops-nix.url = "github:Mic92/sops-nix/83b68a0e8c94b72cdd0a6e547a14ca7eb1c03616";
 
     lanzaboote = {
-      url = "github:nix-community/lanzaboote/3c3f6d1b0f13a0e30d192838e233107182dec032";
+      url = "github:nix-community/lanzaboote/ded8d23709f94aedb1407bee9e26581f258e9e3a";
 
       # Optional but recommended to limit the size of your system closure.
       inputs.nixpkgs.follows = "nixpkgs";
@@ -30,15 +30,15 @@
       url = "github:arkenfox/user.js";
       flake = false;
     };
-    thunderbird-userjs = {
-      url = "github:HorlogeSkynet/thunderbird-user.js/d6b18302e46349d9924c8a76951bae6efca51501";
-      flake = false;
-    };
+    # thunderbird-userjs = {
+    #   url = "github:HorlogeSkynet/thunderbird-user.js/d6b18302e46349d9924c8a76951bae6efca51501";
+    #   flake = false;
+    # };
 
     nixos-privates.url = "git+ssh://git@hellodword.github.com/hellodword/nixos-privates.git";
 
     firefox-addons = {
-      url = "gitlab:rycee/nur-expressions/19101fae468c9773b99925eae619ebb24fc247da?dir=pkgs/firefox-addons";
+      url = "gitlab:rycee/nur-expressions/d1f6bbea177a3542d9ad3ecead77089b65e09963?dir=pkgs/firefox-addons";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -73,7 +73,7 @@
     };
 
     rime-ice = {
-      url = "github:iDvel/rime-ice/10dbeb4a4d5f7b9e6ea511ced442f34bdc529142";
+      url = "github:iDvel/rime-ice/fc2a5eb7aafa73148b7bc4508e9995b492cecd5a";
       flake = false;
     };
 

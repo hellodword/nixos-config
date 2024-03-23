@@ -7,12 +7,12 @@
 
 stdenv.mkDerivation {
   pname = "librime-lua";
-  version = "7f3eca2ce659fc2401b8acb52bd2182b433e12b1";
+  version = "20ddea907e0b0c9c60d1dcb6b102bee38697cb5c";
   src = fetchFromGitHub {
     owner = "hchunhui";
     repo = "librime-lua";
-    rev = "7f3eca2ce659fc2401b8acb52bd2182b433e12b1";
-    hash = "sha256-n+KCu8JmFBGPyfBgeLiFqND3wmQs/4eOZjqTXuaW+hk=";
+    rev = "20ddea907e0b0c9c60d1dcb6b102bee38697cb5c";
+    hash = "sha256-kU3pceqQoIM4pypPg2nLLnnyrgQSUEWZW9VLmmPJltU=";
     fetchSubmodules = false;
   };
   date = "2024-02-06";

@@ -1,7 +1,6 @@
 # https://github.com/klchen0112/nur/blob/95ee0f40a538067cbf5e362d5d72e681cd7a7737/pkgs/Jigmo/default.nix
 { stdenv
 , lib
-, callPackage
 , fetchzip
 ,
 }:

@@ -41,7 +41,7 @@ in
     ../features/desktop/optional/kdeconnect.nix
     ../features/desktop/optional/safeeyes.nix
     (if X then ../features/desktop/optional/peek.nix else ../features/desktop/optional/kooha.nix)
-    ../features/desktop/optional/thunderbird.nix
+    # ../features/desktop/optional/thunderbird.nix
     ../features/desktop/optional/joplin.nix
     ../features/desktop/optional/bitwarden.nix
     ../features/desktop/optional/libreoffice.nix
