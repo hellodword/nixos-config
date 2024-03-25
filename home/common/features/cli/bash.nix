@@ -1,4 +1,4 @@
-{ config, persistPath, nixosConfig, userName, ... }:
+{ config, lib, persistPath, nixosConfig, userName, ... }:
 
 {
   # Broken symbol link
@@ -21,7 +21,26 @@
       "cd"
     ];
     historySize = 10000;
-    # initExtra = builtins.readFile ./.bashrc;
+    # ${pkgs.bash-completion}/share/bash-completion/completions/curl
+    initExtra = lib.mkAfter ''
+      _coderadio()
+      {
+          local cur prev
+          _init_completion || return
+
+          case $prev in
+              --interface)
+                  _available_interfaces -a
+                  return
+                  ;;
+          esac
+
+          if [[ $cur == -* ]]; then
+              COMPREPLY=($(compgen -W '$(_parse_help "$1")' -- "$cur"))
+          fi
+      } &&
+          complete -F _coderadio coderadio
+    '';
     logoutExtra = "";
     profileExtra = "";
     sessionVariables = { };
@@ -75,6 +94,8 @@
       # https://coderadio.freecodecamp.org/
       # https://stackoverflow.com/questions/11831214/how-to-run-ffplay-as-a-window-less-process/53295994#53295994
       "coderadio" = ''coderadio () { curl -s https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3 "$@" | ffplay -autoexit -nodisp -loglevel quiet -; }; coderadio'';
+
+      "nix-outpath" = ''nix-outpath () { nix eval --impure --expr "(import <nixpkgs> {}).$1.outPath" | sed -E "s@(^\"|\"$)@@g"; }; nix-outpath'';
     };
     shellOptions = [
       "histappend"
