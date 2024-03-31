@@ -46,3 +46,7 @@ Added 20435 variables.
 nix-repl> builtins.unsafeGetAttrPos "buildGoModule" pkgs
 { column = 3; file = "/nix/store/599wy5snf00pn1apmsnzmiy0ysdpds03-source/pkgs/top-level/all-packages.nix"; line = 25777; }
 ```
+
+## nix build 断点
+
+- https://github.com/imincik/nix-utils
