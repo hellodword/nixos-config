@@ -50,3 +50,13 @@ nix-repl> builtins.unsafeGetAttrPos "buildGoModule" pkgs
 ## nix build 断点
 
 - https://github.com/imincik/nix-utils
+
+## 转义 `${`
+
+- https://nixos.org/manual/nix/stable/language/values.html
+
+在 `$` 前加 `''`
+
+```
+''''${1:-default}''
+```
