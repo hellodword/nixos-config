@@ -60,3 +60,8 @@ nix-repl> builtins.unsafeGetAttrPos "buildGoModule" pkgs
 ```
 ''''${1:-default}''
 ```
+
+## branch & channel & staging
+
+- https://discourse.nixos.org/t/differences-between-nix-channels/13998/1
+- https://github.com/NixOS/rfcs/pull/26
