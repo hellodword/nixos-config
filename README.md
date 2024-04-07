@@ -188,6 +188,10 @@ mkdir -p /mnt/persist/usr/local/etc/sing-box
 vim /mnt/persist/usr/local/etc/sing-box/outbounds.json
 vim /mnt/persist/usr/local/etc/sing-box/rules.json
 
+# router
+mkdir -p /mnt/persist/usr/local/etc/wireguard
+vim /mnt/persist/usr/local/etc/wireguard/wg0.conf
+
 mkdir -p /mnt/persist/etc
 
 # secure boot
