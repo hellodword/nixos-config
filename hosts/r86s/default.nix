@@ -1,4 +1,4 @@
-{ config, pkgs, inputs, lib, userName, ... }:
+{ config, pkgs, inputs, userName, ... }:
 
 {
   imports = [
@@ -15,6 +15,7 @@
     ../common/optional/adguardhome.nix
 
     ../common/optional/wireguard-server.nix
+    ../common/optional/sing-box.nix
 
     ../common/optional/router
 

@@ -10,7 +10,7 @@
 - hardwares
 - username / uid / group
 - networking
-  - v2ray
+  - sing-box
   - kill-switch
   - dhcp
   - ipv6
