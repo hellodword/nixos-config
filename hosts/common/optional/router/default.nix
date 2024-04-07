@@ -33,9 +33,9 @@ in
 
   # TODO DHCP Server
 
-  # boot.kernel.sysctl = {
-  #   "net.ipv4.ip_forward" = "1";
-  # };
+  boot.kernel.sysctl = {
+    "net.ipv4.ip_forward" = "1";
+  };
 
   # system.activationScripts.iptables-snat.text = ''
   #   iface=$(ip route get 255.255.255.255 | head -n 1 | awk "{print \$4}")
