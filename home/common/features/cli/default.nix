@@ -14,6 +14,6 @@
     nixpkgs-fmt
     nixpkgs-lint
     nil # Nix LSP
-    nixfmt # Nix formatter
+    nixfmt-rfc-style # Nix formatter
   ];
 }
