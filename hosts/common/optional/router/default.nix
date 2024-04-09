@@ -27,7 +27,8 @@ let
 in
 {
   # services.adguardhome.settings.bind_host = lib.mkForce "0.0.0.0";
-  systemd.services."adguardhome".serviceConfig.ExecStartPre = [
+  # execute before sing-box tun
+  systemd.services."sing-box".serviceConfig.ExecStartPre = [
     "+${router-adguardhome-bind-host}/bin/router-adguardhome-bind-host"
   ];
 
