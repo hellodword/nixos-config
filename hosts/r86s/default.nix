@@ -16,6 +16,7 @@
 
     ../common/optional/wireguard-server.nix
     ../common/optional/sing-box.nix
+    ../common/optional/tailscale.nix
 
     ../common/optional/router
 
