@@ -15,6 +15,7 @@ in
   # Address = 172.222.1.1/24, 2001:8b0:2c1:222::1/64
   # ListenPort = 8001
   # PrivateKey = <...>
+  # MTU = 1500
   # [Peer]
   # PublicKey = <...>
   # AllowedIPs = 172.222.1.2/32,172.222.1.0/24,2001:8b0:2c1:222::2/128
@@ -26,6 +27,12 @@ in
   # Address = 172.222.1.2/24, 2001:8b0:2c1:222::2/128
   # ListenPort = 8001
   # PrivateKey = <...>
+  # MTU = 1500
+  # # hijack all DNS for systemd-resolved
+  # PostUp = iptables -t nat -C OUTPUT -p udp ! -d 127.0.0.0/8 ! -s 127.0.0.0/8 --dport 53 -j DNAT --to <...> || iptables -t nat -A OUTPUT -p udp ! -d 127.0.0.0/8 ! -s 127.0.0.0/8 --dport 53 -j DNAT --to <...>
+  # PostUp = iptables -t nat -C OUTPUT -p tcp ! -d 127.0.0.0/8 ! -s 127.0.0.0/8 --dport 53 -j DNAT --to <...> || iptables -t nat -A OUTPUT -p tcp ! -d 127.0.0.0/8 ! -s 127.0.0.0/8 --dport 53 -j DNAT --to <...>
+  # PostDown = iptables -t nat -D OUTPUT -p udp ! -d 127.0.0.0/8 ! -s 127.0.0.0/8 --dport 53 -j DNAT --to <...> || true
+  # PostDown = iptables -t nat -D OUTPUT -p tcp ! -d 127.0.0.0/8 ! -s 127.0.0.0/8 --dport 53 -j DNAT --to <...> || true
   # [Peer]
   # PublicKey = <...>
   # AllowedIPs = 0.0.0.0/0, ::0/0
