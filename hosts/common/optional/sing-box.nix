@@ -273,6 +273,15 @@ in
         strict_route = false;
         tag = "in:tun";
         type = "tun";
+        # bypass tailscale
+        # https://tailscale.com/kb/1015/100.x-addresses/
+        # https://quanquan.space/viewtopic.php?t=1350
+        inet4_route_exclude_address = [
+          "100.64.0.0/10"
+        ];
+        inet6_route_exclude_address = [
+          "fd7a:115c:a1e0::/48"
+        ];
       }
       # listen on ipv4 all and ipv6 local
       # curl ip.sb --proxy socks5h://localhost:10800 -4
