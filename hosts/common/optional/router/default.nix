@@ -45,4 +45,5 @@ in
   # '';
 
   services.tailscale.useRoutingFeatures = lib.mkForce "both";
+  services.tailscale.extraUpFlags = lib.mkForce [ ];
 }
