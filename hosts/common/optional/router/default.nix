@@ -1,7 +1,7 @@
 # https://easonyang.com/posts/transparent-proxy-in-router-gateway/
 # https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html
 # https://github.com/AdguardTeam/AdGuardHome/issues/5582#issuecomment-1466946624
-{ pkgs, config, ... }:
+{ pkgs, config, lib, ... }:
 
 let
   router-adguardhome-bind-host = pkgs.writeShellApplication {
@@ -43,4 +43,6 @@ in
   #   iface=$(ip route get 255.255.255.255 | head -n 1 | awk "{print \$4}")
   #   ${pkgs.iptables}/bin/iptables -t nat -C POSTROUTING -o $iface -j MASQUERADE || ${pkgs.iptables}/bin/iptables -t nat -I POSTROUTING -o $iface -j MASQUERADE
   # '';
+
+  services.tailscale.useRoutingFeatures = lib.mkForce "both";
 }
