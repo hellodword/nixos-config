@@ -58,7 +58,7 @@ in
 
   # services.xserver.displayManager.defaultSession = "sway";
   services.xserver.enable = !greetd;
-  services.xserver.displayManager.sddm =
+  services.displayManager.sddm =
     if (!greetd) then
       ({
         enable = true;
