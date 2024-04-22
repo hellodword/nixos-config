@@ -28,6 +28,11 @@
 
         # gpg: WARNING: unsafe permissions on homedir
         { directory = ".gnupg"; mode = "0700"; }
+
+        # go/pkg/mod
+        "go"
+
+        ".docker"
       ]
       ++ lib.optionals config.virtualisation.virtualbox.host.enable [
         ".config/VirtualBox"
