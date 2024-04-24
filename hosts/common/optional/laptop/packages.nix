@@ -6,5 +6,7 @@
     lm_sensors
     pciutils
     sops
+
+    inotify-tools
   ];
 }

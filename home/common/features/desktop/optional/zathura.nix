@@ -18,6 +18,11 @@ in
 
   me.mimeApps.defApps.reader = "org.pwmt.zathura.desktop";
 
+  home.packages = [
+    # pdftotext
+    pkgs.poppler_utils
+  ];
+
   home = {
     persistence = {
       "${persistPath}${config.home.homeDirectory}".directories = [
