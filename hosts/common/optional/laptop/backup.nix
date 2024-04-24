@@ -250,6 +250,13 @@ in
         group = "root";
         mode = "0700";
       })
-      resticS3Providers);
+      resticS3Providers) ++ [
+      {
+        directory = "/root/.cache/borg";
+        user = "root";
+        group = "root";
+        mode = "0755";
+      }
+    ];
   };
 }
