@@ -68,7 +68,7 @@
     };
 
     lxgw-fusion-kai = {
-      url = "github:lxgw/FusionKai";
+      url = "github:lxgw/FusionKai/0bd3ae7ffcd1f290b8db5047ef31b74573368407";
       flake = false;
     };
 
