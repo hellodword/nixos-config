@@ -105,6 +105,7 @@
       forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
       # forEachPkgs = f: forEachSystem (sys: f nixpkgs.legacyPackages.${sys});
       commonArgs = { persistPath = "/persist"; userName = "ubuntu"; };
+
     in
     {
       nixosModules = import ./modules/nixos;
@@ -162,6 +163,100 @@
           commonArgs = commonArgs;
           inherit inputs outputs;
         } // commonArgs;
+      };
+
+      # nix build .#nixosConfigurations.test-vm-minimal.config.system.build.vm
+      # QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" ./result/bin/run-nixos-vm
+      # ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no admin@localhost -p 2221
+      nixosConfigurations."test-vm-minimal" = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          (
+            { config, lib, pkgs, ... }: {
+
+              users.users = {
+                admin = {
+                  isNormalUser = true;
+                  extraGroups = [ "wheel" ];
+                  password = "admin";
+                };
+              };
+
+              virtualisation.vmVariant = {
+                virtualisation = {
+                  memorySize = 1024;
+                  cores = 2;
+                  graphics = false;
+                };
+              };
+
+              system.stateVersion = "23.05";
+
+              services.openssh = {
+                enable = true;
+                settings.PasswordAuthentication = true;
+              };
+
+              networking.firewall.allowedTCPPorts = [ 22 ];
+
+              boot.kernelPackages = pkgs.linuxPackages_latest;
+
+            }
+          )
+        ];
+      };
+
+      # nix build .#nixosConfigurations.test-vm-x.config.system.build.vm
+      # QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22,hostfwd=tcp:127.0.0.1:3389-:3389" ./result/bin/run-nixos-vm
+      nixosConfigurations."test-vm-x" = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          (
+            { config, lib, pkgs, ... }: {
+
+              users.users = {
+                admin = {
+                  isNormalUser = true;
+                  extraGroups = [ "wheel" ];
+                  password = "admin";
+                };
+              };
+
+              virtualisation.vmVariant = {
+                virtualisation = {
+                  memorySize = 4096;
+                  cores = 4;
+                  graphics = true;
+                };
+              };
+
+              system.stateVersion = "23.05";
+
+              services.openssh = {
+                enable = true;
+                settings.PasswordAuthentication = true;
+              };
+
+              networking.firewall.allowedTCPPorts = [ 22 ];
+
+              boot.kernelPackages = pkgs.linuxPackages_latest;
+
+              services.xserver.enable = true;
+              services.displayManager.sddm.enable = true;
+              services.desktopManager.plasma6.enable = true;
+
+              services.xrdp.enable = true;
+              services.xrdp.defaultWindowManager = "startplasma-x11";
+              services.xrdp.openFirewall = true;
+
+              environment.systemPackages = with pkgs; [
+                bitwarden
+                joplin-desktop
+              ];
+
+            }
+          )
+        ];
       };
 
     };
