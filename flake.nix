@@ -87,6 +87,11 @@
       flake = false;
     };
 
+    catppuccin-alacritty = {
+      url = "github:catppuccin/alacritty/94800165c13998b600a9da9d29c330de9f28618e";
+      flake = false;
+    };
+
     catppuccin-fcitx5 = {
       url = "github:catppuccin/fcitx5/ce244cfdf43a648d984719fdfd1d60aab09f5c97";
       flake = false;

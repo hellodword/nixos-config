@@ -33,7 +33,7 @@ in
   programs.rofi = {
     enable = true;
     plugins = with pkgs; [ rofi-calc rofi-emoji rofi-power-menu ];
-    terminal = "${pkgs.kitty}/bin/kitty";
+    terminal = "${pkgs.alacritty}/bin/alacritty";
     # theme = ./theme.rafi;
     extraConfig = {
       disable-history = false;

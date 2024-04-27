@@ -6,6 +6,7 @@ in
 {
   imports = [
     ./kitty.nix
+    ./alacritty.nix
     ./autolock.nix
   ] ++ (lib.optionals X [ ./autorandr.nix ]);
 
