@@ -19,6 +19,9 @@
       #   "{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.tab}{index}:{title}";
     };
     extraConfig = ''
+      # https://github.com/kovidgoyal/kitty/issues/7396#issuecomment-2081322217
+      wayland_enable_ime no
+
       # https://stackoverflow.com/a/1366113
       # But
       # https://github.com/kovidgoyal/kitty/issues/6572#issuecomment-1690889330

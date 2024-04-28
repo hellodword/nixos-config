@@ -27,7 +27,7 @@ let
   });
   i3Config = {
     modifier = mod;
-    terminal = "alacritty";
+    terminal = "kitty";
     # 生成配置后 ws10 会排在第一行，导致默认在 ws10
     defaultWorkspace = "workspace number 1";
     workspaceLayout = "tabbed";
