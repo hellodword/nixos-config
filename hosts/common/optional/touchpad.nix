@@ -1,5 +1,5 @@
 {
-  services.xserver = {
+  services = {
     # Enable touchpad support
     libinput = {
       enable = true;
