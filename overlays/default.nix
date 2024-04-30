@@ -78,5 +78,14 @@ in
       # https://github.com/SagerNet/sing-box/issues/1494
       ./sing-box-http2ping.patch
     ];
+
+    kitty = addPatches prev.kitty [
+      # https://github.com/kovidgoyal/kitty/issues/7396
+      (prev.fetchpatch {
+        name = "kitty-7396.patch";
+        url = "https://github.com/kovidgoyal/kitty/commit/aecf07bcbaa74507526d3f700954842176fef4f2.patch";
+        hash = "sha256-6m4D/xX5dx0v6rhzIyTlkQyCRb2Ik2Ek3q0BrL3saTw=";
+      })
+    ];
   };
 }
