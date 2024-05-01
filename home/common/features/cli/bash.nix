@@ -102,6 +102,7 @@
 
       "code." = "code .";
       "ffmpeg" = "ffmpeg -hide_banner";
+      "ffplay" = "ffplay -hide_banner -nodisp -autoexit";
     };
     shellOptions = [
       "histappend"
