@@ -354,6 +354,13 @@ in
             (x: builtins.typeOf x == "string" && x != "" && (builtins.substring 0 1 x) == "[")
             (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
         )
+          ## tailscale magicdns
+          # https://tailscale.com/blog/2021-09-private-dns-with-magicdns
+          ++ ([
+          ''[/${lib.concatStringsSep "/" [
+              "ts.net"
+            ]}/]100.100.100.100''
+        ])
           # 直连
           ++ ([
           ''[/${lib.concatStringsSep "/" [
