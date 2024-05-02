@@ -44,15 +44,15 @@
       _suno_radio_completion() {
           local current_word="''${COMP_WORDS[COMP_CWORD]}"
 
-          local options="trending weekly monthly top"
+          local options="status trending weekly monthly top"
 
-          if [[ ''${COMP_CWORD} -eq 1 ]]; then
-              COMPREPLY=( $(compgen -W "''${options}" -- "''${current_word}") )
+          if [[ "$COMP_CWORD" -eq 1 ]]; then
+              COMPREPLY=( $(compgen -W "$options" -- "$current_word") )
               return 0
           fi
 
-          if [[ ''${COMP_CWORD} -eq 2 ]]; then
-              COMPREPLY=( $(compgen -W "''${options}" -- "''${current_word}") )
+          if [[ "$COMP_CWORD" -eq 2 ]]; then
+              COMPREPLY=( $(compgen -W "$options" -- "$current_word") )
               return 0
           fi
       } && complete -F _suno_radio_completion suno-radio
@@ -120,7 +120,7 @@
       "ffmpeg" = "ffmpeg -hide_banner";
       "ffplay" = "ffplay -hide_banner -nodisp -autoexit";
 
-      "suno-radio" = "suno-radio () { curl -s https://gas-observe-ky-mention.trycloudflare.com/v1/playlist/$1 | ffplay -autoexit -nodisp -; }; suno-radio";
+      "suno-radio" = ''suno-radio () {  [[ "$1" == "" || "$1" == "status" ]] && curl -s https://gas-observe-ky-mention.trycloudflare.com/v1/playlist | jq || curl -s https://gas-observe-ky-mention.trycloudflare.com/v1/playlist/$1 | ffplay -autoexit -nodisp -; }; suno-radio'';
     };
     shellOptions = [
       "histappend"
