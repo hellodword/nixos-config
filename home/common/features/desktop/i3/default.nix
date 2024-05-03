@@ -45,7 +45,16 @@ let
 
       #   } // i3ConfigStartupExtra
       # )
-    ] ++ (
+    ]
+    ++ (
+      [
+        {
+          # switch to workspace 1 at startup
+          command = "${if X then "i3msg" else "swaymsg"} 'workspace number 1'";
+          always = false;
+        }
+      ]
+    ) ++ (
       lib.optionals X
         [
           (
@@ -65,6 +74,10 @@ let
       "XF86AudioRaiseVolume" = "exec amixer set Master 4%+";
       "XF86MonBrightnessDown" = "exec brightnessctl set 4%-";
       "XF86MonBrightnessUp" = "exec brightnessctl set 4%+";
+
+      # fix issue from https://github.com/nix-community/home-manager/pull/4636
+      "${mod}+0" = null;
+      "${mod}+Shift+0" = null;
     };
 
     bars = [ ]; # if X then [ ] else (lib.mkForce [ ]);
