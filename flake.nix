@@ -170,6 +170,7 @@
       # nix build .#nixosConfigurations.test-vm-minimal.config.system.build.vm
       # rm nixos.qcow2
       # QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" ./result/bin/run-nixos-vm
+      # NIX_DISK_IMAGE=test1.qcow2 QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" nix run .#nixosConfigurations.test-vm-minimal.config.system.build.vm
       # ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no admin@localhost -p 2221
       nixosConfigurations."test-vm-minimal" = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
