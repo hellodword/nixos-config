@@ -96,10 +96,12 @@
       url = "github:catppuccin/fcitx5/ce244cfdf43a648d984719fdfd1d60aab09f5c97";
       flake = false;
     };
+
+    microvm.url = "github:astro/microvm.nix";
   };
 
   outputs =
-    { self, nixpkgs, home-manager, lanzaboote, sops-nix, nixos-hardware, disko, ... }@ inputs:
+    { self, nixpkgs, home-manager, lanzaboote, sops-nix, nixos-hardware, disko, microvm, ... }@ inputs:
     let
       inherit (self) outputs;
       forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
@@ -198,6 +200,14 @@
         system = "x86_64-linux";
         modules = [
           ./vms/zerotier.nix
+        ];
+      };
+
+      nixosConfigurations."microvm-minimal" = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          microvm.nixosModules.microvm
+          ./vms/microvm-minimal.nix
         ];
       };
 

@@ -5,3 +5,4 @@ keys.txt
 nixos-privates
 result
 *.qcow2
+*.img
