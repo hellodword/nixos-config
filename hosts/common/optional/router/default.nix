@@ -11,17 +11,17 @@ let
       iface="$1"
       [ -n "$iface" ]
 
-      sysctl -w "net.ipv4.conf.$iface.route_localnet=1"
+      sysctl -w "net.ipv4.conf.$iface.route_localnet=1" || true
 
-      iptables -t nat -C PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to 127.0.0.1:${builtins.toString config.services.adguardhome.port} || iptables -t nat -A PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to 127.0.0.1:${builtins.toString config.services.adguardhome.port}
+      iptables -t nat -C PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to 127.0.0.1:${builtins.toString config.services.adguardhome.port} || iptables -t nat -A PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to 127.0.0.1:${builtins.toString config.services.adguardhome.port} || true
 
-      iptables -t nat -C PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to 127.0.0.1:53 || iptables -t nat -A PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to 127.0.0.1:53
-      iptables -t nat -C PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to 127.0.0.1:53 || iptables -t nat -A PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to 127.0.0.1:53
+      iptables -t nat -C PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to 127.0.0.1:53 || iptables -t nat -A PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to 127.0.0.1:53 || true
+      iptables -t nat -C PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to 127.0.0.1:53 || iptables -t nat -A PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to 127.0.0.1:53 || true
 
-      ip6tables -t nat -C PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to "[::1]:${builtins.toString config.services.adguardhome.port}" || ip6tables -t nat -A PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to "[::1]:${builtins.toString config.services.adguardhome.port}"
+      ip6tables -t nat -C PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to "[::1]:${builtins.toString config.services.adguardhome.port}" || ip6tables -t nat -A PREROUTING -i "$iface" -p tcp --dport ${builtins.toString config.services.adguardhome.port} -j DNAT --to "[::1]:${builtins.toString config.services.adguardhome.port}" || true
 
-      ip6tables -t nat -C PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to "[::1]:53" || ip6tables -t nat -A PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to "[::1]:53"
-      ip6tables -t nat -C PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to "[::1]:53" || ip6tables -t nat -A PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to "[::1]:53"
+      ip6tables -t nat -C PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to "[::1]:53" || ip6tables -t nat -A PREROUTING -i "$iface" -p tcp --dport 53 -j DNAT --to "[::1]:53" || true
+      ip6tables -t nat -C PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to "[::1]:53" || ip6tables -t nat -A PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to "[::1]:53" || true
     '';
   };
   router-adguardhome-bind-default = pkgs.writeShellApplication {
