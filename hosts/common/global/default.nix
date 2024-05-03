@@ -42,6 +42,7 @@
     git
     screen
     openssl_legacy
+    iptables
   ];
 
   # # https://github.com/mcdonc/.nixconfig/blob/bb1d1458f2558c16d1451f30a619fa9e14733996/videos/stopdhcp/script.rst
