@@ -1,4 +1,4 @@
-{ lib, inputs, config, pkgs, persistPath, ... }:
+{ lib, inputs, pkgs, persistPath, ... }:
 
 
 let
@@ -182,20 +182,7 @@ let
     '';
   };
 
-  pr247828 = pkgs.writeShellApplication {
-    name = "pr247828-fix";
-    runtimeInputs = with pkgs; [ ipset iptables ];
-    text = ''
-      set -e
-      set -x
 
-      cat ${./AdGuardHome.yaml} > "$STATE_DIRECTORY/AdGuardHome.yaml"
-      # echo "  upstream_dns_file: \"${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt\"" >> "$STATE_DIRECTORY/AdGuardHome.yaml"
-      echo "  upstream_dns:" >> "$STATE_DIRECTORY/AdGuardHome.yaml"
-      set +x
-      echo '${lib.concatStringsSep "\n" (map (x: "    - \"${x}\"") config.services.adguardhome2.settings.dns.upstream_dns)}' >> "$STATE_DIRECTORY/AdGuardHome.yaml"
-    '';
-  };
 in
 {
 
@@ -225,35 +212,34 @@ in
 
   systemd.services = {
     adguardhome = {
-      description = "AdGuard Home: Network-level blocker";
-      after = [ "network.target" "mosdns.service" ];
-      wantedBy = [ "multi-user.target" ];
-      unitConfig = {
-        StartLimitIntervalSec = 5;
-        StartLimitBurst = 10;
-      };
+      # description = "AdGuard Home: Network-level blocker";
+      # after = [ "network.target" "mosdns.service" ];
+      # wantedBy = [ "multi-user.target" ];
+      # unitConfig = {
+      #   StartLimitIntervalSec = 5;
+      #   StartLimitBurst = 10;
+      # };
 
 
       serviceConfig =
-        let
-          myArgs = lib.concatStringsSep " " ([
-            "--no-check-update"
-            "--pidfile /run/AdGuardHome/AdGuardHome.pid"
-            "--work-dir /var/lib/AdGuardHome/"
-            "--config /var/lib/AdGuardHome/AdGuardHome.yaml"
-          ] ++ config.services.adguardhome2.extraArgs);
-        in
+        # let
+        #   myArgs = lib.concatStringsSep " " ([
+        #     "--no-check-update"
+        #     "--pidfile /run/AdGuardHome/AdGuardHome.pid"
+        #     "--work-dir /var/lib/AdGuardHome/"
+        #     "--config /var/lib/AdGuardHome/AdGuardHome.yaml"
+        #   ] ++ config.services.adguardhome2.extraArgs);
+        # in
         {
-          DynamicUser = true;
-          ExecStart = "${pkgs.adguardhome2}/bin/adguardhome ${myArgs}";
-          AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" "CAP_NET_ADMIN" "CAP_NET_RAW" ];
-          Restart = "always";
-          RestartSec = 10;
-          RuntimeDirectory = "AdGuardHome";
-          StateDirectory = "AdGuardHome";
+          # DynamicUser = true;
+          # ExecStart = "${pkgs.adguardhome2}/bin/adguardhome ${myArgs}";
+          # AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" "CAP_NET_ADMIN" "CAP_NET_RAW" ];
+          # Restart = "always";
+          # RestartSec = 10;
+          # RuntimeDirectory = "AdGuardHome";
+          # StateDirectory = "AdGuardHome";
 
           ExecStartPre = [
-            "${pr247828}/bin/pr247828-fix"
             # 直连
             "+${upBypass}/bin/up"
             "+${upBypass6}/bin/up"
@@ -293,19 +279,24 @@ in
 
 
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
-  services.adguardhome2 = {
-    enable = false;
-    package = pkgs.adguardhome2;
+  services.adguardhome = {
+    enable = true;
+    package = pkgs.adguardhome;
     extraArgs = [ ];
     mutableSettings = false;
     openFirewall = false;
     host = "127.0.0.1";
     port = 33380;
     settings = {
+      schema_version = 27;
+
       # fix
       http = {
         address = "127.0.0.1:33380";
         session_ttl = "719h";
+        pprof = {
+          enabled = false;
+        };
       };
 
       # schema_version = pkgs.adguardhome.schema_version;
@@ -313,6 +304,51 @@ in
         inputs.nixos-privates.adguardhome.user
       ];
       dns = {
+        aaaa_disabled = false;
+        all_servers = true;
+        allowed_clients = [ ];
+        anonymize_client_ip = false;
+        blocked_hosts = [ ];
+        bogus_nxdomain = [ ];
+        bootstrap_prefer_ipv6 = false;
+        cache_optimistic = false;
+        cache_size = 4194304;
+        cache_ttl_max = 0;
+        cache_ttl_min = 0;
+        disallowed_clients = [ ];
+        dns64_prefixes = [ ];
+        edns_client_subnet = {
+          custom_ip = "";
+          enabled = false;
+          use_custom = false;
+        };
+        enable_dnssec = false;
+        fallback_dns = [ ];
+        fastest_addr = false;
+        fastest_timeout = "1s";
+        handle_ddr = true;
+        ipset_file = "";
+        local_ptr_upstreams = [ ];
+        max_goroutines = 300;
+        port = 53;
+        private_networks = [ ];
+        ratelimit = 20;
+        ratelimit_subnet_len_ipv4 = 24;
+        ratelimit_subnet_len_ipv6 = 56;
+        ratelimit_whitelist = [ ];
+        refuse_any = true;
+        serve_http3 = false;
+        serve_plain_dns = true;
+        trusted_proxies = [
+          "127.0.0.0/8"
+          "::1/128"
+        ];
+        upstream_mode = "parallel";
+        upstream_timeout = "10s";
+        use_dns64 = false;
+        use_http3_upstreams = false;
+        use_private_ptr_resolvers = true;
+
         # fix: cannot unmarshal !!seq into filtering.BlockedServices
         blocked_services = { };
 
@@ -323,7 +359,7 @@ in
         # };
 
         bind_hosts = [
-          "127.0.0.1"
+          "0.0.0.0"
           "::1"
         ];
         bootstrap_dns = [ ]
@@ -372,6 +408,102 @@ in
         #   { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }
         #   { domain = "chat.openai.com"; answer = "2606:4700::6812:7b9"; }
         # ];
+      };
+
+      auth_attempts = 5;
+      block_auth_min = 15;
+      clients = {
+        runtime_sources = {
+          arp = true;
+          dhcp = true;
+          hosts = true;
+          rdns = true;
+          whois = true;
+        };
+      };
+      dhcp = {
+        enabled = false;
+      };
+
+      filtering = {
+        blocked_response_ttl = 10;
+        blocked_services = {
+          schedule = {
+            time_zone = "Local";
+          };
+        };
+        blocking_mode = "default";
+        cache_time = 30;
+        filtering_enabled = true;
+        filters_update_interval = 24;
+        parental_block_host = "family-block.dns.adguard.com";
+        parental_cache_size = 1048576;
+        parental_enabled = false;
+        protection_enabled = true;
+        rewrites = [
+          {
+            answer = "2606:4700:4400::ac40:961c";
+            domain = "chat.openai.com";
+          }
+          {
+            answer = "104.117.182.8";
+            domain = "www.msftncsi.com";
+          }
+          {
+            answer = "142.251.40.163";
+            domain = "connectivitycheck.gstatic.com";
+          }
+        ];
+        safe_search = {
+          enabled = false;
+        };
+        safebrowsing_block_host = "standard-block.dns.adguard.com";
+        safebrowsing_cache_size = 1048576;
+        safebrowsing_enabled = false;
+        safesearch_cache_size = 1048576;
+      };
+      filters = [
+        {
+          enabled = true;
+          id = 1;
+          name = "AdGuard DNS filter";
+          url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt";
+        }
+        {
+          enabled = false;
+          id = 2;
+          name = "AdAway Default Blocklist";
+          url = "https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt";
+        }
+      ];
+      log = {
+        compress = false;
+        file = "";
+        local_time = false;
+        max_age = 3;
+        max_backups = 0;
+        max_size = 100;
+        verbose = false;
+      };
+      os = {
+        group = "";
+        rlimit_nofile = 0;
+        user = "";
+      };
+      querylog = {
+        enabled = true;
+        file_enabled = true;
+        ignored = [ ];
+        interval = "2160h";
+        size_memory = 1000;
+      };
+      statistics = {
+        enabled = true;
+        ignored = [ ];
+        interval = "24h";
+      };
+      tls = {
+        enabled = false;
       };
     };
   };

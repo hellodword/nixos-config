@@ -17,6 +17,4 @@ rec {
   lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { inherit inputs; };
 
   mosdns = pkgs.callPackage ./mosdns { };
-
-  adguardhome2 = pkgs.callPackage ./adguardhome2 { };
 }
