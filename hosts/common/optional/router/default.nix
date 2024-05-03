@@ -4,11 +4,11 @@
 { pkgs, config, lib, ... }:
 
 let
-  router-adguardhome-bind-host = pkgs.writeShellApplication {
-    name = "router-adguardhome-bind-host";
+  router-adguardhome-bind-interface = pkgs.writeShellApplication {
+    name = "exe";
     runtimeInputs = with pkgs; [ procps iptables iproute2 gawk ];
     text = ''
-      iface=$(ip route get 255.255.255.255 | head -n 1 | awk "{print \$4}")
+      iface="$1"
       [ -n "$iface" ]
 
       sysctl -w "net.ipv4.conf.$iface.route_localnet=1"
@@ -24,12 +24,26 @@ let
       ip6tables -t nat -C PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to "[::1]:53" || ip6tables -t nat -A PREROUTING -i "$iface" -p udp --dport 53 -j DNAT --to "[::1]:53"
     '';
   };
+  router-adguardhome-bind-default = pkgs.writeShellApplication {
+    name = "exe";
+    runtimeInputs = with pkgs; [ procps iproute2 gawk ];
+    text = ''
+      iface=$(ip route get 255.255.255.255 | head -n 1 | awk "{print \$4}")
+      [ -n "$iface" ]
+
+      ${router-adguardhome-bind-interface}/bin/exe "$iface"
+    '';
+  };
 in
 {
   # services.adguardhome.settings.bind_host = lib.mkForce "0.0.0.0";
   # execute before sing-box tun
   systemd.services."sing-box".serviceConfig.ExecStartPre = [
-    "+${router-adguardhome-bind-host}/bin/router-adguardhome-bind-host"
+    "+${router-adguardhome-bind-default}/bin/exe"
+  ];
+
+  systemd.services."tailscaled".serviceConfig.ExecStartPost = [
+    "+${router-adguardhome-bind-interface}/bin/exe ${config.services.tailscale.interfaceName}"
   ];
 
   # TODO DHCP Server
