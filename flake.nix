@@ -104,14 +104,12 @@
     { self, nixpkgs, home-manager, lanzaboote, sops-nix, nixos-hardware, disko, microvm, ... }@ inputs:
     let
       inherit (self) outputs;
-      forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" "aarch64-linux" ];
-      # forEachPkgs = f: forEachSystem (sys: f nixpkgs.legacyPackages.${sys});
+      forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" ];
       commonArgs = { persistPath = "/persist"; userName = "ubuntu"; };
 
     in
     {
       nixosModules = import ./modules/nixos;
-      homeManagerModules = import ./modules/home-manager;
 
       overlays = import ./overlays { inherit inputs outputs; };
 
@@ -121,17 +119,6 @@
         let pkgs = nixpkgs.legacyPackages.${system};
         in import ./pkgs { inherit pkgs; }
       );
-
-      # vbox
-      nixosConfigurations."vbox" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/vbox
-        ];
-        specialArgs = {
-          commonArgs = commonArgs;
-          inherit inputs outputs;
-        } // commonArgs;
-      };
 
       # laptop2
       nixosConfigurations."laptop2" = nixpkgs.lib.nixosSystem {
@@ -173,8 +160,10 @@
       # NIX_DISK_IMAGE=test1.qcow2 QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" nix run .#nixosConfigurations.test-vm-minimal.config.system.build.vm
       # ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no admin@localhost -p 2221
       nixosConfigurations."test-vm-minimal" = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
         modules = [
+          {
+            nixpkgs.hostPlatform = "x86_64-linux";
+          }
           ./vms/minimal.nix
         ];
       };
@@ -197,20 +186,21 @@
         ];
       };
 
-      nixosConfigurations."test-zerotier" = nixpkgs.lib.nixosSystem {
+      nixosConfigurations."test-zerotier" = forEachSystem (system: nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [
           ./vms/zerotier.nix
         ];
-      };
+      });
 
-      nixosConfigurations."microvm-minimal" = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
+      # nix run .#nixosConfigurations."microvm-minimal".<system>.config.microvm.declaredRunner
+      nixosConfigurations."microvm-minimal" = forEachSystem (system: nixpkgs.lib.nixosSystem {
+        inherit system;
         modules = [
           microvm.nixosModules.microvm
           ./vms/microvm-minimal.nix
         ];
-      };
+      });
 
     };
 }
