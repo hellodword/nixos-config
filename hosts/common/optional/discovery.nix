@@ -1,8 +1,15 @@
 { pkgs, ... }:
 
 {
-  environment.systemPackages = with pkgs; [
-    localsend-discovery
+  # environment.systemPackages = with pkgs; [
+  #   localsend-discovery
+  # ];
+
+  me.sing-box-bypass-services = [
+    {
+      user = "localsend-discovery";
+      service = "localsend-discovery";
+    }
   ];
 
   systemd.services."localsend-discovery" = {
