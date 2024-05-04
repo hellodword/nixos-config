@@ -20,9 +20,9 @@ let
       uids=()
 
       ${lib.strings.concatStringsSep "\n" (map (x: ''
-      ${x.user}="$(id -u ${x.user} || true)"
-      if [ -n "''$${x.user}" ]; then
-        uids+=("''$${x.user}")
+      tmp_val="$(id -u ${x.user} || true)"
+      if [ -n "$tmp_val" ]; then
+        uids+=("$tmp_val")
       fi
       '') config.me.sing-box-bypass-services)}
 
