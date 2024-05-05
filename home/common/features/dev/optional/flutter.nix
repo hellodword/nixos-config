@@ -5,30 +5,7 @@
   # 外部 bash 可以正常运行和调试
 
   home.packages = [
-    # flutter
-
-    (
-      # 相当于覆盖 flutter bin ?
-      pkgs.symlinkJoin {
-        name = "flutter-ass";
-        paths = [
-          (
-            pkgs.writeShellApplication {
-              name = "flutter";
-              runtimeInputs = with pkgs; [ android-studio gnugrep ];
-              text = ''
-                fhs="$(grep -oP '^[^ ]+-fhs-env' ${pkgs.android-studio.outPath}/bin/android-studio)"
-                "$fhs" "${pkgs.flutter}/bin/flutter" "$@"
-              '';
-            }
-          )
-          pkgs.flutter
-        ];
-        # postBuild = ''
-
-        # '';
-      }
-    )
+    pkgs.flutter
   ];
 
   programs.vscode.userSettings = lib.optionalAttrs
