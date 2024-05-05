@@ -1,8 +1,8 @@
-{ config, lib, pkgs, persistPath, ... }:
+# { config, lib, pkgs, persistPath, ... }:
 
-let
-  DIRTY = "/usr/local/etc/dirty-chrome-sandbox";
-in
+# let
+#   DIRTY = "/usr/local/etc/dirty-chrome-sandbox";
+# in
 {
   # never do this, FIX IN THE FUTURE
   boot.kernel.sysctl."kernel.unprivileged_userns_clone" = 1;

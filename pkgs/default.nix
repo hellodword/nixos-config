@@ -6,7 +6,6 @@ rec {
   localsend-discovery = pkgs.callPackage ./localsend-discovery { };
 
   # fonts
-  plangothic-fonts = pkgs.callPackage ./plangothic-fonts { };
   jigmo = pkgs.callPackage ./jigmo { };
   noto-fonts-cjk-novf = pkgs.callPackage ./noto-fonts-cjk-novf { };
   fira-code-novf = pkgs.callPackage ./fira-code-novf { };

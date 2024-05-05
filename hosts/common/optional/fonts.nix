@@ -1,4 +1,4 @@
-{ pkgs, lib, ... }:
+{ pkgs, ... }:
 
 {
   me.allowedUnfreePkg = [
@@ -51,7 +51,6 @@
       noto-fonts-emoji
       noto-fonts-emoji-blob-bin
       noto-fonts-extra
-      # plangothic-fonts.allideo
       # source-code-pro
       # source-han-code-jp
       # source-han-mono
