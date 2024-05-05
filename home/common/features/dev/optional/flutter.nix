@@ -1,8 +1,10 @@
-{ pkgs, lib, config, persistPath, ... }:
+{ pkgs, lib, config, persistPath, inputs, ... }:
 
 {
   # 插件会报错，而且没办法调试，用 nix develop 或者 devcontainer 代替
   # 外部 bash 可以正常运行和调试
+
+  nixpkgs.overlays = [ inputs.flutter-nix.overlays.default ];
 
   home.packages = [
     pkgs.flutter

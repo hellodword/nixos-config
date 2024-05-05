@@ -97,6 +97,11 @@
       url = "github:tadfisher/android-nixpkgs/stable";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    flutter-nix = {
+      url = "github:maximoffua/flutter.nix/5bf0b6aafdcdf45482d5511c5b806e7a4045e756";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
