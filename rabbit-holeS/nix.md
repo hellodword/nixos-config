@@ -65,3 +65,11 @@ nix-repl> builtins.unsafeGetAttrPos "buildGoModule" pkgs
 
 - https://discourse.nixos.org/t/differences-between-nix-channels/13998/1
 - https://github.com/NixOS/rfcs/pull/26
+
+## `__functionArgs`
+
+- https://nixos.org/manual/nix/stable/language/builtins.html#builtins-functionArgs
+
+```sh
+nix eval --impure --expr "(import <nixpkgs> {}).androidenv.composeAndroidPackages.__functionArgs" | nixfmt
+```

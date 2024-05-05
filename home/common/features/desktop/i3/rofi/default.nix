@@ -1,4 +1,4 @@
-{ pkgs, config, persistPath, lib, nixosConfig, ... }:
+{ pkgs, config, persistPath, lib, ... }:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
