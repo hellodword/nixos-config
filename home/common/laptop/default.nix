@@ -18,7 +18,6 @@ in
     ../features/cli/optional/nix-index.nix
     ../features/cli/optional/ffmpeg.nix
     ../features/cli/optional/ranger.nix
-    ../features/cli/optional/qrencode.nix
     ../features/cli/optional/starship.nix
     ../features/cli/optional/zoxide.nix
   ]

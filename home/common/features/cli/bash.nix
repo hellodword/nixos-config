@@ -121,6 +121,8 @@
       "ffplay" = "ffplay -hide_banner -nodisp -autoexit";
 
       "suno-radio" = ''suno-radio () {  [[ "$1" == "" || "$1" == "status" ]] && curl -s https://gas-observe-ky-mention.trycloudflare.com/v1/playlist | jq || curl -s https://gas-observe-ky-mention.trycloudflare.com/v1/playlist/$1 | ffplay -autoexit -nodisp -; }; suno-radio'';
+
+      "qrencode" = "docker run --rm -i --network none --runtime runsc leplusorg/qrcode qrencode";
     };
     shellOptions = [
       "histappend"
