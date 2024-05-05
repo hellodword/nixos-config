@@ -17,6 +17,7 @@
     ++ lib.optionals config.hardware.brillo.enable [ "video" ]
     # https://wiki.nixos.org/wiki/Android
     ++ lib.optionals config.programs.adb.enable [ "adbusers" "kvm" ]
+    ++ lib.optionals ((builtins.length (builtins.filter (x: builtins.hasAttr "pname" x && x.pname == "android-udev-rules") config.services.udev.packages)) == 1) [ "adbusers" "kvm" ]
     ++ [ ];
   };
 
