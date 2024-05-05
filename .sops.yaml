@@ -17,11 +17,3 @@ creation_rules:
     key_groups:
       - age:
           - *r86s
-  # - path_regex: home/.*/laptop3/secrets/.*$
-  #   key_groups:
-  #     - age:
-  #         - *laptop3-hm
-  # - path_regex: home/.*/r86s/secrets/.*$
-  #   key_groups:
-  #     - age:
-  #         - *r86s-hm

@@ -56,12 +56,6 @@
       url = "github:hellodword/nix-vscode-ext/nixos-unstable";
     };
 
-    # use this fork for git repository
-    flake-compat = {
-      url = "github:inclyc/flake-compat/70e56389c58bbd300d11778913b255477ebbae22";
-      flake = false;
-    };
-
     catppuccin-sddm = {
       url = "github:catppuccin/sddm/95bfcba80a3b0cb5d9a6fad422a28f11a5064991";
       flake = false;
