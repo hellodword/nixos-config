@@ -94,7 +94,8 @@
     microvm.url = "github:astro/microvm.nix";
 
     android-nixpkgs = {
-      url = "github:tadfisher/android-nixpkgs/stable";
+      # url = "github:tadfisher/android-nixpkgs/stable";
+      url = "github:tadfisher/android-nixpkgs/c500d23a40a7db979537655f914cbc1609b14bbd";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

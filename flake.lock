@@ -18,8 +18,8 @@
       },
       "original": {
         "owner": "tadfisher",
-        "ref": "stable",
         "repo": "android-nixpkgs",
+        "rev": "c500d23a40a7db979537655f914cbc1609b14bbd",
         "type": "github"
       }
     },
