@@ -115,6 +115,7 @@
     in
     {
       nixosModules = import ./modules/nixos;
+      homeManagerModules = import ./modules/home-manager;
 
       overlays = import ./overlays { inherit inputs outputs; };
 
