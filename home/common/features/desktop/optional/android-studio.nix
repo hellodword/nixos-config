@@ -1,13 +1,53 @@
 { pkgs, config, persistPath, ... }:
 
 let
-  emulator = pkgs.writeShellApplication {
-    name = "emulator.sh";
-    text = builtins.replaceStrings
-      [ "${pkgs.android-studio.unwrapped.outPath}/bin/.studio.sh-wrapped" ]
-      [ "${config.home.homeDirectory}/Android/Sdk/emulator/emulator" ]
-      (builtins.readFile "${pkgs.android-studio.unwrapped.outPath}/bin/studio.sh");
+  sdkArgs = {
+    abiVersions = [ "arm64-v8a" "x86_64" ];
+    # buildToolsVersions = [ ];
+    # cmakeVersions = [ ];
+    # cmdLineToolsVersion = [ ];
+    # emulatorVersion = "";
+    # Accepting more licenses declaratively:
+    extraLicenses = [
+      # Already accepted for you with the global accept_license = true or
+      # licenseAccepted = true on androidenv.
+      # "android-sdk-license"
+
+      # These aren't, but are useful for more uncommon setups.
+
+      # curl -sSL https://github.com/NixOS/nixpkgs/raw/nixos-unstable/pkgs/development/mobile/androidenv/repo.json | grep -oP '"[^"\n,]+-license"' | sort -u
+      "android-googletv-license"
+      "android-sdk-arm-dbt-license"
+      "android-sdk-license"
+      "android-sdk-preview-license"
+      "google-gdk-license"
+      "intel-android-extra-license"
+      "intel-android-sysimage-license"
+      "mips-android-sysimage-license"
+    ];
+    includeEmulator = true;
+    includeExtras = [
+      "extras;android;m2repository"
+      "extras;google;m2repository"
+      # "extras;google;gcm"
+    ];
+    includeNDK = false;
+    includeSources = false;
+    includeSystemImages = true;
+    # ndkVersions = [ ];
+    # platformToolsVersion = "";
+    platformVersions = [ "34" ];
+    systemImageTypes = [ "google_apis" ];
+    # toolsVersion = "";
+    useGoogleAPIs = false;
+    useGoogleTVAddOns = false;
   };
+
+  androidComposition = pkgs.androidenv.composeAndroidPackages sdkArgs;
+
+  androidSdk = androidComposition.androidsdk;
+  platformTools = androidComposition.platform-tools;
+  jdk = pkgs.jdk;
 in
 {
   # https://web.archive.org/web/20230626093526/https://forum.manjaro.org/t/android-emulator-performs-extremely-slow/118513/4
@@ -21,30 +61,21 @@ in
     # "android-sdk-tools"
   ];
 
-  # nixpkgs.config = {
-  #   android_sdk.accept_license = true;
-  # };
-
-  home.sessionVariables = {
-    ANDROID_SDK_ROOT = "${config.home.homeDirectory}/Android/Sdk";
-    ANDROID_HOME = "${config.home.homeDirectory}/Android/Sdk";
+  nixpkgs.config = {
+    android_sdk.accept_license = true;
   };
 
-  home.packages = with pkgs; [
-    android-studio
-    # androidenv.androidPkgs_9_0.androidsdk
+  home.sessionVariables = rec {
+    # Note: ANDROID_HOME is deprecated. Use ANDROID_SDK_ROOT.
+    ANDROID_SDK_ROOT = "${androidSdk}/libexec/android-sdk";
+    ANDROID_NDK_ROOT = "${ANDROID_SDK_ROOT}/ndk-bundle";
+  };
 
-    # androidenv.androidPkgs_9_0.emulator
-    # # env ANDROID_SDK_ROOT=~/Android/Sdk emulator -netdelay none -netspeed full -no-snapstorage -avd Pixel_6_Pro_API_28 -qt-hide-window -grpc-use-token -idle-grpc-timeout 300
-
-    (pkgs.writeShellApplication {
-      name = "emulator";
-      runtimeInputs = with pkgs; [ android-studio gnugrep ];
-      text = ''
-        fhs="$(grep -oP '^[^ ]+-fhs-env' ${pkgs.android-studio.outPath}/bin/android-studio)"
-        "$fhs" "${emulator}/bin/emulator.sh" "$@"
-      '';
-    })
+  home.packages = [
+    androidSdk
+    platformTools
+    jdk
+    pkgs.android-studio
   ];
 
   home = {
