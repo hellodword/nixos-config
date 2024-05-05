@@ -1,34 +1,48 @@
 { pkgs, lib, config, persistPath, ... }:
 
+let
+  flutterAss = pkgs.symlinkJoin {
+    name = "flutter-ass";
+    meta = pkgs.flutter.meta;
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    passthru = pkgs.flutter.passthru // {
+      # Update the SDK attribute.
+      # This allows any modified SDK files to be included
+      # in future invocations.
+      sdk = flutterAss;
+    };
+    paths = [
+      (
+        pkgs.writeShellApplication {
+          name = "flutter";
+          runtimeInputs = with pkgs; [ android-studio gnugrep ];
+          text = ''
+            fhs="$(grep -oP '^[^ ]+-fhs-env' ${pkgs.android-studio.outPath}/bin/android-studio)"
+            "$fhs" "${pkgs.flutter}/bin/flutter" "$@"
+          '';
+        }
+      )
+      pkgs.flutter
+      pkgs.flutter.cacheDir
+      pkgs.flutter.sdk
+    ];
+    postBuild = ''
+      wrapProgram "$out/bin/flutter" \
+        --set-default FLUTTER_ROOT "$out"
+
+      if [ ! -d "$out/.git" ]; then
+        # symlinkJoin seems to be missing the .git directory for some reason.
+        if [ -d '${pkgs.flutter.sdk}/.git' ]; then
+          ln -s '${pkgs.flutter.sdk}/.git' "$out"
+        fi
+      fi
+    '';
+  };
+in
 {
-  # 插件会报错，而且没办法调试，用 nix develop 或者 devcontainer 代替
-  # 外部 bash 可以正常运行和调试
-
   home.packages = [
-    # flutter
-
-    (
-      # 相当于覆盖 flutter bin ?
-      pkgs.symlinkJoin {
-        name = "flutter-ass";
-        paths = [
-          (
-            pkgs.writeShellApplication {
-              name = "flutter";
-              runtimeInputs = with pkgs; [ androidStudioPackages.stable gnugrep ];
-              text = ''
-                fhs="$(grep -oP '^[^ ]+-fhs-env' ${pkgs.androidStudioPackages.stable.outPath}/bin/android-studio)"
-                "$fhs" "${pkgs.flutter}/bin/flutter" "$@"
-              '';
-            }
-          )
-          pkgs.flutter
-        ];
-        # postBuild = ''
-
-        # '';
-      }
-    )
+    # pkgs.flutter
+    flutterAss
   ];
 
   programs.vscode.userSettings = lib.optionalAttrs

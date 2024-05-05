@@ -16,7 +16,7 @@
   home.packages = with pkgs; [
     jdk
     gradle
-    androidStudioPackages.stable
+    android-studio
   ];
 
   android-sdk.enable = true;
@@ -38,6 +38,11 @@
 
     system-images-android-34-default-x86-64
     system-images-android-34-aosp-atd-x86-64
+  ] ++ [
+    # for flutter
+    # build-tools;30.0.3
+    build-tools-30-0-3
+    tools
   ];
 
   home = {

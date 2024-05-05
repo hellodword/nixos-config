@@ -14,6 +14,16 @@ avdmanager create avd -k 'system-images;android-34;default;x86_64' -n test
 env ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL=999 emulator -avd test
 ```
 
+## flutter
+
+- https://github.com/NixOS/nixpkgs/blob/db5f88c41a638e4ff1f67a61310a6e958eaa07a8/pkgs/development/compilers/flutter/sdk-symlink.nix
+
+- flutter 会在 `flutter doctor` 时报错 `Unable to determine bundled Java version`，需要 android-studio 的 FHS 环境。`pkgs.flutter*` 是一些 wrapper，不方便 override，可以用 symlinkJoin，但需要 `--set-default FLUTTER_ROOT "$out"`
+
+- flutter 项目默认依赖的 gradle 版本与 nixpkgs 中的版本不一致，第一次 `flutter build apk` 时就会去拉对应版本的 gradle，网络不好就会超时，超时时间似乎是[硬编码](https://github.com/gradle/gradle/blob/73b46a83d30052c8bc5714373184f6ad9e74b3f5/platforms/core-runtime/wrapper-shared/src/main/java/org/gradle/wrapper/Install.java#L55)没法覆盖，可以手动下载到指定位置
+
+- flutter 项目会依赖一些特定版本的 sdkmanager 中的包并且会在编译时尝试安装，例如 `flutter stable 3.19.0` 需要 `build-tools;30.0.3`，还没找到直接可以获取对应关系的地方。例如使用 `android-nixpkgs`，那么 `$ANDROID_SDK_ROOT` 只读，就会在 `flutter build apk` 时提示失败，补齐需要的包即可
+
 ## know issues
 
 - https://github.com/tadfisher/android-nixpkgs/blob/2d8181caef279f19c4a33dc694723f89ffc195d4/README.md#troubleshooting
