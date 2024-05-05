@@ -1,13 +1,34 @@
-{ pkgs, lib, config, persistPath, inputs, ... }:
+{ pkgs, lib, config, persistPath, ... }:
 
 {
   # 插件会报错，而且没办法调试，用 nix develop 或者 devcontainer 代替
   # 外部 bash 可以正常运行和调试
 
-  nixpkgs.overlays = [ inputs.flutter-nix.overlays.default ];
-
   home.packages = [
-    pkgs.flutter
+    # flutter
+
+    (
+      # 相当于覆盖 flutter bin ?
+      pkgs.symlinkJoin {
+        name = "flutter-ass";
+        paths = [
+          (
+            pkgs.writeShellApplication {
+              name = "flutter";
+              runtimeInputs = with pkgs; [ androidStudioPackages.stable gnugrep ];
+              text = ''
+                fhs="$(grep -oP '^[^ ]+-fhs-env' ${pkgs.androidStudioPackages.stable.outPath}/bin/android-studio)"
+                "$fhs" "${pkgs.flutter}/bin/flutter" "$@"
+              '';
+            }
+          )
+          pkgs.flutter
+        ];
+        # postBuild = ''
+
+        # '';
+      }
+    )
   ];
 
   programs.vscode.userSettings = lib.optionalAttrs
