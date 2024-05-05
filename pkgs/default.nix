@@ -4,11 +4,8 @@ rec {
   rime-ice = pkgs.callPackage ./rime-ice { inherit inputs; };
   librime-lua = pkgs.callPackage ./librime-lua { };
   localsend-discovery = pkgs.callPackage ./localsend-discovery { };
-  eww-tray = pkgs.callPackage ./eww-tray { };
 
   # fonts
-  kaixinsong-fonts = pkgs.callPackage ./kaixinsong-fonts { };
-  hanyi-wenhei = pkgs.callPackage ./hanyi-wenhei { };
   plangothic-fonts = pkgs.callPackage ./plangothic-fonts { };
   jigmo = pkgs.callPackage ./jigmo { };
   noto-fonts-cjk-novf = pkgs.callPackage ./noto-fonts-cjk-novf { };

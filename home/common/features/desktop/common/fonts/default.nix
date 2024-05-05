@@ -11,7 +11,6 @@
 
   me.allowedUnfreePkg = [
     # "corefonts"
-    # "hanyi-wenhei"
     # "vista-fonts"
     # "vista-fonts-chs"
     # "vista-fonts-cht"

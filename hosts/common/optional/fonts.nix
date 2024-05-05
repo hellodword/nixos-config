@@ -3,7 +3,6 @@
 {
   me.allowedUnfreePkg = [
     # "corefonts"
-    # "hanyi-wenhei"
     # "vista-fonts"
     # "vista-fonts-chs"
     # "vista-fonts-cht"
@@ -39,9 +38,7 @@
       # fira-code-novf
       # fira-code-symbols
       # font-awesome
-      # kaixinsong-fonts
       # hanazono
-      # hanyi-wenhei
       # # hoyo-glyphs
       # liberation_ttf
 
