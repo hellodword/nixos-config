@@ -18,6 +18,7 @@ let
         for_window [app_id="mpv"] floating enable
         for_window [app_id="deadd-notification-center"] move position 1px 1px
         for_window [class="feh"] floating enable
+        for_window [class="Emulator"] floating enable
       ''
     )
   );
