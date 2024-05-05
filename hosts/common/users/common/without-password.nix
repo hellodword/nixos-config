@@ -15,7 +15,8 @@
     # VirtualBox is not currently allowed to access USB devices
     ++ lib.optionals config.virtualisation.virtualbox.host.enable [ "vboxusers" ]
     ++ lib.optionals config.hardware.brillo.enable [ "video" ]
-    ++ lib.optionals config.programs.adb.enable [ "adbusers" ]
+    # https://wiki.nixos.org/wiki/Android
+    ++ lib.optionals config.programs.adb.enable [ "adbusers" "kvm" ]
     ++ [ ];
   };
 
