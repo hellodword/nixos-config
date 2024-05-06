@@ -179,6 +179,20 @@
         ];
       };
 
+      nixosConfigurations."test-vm-wayland" = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          ./vms/wayland.nix
+        ];
+      };
+
+      nixosConfigurations."test-vm-android-studio" = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          ./vms/android-studio.nix
+        ];
+      };
+
 
       nixosConfigurations."test-tailscale" = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
