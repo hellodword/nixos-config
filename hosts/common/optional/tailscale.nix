@@ -5,6 +5,7 @@
     pkgs.tailscale
   ];
 
+  # https://kiprey.github.io/2023/11/tailscale-derp/#%E5%85%AD%E3%80%81DERP-%E6%90%AD%E5%BB%BA%E6%80%BB%E7%BB%93%E6%BC%94%E7%A4%BA
   services.tailscale = {
     enable = true;
     package = pkgs.tailscale;
