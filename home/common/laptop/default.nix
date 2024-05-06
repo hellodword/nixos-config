@@ -58,7 +58,7 @@ in
     ../features/desktop/optional/vscode.nix
     ../features/dev/optional/go.nix
     ../features/dev/optional/flutter.nix
-    ../features/desktop/optional/android-studio.nix
+    ../features/dev/optional/android.nix
   ]
   ;
 
