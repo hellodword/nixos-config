@@ -20,7 +20,7 @@
         INPUT_DIR="$(cd "$(dirname "$TARGET")" && pwd -P)"
         INPUT_FILE="$(basename "$TARGET")"
 
-        docker run --network=none --rm --volume "$INPUT_DIR/$INPUT_FILE":"/input/$INPUT_FILE":ro -i ghcr.io/hellodword/apkid:master "/input/$INPUT_FILE" "''${@:0:$#}";
+        docker run --network=none --runtime=runsc --rm --volume "$INPUT_DIR/$INPUT_FILE":"/input/$INPUT_FILE":ro -i ghcr.io/hellodword/apkid:master "/input/$INPUT_FILE" "''${@:0:$#}";
       '';
     })
   ];
