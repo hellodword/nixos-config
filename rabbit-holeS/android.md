@@ -30,7 +30,7 @@ env ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL=999 emulator -avd test
 
 - Android Studio 里的 sdkmanager 和 device manager 显示的 system-images 不正确。例如只安装了 `system-images-android-34-default-x86-64`，但 device manager 里创建时只显示 `system-images-android-34-google-apis-x86-64` 已下载，而实际选择它时则又提示需要下载。可以通过 `avdmanager` 和 `emulator` 创建和运行
 
-- Android Studio 内的 Terminal 无法打开
+- hm 里安装的 Android Studio 内的 Terminal 无法打开，以 nixos 方式安装则正常
 
 - Emulator 所有按键包括浮动侧栏上面的按键都不生效，可以通过类似 `adb shell input keyevent 3` `adb shell reboot -p` 等命令来控制
 
