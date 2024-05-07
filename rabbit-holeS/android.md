@@ -28,10 +28,17 @@ env ANDROID_EMULATOR_WAIT_TIME_BEFORE_KILL=999 emulator -avd test
 
 - https://github.com/tadfisher/android-nixpkgs/blob/2d8181caef279f19c4a33dc694723f89ffc195d4/README.md#troubleshooting
 
-- Android Studio 里的 sdkmanager 和 device manager 显示的 system-images 不正确。例如只安装了 `system-images-android-34-default-x86-64`，但 device manager 里创建时只显示 `system-images-android-34-google-apis-x86-64` 已下载，而实际选择它时则又提示需要下载。可以通过 `avdmanager` 和 `emulator` 创建和运行
+- ~~Android Studio 里的 sdkmanager 和 device manager 显示的 system-images 不正确。例如只安装了 `system-images-android-34-default-x86-64`，但 device manager 里创建时只显示 `system-images-android-34-google-apis-x86-64` 已下载，而实际选择它时则又提示需要下载。可以通过 `avdmanager` 和 `emulator` 创建和运行~~ 这是因为旧方式切换过来的 Android SDK 目录没改成 `android-sdk.path`，在 `Tools - SDK Manager` 里修改 `Android SDK Location`
 
 - hm 里安装的 Android Studio 内的 Terminal 无法打开，以 nixos 方式安装则正常
 
-- Emulator 所有按键包括浮动侧栏上面的按键都不生效，可以通过类似 `adb shell input keyevent 3` `adb shell reboot -p` 等命令来控制
+- Emulator 所有按键包括浮动侧栏上面的按键都不生效，可以通过类似 `adb shell input keyevent 3` `adb shell reboot -p` 等命令来控制。最好还是在 Android Studio 中的 Running Devices 通过浮动窗口使用，但是退出 Android Studio 时无法停止:
+
+```
+WARN - #com.android.sdklib.deviceprovisioner.LocalEmulatorProvisionerPlugin - Emulator failed to disconnect within 1 minutes
+WARN - #com.android.ddmlib - ADB rejected shell command (am force-stop com.example.myapplication): closed
+WARN - Emulator: test - Emulator terminated with exit code 137
+WARN - Emulator: Pixel 8 Pro API 34 - Emulator terminated with exit code 137
+```
 
 - `system-images;android-27;default;arm64-v8a` 无法启动
