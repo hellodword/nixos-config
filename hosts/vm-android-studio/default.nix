@@ -1,5 +1,7 @@
 { pkgs, lib, ... }: {
 
+  nixpkgs.hostPlatform = "x86_64-linux";
+
   users.users = {
     admin = {
       isNormalUser = true;

@@ -1,5 +1,7 @@
 { pkgs, ... }: {
 
+  nixpkgs.hostPlatform = "x86_64-linux";
+
   users.users = {
     admin = {
       isNormalUser = true;
@@ -25,22 +27,6 @@
 
   networking.firewall.allowedTCPPorts = [ 22 ];
 
-  boot.kernelPackages = pkgs.linuxPackages_6_6;
-
-  nix.settings.experimental-features = [ "nix-command" "flakes" "repl-flake" ];
-
-  environment.systemPackages = with pkgs; [
-    vim
-    iptables
-    iproute2
-    python3
-  ];
-
-  services.tailscale = {
-    enable = true;
-    authKeyFile = "/tailscale-auth-key";
-    # useRoutingFeatures = "both";
-    # openFirewall = false;
-  };
+  boot.kernelPackages = pkgs.linuxPackages_latest;
 
 }

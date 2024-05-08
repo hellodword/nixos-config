@@ -155,58 +155,35 @@
         } // commonArgs;
       };
 
-      # nix build .#nixosConfigurations.test-vm-minimal.config.system.build.vm
+      # nix build .#nixosConfigurations.vm-minimal.config.system.build.vm
       # rm nixos.qcow2
       # QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" ./result/bin/run-nixos-vm
-      # NIX_DISK_IMAGE=test1.qcow2 QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" nix run .#nixosConfigurations.test-vm-minimal.config.system.build.vm
+      # NIX_DISK_IMAGE=test1.qcow2 QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" nix run .#nixosConfigurations.vm-minimal.config.system.build.vm
       # ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no admin@localhost -p 2221
-      nixosConfigurations."test-vm-minimal" = nixpkgs.lib.nixosSystem {
+      nixosConfigurations."vm-minimal" = nixpkgs.lib.nixosSystem {
         modules = [
-          {
-            nixpkgs.hostPlatform = "x86_64-linux";
-          }
-          ./vms/minimal.nix
+          ./hosts/vm-minimal
         ];
       };
 
-      # nix build .#nixosConfigurations.test-vm-x.config.system.build.vm
-      # rm nixos.qcow2
       # QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22,hostfwd=tcp:127.0.0.1:3389-:3389" ./result/bin/run-nixos-vm
-      nixosConfigurations."test-vm-x" = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
+      nixosConfigurations."vm-x11" = nixpkgs.lib.nixosSystem {
         modules = [
-          ./vms/x.nix
+          ./hosts/vm-x11
         ];
       };
 
-      nixosConfigurations."test-vm-wayland" = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
+      nixosConfigurations."vm-wayland" = nixpkgs.lib.nixosSystem {
         modules = [
-          ./vms/wayland.nix
+          ./hosts/vm-wayland
         ];
       };
 
-      nixosConfigurations."test-vm-android-studio" = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
+      nixosConfigurations."vm-android-studio" = nixpkgs.lib.nixosSystem {
         modules = [
-          ./vms/android-studio.nix
+          ./hosts/vm-android-studio
         ];
       };
-
-
-      nixosConfigurations."test-tailscale" = nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          ./vms/tailscale.nix
-        ];
-      };
-
-      nixosConfigurations."test-zerotier" = forEachSystem (system: nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          ./vms/zerotier.nix
-        ];
-      });
 
       # nix run .#nixosConfigurations."microvm-minimal".<system>.config.microvm.declaredRunner
       nixosConfigurations."microvm-minimal" = forEachSystem (system: nixpkgs.lib.nixosSystem {
