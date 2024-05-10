@@ -58,6 +58,6 @@ in
   #   ${pkgs.iptables}/bin/iptables -t nat -C POSTROUTING -o $iface -j MASQUERADE || ${pkgs.iptables}/bin/iptables -t nat -I POSTROUTING -o $iface -j MASQUERADE
   # '';
 
-  services.tailscale.useRoutingFeatures = lib.mkForce "none";
-  services.tailscale.extraUpFlags = lib.mkForce [ ];
+  services.tailscale.useRoutingFeatures = lib.mkForce "both";
+  services.tailscale.extraUpFlags = lib.mkForce [ "--advertise-exit-node" ];
 }
