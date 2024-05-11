@@ -2,14 +2,14 @@
 
 {
   imports = [
-    ../global
+    ../common/global
   ]
   ++
   [
-    ../features/cli
+    ../common/features/cli
 
-    ../features/cli/optional/gpg.nix
-    ../features/cli/optional/gpg-forwarding.nix
+    ../common/features/cli/optional/gpg.nix
+    ../common/features/cli/optional/gpg-forwarding.nix
   ]
   ;
 

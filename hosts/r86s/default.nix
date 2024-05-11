@@ -53,7 +53,7 @@
 
   security.sudo.wheelNeedsPassword = false;
 
-  home-manager.users."${userName}" = import ../../home/common/r86s;
+  home-manager.users."${userName}" = import ../../home/r86s;
 
   # gpg forwarding
   services.openssh.settings.StreamLocalBindUnlink = "yes";

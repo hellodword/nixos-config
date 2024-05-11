@@ -5,61 +5,61 @@ let
 in
 {
   imports = [
-    ../global
+    ../common/global
   ]
   ++
   [
-    ../features/cli
+    ../common/features/cli
 
-    ../features/cli/optional/gpg.nix
-    ../features/cli/optional/gpg-agent.nix
+    ../common/features/cli/optional/gpg.nix
+    ../common/features/cli/optional/gpg-agent.nix
 
-    ../features/cli/optional/bat.nix
-    ../features/cli/optional/nix-index.nix
-    ../features/cli/optional/ffmpeg.nix
-    ../features/cli/optional/ranger.nix
-    ../features/cli/optional/starship.nix
-    ../features/cli/optional/zoxide.nix
-    ../features/cli/optional/calculator.nix
+    ../common/features/cli/optional/bat.nix
+    ../common/features/cli/optional/nix-index.nix
+    ../common/features/cli/optional/ffmpeg.nix
+    ../common/features/cli/optional/ranger.nix
+    ../common/features/cli/optional/starship.nix
+    ../common/features/cli/optional/zoxide.nix
+    ../common/features/cli/optional/calculator.nix
   ]
   ++
   [
-    ../features/desktop/i3
-    (if X then ../features/desktop/optional/flameshot.nix else ../features/desktop/optional/grimshot.nix)
-    ../features/desktop/optional/thunar.nix
-    ../features/desktop/optional/mpv.nix
-    ../features/desktop/optional/feh.nix
-    ../features/desktop/optional/low-battery.nix
-    ../features/desktop/optional/services-failed.nix
+    ../common/features/desktop/i3
+    (if X then ../common/features/desktop/optional/flameshot.nix else ../common/features/desktop/optional/grimshot.nix)
+    ../common/features/desktop/optional/thunar.nix
+    ../common/features/desktop/optional/mpv.nix
+    ../common/features/desktop/optional/feh.nix
+    ../common/features/desktop/optional/low-battery.nix
+    ../common/features/desktop/optional/services-failed.nix
 
-    ../features/desktop/optional/firefox.nix
-    ../features/desktop/optional/chromium.nix
-    # ../features/desktop/optional/chrome.nix
+    ../common/features/desktop/optional/firefox.nix
+    ../common/features/desktop/optional/chromium.nix
+    # ../common/features/desktop/optional/chrome.nix
   ]
   ++
   [
-    ../features/desktop/optional/kdeconnect.nix
-    ../features/desktop/optional/safeeyes.nix
-    (if X then ../features/desktop/optional/peek.nix else ../features/desktop/optional/kooha.nix)
-    # ../features/desktop/optional/thunderbird.nix
-    ../features/desktop/optional/joplin.nix
-    ../features/desktop/optional/bitwarden.nix
-    ../features/desktop/optional/libreoffice.nix
-    ../features/desktop/optional/zathura.nix
-    ../features/desktop/optional/scrcpy.nix
-    ../features/desktop/optional/remmina.nix
+    ../common/features/desktop/optional/kdeconnect.nix
+    ../common/features/desktop/optional/safeeyes.nix
+    (if X then ../common/features/desktop/optional/peek.nix else ../common/features/desktop/optional/kooha.nix)
+    # ../common/features/desktop/optional/thunderbird.nix
+    ../common/features/desktop/optional/joplin.nix
+    ../common/features/desktop/optional/bitwarden.nix
+    ../common/features/desktop/optional/libreoffice.nix
+    ../common/features/desktop/optional/zathura.nix
+    ../common/features/desktop/optional/scrcpy.nix
+    ../common/features/desktop/optional/remmina.nix
   ]
   ++
   [
-    ../features/cli/optional/sqlite.nix
-    ../features/desktop/optional/sqlitebrowser.nix
+    ../common/features/cli/optional/sqlite.nix
+    ../common/features/desktop/optional/sqlitebrowser.nix
   ]
   ++
   [
-    ../features/desktop/optional/vscode.nix
-    ../features/dev/optional/go.nix
-    ../features/dev/optional/flutter.nix
-    ../features/dev/optional/android.nix
+    ../common/features/desktop/optional/vscode.nix
+    ../common/features/dev/optional/go.nix
+    ../common/features/dev/optional/flutter.nix
+    ../common/features/dev/optional/android.nix
   ]
   ;
 

@@ -42,7 +42,7 @@
 
   users.users."${userName}".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
 
-  home-manager.users."${userName}" = import ../../home/common/laptop;
+  home-manager.users."${userName}" = import ../../home/laptop;
 
   system.stateVersion = "22.11";
 }
