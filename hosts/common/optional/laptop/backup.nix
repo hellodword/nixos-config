@@ -109,21 +109,6 @@ let
       };
       user = "root";
     };
-
-  setResticS3 = cfg: name:
-    let
-      require = [ "network.target" ]
-        ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
-    in
-    {
-      # requires = lib.mkForce require;
-      after = lib.mkForce require;
-      # before = [ ]
-      #   # (maybe) fix: a stop job is running for dhcp
-      #   ++ lib.optionals config.networking.dhcpcd.enable [ "dhcpcd.service" ];
-      # preStart = '''';
-      # preStop = '''';
-    };
 in
 {
   environment.systemPackages = with pkgs; [
@@ -239,7 +224,43 @@ in
 
   services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "borgbackup-${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
 
-  systemd.services = (lib.listToAttrs (map (name: lib.nameValuePair "restic-backups-borgbackup-${config.networking.hostName}-${name}" (setResticS3 name)) resticS3Providers));
+  systemd.services = (lib.listToAttrs (
+    map
+      (name:
+        lib.nameValuePair
+          "restic-backups-borgbackup-${config.networking.hostName}-${name}"
+          (
+            let
+              after = [ "network.target" ]
+                ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
+            in
+            {
+              after = after;
+            }
+          )
+      )
+      resticS3Providers
+  ));
+
+  systemd.timers = (lib.listToAttrs (
+    lib.imap
+      (index: name:
+        lib.nameValuePair
+          "restic-backups-borgbackup-${config.networking.hostName}-${name}"
+          (
+            let
+              prev = lib.optionals (index > 1) [
+                "restic-backups-borgbackup-${config.networking.hostName}-${(builtins.elemAt resticS3Providers (index - 2))}.timer"
+              ];
+            in
+            {
+              after = prev;
+              requires = prev;
+            }
+          )
+      )
+      resticS3Providers
+  ));
 
 
   environment.persistence = {
