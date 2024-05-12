@@ -12,8 +12,9 @@
     authKeyFile = config.sops.secrets."tailscale-auth-key".path;
     extraUpFlags = [
       # https://tailscale.com/kb/1072/client-preferences#in-the-cli
-      # block incoming connections
-      "--shields-up"
+      # block incoming connections when --shields-up=true
+      "--shields-up=true"
+      "--accept-routes=false"
     ];
     # interfaceName = "tailscale";
     openFirewall = false;
