@@ -171,8 +171,22 @@
               urls = [{
                 template = "https://noogle.dev/q?term={searchTerms}";
               }];
-              definedAliases = [ "@noogle" "noogle" "@nix" ];
+              definedAliases = [ "@noogle" "noogle" "@nix1" ];
               iconUpdateURL = "https://noogle.dev/favicon.png";
+            };
+            "Nix Nixhub" = {
+              urls = [{
+                template = "https://www.nixhub.io/search?q={searchTerms}";
+              }];
+              definedAliases = [ "@nixhub" "nixhub" "@nix2" ];
+              iconUpdateURL = "https://www.nixhub.io/favicon.ico";
+            };
+            "Nix MyNixOS" = {
+              urls = [{
+                template = "https://mynixos.com/search?q={searchTerms}";
+              }];
+              definedAliases = [ "@mynixos" "mynixos" "@nix3" ];
+              iconUpdateURL = "https://mynixos.com/favicon.ico";
             };
             "Nixpkgs" = {
               urls = [{
