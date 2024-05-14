@@ -27,6 +27,23 @@
     sopsFile = ../../${config.networking.hostName}/secrets/secrets.yaml;
   };
 
+  # use specific User for bypassing sing-box tun
+  # DynamicUser not working because tailscaled-autoconnect will use `system_bus_socket`
+  # https://github.com/NixOS/nixpkgs/blob/a71aec5f3ae3d6c13d51d45952365e8721e8af4d/nixos/modules/services/networking/tailscale.nix#L116
+  # see https://github.com/systemd/systemd/issues/22737
+  systemd.services = {
+    tailscaled = {
+      serviceConfig = {
+        AmbientCapabilities = [
+          "CAP_NET_ADMIN"
+          # TODO minify
+          "CAP_SYS_ADMIN"
+        ];
+        DynamicUser = true;
+      };
+    };
+  };
+
   me.sing-box-bypass-services = [
     {
       user = "tailscaled";
@@ -37,8 +54,8 @@
   environment.persistence = {
     "${persistPath}".directories = [
       # https://www.reddit.com/r/NixOS/comments/14w1404/every_nixos_rebuild_creates_a_new_tailscale/
-      # "/var/lib/private/tailscale"
-      "/var/lib/tailscale"
+      "/var/lib/private/tailscale"
+      # "/var/lib/tailscale"
     ];
   };
 }
