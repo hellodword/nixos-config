@@ -17,7 +17,7 @@
     ../common/optional/wireguard-server.nix
     ../common/optional/sing-box.nix
     ../common/optional/tailscale.nix
-    ../common/optional/tailscale-derp-verifier.nix
+    ../common/optional/tailscale-derp-client-verifier-sync.nix
 
     ../common/optional/router
 
