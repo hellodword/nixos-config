@@ -41,6 +41,6 @@
       "type": "bind"
     }
   ],
-  "onCreateCommand": "mkdir -p $HOME/.ssh; cat /etc/ssh/from_host/config > $HOME/.ssh/config && cat /etc/ssh/from_host/known_hosts > $HOME/.ssh/known_hosts"
+  "onCreateCommand": "mkdir -p $HOME/.ssh; cat /etc/ssh/from_host/config > $HOME/.ssh/config && cat /etc/ssh/from_host/known_hosts > $HOME/.ssh/known_hosts && sed -i 's@127.0.0.1@172.17.0.1@g' $HOME/.ssh/config"
 }
 ```
