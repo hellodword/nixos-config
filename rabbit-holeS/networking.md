@@ -66,32 +66,6 @@ curl -k https://${DERP_HOST}:${DERP_PORT} --resolve ${DERP_HOST}:${DERP_PORT}:<s
 ```
 
 ```ini
-# derper-verifier-update.service
-[Unit]
-Description=DERP Verifier Update Service
-
-[Service]
-ExecStart=/usr/bin/rclone --config /usr/local/etc/rclone/rclone.conf --contimeout=3m --timeout=10m --checksum copyto $TAILSCALE_S3_REMOTE_NAME:$TAILSCALE_S3_BUCKET/verifier.json /usr/local/etc/derper-verifier/verifier.json
-
-Type=oneshot
-```
-
-```ini
-# derper-verifier-update.timer
-[Unit]
-After=network.target nss-lookup.target
-Description=derp-verifier-update
-
-[Timer]
-OnBootSec=30
-# per 6min
-OnUnitInactiveSec=360
-
-[Install]
-WantedBy=timers.target
-```
-
-```ini
 # derper-verifier.service
 [Unit]
 Description=DERP Verifier Service
@@ -101,9 +75,11 @@ After=network.target nss-lookup.target
 Restart=on-failure
 RestartPreventExitStatus=23
 
+EnvironmentFile=/usr/local/etc/derper-verifier/.env
+
 User=root
 
-ExecStart=/usr/local/bin/derper-verifier -path /usr/local/etc/derper-verifier/verifier.json
+ExecStart=/usr/local/bin/derper-verifier
 
 Type=simple
 
