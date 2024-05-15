@@ -22,41 +22,9 @@
     ];
     historySize = 10000;
     # ${pkgs.bash-completion}/share/bash-completion/completions/curl
-    initExtra = lib.mkAfter ''
-      _coderadio()
-      {
-          local cur prev
-          _init_completion || return
-
-          case $prev in
-              --interface)
-                  _available_interfaces -a
-                  return
-                  ;;
-          esac
-
-          if [[ $cur == -* ]]; then
-              COMPREPLY=($(compgen -W '$(_parse_help "$1")' -- "$cur"))
-          fi
-      } &&
-          complete -F _coderadio coderadio
-
-      _suno_radio_completion() {
-          local current_word="''${COMP_WORDS[COMP_CWORD]}"
-
-          local options="status trending weekly monthly top"
-
-          if [[ "$COMP_CWORD" -eq 1 ]]; then
-              COMPREPLY=( $(compgen -W "$options" -- "$current_word") )
-              return 0
-          fi
-
-          if [[ "$COMP_CWORD" -eq 2 ]]; then
-              COMPREPLY=( $(compgen -W "$options" -- "$current_word") )
-              return 0
-          fi
-      } && complete -F _suno_radio_completion suno-radio
-    '';
+    initExtra = lib.mkAfter (lib.strings.concatStringsSep "\n\n" [
+      (lib.optionalString nixosConfig.services.tailscale.enable ''source <(tailscale completion bash)'')
+    ]);
     logoutExtra = "";
     profileExtra = "";
     sessionVariables = { };
@@ -82,34 +50,11 @@
       "rp" = "rp() { realpath \"\$(which \"\$1\")\" ;}; rp";
       "fb" = "touch /home/${userName}/Downloads/fb.db; mkdir -p /home/${userName}/Downloads/fb; docker run --name filebrowser --rm -u `id -u`:`id -g` -p 8000:80 -v /home/${userName}/Downloads/fb.db:/database.db -v /home/${userName}/Downloads/fb:/srv filebrowser/filebrowser";
 
-      /*
-        # httpserver_arg1="$1"
-        # if [ -n "$httpserver_arg1" ]; then
-        #     httpserver_arg1="$(readlink -f "$httpserver_arg1")"
-        # else
-        #     httpserver_arg1="$(pwd)"
-        # fi
-
-        # if [ -d "$httpserver_arg1" ]; then
-        #     docker run --rm -v "$httpserver_arg1":/w:ro -w /w -p 8000:8000 -it python python -m http.server
-        # elif [ -f "$httpserver_arg1" ]; then
-        #     docker run --rm -v "$httpserver_arg1":/w/"$(basename "$httpserver_arg1")":ro -w /w -p 8000:8000 -it python python -m http.server
-        # else
-        #     echo "$httpserver_arg1"
-        #     exit 1
-        # fi
-      */
-      "httpserver" = ''httpserver() { httpserver_arg1="$1"; if [ -n "$httpserver_arg1" ]; then httpserver_arg1="$(readlink -f "$httpserver_arg1")"; else httpserver_arg1="$(pwd)"; fi; if [ -d "$httpserver_arg1" ]; then docker run --rm -v "$httpserver_arg1":/w:ro -w /w -p 8000:8000 -it python python -m http.server; elif [ -f "$httpserver_arg1" ]; then docker run --rm -v "$httpserver_arg1":/w/"$(basename "$httpserver_arg1")":ro -w /w -p 8000:8000 -it python python -m http.server; else ( echo "$httpserver_arg1"; exit 1; ) fi; }; httpserver'';
-
       "sing-box-log" = "sudo tail -f /var/log/sing-box/log";
       "sing-box-config" = "sudo cat /var/lib/sing-box/sing-box.json | jq";
 
       "nix-prefetch-url-sha256" = "nix-prefetch-url-sha256() { nix hash to-sri --type sha256 \"$(nix-prefetch-url $1)\"; }; nix-prefetch-url-sha256";
       "nix-prefetch-patch" = ''nix-prefetch-patch() { nix build --impure --expr "(import <nixpkgs> {}).fetchpatch { url = \"$1\"; }"; }; nix-prefetch-patch'';
-
-      # https://coderadio.freecodecamp.org/
-      # https://stackoverflow.com/questions/11831214/how-to-run-ffplay-as-a-window-less-process/53295994#53295994
-      "coderadio" = ''coderadio () { curl -s https://coderadio-admin-v2.freecodecamp.org/listen/coderadio/radio.mp3 "$@" | ffplay -autoexit -nodisp -; }; coderadio'';
 
       "nix-outpath" = ''nix-outpath () { nix eval --impure --expr "(import <nixpkgs> {}).$1.outPath" | sed -E "s@(^\"|\"$)@@g"; }; nix-outpath'';
       "nix-meta" = ''nix-meta () { nix eval --impure --expr "builtins.toJSON ((import <nixpkgs> {}).$1.meta // { platforms = null; })" | sed -E "s@/nix/store/[^\n\/]+@https://github.com/NixOS/nixpkgs/blob/nixos-unstable@" | sed -E "s@\.nix:[0-9]+@\.nix@" | jq -r | jq; }; nix-meta'';
@@ -119,8 +64,6 @@
       "code." = "code .";
       "ffmpeg" = "ffmpeg -hide_banner";
       "ffplay" = "ffplay -hide_banner -nodisp -autoexit";
-
-      "suno-radio" = ''suno-radio () {  [[ "$1" == "" || "$1" == "status" ]] && curl -s https://gas-observe-ky-mention.trycloudflare.com/v1/playlist | jq || curl -s https://gas-observe-ky-mention.trycloudflare.com/v1/playlist/$1 | ffplay -autoexit -nodisp -; }; suno-radio'';
 
       "qrencode" = "docker run --rm -i --network none --runtime runsc leplusorg/qrcode qrencode";
     };

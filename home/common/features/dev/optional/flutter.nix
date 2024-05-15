@@ -59,6 +59,10 @@ in
       pkgs.vscode-extensions.dart-code.flutter
     ];
 
+  programs.bash.initExtra = lib.mkAfter ''
+    source <(flutter bash-completion)
+  '';
+
   # /home/ubuntu/.config/flutter/tool_state
   home = {
     persistence = {

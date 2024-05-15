@@ -10,6 +10,7 @@ in
   ++
   [
     ../common/features/cli
+    ../common/features/cli/optional/scripts.nix
 
     ../common/features/cli/optional/gpg.nix
     ../common/features/cli/optional/gpg-agent.nix
