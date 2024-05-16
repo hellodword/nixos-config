@@ -4,8 +4,26 @@ set -e
 
 _HOST="https://gas-observe-ky-mention.trycloudflare.com"
 
+cleanup() {
+    if [[ -n $TARGET_PID ]]; then
+        kill "$TARGET_PID"
+        wait "$TARGET_PID" || true
+    fi
+    exit 0
+}
+
+trap cleanup SIGINT SIGTERM
+
 if [[ $# -eq 0 || "$1" == "status" ]]; then
     curl -s "$_HOST/v1/playlist" | jq
 else
-    curl -s "$_HOST/v1/playlist/$1" | ffplay -hide_banner -autoexit -nodisp -
+    set +e
+
+    while true
+    do
+        curl -s "$_HOST/v1/playlist/$1" | ffplay -hide_banner -autoexit -nodisp - &
+        TARGET_PID=$!
+        wait "$TARGET_PID"
+        sleep 3s
+    done
 fi
