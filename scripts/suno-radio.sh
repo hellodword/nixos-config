@@ -2,7 +2,7 @@
 
 set -e
 
-_HOST="https://gas-observe-ky-mention.trycloudflare.com"
+_HOST="https://looked-livecam-formula-novel.trycloudflare.com"
 
 cleanup() {
     if [[ -n $TARGET_PID ]]; then
