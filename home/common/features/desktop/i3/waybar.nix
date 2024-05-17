@@ -40,6 +40,10 @@
           "network#ethernet"
           "network#wireless"
           "network#wgcf"
+        ] ++
+        (lib.optionals nixosConfig.services.tailscale.enable [
+          "network#${nixosConfig.services.tailscale.interfaceName}"
+        ]) ++ [
           "network#goose"
           "network#fastest"
           "cpu"
@@ -228,6 +232,13 @@
         };
         "network#wgcf" = {
           "interface" = "wgcf*";
+          "format-ethernet" = "{ifname}";
+          "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
+          "format-linked" = "{ifname} (No IP)";
+          "format-disconnected" = "{ifname}";
+        };
+        "network#${nixosConfig.services.tailscale.interfaceName}" = {
+          "interface" = "${nixosConfig.services.tailscale.interfaceName}*";
           "format-ethernet" = "{ifname}";
           "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
           "format-linked" = "{ifname} (No IP)";
