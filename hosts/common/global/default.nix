@@ -72,4 +72,8 @@
       value = "unlimited";
     }
   ];
+
+  environment.variables = {
+    "NIXPKGS_SOURCE" = "${inputs.nixpkgs.outPath}";
+  };
 }
