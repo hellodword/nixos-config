@@ -571,6 +571,13 @@ in
           port = 2222;
         }
         {
+          outbound = "auto:proxy";
+          domain_suffix = [
+            "sourceforge.net"
+            "cache.nixos.org"
+          ];
+        }
+        {
           outbound = "auto:hideme";
           rule_set = "geosite:protonmail";
         }
