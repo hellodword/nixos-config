@@ -21,7 +21,7 @@
     };
 
     disko = {
-      url = "github:nix-community/disko/5a2dc95464080764b9ca1b82b5d6d981157522be";
+      url = "github:nix-community/disko/5f6dbcce99d60dd77f96dfc66d06bbea149a40e1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
