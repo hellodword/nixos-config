@@ -102,9 +102,16 @@ nix-repl> let a = {f = (x: x);}; in a.f == a.f
 false
 ```
 
-##
+## find special builtins
 
 ```sh
 nix eval --expr 'builtins.concatStringsSep "\n" (builtins.attrNames builtins)' | jq -r | grep -oP '^[a-z\d]+$' | grep -v 'builtins' | \
   xargs -I {} bash -c 'result="$(nix eval --expr {} 2>/dev/null)" && echo -e -n {} "$result" "\n"'
+```
+
+## fake sha256
+
+```sh
+nix hash to-sri --type sha256 "$(nix eval --impure --expr '(import <nixpkgs> {}).lib.fakeSha256' | jq -r)"
+# sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 ```
