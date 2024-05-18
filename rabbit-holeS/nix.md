@@ -73,3 +73,38 @@ nix-repl> builtins.unsafeGetAttrPos "buildGoModule" pkgs
 ```sh
 nix eval --impure --expr "(import <nixpkgs> {}).androidenv.composeAndroidPackages.__functionArgs" | nixfmt
 ```
+
+## nix-shell shebang
+
+> The additional shebang lines are a Nix-specific construct.
+
+```sh
+#!/usr/bin/env nix-shell
+#! nix-shell -i bash --pure
+#! nix-shell -p bash cacert curl jq python3Packages.xmljson
+#! nix-shell -I nixpkgs=https://github.com/NixOS/nixpkgs/archive/2a601aafdc5605a5133a2ca506a34a3a73377247.tar.gz
+
+curl https://github.com/NixOS/nixpkgs/releases.atom | xml2json | jq .
+```
+
+## function equality
+
+> https://github.com/NixOS/nix/issues/3371
+
+```
+nix-repl> let f = (x: x); in f == f
+false
+
+nix-repl> let a = {f = (x: x);}; in a == a
+true
+
+nix-repl> let a = {f = (x: x);}; in a.f == a.f
+false
+```
+
+##
+
+```sh
+nix eval --expr 'builtins.concatStringsSep "\n" (builtins.attrNames builtins)' | jq -r | grep -oP '^[a-z\d]+$' | grep -v 'builtins' | \
+  xargs -I {} bash -c 'result="$(nix eval --expr {} 2>/dev/null)" && echo -e -n {} "$result" "\n"'
+```
