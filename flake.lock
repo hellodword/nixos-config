@@ -106,23 +106,6 @@
         "type": "github"
       }
     },
-    "catppuccin-sddm": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1701805879,
-        "narHash": "sha256-Jf4xfgJEzLM7WiVsERVkj5k80Fhh1edUl6zsSBbQi6Y=",
-        "owner": "catppuccin",
-        "repo": "sddm",
-        "rev": "95bfcba80a3b0cb5d9a6fad422a28f11a5064991",
-        "type": "github"
-      },
-      "original": {
-        "owner": "catppuccin",
-        "repo": "sddm",
-        "rev": "95bfcba80a3b0cb5d9a6fad422a28f11a5064991",
-        "type": "github"
-      }
-    },
     "crane": {
       "inputs": {
         "nixpkgs": [
@@ -659,7 +642,6 @@
         "catppuccin-alacritty": "catppuccin-alacritty",
         "catppuccin-fcitx5": "catppuccin-fcitx5",
         "catppuccin-kitty": "catppuccin-kitty",
-        "catppuccin-sddm": "catppuccin-sddm",
         "disko": "disko",
         "firefox-addons": "firefox-addons",
         "home-manager": "home-manager",

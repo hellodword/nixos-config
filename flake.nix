@@ -57,11 +57,6 @@
       url = "github:hellodword/nix-vscode-ext/nixos-unstable";
     };
 
-    catppuccin-sddm = {
-      url = "github:catppuccin/sddm/95bfcba80a3b0cb5d9a6fad422a28f11a5064991";
-      flake = false;
-    };
-
     lxgw-fusion-kai = {
       url = "github:lxgw/FusionKai/0bd3ae7ffcd1f290b8db5047ef31b74573368407";
       flake = false;

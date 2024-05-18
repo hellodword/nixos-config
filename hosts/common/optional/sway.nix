@@ -1,4 +1,4 @@
-{ pkgs, lib, config, persistPath, inputs, userName, ... }:
+{ pkgs, lib, config, persistPath, userName, ... }:
 
 let
   greetd = false;
@@ -56,6 +56,16 @@ in
   ############ sddm ############
   ##############################
 
+  environment.systemPackages = [
+    (
+      pkgs.catppuccin-sddm.override {
+        flavor = "mocha";
+        font = "Noto Sans";
+        fontSize = "12";
+      }
+    )
+  ];
+
   # services.xserver.displayManager.defaultSession = "sway";
   services.xserver.enable = !greetd;
   services.displayManager.sddm =
@@ -64,10 +74,6 @@ in
         enable = true;
         wayland.enable = true;
         theme = "catppuccin-mocha";
-        settings = {
-          Theme.ThemeDir = "${inputs.catppuccin-sddm}/src";
-          # Last.User = userName;
-        };
       })
     else
       { };
