@@ -575,6 +575,7 @@ in
           domain_suffix = [
             "sourceforge.net"
             "cache.nixos.org"
+            "rust-lang.org"
           ];
         }
         {
@@ -630,11 +631,11 @@ in
           rule_set = "geoip:cloudflare";
         }
         {
-          outbound = "auto:hideme";
+          outbound = "auto:proxy";
           rule_set = "geoip:fastly";
         }
         {
-          outbound = "auto:hideme";
+          outbound = "auto:proxy";
           rule_set = "geoip:cloudfront";
         }
         {
