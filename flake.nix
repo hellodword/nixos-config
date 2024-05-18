@@ -11,7 +11,7 @@
     };
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
     impermanence.url = "github:nix-community/impermanence";
-    sops-nix.url = "github:Mic92/sops-nix/83b68a0e8c94b72cdd0a6e547a14ca7eb1c03616";
+    sops-nix.url = "github:Mic92/sops-nix/b6cb5de2ce57acb10ecdaaf9bbd62a5ff24fa02e";
 
     lanzaboote = {
       url = "github:nix-community/lanzaboote/850f27322239f8cfa56b122cc9a278ab99a49015";
