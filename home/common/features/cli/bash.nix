@@ -66,6 +66,8 @@
       "ffplay" = "ffplay -hide_banner -nodisp -autoexit";
 
       "qrencode" = "docker run --rm -i --network none --runtime runsc leplusorg/qrcode qrencode";
+
+      "nix-repl" = "nix repl --expr 'import <nixpkgs>{}'";
     };
     shellOptions = [
       "histappend"
