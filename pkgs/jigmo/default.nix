@@ -20,7 +20,6 @@ stdenv.mkDerivation rec {
   dontFixup = true;
 
   installPhase = ''
-
     runHook preInstall
 
     mkdir -p $out/share/fonts/${pname}

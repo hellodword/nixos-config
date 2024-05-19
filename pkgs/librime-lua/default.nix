@@ -20,8 +20,12 @@ stdenv.mkDerivation {
   buildInputs = [ lua5_4 ];
 
   installPhase = ''
+    runHook preInstall
+
     mkdir -p $out
     cp -r $src/* $out
+
+    runHook postInstall
   '';
 
   meta = with lib; {

@@ -1,7 +1,7 @@
 # https://github.com/iori2333/nix-config/blob/26431908e4e183611a4ca8fc090969be542d35d0/system/common/fonts/harmonyos-sans.nix
 { lib, stdenvNoCC, fetchzip }:
 
-stdenvNoCC.mkDerivation rec {
+stdenvNoCC.mkDerivation {
   pname = "harmonyos-sans";
   version = "1.0";
 

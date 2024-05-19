@@ -18,7 +18,11 @@ rec {
       };
 
       installPhase = ''
+        runHook preInstall
+
         install -m444 -Dt $out/share/fonts/opentype/noto-cjk ${typeface}/OTC/*.ttc
+
+        runHook postInstall
       '';
 
       passthru.tests.noto-fonts = nixosTests.noto-fonts;

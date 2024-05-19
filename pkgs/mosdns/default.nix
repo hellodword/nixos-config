@@ -22,7 +22,9 @@ buildGoModule rec {
 
   installPhase = ''
     runHook preInstall
+
     install -Dm555 "$GOPATH"/bin/${pname} $out/bin/${pname}
+
     runHook postInstall
   '';
 
