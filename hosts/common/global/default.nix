@@ -74,6 +74,8 @@
   ];
 
   environment.variables = {
-    "NIXPKGS_SOURCE" = "${inputs.nixpkgs.outPath}";
+    "NIXPKGS_SOURCE" = "${inputs.nixpkgs}";
   };
+
+  environment.etc = builtins.listToAttrs (map (x: { name = "flake-inputs/${x}"; value = { source = inputs."${x}".outPath; }; }) (builtins.attrNames inputs));
 }
