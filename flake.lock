@@ -402,23 +402,6 @@
         "type": "github"
       }
     },
-    "lxgw-fusion-kai": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1696689635,
-        "narHash": "sha256-aqEGMFlAzis8w5YWJQuWdgRK9gIWaiRW3wZIUA5ri7M=",
-        "owner": "lxgw",
-        "repo": "FusionKai",
-        "rev": "0bd3ae7ffcd1f290b8db5047ef31b74573368407",
-        "type": "github"
-      },
-      "original": {
-        "owner": "lxgw",
-        "repo": "FusionKai",
-        "rev": "0bd3ae7ffcd1f290b8db5047ef31b74573368407",
-        "type": "github"
-      }
-    },
     "microvm": {
       "inputs": {
         "flake-utils": "flake-utils_5",
@@ -587,23 +570,6 @@
         "type": "github"
       }
     },
-    "rime-ice": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1715853456,
-        "narHash": "sha256-JbDETlkNAq9SqJ2FHO7RT0AylLUiNhktpvZVXzVQ/gw=",
-        "owner": "iDvel",
-        "repo": "rime-ice",
-        "rev": "c29d07abe402ea3d79d3357dc458bdb78084f9b5",
-        "type": "github"
-      },
-      "original": {
-        "owner": "iDvel",
-        "repo": "rime-ice",
-        "rev": "c29d07abe402ea3d79d3357dc458bdb78084f9b5",
-        "type": "github"
-      }
-    },
     "root": {
       "inputs": {
         "android-nixpkgs": "android-nixpkgs",
@@ -617,14 +583,12 @@
         "home-manager": "home-manager",
         "impermanence": "impermanence",
         "lanzaboote": "lanzaboote",
-        "lxgw-fusion-kai": "lxgw-fusion-kai",
         "microvm": "microvm",
         "nix-index-database": "nix-index-database",
         "nix-vscode-ext": "nix-vscode-ext",
         "nixos-hardware": "nixos-hardware",
         "nixos-privates": "nixos-privates",
         "nixpkgs": "nixpkgs",
-        "rime-ice": "rime-ice",
         "sops-nix": "sops-nix",
         "you-know-who": "you-know-who"
       }

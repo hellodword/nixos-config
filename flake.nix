@@ -61,16 +61,6 @@
       url = "github:hellodword/nix-vscode-ext/nixos-unstable";
     };
 
-    lxgw-fusion-kai = {
-      url = "github:lxgw/FusionKai/0bd3ae7ffcd1f290b8db5047ef31b74573368407";
-      flake = false;
-    };
-
-    rime-ice = {
-      url = "github:iDvel/rime-ice/c29d07abe402ea3d79d3357dc458bdb78084f9b5";
-      flake = false;
-    };
-
     auditd-rules = {
       url = "github:Neo23x0/auditd";
       flake = false;

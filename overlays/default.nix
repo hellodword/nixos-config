@@ -16,7 +16,7 @@ in
   };
 
   # Adds my custom packages
-  additions = final: prev: import ../pkgs { pkgs = final; inherit inputs; };
+  additions = final: prev: import ../pkgs { pkgs = final; };
 
   # This one contains whatever you want to overlay
   # You can change versions, add patches, set compilation flags, anything really.

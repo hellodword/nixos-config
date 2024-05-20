@@ -1,11 +1,19 @@
 # https://github.com/zendo/nsworld/blob/369247cb4520c689781f1bc3874b5b3ec8b10679/overlays/rime-ice/default.nix
 
-{ lib, stdenvNoCC, inputs, ... }:
+{ lib, stdenvNoCC, fetchFromGitHub, ... }:
 
+let
+  rev = "c29d07abe402ea3d79d3357dc458bdb78084f9b5";
+in
 stdenvNoCC.mkDerivation rec {
   pname = "rime-ice";
-  version = "v0.0.0-${inputs."${pname}".lastModifiedDate}-${inputs."${pname}".shortRev}";
-  src = inputs."${pname}";
+  version = "v0.0.0-${rev}";
+  src = fetchFromGitHub {
+    owner = "iDvel";
+    repo = pname;
+    rev = rev;
+    hash = "sha256-JbDETlkNAq9SqJ2FHO7RT0AylLUiNhktpvZVXzVQ/gw=";
+  };
 
   installPhase = ''
     runHook preInstall
