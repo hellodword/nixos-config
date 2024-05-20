@@ -11,7 +11,10 @@
     };
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
     impermanence.url = "github:nix-community/impermanence";
-    sops-nix.url = "github:Mic92/sops-nix/b6cb5de2ce57acb10ecdaaf9bbd62a5ff24fa02e";
+    sops-nix = {
+      url = "github:Mic92/sops-nix/b6cb5de2ce57acb10ecdaaf9bbd62a5ff24fa02e";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     lanzaboote = {
       url = "github:nix-community/lanzaboote/850f27322239f8cfa56b122cc9a278ab99a49015";
@@ -88,7 +91,10 @@
       flake = false;
     };
 
-    microvm.url = "github:astro/microvm.nix";
+    microvm = {
+      url = "github:astro/microvm.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     android-nixpkgs = {
       # url = "github:tadfisher/android-nixpkgs/stable";
