@@ -188,6 +188,13 @@
               definedAliases = [ "@mynixos" "mynixos" "@nix3" ];
               iconUpdateURL = "https://mynixos.com/favicon.ico";
             };
+            "Nix package versions" = {
+              urls = [{
+                template = "https://lazamar.co.uk/nix-versions/?channel=nixpkgs-unstable&package={searchTerms}";
+              }];
+              definedAliases = [ "@nix4" ];
+              iconUpdateURL = "https://nixos.org/favicon.png";
+            };
             "Nixpkgs" = {
               urls = [{
                 template = "https://github.com/search?q=repo%3ANixOS%2Fnixpkgs+{searchTerms}+language%3Anix&type=code";
