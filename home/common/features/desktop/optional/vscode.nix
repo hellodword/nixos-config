@@ -57,6 +57,7 @@
       };
       "remote.autoForwardPortsSource" = "hybrid";
       "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";
+      "editor.tabSize" = 2;
     };
     extensions = (with pkgs.vscode-extensions; [
       esbenp.prettier-vscode
