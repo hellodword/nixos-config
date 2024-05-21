@@ -387,7 +387,7 @@ in
           #   # ]
           ++ (
           builtins.filter
-            (x: builtins.typeOf x == "string" && x != "" && (builtins.substring 0 1 x) == "[")
+            (x: builtins.isString x && x != "" && (builtins.substring 0 1 x) == "[")
             (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
         )
           ## tailscale magicdns
