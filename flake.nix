@@ -94,7 +94,7 @@
   };
 
   outputs =
-    { self, nixpkgs, home-manager, lanzaboote, sops-nix, nixos-hardware, disko, microvm, ... }@ inputs:
+    { self, nixpkgs, microvm, ... }@ inputs:
     let
       inherit (self) outputs;
       forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" ];
