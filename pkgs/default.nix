@@ -7,8 +7,8 @@
 
   # fonts
   jigmo = pkgs.callPackage ./jigmo { };
-  noto-fonts-cjk-novf = pkgs.callPackage ./noto-fonts-cjk-novf { };
-  fira-code-novf = pkgs.callPackage ./fira-code-novf { };
+  # noto-fonts-cjk-novf = pkgs.callPackage ./noto-fonts-cjk-novf { };
+  # fira-code-novf = pkgs.callPackage ./fira-code-novf { };
   harmonyos-sans = pkgs.callPackage ./harmonyos-sans { };
   lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { };
 

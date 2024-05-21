@@ -34,16 +34,16 @@
 
     jigmo
 
-    # fira-code
-    fira-code-novf
+    fira-code
+    # fira-code-novf
     # fira-code-symbols
     font-awesome
 
     noto-fonts
-    # noto-fonts-cjk-sans
-    # noto-fonts-cjk-serif
-    noto-fonts-cjk-novf.sans
-    noto-fonts-cjk-novf.serif
+    noto-fonts-cjk-sans
+    noto-fonts-cjk-serif
+    # noto-fonts-cjk-novf.sans
+    # noto-fonts-cjk-novf.serif
 
     noto-fonts-emoji
     noto-fonts-emoji-blob-bin
