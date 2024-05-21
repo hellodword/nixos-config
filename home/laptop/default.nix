@@ -2,6 +2,36 @@
 
 let
   X = nixosConfig.services.xserver.windowManager.i3.enable;
+  switch-to-ws1 = pkgs.writeShellApplication {
+    name = "exe";
+    runtimeInputs = with pkgs; (lib.optionals (!X) [ sway jq coreutils ]);
+    text = lib.optionalString (!X) ''
+      mkdir -p "$HOME"/.cache/kanshi
+
+      if [ ! -f "$HOME"/.cache/kanshi/boot ]; then
+        touch "$HOME"/.cache/kanshi/boot
+
+        # sleep 1s
+        # will mess up the rofi
+        swaymsg workspace 1
+      fi
+
+      # swaymsg -t get_tree | jq > /tmp/switch-to-ws1.json
+    '';
+  };
+  i3ConfigStartupExtra = (lib.optionalAttrs X {
+    notification = false;
+    workspace = null;
+  });
+  # https://github.com/emersion/kanshi/issues/43
+  startup = [
+    (
+      {
+        command = "pkill kanshi; systemctl --user restart kanshi";
+        always = true;
+      } // i3ConfigStartupExtra
+    )
+  ];
 in
 {
   imports = [
@@ -78,21 +108,27 @@ in
   # services.gpg-agent.pinentryFlavor = "qt";
   services.gpg-agent.pinentryPackage = pkgs.pinentry-qt;
 
+  wayland.windowManager.sway.config.startup = (lib.optionals (!X) startup);
+
   services.kanshi = lib.optionalAttrs (!X) {
     enable = true;
-    profiles = {
-      default = {
-        outputs = [
+    settings = [
+      {
+        profile.name = "default";
+        profile.outputs = [
           {
             criteria = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}";
             status = "enable";
           }
         ];
-      };
-      "with-dell-1" = {
+      }
+      {
+        profile.name = "with-dell-1";
         # 如果没有哪个 ws 有窗口，就切换到 ws1
-        exec = [ ''[ "''$(${pkgs.sway}/bin/swaymsg -t get_tree | ${lib.getExe pkgs.jq} -r '.. | select(.nodes? and .id? and .idle_inhibitors?) | .id' | ${pkgs.coreutils}/bin/wc -l)" -ne "0" ] || ${pkgs.sway}/bin/swaymsg workspace 1'' ];
-        outputs = [
+        profile.exec = [
+          "${switch-to-ws1}/bin/exe"
+        ];
+        profile.outputs = [
           {
             criteria = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}";
             status = "disable";
@@ -102,8 +138,8 @@ in
             status = "enable";
           }
         ];
-      };
-    };
+      }
+    ];
   };
 
   programs.autorandr = lib.optionalAttrs X {
