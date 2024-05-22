@@ -28,24 +28,13 @@
 
 - https://nix.dev
 
-  > NixOS 维护的一些教程，可能是由于 flakes 还是 `experimental-features`，所以这系列教程中不包括 flakes。
+  > NixOS 维护的入门教程，可能是由于 flakes 还是 `experimental-features`，所以这系列教程中不包括 flakes。
 
-  - https://nix.dev/tutorials/first-steps/ad-hoc-shell-environments
-  - https://nix.dev/tutorials/first-steps/reproducible-scripts
-  - https://nix.dev/tutorials/first-steps/declarative-shell
-  - https://nix.dev/tutorials/first-steps/towards-reproducibility-pinning-nixpkgs
-  - https://nix.dev/tutorials/nix-language
-  - https://nix.dev/tutorials/packaging-existing-software
-  - https://nix.dev/tutorials/callpackage
-  - https://nix.dev/tutorials/nixos/nixos-configuration-on-vm
-  - https://nix.dev/tutorials/nixos/integration-testing-using-virtual-machines
-  - https://nix.dev/tutorials/nixos/building-bootable-iso-image
+## internals
 
 - https://nixos.org/guides/nix-pills/
 
-  > NixOS 维护的一系列教程，是从博客整理而来，也没有 flakes。但是循序渐进地讲解了 `mkDerivation` 的发展历程，提到了 patchelf，
-
-## internals
+  > NixOS 维护的一系列教程，是从博客整理而来，也没有 flakes。我觉得比其它入门教程更深入，例如 4-9 循序渐进地讲解了为什么以及怎么编写一个通用的 `mkDerivation` 而不只是打包一个 hello，12 开始介绍 nixpkgs 的设计。
 
 - https://edolstra.github.io/pubs/phd-thesis.pdf
 
