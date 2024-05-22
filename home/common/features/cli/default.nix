@@ -15,5 +15,7 @@
     nixpkgs-lint
     nil # Nix LSP
     nixfmt-rfc-style # Nix formatter
+    fh
+    flake-checker
   ];
 }
