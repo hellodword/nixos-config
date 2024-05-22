@@ -1,6 +1,7 @@
 # nix-fuzzing
 
 - https://github.com/NixOS/nix/issues/1937
+- https://github.com/dezgeg/fuzz-nix
 - https://github.com/google/oss-fuzz/pull/6317
   - https://github.com/google/oss-fuzz/pull/6338
   - https://github.com/google/oss-fuzz/issues/6264

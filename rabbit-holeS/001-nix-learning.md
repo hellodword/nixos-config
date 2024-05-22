@@ -30,6 +30,10 @@
 
   > NixOS 维护的入门教程，可能是由于 flakes 还是 `experimental-features`，所以这系列教程中不包括 flakes。
 
+- [x] https://nixos.org/guides/how-nix-works/
+
+  > 简单介绍了一下 nix store。
+
 ## internals
 
 - [x] https://nix.dev/tutorials/module-system/module-system
@@ -47,8 +51,6 @@
   - https://jonathanlorimer.dev/posts/nix-thesis.html
   - https://www.youtube.com/playlist?list=PLa01scHy0YEkFRy1mpC-DDjuayJFpwDqp
   - https://www.usenix.org/legacy/event/hotos07/tech/full_papers/dolstra/dolstra_html/
-
-- [ ] https://nixos.org/guides/how-nix-works/
 
 - [ ] https://shopify.engineering/what-is-nix
 
