@@ -75,11 +75,19 @@
 ## libraries
 
 - https://github.com/edolstra/flake-compat
+
+  - https://wiki.nixos.org/wiki/Flakes#Using_flakes_with_stable_Nix
+
 - https://github.com/numtide/flake-utils
-- https://github.com/gytis-ivaskevicius/flake-utils-plus
+
+  - https://ayats.org/blog/no-flake-utils/
+
 - https://github.com/hercules-ci/flake-parts
 - https://github.com/divnix/std
 - https://github.com/nix-community/haumea
+- https://github.com/nix-systems/nix-systems
+- https://github.com/nix-community/flakelight
+- https://github.com/hercules-ci/gitignore.nix
 
 ## wiki
 
@@ -94,6 +102,7 @@
 ## nixify
 
 - https://github.com/nix-community/todomvc-nix
+- https://github.com/nix-community/templates
 - https://github.com/rvolosatovs/nixify
 - https://github.com/nixified-ai/flake
 
