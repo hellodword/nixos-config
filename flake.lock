@@ -42,11 +42,11 @@
     "auditd-rules": {
       "flake": false,
       "locked": {
-        "lastModified": 1713678588,
-        "narHash": "sha256-9l4vd09QE9eUoEiB4vf3HY/E78++Svlhzuo+fhej1yc=",
+        "lastModified": 1716449124,
+        "narHash": "sha256-0HD5Xr+3f6y5q5u8uFbZj7uwrhQk/kq5QJAsShBXVyU=",
         "owner": "Neo23x0",
         "repo": "auditd",
-        "rev": "8ba9a8397b221aed85c66d3f1c5c4e336dd78a57",
+        "rev": "d4a373a81ce3ea1930aa007ee32aa2f68c0b4db0",
         "type": "github"
       },
       "original": {
@@ -347,11 +347,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1715930644,
-        "narHash": "sha256-W9pyM3/vePxrffHtzlJI6lDS3seANQ+Nqp+i58O46LI=",
+        "lastModified": 1716457508,
+        "narHash": "sha256-ZxzffLuWRyuMrkVVq7wastNUqeO0HJL9xqfY1QsYaqo=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "e3ad5108f54177e6520535768ddbf1e6af54b59d",
+        "rev": "850cb322046ef1a268449cf1ceda5fd24d930b05",
         "type": "github"
       },
       "original": {
@@ -411,11 +411,11 @@
         "spectrum": "spectrum"
       },
       "locked": {
-        "lastModified": 1715787097,
-        "narHash": "sha256-TPp2j0ttvBvkk4oXidvo8Y071zEab0BtcNsC3ZEkluI=",
+        "lastModified": 1716382614,
+        "narHash": "sha256-dwUYl8jyMNKidPEM9gTafcRe+3pUh2rH3ZlBrUpsvnw=",
         "owner": "astro",
         "repo": "microvm.nix",
-        "rev": "fa673bf8656fe6f28253b83971a36999bc9995d2",
+        "rev": "a59c3167f673ce29b65c674deb2bee73d151a96c",
         "type": "github"
       },
       "original": {
@@ -493,11 +493,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1715961556,
-        "narHash": "sha256-+NpbZRCRisUHKQJZF3CT+xn14ZZQO+KjxIIanH3Pvn4=",
+        "lastModified": 1716330097,
+        "narHash": "sha256-8BO3B7e3BiyIDsaKA0tY8O88rClYRTjvAp66y+VBUeU=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "4a6b83b05df1a8bd7d99095ec4b4d271f2956b64",
+        "rev": "5710852ba686cc1fd0d3b8e22b3117d43ba374c2",
         "type": "github"
       },
       "original": {
@@ -719,11 +719,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1716082340,
-        "narHash": "sha256-mJfV3hu51gyrDT49QpdgKP7nZ5G83Zo2yUgqIwtI4iE=",
+        "lastModified": 1716430521,
+        "narHash": "sha256-vFXb2vefBvRsHMQd2x5OYDQ1lcOCkqWL89ik1wIKwoc=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "6ff1faaf5f4980563d0175444a00c039026f40cf",
+        "rev": "b4b5e1e06cc964c94ec00784a963d0194b033f31",
         "type": "github"
       },
       "original": {
