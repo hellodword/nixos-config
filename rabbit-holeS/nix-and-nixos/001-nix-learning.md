@@ -72,6 +72,15 @@
 - https://jade.fyi/blog/flakes-arent-real/
 - https://discourse.nixos.org/t/experimental-does-not-mean-unstable-detsyss-perspective-on-nix-flakes/32703/1
 
+## libraries
+
+- https://github.com/edolstra/flake-compat
+- https://github.com/numtide/flake-utils
+- https://github.com/gytis-ivaskevicius/flake-utils-plus
+- https://github.com/hercules-ci/flake-parts
+- https://github.com/divnix/std
+- https://github.com/nix-community/haumea
+
 ## wiki
 
 - https://wiki.nixos.org
