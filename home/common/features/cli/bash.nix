@@ -68,6 +68,9 @@
       "qrencode" = "docker run --rm -i --network none --runtime runsc leplusorg/qrcode qrencode";
 
       "nix-repl" = "nix repl --expr 'import <nixpkgs>{}'";
+
+      "docker-rmi-none-images" = "docker images | grep '<none>' | awk '{print $3}' | xargs docker rmi";
+      "docker-pull-my-images" = "docker images | grep -P '(ghcr.io/hellodword)|(mcr.microsoft.com)|(gcr.io/distroless)|(^filebrowser/filebrowser )|(^golang )|(^python )|(^nixos/nix )|(^node )|(lwthiker/curl-impersonate)|(leplusorg/qrcode)|(liwei2633/gopeed)|(mitmproxy/mitmproxy)|(^ubuntu )|(^alpine )' | awk '{print $1 \":\" $2}' | xargs -L 1 docker pull";
     };
     shellOptions = [
       "histappend"
