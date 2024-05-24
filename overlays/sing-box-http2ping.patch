@@ -187,7 +187,7 @@ index 43b8456..8e2aa1e 100644
 +	})
 +}
 diff --git a/outbound/urltest.go b/outbound/urltest.go
-index f6366c0..d5bfc5e 100644
+index aa7cff6..d7ef897 100644
 --- a/outbound/urltest.go
 +++ b/outbound/urltest.go
 @@ -3,6 +3,7 @@ package outbound
@@ -206,7 +206,7 @@ index f6366c0..d5bfc5e 100644
  	)
  	if err != nil {
  		return err
-@@ -204,6 +206,10 @@ type URLTestGroup struct {
+@@ -204,6 +206,12 @@ type URLTestGroup struct {
  	close      chan struct{}
  	started    bool
  	lastActive atomic.TypedValue[time.Time]
@@ -214,10 +214,12 @@ index f6366c0..d5bfc5e 100644
 +	useHttp2Ping             bool
 +	currentSelectedOutBounds sync.Map
 +	tag                      string
++	cacheLoaded              bool
++	beenChecked              bool
  }
  
  func NewURLTestGroup(
-@@ -216,6 +222,7 @@ func NewURLTestGroup(
+@@ -216,6 +224,7 @@ func NewURLTestGroup(
  	tolerance uint16,
  	idleTimeout time.Duration,
  	interruptExternalConnections bool,
@@ -225,7 +227,7 @@ index f6366c0..d5bfc5e 100644
  ) (*URLTestGroup, error) {
  	if interval == 0 {
  		interval = C.DefaultURLTestInterval
-@@ -250,13 +257,31 @@ func NewURLTestGroup(
+@@ -250,13 +259,17 @@ func NewURLTestGroup(
  		pauseManager:                 service.FromContext[pause.Manager](ctx),
  		interruptGroup:               interrupt.NewGroup(),
  		interruptExternalConnections: interruptExternalConnections,
@@ -235,21 +237,7 @@ index f6366c0..d5bfc5e 100644
  }
  
  func (g *URLTestGroup) PostStart() {
-+	cacheFile := service.FromContext[adapter.CacheFile](g.ctx)
-+	if cacheFile != nil {
-+		for _, network := range []string{"tcp", "udp"} {
-+			selected := cacheFile.LoadURLTestSelected(g.tag, network)
-+			if selected != "" {
-+				for _, detour := range g.outbounds {
-+					if detour.Tag() == selected {
-+						g.logger.Debug("loaded from cachefile ", selected, " network: ", network)
-+						g.storeCurrentSelectedOutBound(network, detour)
-+						break
-+					}
-+				}
-+			}
-+		}
-+	}
++	g.loadCache()
  	g.started = true
  	g.lastActive.Store(time.Now())
  	go g.CheckOutbounds(false)
@@ -257,15 +245,26 @@ index f6366c0..d5bfc5e 100644
  }
  
  func (g *URLTestGroup) Touch() {
-@@ -289,6 +314,7 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+@@ -286,8 +299,10 @@ func (g *URLTestGroup) Close() error {
+ }
+ 
+ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
++	g.loadCache()
  	var minDelay uint16
- 	var minTime time.Time
  	var minOutbound adapter.Outbound
 +	current := g.getCurrentSelectedOutBound(network)
- 	for _, detour := range g.outbounds {
+ 	switch network {
+ 	case N.NetworkTCP:
+ 		if g.selectedOutboundTCP != nil {
+@@ -308,16 +323,27 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
  		if !common.Contains(detour.Network(), network) {
  			continue
-@@ -297,6 +323,10 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+ 		}
++		if g.useHttp2Ping && !g.beenChecked && current != nil && current.Tag == detour.Tag() {
++			g.logger.Debug("[http2ping] reuse outbound ", current.Tag, " network: ", network)
++			return current.Detour, true
++		}
+ 		history := g.history.LoadURLTestHistory(RealTag(detour))
  		if history == nil {
  			continue
  		}
@@ -273,10 +272,9 @@ index f6366c0..d5bfc5e 100644
 +			g.logger.Debug("[http2ping] reuse outbound ", current.Tag, " network: ", network)
 +			return current.Detour, true
 +		}
- 		if minDelay == 0 || minDelay > history.Delay+g.tolerance || minDelay > history.Delay-g.tolerance && minTime.Before(history.Time) {
+ 		if minDelay == 0 || minDelay > history.Delay+g.tolerance {
  			minDelay = history.Delay
- 			minTime = history.Time
-@@ -304,6 +334,9 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+ 			minOutbound = detour
  		}
  	}
  	if minOutbound == nil {
@@ -286,7 +284,7 @@ index f6366c0..d5bfc5e 100644
  		for _, detour := range g.outbounds {
  			if !common.Contains(detour.Network(), network) {
  				continue
-@@ -312,6 +345,10 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+@@ -326,6 +352,10 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
  		}
  		return nil, false
  	}
@@ -297,7 +295,7 @@ index f6366c0..d5bfc5e 100644
  	return minOutbound, true
  }
  
-@@ -320,6 +357,7 @@ func (g *URLTestGroup) loopCheck() {
+@@ -334,6 +364,7 @@ func (g *URLTestGroup) loopCheck() {
  		g.lastActive.Store(time.Now())
  		g.CheckOutbounds(false)
  	}
@@ -305,7 +303,7 @@ index f6366c0..d5bfc5e 100644
  	for {
  		select {
  		case <-g.close:
-@@ -335,6 +373,14 @@ func (g *URLTestGroup) loopCheck() {
+@@ -349,6 +380,14 @@ func (g *URLTestGroup) loopCheck() {
  		}
  		g.pauseManager.WaitActive()
  		g.CheckOutbounds(false)
@@ -320,7 +318,15 @@ index f6366c0..d5bfc5e 100644
  	}
  }
  
-@@ -373,7 +419,13 @@ func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint
+@@ -361,6 +400,7 @@ func (g *URLTestGroup) URLTest(ctx context.Context) (map[string]uint16, error) {
+ }
+ 
+ func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint16, error) {
++	g.beenChecked = true
+ 	result := make(map[string]uint16)
+ 	if g.checking.Swap(true) {
+ 		return result, nil
+@@ -387,7 +427,13 @@ func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint
  		b.Go(realTag, func() (any, error) {
  			ctx, cancel := context.WithTimeout(context.Background(), C.TCPTimeout)
  			defer cancel()
@@ -335,7 +341,7 @@ index f6366c0..d5bfc5e 100644
  			if err != nil {
  				g.logger.Debug("outbound ", tag, " unavailable: ", err)
  				g.history.DeleteURLTestHistory(realTag)
-@@ -409,3 +461,27 @@ func (g *URLTestGroup) performUpdateCheck() {
+@@ -423,3 +469,49 @@ func (g *URLTestGroup) performUpdateCheck() {
  		g.interruptGroup.Interrupt(g.interruptExternalConnections)
  	}
  }
@@ -362,4 +368,26 @@ index f6366c0..d5bfc5e 100644
 +	}
 +	g.currentSelectedOutBounds.Store(network, v)
 +	return v
++}
++
++func (g *URLTestGroup) loadCache() {
++	if g.cacheLoaded {
++		return
++	}
++	cacheFile := service.FromContext[adapter.CacheFile](g.ctx)
++	if cacheFile != nil {
++		for _, network := range []string{"tcp", "udp"} {
++			selected := cacheFile.LoadURLTestSelected(g.tag, network)
++			if selected != "" {
++				for _, detour := range g.outbounds {
++					if detour.Tag() == selected {
++						g.logger.Debug("loaded from cachefile ", selected, " network: ", network)
++						g.storeCurrentSelectedOutBound(network, detour)
++						break
++					}
++				}
++			}
++		}
++	}
++	g.cacheLoaded = true
 +}
