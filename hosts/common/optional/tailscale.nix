@@ -15,6 +15,7 @@
       # block incoming connections when --shields-up=true
       "--shields-up=true"
       "--accept-routes=false"
+      "--stateful-filtering=false"
     ];
     # interfaceName = "tailscale";
     openFirewall = false;
