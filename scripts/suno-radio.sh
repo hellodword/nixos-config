@@ -2,7 +2,7 @@
 
 set -e
 
-_HOST="https://looked-livecam-formula-novel.trycloudflare.com"
+_HOST="$(curl -s https://raw.githubusercontent.com/hellodword/suno-radio/master/README.md | grep -oP 'https://[a-z\d\-]+.trycloudflare.com' | head -1)"
 
 cleanup() {
     if [[ -n $TARGET_PID ]]; then
