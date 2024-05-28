@@ -13,7 +13,7 @@
       name = "bark";
       runtimeInputs = with pkgs; [ openssl_legacy jq curl coreutils ];
       text = ''
-        env BARK_DEVICE_TOKEN="$(cat ${config.sops.secrets."bark-device-token".path})" ${../../../scripts/bark.sh}
+        env BARK_DEVICE_TOKEN="$(cat ${config.sops.secrets."bark-device-token".path})" ${../../../scripts/bark.sh} "$@"
       '';
     })
   ];
