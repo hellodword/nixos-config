@@ -1,6 +1,10 @@
 { pkgs, ... }:
 
 {
+  environment.systemPackages = with pkgs; [
+    sshpass
+  ];
+
   programs.ssh = {
     # askPassword = "${pkgs.x11_ssh_askpass}/libexec/x11-ssh-askpass";
     # enableAskPassword = true;
