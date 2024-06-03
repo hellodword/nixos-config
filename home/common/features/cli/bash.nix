@@ -70,7 +70,7 @@
       "nix-repl" = "nix repl --expr 'import <nixpkgs>{}'";
 
       "docker-rmi-none-images" = "docker images | grep '<none>' | awk '{print $3}' | xargs docker rmi";
-      "docker-pull-my-images" = "docker images | grep -P '(ghcr.io/hellodword)|(mcr.microsoft.com)|(gcr.io/distroless)|(^filebrowser/filebrowser )|(^golang )|(^python )|(^nixos/nix )|(^node )|(lwthiker/curl-impersonate)|(leplusorg/qrcode)|(liwei2633/gopeed)|(mitmproxy/mitmproxy)|(^ubuntu )|(^alpine )' | awk '{print $1 \":\" $2}' | xargs -L 1 docker pull";
+      "docker-pull-my-images" = "docker images | grep -v '<none>' | grep -P '(ghcr.io/hellodword)|(mcr.microsoft.com)|(gcr.io/distroless)|(^filebrowser/filebrowser )|(^golang )|(^python )|(^nixos/nix )|(^node )|(lwthiker/curl-impersonate)|(leplusorg/qrcode)|(liwei2633/gopeed)|(mitmproxy/mitmproxy)|(^ubuntu )|(^alpine )' | awk '{print $1 \":\" $2}' | xargs -I {} bash -c 'echo docker pull {}; docker pull {}'";
 
       "gopeed" = ''docker run --rm --name gopeed --runtime runsc -v "$HOME/Downloads/gopeed/Downloads":/app/Downloads -v "$HOME/Downloads/gopeed/storage":/app/storage -p 127.0.0.1:9999:9999 --user "$(id -u)":"$(id -g)" --entrypoint /app/gopeed liwei2633/gopeed'';
     };
