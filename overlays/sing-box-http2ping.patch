@@ -138,10 +138,10 @@ index 001f2e1..2a47e54 100644
 +
 +}
 diff --git a/experimental/cachefile/cache.go b/experimental/cachefile/cache.go
-index 43b8456..8e2aa1e 100644
+index 1027588..d7a5e50 100644
 --- a/experimental/cachefile/cache.go
 +++ b/experimental/cachefile/cache.go
-@@ -24,11 +24,14 @@ var (
+@@ -24,12 +24,15 @@ var (
  	bucketMode     = []byte("clash_mode")
  	bucketRuleSet  = []byte("rule_set")
  
@@ -152,11 +152,12 @@ index 43b8456..8e2aa1e 100644
  		string(bucketExpand),
  		string(bucketMode),
  		string(bucketRuleSet),
+ 		string(bucketRDRC),
 +		string(bucketURLTestSelected),
  	}
  
  	cacheIDDefault = []byte("default")
-@@ -292,3 +295,29 @@ func (c *CacheFile) SaveRuleSet(tag string, set *adapter.SavedRuleSet) error {
+@@ -313,3 +316,29 @@ func (c *CacheFile) SaveRuleSet(tag string, set *adapter.SavedRuleSet) error {
  		return bucket.Put([]byte(tag), setBinary)
  	})
  }
