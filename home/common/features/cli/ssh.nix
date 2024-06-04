@@ -25,6 +25,7 @@
 
   programs.bash.shellAliases = {
     "ssh-passwordonly" = "ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password";
+    "ssh-skip-checking" = "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no";
   };
 
   home.persistence = {
