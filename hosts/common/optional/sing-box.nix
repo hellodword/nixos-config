@@ -273,14 +273,25 @@ in
         strict_route = false;
         tag = "in:tun";
         type = "tun";
-        # bypass tailscale
-        # https://tailscale.com/kb/1015/100.x-addresses/
-        # https://quanquan.space/viewtopic.php?t=1350
         inet4_route_exclude_address = [
+          # bypass tailscale
+          # https://tailscale.com/kb/1015/100.x-addresses/
+          # https://quanquan.space/viewtopic.php?t=1350
           "100.64.0.0/10"
+        ] ++ [
+          # docker
+          "172.17.0.0/16"
+          # docker compose
+          "172.18.0.0/16"
+        ] ++ [
+          "10.0.0.0/8"
+          "127.0.0.0/8"
         ];
         inet6_route_exclude_address = [
+          # tailscale
           "fd7a:115c:a1e0::/48"
+        ] ++ [
+          "::1/128"
         ];
       }
       # listen on ipv4 all and ipv6 local
