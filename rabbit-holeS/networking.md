@@ -108,6 +108,8 @@ StateDirectory=derper
 RestrictAddressFamilies=AF_INET AF_INET6 AF_NETLINK
 
 ExecStartPre=+/usr/sbin/sysctl -w net.core.rmem_max=2500000
+ExecStartPre=+sh -c "iptables -C INPUT -p tcp --dport 8888 -j ACCEPT || iptables -I INPUT -p tcp --dport 8888 -j ACCEPT"
+ExecStartPre=+sh -c "iptables -C INPUT -p udp --dport 8889 -j ACCEPT || iptables -I INPUT -p udp --dport 8889 -j ACCEPT"
 ExecStart=/usr/local/bin/derper -c /var/lib/derper/.derper.key -a :8888 -http-port -1 -stun-port 8889 -hostname "kiprey-derp" --certmode manual -certdir /var/lib/derper/certdir --verify-clients=false --verify-client-url-fail-open=false --verify-client-url=http://127.0.0.1:3000
 
 NoNewPrivileges=true
