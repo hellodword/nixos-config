@@ -2,7 +2,7 @@
 
 let
   mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
-  bitwarden = pkgs.bitwarden-desktop-issue;
+  bitwarden = pkgs.bitwarden-desktop;
 in
 {
   home.packages = [

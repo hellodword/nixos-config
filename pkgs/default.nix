@@ -13,6 +13,4 @@
   lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { };
 
   mosdns = pkgs.callPackage ./mosdns { };
-
-  bitwarden-desktop-issue = pkgs.callPackage ./bitwarden-desktop-issue { };
 }
