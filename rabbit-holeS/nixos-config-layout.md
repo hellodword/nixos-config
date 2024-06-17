@@ -58,7 +58,6 @@
 
 - backup
 
-  - borg
   - restic
 
 - virtualisation

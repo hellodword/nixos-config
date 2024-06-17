@@ -156,11 +156,10 @@ nixos-generate-config --root /mnt
 3. 准备文件
 
 ```sh
-# 从 borg 恢复
-mkdir -p /tmp/borg
-borg mount /path/to/borg/repo::<...> /tmp/borg
-# ...
-borg umount /tmp/borg
+# 从 restic 恢复
+restic snapshots --no-cache
+restic restore --no-cache --target=./restorepath <snapshot ID>
+# manually move and chown/chmod
 ```
 
 ```sh

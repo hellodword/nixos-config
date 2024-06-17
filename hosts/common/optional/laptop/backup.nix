@@ -1,80 +1,18 @@
 { lib, pkgs, config, persistPath, userName, ... }:
 
 let
-  # TODO hetzner storage box
   resticS3Providers = [
-    /*
-      idrive
-      https://github.com/restic/restic/pull/4279/files
-    */
-    "idrive"
-
-    /*
-      scaleway
-      https://www.scaleway.com/en/docs/tutorials/restic-s3-backup/
-      https://status.scaleway.com/uptime/6q1d32x121dx
-
-      1. 创建 project restic https://console.scaleway.com/project 并创建 object storage bucket
-      2. 创建 policy restic https://console.scaleway.com/iam/policies 选择 1 中的 project，选择 ObjectStorageObjectsDelete/ObjectStorageObjectsRead/ObjectStorageObjectsWrite/ObjectStorageReadOnly
-      3. 创建 application restic https://console.scaleway.com/iam/applications 选择 2 中的 policy restic
-      4. 创建 API Keys https://console.scaleway.com/iam/api-keys 选择 3 中的 application restic
-    */
+    # "idrive"
     "scaleway"
-
-    /*
-      wasabi
-      # 不要选择这种会突然告知要填写信息并且三天不提交就让账户 inactive 的服务
-      https://status.wasabi.com/uptime/5w7g77w19r8z?page=1
-
-      1. 创建 policy restic https://console.wasabisys.com/policies
-      {
-          "Version": "2012-10-17",
-          "Statement": [
-              {
-                  "Effect": "Allow",
-                  "Action": [
-                      "s3:ListBucket",
-                      "s3:DeleteObject",
-                      "s3:GetObject",
-                      "s3:PutObject",
-                      "s3:PutObjectAcl"
-                  ],
-                  "Resource": [
-                      "arn:aws:s3:::bucketname",
-                      "arn:aws:s3:::bucketname/*"
-                  ]
-              }
-          ]
-      }
-
-      2. 创建 User restic https://console.wasabisys.com/users 勾选 Programmatic，创建 group restic，Policy 选择 restic
-    */
-    # "wasabi"
-
-    /*
-      Cloudflare R2
-
-      2023-08-16 支持设置 API Key 只对特定 bucket 生效 https://github.com/cloudflare/cloudflare-docs/commit/f4386f52f42359b48c531a1fc47cbc6cfbbcfa35
-    */
+    # # "wasabi"
     "r2"
-
-    /*
-      Backblaze B2
-      https://www.backblaze.com/docs/cloud-storage-integrate-restic-with-backblaze-b2
-    */
     "b2"
-
-    /*
-      telnyx
-      https://support.telnyx.com/en/articles/8047928-use-dragondisk-with-telnyx-storage
-      the secret key is not used by Telnyx Storage, you can type out anything you want here
-    */
-    "telnyx"
+    # "telnyx"
   ];
 
   mkResticS3 = name:
     let
-      cacheDir = "${persistPath}/borgbackup/.restic/${name}";
+      cacheDir = "${persistPath}/restic-cache/${name}";
     in
     {
       package = pkgs.restic;
@@ -86,12 +24,37 @@ let
         "--cache-dir=${cacheDir}"
       ];
       initialize = true;
-      passwordFile = config.sops.secrets."restic-password-${name}".path;
+      passwordFile = config.sops.secrets."restic-password".path;
       repositoryFile = config.sops.secrets."restic-repo-${name}".path;
       environmentFile = config.sops.secrets."restic-s3-${name}".path;
+      # dynamicFilesFrom = ''find /home/matt/git -type d -name .git'';
+      exclude = [ ];
       paths = [
-        config.services.borgbackup2.jobs."${config.networking.hostName}".repo
-      ];
+
+        "${persistPath}/etc/machine-id"
+        "${persistPath}/etc/ssh/ssh_host_*"
+
+        /*
+          ## note
+          ### joplin
+        */
+        "${persistPath}/home/${userName}/.config/joplin-desktop"
+        /*
+          ## password manager
+          ### bitwarden-desktop
+        */
+        "${persistPath}/home/${userName}/.config/Bitwarden"
+      ]
+      ++ (lib.optionals (builtins.hasAttr "lanzaboote" config.boot && config.boot.lanzaboote.enable) [
+        "${persistPath}/etc/secureboot"
+      ])
+      ++ (lib.optionals config.services.xrdp.enable [
+        "${persistPath}/etc/xrdp"
+      ])
+        # ++ (lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
+        #   "${persistPath}/usr/local/etc/sing-box/*.json"
+        # ])
+      ;
       pruneOpts = [
         # "--keep-daily 7"
         # "--keep-weekly 5"
@@ -101,7 +64,7 @@ let
       timerConfig = {
         OnCalendar = [
           "*-*-* 02:10:00" # 10:10
-          "*-*-* 07:10:00" # 15:10
+          # "*-*-* 07:10:00" # 15:10
           "*-*-* 13:10:00" # 21:10
         ];
         Persistent = true;
@@ -114,126 +77,107 @@ in
   environment.systemPackages = with pkgs; [
     rclone
     restic
-    borgbackup
   ];
-
-  # sops.secrets."borgbackup" = {
-  #   sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml;
-  # };
-
-  # sops.secrets."restic-repo-idrive" = {
-  #   sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml;
-  # };
-
-  # sops.secrets."restic-password-idrive" = {
-  #   sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml;
-  # };
-
-  # sops.secrets."restic-s3-idrive" = {
-  #   sopsFile = ../../../${config.networking.hostName}/secrets/restic-s3-idrive;
-  #   format = "binary";
-  # };
 
   sops.secrets = (lib.listToAttrs (
     (map (name: lib.nameValuePair "restic-repo-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) resticS3Providers) ++
-    (map (name: lib.nameValuePair "restic-password-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) resticS3Providers) ++
     (map (name: lib.nameValuePair "restic-s3-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/restic-s3-${name}; format = "binary"; }) resticS3Providers) ++
-    [ (lib.nameValuePair "borgbackup" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) ]
+    [ (lib.nameValuePair "restic-password" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) ]
   ));
 
   # TODO notify on failure
 
-  services.borgbackup2.jobs =
-    let
-      commonOptions = {
-        appendFailedSuffix = true;
-        compression = "auto,zstd,3";
-        doInit = true;
-        encryption = {
-          mode = "repokey";
-          passCommand = "cat ${config.sops.secrets."borgbackup".path}";
-        };
+  # services.borgbackup2.jobs =
+  #   let
+  #     commonOptions = {
+  #       appendFailedSuffix = true;
+  #       compression = "auto,zstd,3";
+  #       doInit = true;
+  #       encryption = {
+  #         mode = "repokey";
+  #         passCommand = "cat ${config.sops.secrets."borgbackup".path}";
+  #       };
 
-        # environment = {
-        #   BORG_RSH = "ssh -i /path/to/key";
-        # };
-        user = "root";
-        group = "root";
-        startAt = "hourly";
-        persistentTimer = true;
-        prune = {
-          keep = {
-            within = "2d"; # Keep all archives from the last day
-            daily = 7;
-            weekly = 4;
-            monthly = -1; # Keep at least one archive for each month
-          };
-        };
-      };
+  #       # environment = {
+  #       #   BORG_RSH = "ssh -i /path/to/key";
+  #       # };
+  #       user = "root";
+  #       group = "root";
+  #       startAt = "hourly";
+  #       persistentTimer = true;
+  #       prune = {
+  #         keep = {
+  #           within = "2d"; # Keep all archives from the last day
+  #           daily = 7;
+  #           weekly = 4;
+  #           monthly = -1; # Keep at least one archive for each month
+  #         };
+  #       };
+  #     };
 
-      commonExclude = [
-        "${persistPath}/etc/ssh/gpg.*"
-        "${persistPath}/home/${userName}/.ssh/config"
-        "${persistPath}/home/${userName}/.ssh/gpg.*"
+  #     commonExclude = [
+  #       "${persistPath}/etc/ssh/gpg.*"
+  #       "${persistPath}/home/${userName}/.ssh/config"
+  #       "${persistPath}/home/${userName}/.ssh/gpg.*"
 
-        "${persistPath}/home/${userName}/.gnupg/gpg-agent.conf"
-        "${persistPath}/home/${userName}/.gnupg/gpg.conf"
-        "${persistPath}/home/${userName}/.gnupg/scdaemon.conf"
-        "${persistPath}/home/${userName}/.gnupg/sshcontrol"
-        "${persistPath}/home/${userName}/.gnupg/S.*"
-      ];
-    in
-    {
-      "${config.networking.hostName}" = commonOptions // {
-        repo = "${persistPath}/borgbackup/${config.networking.hostName}";
+  #       "${persistPath}/home/${userName}/.gnupg/gpg-agent.conf"
+  #       "${persistPath}/home/${userName}/.gnupg/gpg.conf"
+  #       "${persistPath}/home/${userName}/.gnupg/scdaemon.conf"
+  #       "${persistPath}/home/${userName}/.gnupg/sshcontrol"
+  #       "${persistPath}/home/${userName}/.gnupg/S.*"
+  #     ];
+  #   in
+  #   {
+  #     "${config.networking.hostName}" = commonOptions // {
+  #       repo = "${persistPath}/borgbackup/${config.networking.hostName}";
 
-        exclude = [
+  #       exclude = [
 
-        ] ++ commonExclude;
+  #       ] ++ commonExclude;
 
-        paths = [
-          "${persistPath}/etc"
+  #       paths = [
+  #         "${persistPath}/etc"
 
-          "${persistPath}/home/${userName}/.ssh"
-          "${persistPath}/home/${userName}/.bash_history"
+  #         "${persistPath}/home/${userName}/.ssh"
+  #         "${persistPath}/home/${userName}/.bash_history"
 
-          "${persistPath}/home/${userName}/.config/kdeconnect"
-          "${persistPath}/home/${userName}/.config/joplin-desktop"
-          "${persistPath}/home/${userName}/.config/Bitwarden"
+  #         "${persistPath}/home/${userName}/.config/kdeconnect"
+  #         "${persistPath}/home/${userName}/.config/joplin-desktop"
+  #         "${persistPath}/home/${userName}/.config/Bitwarden"
 
-          "${persistPath}/home/${userName}/.android/adbkey"
-          "${persistPath}/home/${userName}/.android/adbkey.pub"
+  #         "${persistPath}/home/${userName}/.android/adbkey"
+  #         "${persistPath}/home/${userName}/.android/adbkey.pub"
 
-          "${persistPath}/home/${userName}/backups/borged"
+  #         "${persistPath}/home/${userName}/backups/borged"
 
-          "${persistPath}/home/${userName}/.gnupg"
+  #         "${persistPath}/home/${userName}/.gnupg"
 
-          # firefox cookies
-          "${persistPath}/home/${userName}/.mozilla/firefox/default/sessionstore-backups"
-          # "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite-wal"
-          "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite"
+  #         # firefox cookies
+  #         "${persistPath}/home/${userName}/.mozilla/firefox/default/sessionstore-backups"
+  #         # "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite-wal"
+  #         "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite"
 
-          "${persistPath}/home/${userName}/.cache/rofi3.druncache"
-        ]
-        ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
-          "/usr/local/etc/sing-box/outbounds.json"
-          "/usr/local/etc/sing-box/rules.json"
-        ];
-      };
-    };
+  #         "${persistPath}/home/${userName}/.cache/rofi3.druncache"
+  #       ]
+  #       ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
+  #         "/usr/local/etc/sing-box/outbounds.json"
+  #         "/usr/local/etc/sing-box/rules.json"
+  #       ];
+  #     };
+  #   };
 
-  services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "borgbackup-${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
+  services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
 
   systemd.services = (lib.listToAttrs (
     map
       (name:
         lib.nameValuePair
-          "restic-backups-borgbackup-${config.networking.hostName}-${name}"
+          "restic-backups-${config.networking.hostName}-${name}"
           (
             let
               after = [ "network.target" ]
                 ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
-              backup = config.services.restic.backups."borgbackup-${config.networking.hostName}-${name}";
+              backup = config.services.restic.backups."${config.networking.hostName}-${name}";
               extraOptions = lib.concatMapStrings (arg: " -o ${arg}") backup.extraOptions;
               resticCmd = "${backup.package}/bin/restic${extraOptions}";
             in
@@ -246,42 +190,42 @@ in
       resticS3Providers
   ));
 
-  systemd.timers = (lib.listToAttrs (
-    lib.imap
-      (index: name:
-        lib.nameValuePair
-          "restic-backups-borgbackup-${config.networking.hostName}-${name}"
-          (
-            let
-              prev = lib.optionals (index > 1) [
-                "restic-backups-borgbackup-${config.networking.hostName}-${(builtins.elemAt resticS3Providers (index - 2))}.timer"
-              ];
-            in
-            {
-              after = prev;
-              requires = prev;
-            }
-          )
-      )
-      resticS3Providers
-  ));
+  # systemd.timers = (lib.listToAttrs (
+  #   lib.imap
+  #     (index: name:
+  #       lib.nameValuePair
+  #         "restic-backups-${config.networking.hostName}-${name}"
+  #         (
+  #           let
+  #             prev = lib.optionals (index > 1) [
+  #               "restic-backups-${config.networking.hostName}-${(builtins.elemAt resticS3Providers (index - 2))}.timer"
+  #             ];
+  #           in
+  #           {
+  #             after = prev;
+  #             requires = prev;
+  #           }
+  #         )
+  #     )
+  #     resticS3Providers
+  # ));
 
 
   environment.persistence = {
     "${persistPath}".directories = (map
       (name: {
-        directory = "/var/cache/restic-backups-borgbackup-laptop2-${name}";
+        directory = "/var/cache/restic-backups-laptop2-${name}";
         user = "root";
         group = "root";
         mode = "0700";
       })
       resticS3Providers) ++ [
-      {
-        directory = "/root/.cache/borg";
-        user = "root";
-        group = "root";
-        mode = "0755";
-      }
+      # {
+      #   directory = "/root/.cache/borg";
+      #   user = "root";
+      #   group = "root";
+      #   mode = "0755";
+      # }
     ];
   };
 }
