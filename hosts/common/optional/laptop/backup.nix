@@ -27,34 +27,44 @@ let
       passwordFile = config.sops.secrets."restic-password".path;
       repositoryFile = config.sops.secrets."restic-repo-${name}".path;
       environmentFile = config.sops.secrets."restic-s3-${name}".path;
-      # dynamicFilesFrom = ''find /home/matt/git -type d -name .git'';
+      # filter regular file only
+      dynamicFilesFrom = ''
+        echo
+
+        find "${persistPath}/home/${userName}/.gnupg" -type f || true
+        find "${persistPath}/home/${userName}/.ssh" -type f || true
+
+        find "${persistPath}/home/${userName}/.config/kdeconnect" -type f || true
+
+        find "${persistPath}/usr/local/etc/sing-box" -type f || true
+
+        if [ -d "${persistPath}/home/${userName}/.config/joplin-desktop" ]; then
+          echo "${persistPath}/home/${userName}/.config/joplin-desktop"
+        fi
+
+        if [ -d "${persistPath}/home/${userName}/.config/Bitwarden" ]; then
+          echo "${persistPath}/home/${userName}/.config/Bitwarden"
+        fi
+
+        if [ -d "${persistPath}/etc/secureboot" ]; then
+          echo "${persistPath}/etc/secureboot"
+        fi
+
+        if [ -d "${persistPath}/etc/xrdp" ]; then
+          echo "${persistPath}/etc/xrdp"
+        fi
+
+        find "${persistPath}/home/${userName}/.android" -type f -name adbkey* || true
+
+        # find "${persistPath}/home/${userName}/.cache" -type f -name rofi3.druncache || true
+      '';
       exclude = [ ];
       paths = [
-
         "${persistPath}/etc/machine-id"
         "${persistPath}/etc/ssh/ssh_host_*"
 
-        /*
-          ## note
-          ### joplin
-        */
-        "${persistPath}/home/${userName}/.config/joplin-desktop"
-        /*
-          ## password manager
-          ### bitwarden-desktop
-        */
-        "${persistPath}/home/${userName}/.config/Bitwarden"
-      ]
-      ++ (lib.optionals (builtins.hasAttr "lanzaboote" config.boot && config.boot.lanzaboote.enable) [
-        "${persistPath}/etc/secureboot"
-      ])
-      ++ (lib.optionals config.services.xrdp.enable [
-        "${persistPath}/etc/xrdp"
-      ])
-        # ++ (lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
-        #   "${persistPath}/usr/local/etc/sing-box/*.json"
-        # ])
-      ;
+        "${persistPath}/home/${userName}/backups/git"
+      ];
       pruneOpts = [
         # "--keep-daily 7"
         # "--keep-weekly 5"
@@ -85,86 +95,7 @@ in
     [ (lib.nameValuePair "restic-password" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) ]
   ));
 
-  # TODO notify on failure
-
-  # services.borgbackup2.jobs =
-  #   let
-  #     commonOptions = {
-  #       appendFailedSuffix = true;
-  #       compression = "auto,zstd,3";
-  #       doInit = true;
-  #       encryption = {
-  #         mode = "repokey";
-  #         passCommand = "cat ${config.sops.secrets."borgbackup".path}";
-  #       };
-
-  #       # environment = {
-  #       #   BORG_RSH = "ssh -i /path/to/key";
-  #       # };
-  #       user = "root";
-  #       group = "root";
-  #       startAt = "hourly";
-  #       persistentTimer = true;
-  #       prune = {
-  #         keep = {
-  #           within = "2d"; # Keep all archives from the last day
-  #           daily = 7;
-  #           weekly = 4;
-  #           monthly = -1; # Keep at least one archive for each month
-  #         };
-  #       };
-  #     };
-
-  #     commonExclude = [
-  #       "${persistPath}/etc/ssh/gpg.*"
-  #       "${persistPath}/home/${userName}/.ssh/config"
-  #       "${persistPath}/home/${userName}/.ssh/gpg.*"
-
-  #       "${persistPath}/home/${userName}/.gnupg/gpg-agent.conf"
-  #       "${persistPath}/home/${userName}/.gnupg/gpg.conf"
-  #       "${persistPath}/home/${userName}/.gnupg/scdaemon.conf"
-  #       "${persistPath}/home/${userName}/.gnupg/sshcontrol"
-  #       "${persistPath}/home/${userName}/.gnupg/S.*"
-  #     ];
-  #   in
-  #   {
-  #     "${config.networking.hostName}" = commonOptions // {
-  #       repo = "${persistPath}/borgbackup/${config.networking.hostName}";
-
-  #       exclude = [
-
-  #       ] ++ commonExclude;
-
-  #       paths = [
-  #         "${persistPath}/etc"
-
-  #         "${persistPath}/home/${userName}/.ssh"
-  #         "${persistPath}/home/${userName}/.bash_history"
-
-  #         "${persistPath}/home/${userName}/.config/kdeconnect"
-  #         "${persistPath}/home/${userName}/.config/joplin-desktop"
-  #         "${persistPath}/home/${userName}/.config/Bitwarden"
-
-  #         "${persistPath}/home/${userName}/.android/adbkey"
-  #         "${persistPath}/home/${userName}/.android/adbkey.pub"
-
-  #         "${persistPath}/home/${userName}/backups/borged"
-
-  #         "${persistPath}/home/${userName}/.gnupg"
-
-  #         # firefox cookies
-  #         "${persistPath}/home/${userName}/.mozilla/firefox/default/sessionstore-backups"
-  #         # "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite-wal"
-  #         "${persistPath}/home/${userName}/.mozilla/firefox/default/cookies.sqlite"
-
-  #         "${persistPath}/home/${userName}/.cache/rofi3.druncache"
-  #       ]
-  #       ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
-  #         "/usr/local/etc/sing-box/outbounds.json"
-  #         "/usr/local/etc/sing-box/rules.json"
-  #       ];
-  #     };
-  #   };
+  # TODO notify on failure/success
 
   services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
 

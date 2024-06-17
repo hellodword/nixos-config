@@ -22,6 +22,8 @@
 
         # 一些备份文件
         "backups"
+        # for git alias.backup
+        "backups/git"
 
         # 例如和 virtualbox guest 共享
         "share"
