@@ -1,6 +1,8 @@
 { lib, pkgs, config, persistPath, userName, ... }:
 
 let
+  withBark = (lib.hasAttr "sops" config && lib.hasAttr "bark-device-token" config.sops.secrets);
+
   resticS3Providers = [
     "idrive"
     "scaleway"
@@ -89,6 +91,8 @@ in
     restic
   ];
 
+
+
   sops.secrets = (lib.listToAttrs (
     (map (name: lib.nameValuePair "restic-repo-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) resticS3Providers) ++
     (map (name: lib.nameValuePair "restic-s3-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/restic-s3-${name}; format = "binary"; }) resticS3Providers) ++
@@ -115,6 +119,8 @@ in
             {
               after = after;
               preStart = lib.mkAfter ''${resticCmd} unlock ${lib.concatStringsSep " " backup.extraBackupArgs}'';
+              onSuccess = lib.optionals withBark [ "systemd-notify-success@%i.service" ];
+              onFailure = lib.optionals withBark [ "systemd-notify-failure@%i.service" ];
             }
           )
       )
