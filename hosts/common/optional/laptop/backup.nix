@@ -2,12 +2,12 @@
 
 let
   resticS3Providers = [
-    # "idrive"
+    "idrive"
     "scaleway"
     # # "wasabi"
     "r2"
     "b2"
-    # "telnyx"
+    "telnyx"
   ];
 
   mkResticS3 = name:
