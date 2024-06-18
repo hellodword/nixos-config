@@ -34,7 +34,11 @@ in
         enable = true;
         path = [ pkgs.bash ];
         environment.SERVICE_ID = "%i";
-        serviceConfig.ExecStart = ''${lib.getExe bark} "systemd failure" "$SERVICE_ID"'';
+        script = ''
+          TEMPFILE=$(mktemp)
+          journalctl --no-pager -n10 -b -u "$SERVICE_ID" >> $TEMPFILE || systemctl status --no-pager "$SERVICE_ID" >> $TEMPFILE
+          ${lib.getExe bark} "❌ $SERVICE_ID" "$(cat "$TEMPFILE")"
+        '';
       };
   };
 }
