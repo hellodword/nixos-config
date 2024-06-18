@@ -91,15 +91,11 @@ in
     restic
   ];
 
-
-
   sops.secrets = (lib.listToAttrs (
     (map (name: lib.nameValuePair "restic-repo-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) resticS3Providers) ++
     (map (name: lib.nameValuePair "restic-s3-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/restic-s3-${name}; format = "binary"; }) resticS3Providers) ++
     [ (lib.nameValuePair "restic-password" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) ]
   ));
-
-  # TODO notify on failure/success
 
   services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
 
@@ -126,27 +122,6 @@ in
       )
       resticS3Providers
   ));
-
-  # systemd.timers = (lib.listToAttrs (
-  #   lib.imap
-  #     (index: name:
-  #       lib.nameValuePair
-  #         "restic-backups-${config.networking.hostName}-${name}"
-  #         (
-  #           let
-  #             prev = lib.optionals (index > 1) [
-  #               "restic-backups-${config.networking.hostName}-${(builtins.elemAt resticS3Providers (index - 2))}.timer"
-  #             ];
-  #           in
-  #           {
-  #             after = prev;
-  #             requires = prev;
-  #           }
-  #         )
-  #     )
-  #     resticS3Providers
-  # ));
-
 
   environment.persistence = {
     "${persistPath}".directories = (map

@@ -115,3 +115,27 @@ nix eval --expr 'builtins.concatStringsSep "\n" (builtins.attrNames builtins)' |
 nix hash to-sri --type sha256 "$(nix eval --impure --expr '(import <nixpkgs> {}).lib.fakeSha256' | jq -r)"
 # sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 ```
+
+## order timers
+
+```nix
+systemd.timers = (lib.listToAttrs (
+  lib.imap
+    (index: name:
+      lib.nameValuePair
+        "restic-backups-${config.networking.hostName}-${name}"
+        (
+          let
+            prev = lib.optionals (index > 1) [
+              "restic-backups-${config.networking.hostName}-${(builtins.elemAt resticS3Providers (index - 2))}.timer"
+            ];
+          in
+          {
+            after = prev;
+            requires = prev;
+          }
+        )
+    )
+    resticS3Providers
+));
+```
