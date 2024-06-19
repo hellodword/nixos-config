@@ -1,5 +1,17 @@
 { lib, pkgs, config, persistPath, userName, ... }:
 
+
+
+# TODO fix \n https://github.com/NixOS/nixpkgs/blob/7eabbc2829806a1fa896b82f674c3e0bd23b9dbc/nixos/modules/services/backup/restic.nix#L363-L365
+
+
+# TODO add --latest=1 to restic snapshots
+# snapshots is expensive https://github.com/NixOS/nixpkgs/blob/7eabbc2829806a1fa896b82f674c3e0bd23b9dbc/nixos/modules/services/backup/restic.nix#L358
+# https://github.com/restic/restic/issues/2239#issuecomment-483025297
+
+# TODO check is very expensive without `--with-cache`, but with cache, it's dangerous for data
+# so `check --no-cache` per 3 days, and `check --with-cache` for others
+
 let
   withBark = (lib.hasAttr "sops" config && lib.hasAttr "bark-device-token" config.sops.secrets);
 
@@ -18,10 +30,20 @@ let
     in
     {
       package = pkgs.restic;
+
       checkOpts = [
         "--with-cache"
         "--cache-dir=${cacheDir}"
       ];
+
+      pruneOpts = [
+        "--cache-dir=${cacheDir}"
+        "--keep-daily 7"
+        "--keep-weekly 5"
+        "--keep-monthly 12"
+        "--keep-yearly 75"
+      ];
+
       extraBackupArgs = [
         "--cache-dir=${cacheDir}"
       ];
@@ -66,12 +88,6 @@ let
         "${persistPath}/etc/ssh/ssh_host_*"
 
         "${persistPath}/home/${userName}/backups/git"
-      ];
-      pruneOpts = [
-        # "--keep-daily 7"
-        # "--keep-weekly 5"
-        # "--keep-monthly 12"
-        # "--keep-yearly 75"
       ];
       timerConfig = {
         OnCalendar = [
