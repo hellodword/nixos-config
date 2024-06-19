@@ -11,8 +11,9 @@ let
       filename="$fullstartdate"".jpg"
       if [ ! -f "${wallpapers}/$filename" ]; then
         url="$(echo "$result" | grep -oP '(?<=<url>)[^<]+(?=</url>)')"
-        curl -f --output "/tmp/$filename" "http://www.bing.com$url"
-        mv "/tmp/$filename" "${wallpapers}/$filename"
+        tmp="$(mktemp)"
+        curl -f --output "$tmp" "http://www.bing.com$url"
+        mv "$tmp" "${wallpapers}/$filename"
       fi
     '';
   };
