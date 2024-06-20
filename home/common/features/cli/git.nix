@@ -20,17 +20,27 @@ in
       "backup" = ''
         !f() {
           set -e
-          set -x
 
-          [ -n "$1" ]
+          local git_backup_name="$1"
+          local git_backup_root="${GIT_BACKUP_DIR}"
+          local git_backup_branch="${GIT_BACKUP_BRANCH}"
 
-          [ -f "${GIT_BACKUP_DIR}/$1/HEAD" ] || git init --bare "${GIT_BACKUP_DIR}/$1"
+          if [ -z "$git_backup_name" ]; then
+            echo "usage: git backup <name>"
+            exit 1
+          fi
 
-          git remote set-url --delete origin "${GIT_BACKUP_DIR}/$1" 2>/dev/null || true
-          git remote set-url --add origin "${GIT_BACKUP_DIR}/$1"
+          if [ ! -f "$git_backup_root/$git_backup_name/HEAD" ]; then
+            git init --bare "$git_backup_root/$git_backup_name"
+          fi
 
-          git remote get-url "${GIT_BACKUP_BRANCH}" >/dev/null 2>/dev/null || \
-            (git remote add "${GIT_BACKUP_BRANCH}" "file:///dev/null" && git remote set-url --push "${GIT_BACKUP_BRANCH}" "${GIT_BACKUP_DIR}/$1")
+          git remote set-url --delete origin "$git_backup_root/$git_backup_name" 2>/dev/null || true
+          git remote set-url --add origin "$git_backup_root/$git_backup_name"
+
+          if ! git remote get-url "$git_backup_branch" >/dev/null 2>/dev/null; then
+            git remote add "$git_backup_branch" "file:///dev/null"
+            git remote set-url --push "$git_backup_branch" "$git_backup_root/$git_backup_name"
+          fi
 
           git remote -v
         };
