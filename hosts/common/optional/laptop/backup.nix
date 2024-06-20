@@ -25,19 +25,20 @@ let
   ];
 
   mkResticS3 = name:
-    let
-      cacheDir = "${persistPath}/restic-cache/${name}";
-    in
+    # let
+    #   cacheDir = "${persistPath}/restic-cache/${name}";
+    # in
     {
       package = pkgs.restic;
 
-      checkOpts = [
-        "--with-cache"
-        "--cache-dir=${cacheDir}"
-      ];
+      runCheck = lib.mkForce false;
+      # checkOpts = [
+      #   "--with-cache"
+      #   "--cache-dir=${cacheDir}"
+      # ];
 
       pruneOpts = [
-        "--cache-dir=${cacheDir}"
+        # "--cache-dir=${cacheDir}"
         "--keep-daily 7"
         "--keep-weekly 5"
         "--keep-monthly 12"
@@ -45,7 +46,7 @@ let
       ];
 
       extraBackupArgs = [
-        "--cache-dir=${cacheDir}"
+        # "--cache-dir=${cacheDir}"
       ];
       initialize = true;
       passwordFile = config.sops.secrets."restic-password".path;
@@ -127,12 +128,32 @@ in
               backup = config.services.restic.backups."${config.networking.hostName}-${name}";
               extraOptions = lib.concatMapStrings (arg: " -o ${arg}") backup.extraOptions;
               resticCmd = "${backup.package}/bin/restic${extraOptions}";
+              pruneScript = pkgs.writeShellApplication {
+                name = "exe";
+                runtimeInputs = with pkgs; [ restic gawk ];
+                excludeShellChecks = [ ];
+                text = ''
+                  set -e
+                  set -x
+                  [ -f "$RESTIC_REPOSITORY_FILE" ]
+                  key="$(sha256sum < "$RESTIC_REPOSITORY_FILE" | head -1 | awk '{print $1}')"
+                  last_check="$(cat "$RESTIC_CACHE_DIR/.last_check.$key" 2>/dev/null || echo "0")"
+                  current_time="$(date +%s)"
+                  if [ $((current_time - last_check)) -ge "$((60*60*24*7))" ]; then
+                    echo "$current_time" | tee "$RESTIC_CACHE_DIR/.last_check.$key"
+                    "${resticCmd}" check --no-cache --verbose=2
+                  else
+                    "${resticCmd}" check --with-cache --cache-dir="$RESTIC_CACHE_DIR"
+                  fi
+                '';
+              };
             in
             {
               after = after;
               preStart = lib.mkAfter ''${resticCmd} unlock ${lib.concatStringsSep " " backup.extraBackupArgs}'';
               onSuccess = lib.optionals withBark [ "systemd-notify-success@%i.service" ];
               onFailure = lib.optionals withBark [ "systemd-notify-failure@%i.service" ];
+              serviceConfig.ExecStart = lib.mkAfter [ "${lib.getExe pruneScript}" ];
             }
           )
       )
