@@ -2,7 +2,7 @@
 
 let
   GIT_BACKUP_DIR = "$HOME/backups/git";
-  GIT_BACKUP_BRANCH = "laptop-git-backup";
+  GIT_BACKUP_REMOTE = "laptop-git-backup";
 in
 {
   programs.git = {
@@ -19,27 +19,62 @@ in
       # push only https://stackoverflow.com/a/53706195
       "backup" = ''
         !f() {
-          set -e
+          usage() {
+              echo "Usage: git backup [-f | --force] <name>"
+              exit 1
+          }
 
-          local git_backup_name="$1"
-          local git_backup_root="${GIT_BACKUP_DIR}"
-          local git_backup_branch="${GIT_BACKUP_BRANCH}"
+          if [ $# -lt 1 ]; then
+              usage
+          fi
 
-          if [ -z "$git_backup_name" ]; then
-            echo "usage: git backup <name>"
+          local FORCE=false
+          local BACKUP_NAME=""
+          local BACKUP_ROOT="${GIT_BACKUP_DIR}"
+          local BACKUP_REMOTE="${GIT_BACKUP_REMOTE}"
+
+          while [[ "$1" != "" ]]; do
+              case $1 in
+                  -f | --force )
+                      FORCE=true
+                      ;;
+                  -* )
+                      echo "Invalid option: $1"
+                      usage
+                      ;;
+                  * )
+                      BACKUP_NAME="$1"
+                      ;;
+              esac
+              shift
+          done
+
+          if [ -z "$BACKUP_NAME" ]; then
+            usage
+          fi
+
+          if [ ! -d ".git" ]; then
+            echo "this is not a git repo"
             exit 1
           fi
 
-          if [ ! -f "$git_backup_root/$git_backup_name/HEAD" ]; then
-            git init --bare "$git_backup_root/$git_backup_name"
+          if git remote get-url origin >/dev/null 2>/dev/null; then
+            git remote set-url --delete origin "$BACKUP_ROOT/$BACKUP_NAME" 2>/dev/null || true
+            git remote set-url --add origin "$BACKUP_ROOT/$BACKUP_NAME"
+          else
+            if ! "$FORCE"; then
+              echo "run git remote add origin"
+              exit 1
+            fi
           fi
 
-          git remote set-url --delete origin "$git_backup_root/$git_backup_name" 2>/dev/null || true
-          git remote set-url --add origin "$git_backup_root/$git_backup_name"
+          if ! git remote get-url "$BACKUP_REMOTE" >/dev/null 2>/dev/null; then
+            git remote add "$BACKUP_REMOTE" "file:///dev/null"
+            git remote set-url --push "$BACKUP_REMOTE" "$BACKUP_ROOT/$BACKUP_NAME"
+          fi
 
-          if ! git remote get-url "$git_backup_branch" >/dev/null 2>/dev/null; then
-            git remote add "$git_backup_branch" "file:///dev/null"
-            git remote set-url --push "$git_backup_branch" "$git_backup_root/$git_backup_name"
+          if [ ! -f "$BACKUP_ROOT/$BACKUP_NAME/HEAD" ]; then
+            git init --bare "$BACKUP_ROOT/$BACKUP_NAME"
           fi
 
           git remote -v
