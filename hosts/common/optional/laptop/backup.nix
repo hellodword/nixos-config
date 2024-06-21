@@ -128,6 +128,7 @@ in
               backup = config.services.restic.backups."${config.networking.hostName}-${name}";
               extraOptions = lib.concatMapStrings (arg: " -o ${arg}") backup.extraOptions;
               resticCmd = "${backup.package}/bin/restic${extraOptions}";
+              shouldPruneWithoutCache = lib.optionalString (name == "scaleway" || name == "r2") "true";
               pruneScript = pkgs.writeShellApplication {
                 name = "exe";
                 runtimeInputs = with pkgs; [ restic gawk ];
@@ -135,11 +136,12 @@ in
                 text = ''
                   set -e
                   set -x
+                  shouldPruneWithoutCache="${shouldPruneWithoutCache}"
                   [ -f "$RESTIC_REPOSITORY_FILE" ]
                   key="$(sha256sum < "$RESTIC_REPOSITORY_FILE" | head -1 | awk '{print $1}')"
                   last_check="$(cat "$RESTIC_CACHE_DIR/.last_check.$key" 2>/dev/null || echo "0")"
                   current_time="$(date +%s)"
-                  if [ $((current_time - last_check)) -ge "$((60*60*24*7))" ]; then
+                  if [[ "$shouldPruneWithoutCache" = "true" && $((current_time - last_check)) -ge "$((60*60*24*7))" ]]; then
                     echo "$current_time" | tee "$RESTIC_CACHE_DIR/.last_check.$key"
                     "${resticCmd}" check --no-cache --verbose=2
                   else
