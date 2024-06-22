@@ -57,8 +57,9 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    nix-vscode-ext = {
-      url = "github:hellodword/nix-vscode-ext/nixos-unstable";
+    nix-vscode-extensions = {
+      url = "github:nix-community/nix-vscode-extensions";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     auditd-rules = {

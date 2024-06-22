@@ -20,7 +20,7 @@
   programs.vscode.extensions = lib.optionals
     config.programs.vscode.enable
     [
-      pkgs.vscode-extensions.golang.go
+      # pkgs.vscode-extensions.golang.go
     ];
 
   programs.vscode.userSettings = lib.optionalAttrs
