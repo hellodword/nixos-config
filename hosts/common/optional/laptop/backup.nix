@@ -103,7 +103,7 @@ let
           # "*-*-* 07:10:00" # 15:10
           "*-*-* 13:10:00" # 21:10
         ];
-        Persistent = true;
+        Persistent = false;
         RandomizedDelaySec = "10m";
       };
       user = "root";
