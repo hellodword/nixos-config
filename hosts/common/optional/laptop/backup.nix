@@ -25,11 +25,18 @@ let
   ];
 
   mkResticS3 = name:
-    # let
-    #   cacheDir = "${persistPath}/restic-cache/${name}";
-    # in
-    {
+    let
       package = pkgs.restic;
+      extraOptions = [ ];
+      _extraOptions = lib.concatMapStrings (arg: " -o ${arg}") extraOptions;
+      resticCmd = "${package}/bin/restic${_extraOptions}";
+    in
+    {
+      inherit package extraOptions;
+
+      backupPrepareCommand = ''
+        ${resticCmd} unlock || true
+      '';
 
       runCheck = lib.mkForce false;
       # checkOpts = [
@@ -152,7 +159,6 @@ in
             in
             {
               after = after;
-              preStart = lib.mkAfter ''${resticCmd} unlock ${lib.concatStringsSep " " backup.extraBackupArgs}'';
               onSuccess = lib.optionals withBark [ "systemd-notify-success@%i.service" ];
               onFailure = lib.optionals withBark [ "systemd-notify-failure@%i.service" ];
               serviceConfig.ExecStart = lib.mkAfter [ "${lib.getExe pruneScript}" ];
