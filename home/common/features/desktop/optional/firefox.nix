@@ -107,21 +107,13 @@
         ];
         extensions = [
           (inputs.firefox-addons.lib.${pkgs.system}.buildFirefoxXpiAddon {
+            # https://addons.mozilla.org/en-US/firefox/addon/violentmonkey/
             pname = "violentmonkey";
             addonId = "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}";
-            version = "2.15.0";
+            version = "2.19.0";
             url =
-              "https://addons.mozilla.org/firefox/downloads/file/4142251/violentmonkey-2.15.0.xpi";
-            sha256 = "0ljkqmhv3hj94bafnmp1zsdfspwmi8kbjm7hmvg3blnwx75m8kl9";
-            meta = { };
-          })
-          (inputs.firefox-addons.lib.${pkgs.system}.buildFirefoxXpiAddon {
-            pname = "google-no-tracking-url";
-            addonId = "jid1-zUrvDCat3xoDSQ@jetpack";
-            version = "3.0.0";
-            url =
-              "https://addons.mozilla.org/firefox/downloads/file/706680/google_no_tracking_url-3.0.0.xpi";
-            sha256 = "0iqnlcw714279mc4r3z06j3fhyb5cx2ghxh9816wn80ljzfhphzc";
+              "https://addons.mozilla.org/firefox/downloads/file/4289102/violentmonkey-2.19.0.xpi";
+            sha256 = "0g6wldp6g5rxbd15vszrdng6v6hq7v0m2wxlz4qk9cw7kvh36m0h";
             meta = { };
           })
         ];
