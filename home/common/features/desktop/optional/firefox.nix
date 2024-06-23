@@ -113,7 +113,8 @@
             version = "2.19.0";
             url =
               "https://addons.mozilla.org/firefox/downloads/file/4289102/violentmonkey-2.19.0.xpi";
-            sha256 = "0g6wldp6g5rxbd15vszrdng6v6hq7v0m2wxlz4qk9cw7kvh36m0h";
+            # nix hash to-sri --type sha256 "$(nix-prefetch-url $url)"
+            sha256 = "sha256-EFQz4J6HszQx+bRzUcE+GJptnm35611CWz2XZ26j3Dw=";
             meta = { };
           })
         ];
