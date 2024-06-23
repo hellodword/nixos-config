@@ -6,6 +6,7 @@
   ];
 
   environment.systemPackages = with pkgs; [
+    nix-prefetch
     nix-prefetch-scripts
     sysstat
     aria
