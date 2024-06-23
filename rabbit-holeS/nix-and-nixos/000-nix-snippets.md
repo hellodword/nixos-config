@@ -139,3 +139,20 @@ systemd.timers = (lib.listToAttrs (
     resticS3Providers
 ));
 ```
+
+## fetchurl/fetchzip fails based on file extension
+
+> https://github.com/NixOS/nixpkgs/issues/60157#issuecomment-524965720
+
+```diff
+with import <nixpkgs> {};
+stdenv.mkDerivation {
+   name = "test";
+   src = fetchzip {
+      name = "cs2d.zip";
+-      url = "http://www.unrealsoftware.de/get.php?get=cs2d_1008_win.zip&p=1&cid=1266";
++      url = "http://www.unrealsoftware.de/get.php?get=cs2d_1008_win.zip&p=1&cid=1266#cs2d.zip";
+      sha256 = "1g66635m8zfsxdmg95c1xz72s6pam9w1myrjwk4dnw697dhpir1p";
+      };
+}
+```
