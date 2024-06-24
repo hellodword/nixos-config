@@ -1,5 +1,7 @@
 { pkgs, ... }: {
 
+  nix.settings.experimental-features = [ "nix-command" "flakes" "repl-flake" ];
+
   nixpkgs.hostPlatform = "x86_64-linux";
 
   users.users = {
@@ -15,6 +17,9 @@
       memorySize = 4096;
       cores = 4;
       graphics = true;
+
+      diskImage = "./wayland.qcow2";
+      diskSize = 256 * 1024;
     };
   };
 
