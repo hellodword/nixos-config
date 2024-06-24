@@ -4,6 +4,8 @@ let
   greetd = false;
 in
 {
+  services.gnome.gnome-keyring.enable = true;
+
   programs.sway = {
     enable = true;
   };
