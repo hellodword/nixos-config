@@ -1,9 +1,7 @@
 { pkgs, ... }:
 
 {
-  me.allowedUnfreePkg = [
-    "p7zip"
-  ];
+  me.allowedUnfreePkg = [ pkgs.p7zip ];
 
   environment.systemPackages = with pkgs; [
     nix-prefetch

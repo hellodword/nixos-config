@@ -1,9 +1,9 @@
-{ config, pkgs, persistPath, lib, ... }:
+{ config, pkgs, persistPath, ... }:
 
 {
   home.packages = [ pkgs.anytype ];
 
-  me.allowedUnfreePkg = [ (lib.getName pkgs.anytype) ];
+  me.allowedUnfreePkg = [ pkgs.anytype ];
 
   me.exitProcess = [ "anytype" ];
 

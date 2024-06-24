@@ -1,9 +1,7 @@
-{ lib, config, persistPath, ... }:
+{ lib, config, persistPath, pkgs, ... }:
 
 {
-  me.allowedUnfreePkg = [
-    "google-chrome"
-  ];
+  me.allowedUnfreePkg = [ pkgs.google-chrome ];
 
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/google-chrome" ];

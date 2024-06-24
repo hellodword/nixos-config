@@ -5,12 +5,12 @@
   # https://marketplace.visualstudio.com/items?itemName=${publisher}.${name}
   # https://${publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/${publisher}/extension/${name}/${version}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage
 
-  me.allowedUnfreePkg = [
-    "vscode"
+  me.allowedUnfreePkg = with pkgs; [
+    vscode
 
-    "vscode-extension-MS-python-vscode-pylance"
+    vscode-extensions.ms-python.vscode-pylance
     # "vscode-extension-ms-vscode-remote-remote-ssh"
-    "vscode-extension-ms-vscode-cpptools"
+    vscode-extensions.ms-vscode.cpptools
   ];
 
   me.mimeApps.defApps.editor = "code.desktop";

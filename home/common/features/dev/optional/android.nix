@@ -7,8 +7,8 @@
 
   nixpkgs.overlays = [ inputs.android-nixpkgs.overlays.default ];
 
-  me.allowedUnfreePkg = [
-    "android-studio-stable"
+  me.allowedUnfreePkg = with pkgs; [
+    android-studio
     # "android-sdk-cmdline-tools"
     # "android-sdk-tools"
   ];
