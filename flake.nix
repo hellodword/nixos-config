@@ -97,6 +97,11 @@
       url = "github:squalus/anytype-flake/64e7c8fb1e15b77b547d4733ee8eb1e6e4b064b2";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    firejail-src = {
+      url = "github:netblue30/firejail/b89ec818926b4bcd3a58bb4e2a67b68a8090ba1c";
+      flake = false;
+    };
   };
 
   outputs =

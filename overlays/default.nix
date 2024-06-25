@@ -79,5 +79,8 @@ in
       ./sing-box-http2ping.patch
     ];
 
+    firejail = prev.firejail.overrideDerivation (oldAttrs: {
+      src = inputs.firejail-src;
+    });
   };
 }

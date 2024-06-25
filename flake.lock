@@ -234,6 +234,23 @@
         "type": "gitlab"
       }
     },
+    "firejail-src": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1718467113,
+        "narHash": "sha256-+YgDHHYwPeCLCT4Ey89AhC5F0EWVPOrbeJ7Tu4e1MW4=",
+        "owner": "netblue30",
+        "repo": "firejail",
+        "rev": "b89ec818926b4bcd3a58bb4e2a67b68a8090ba1c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "netblue30",
+        "repo": "firejail",
+        "rev": "b89ec818926b4bcd3a58bb4e2a67b68a8090ba1c",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -681,6 +698,7 @@
         "catppuccin-kitty": "catppuccin-kitty",
         "disko": "disko",
         "firefox-addons": "firefox-addons",
+        "firejail-src": "firejail-src",
         "home-manager": "home-manager",
         "impermanence": "impermanence",
         "lanzaboote": "lanzaboote",
