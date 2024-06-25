@@ -92,6 +92,11 @@
       url = "github:tadfisher/android-nixpkgs/c500d23a40a7db979537655f914cbc1609b14bbd";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    anytype-flake = {
+      url = "github:squalus/anytype-flake/64e7c8fb1e15b77b547d4733ee8eb1e6e4b064b2";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
