@@ -24,6 +24,7 @@
     # ${pkgs.bash-completion}/share/bash-completion/completions/curl
     initExtra = lib.mkAfter (lib.strings.concatStringsSep "\n\n" [
       (lib.optionalString nixosConfig.services.tailscale.enable ''source <(tailscale completion bash)'')
+      "complete -c rp"
     ]);
     logoutExtra = "";
     profileExtra = "";
