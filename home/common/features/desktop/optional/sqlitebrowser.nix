@@ -9,7 +9,10 @@ in
       if nixosConfig.programs.firejail.enable then
         (mkJailed {
           originalPkg = pkgs.sqlitebrowser;
-          profile = "${pkgs.firejail}/etc/firejail/sqlitebrowser.profile";
+          profile = "${pkgs.writeText "sqlitebrowser-fixed.profile" ''
+            include ${pkgs.firejail}/etc/firejail/sqlitebrowser.profile
+            private-etc machine-id
+          ''}";
         })
       else
         pkgs.sqlitebrowser
