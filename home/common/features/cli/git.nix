@@ -82,4 +82,18 @@ in
         f''; # notice the \n
     };
   };
+
+  programs.starship = {
+    settings = {
+      custom = {
+        git_backup_status = {
+          command = ''[ -d "$(git remote get-url --push ${GIT_BACKUP_REMOTE})" ] || echo ❌❌❌ NOT BACKUP'';
+          require_repo = true;
+          when = true;
+          ignore_timeout = true;
+          style = "bold yellow";
+        };
+      };
+    };
+  };
 }
