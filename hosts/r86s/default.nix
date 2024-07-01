@@ -24,6 +24,8 @@
 
     ../common/optional/discovery.nix
     ../common/optional/prefer-ipv4.nix
+
+    ../common/optional/docker.nix
   ]
   ++
   [
