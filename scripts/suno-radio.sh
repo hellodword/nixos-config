@@ -6,8 +6,9 @@ _HOST="$(curl -s https://raw.githubusercontent.com/hellodword/suno-radio/master/
 
 cleanup() {
     if [[ -n $TARGET_PID ]]; then
-        kill "$TARGET_PID"
+        kill "$TARGET_PID" || true
         wait "$TARGET_PID" || true
+        TARGET_PID=""
     fi
     exit 0
 }
