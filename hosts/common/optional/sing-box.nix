@@ -36,13 +36,15 @@ let
 
       proxy_tags="$(jq '.outbounds[] | select(.tag | startswith("proxy:")).tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
       hideme_tags="$(jq '.outbounds[] | select(.tag | startswith("hideme:")).tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
+      crypto_tags="$(jq '.outbounds[] | select(.tag | startswith("crypto:")).tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
 
       jq "(.outbounds[] | select(.tag == \"auto:proxy\")).outbounds = [$proxy_tags]" config.json.tmp.1 > config.json.tmp.2
       jq "(.outbounds[] | select(.tag == \"auto:hideme\")).outbounds = [$hideme_tags]" config.json.tmp.2 > config.json.tmp.3
+      jq "(.outbounds[] | select(.tag == \"auto:crypto\")).outbounds = [$crypto_tags]" config.json.tmp.3 > config.json.tmp.4
 
       PRE_RULES="$(jq -c '.route.rules' ${sbRulesFile} | sed -E 's@^\[@@' | sed -E 's@\]$@,@')"
-      sed -E "/\"rules\": ?\[/a\\$PRE_RULES" "config.json.tmp.3" | jq > "config.json.tmp.4"
-      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.4" ${sbOutboundsFile} > ${sbConfigFile}
+      sed -E "/\"rules\": ?\[/a\\$PRE_RULES" "config.json.tmp.4" | jq > "config.json.tmp.5"
+      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.5" ${sbOutboundsFile} > ${sbConfigFile}
       rm -rf config.json.tmp.*
     '';
   };
@@ -393,6 +395,18 @@ in
         type = "urltest";
         url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
+      {
+        idle_timeout = "30m";
+        interrupt_exist_connections = false;
+        interval = "1s";
+        # _outbounds = [
+        #   "crypto:"
+        # ];
+        tag = "auto:crypto";
+        tolerance = 25;
+        type = "urltest";
+        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
+      }
     ];
     route = {
       auto_detect_interface = true;
@@ -629,7 +643,7 @@ in
           rule_set = "geosite:pixiv";
         }
         {
-          outbound = "auto:hideme";
+          outbound = "auto:crypto";
           rule_set = "geosite:category-cryptocurrency";
         }
         {
