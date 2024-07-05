@@ -42,26 +42,26 @@
         "update.mode" = "none";
         "extensions.autoCheckUpdates" = false;
         "extensions.autoUpdate" = false;
-        "[json]" = {
-          "editor.defaultFormatter" = "vscode.json-language-features";
-        };
-        "[jsonc]" = {
-          "editor.defaultFormatter" = "vscode.json-language-features";
-        };
-        "[javascript]" = {
-          "editor.defaultFormatter" = "vscode.typescript-language-features";
-        };
+        # "[json]" = {
+        #   "editor.defaultFormatter" = "vscode.json-language-features";
+        # };
+        # "[jsonc]" = {
+        #   "editor.defaultFormatter" = "vscode.json-language-features";
+        # };
+        # "[javascript]" = {
+        #   "editor.defaultFormatter" = "vscode.typescript-language-features";
+        # };
         # https://stackoverflow.com/a/74909302
         # https://github.com/microsoft/vscode/issues/113175
         "window.titleBarStyle" = "custom";
-        "files.associations" = {
-          "cspell.json" = "jsonc";
-          "v2ray.json" = "jsonc";
-          "sing-box.json" = "jsonc";
-        };
+        # "files.associations" = {
+        #   "cspell.json" = "jsonc";
+        #   "v2ray.json" = "jsonc";
+        #   "sing-box.json" = "jsonc";
+        # };
         "remote.autoForwardPortsSource" = "hybrid";
         "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";
-        "editor.tabSize" = 2;
+        # "editor.tabSize" = 2;
       };
       extensions = (
         # with pkgs.vscode-extensions; [
@@ -79,11 +79,11 @@
         with (inputs.nix-vscode-extensions.extensions.${pkgs.system}.forVSCodeVersion package.version).vscode-marketplace; [
           jnoortheen.nix-ide
 
-          esbenp.prettier-vscode
+          # esbenp.prettier-vscode
 
           ms-vscode-remote.remote-ssh
           ms-vscode-remote.remote-containers
-          ms-python.python
+          # ms-python.python
         ]
       );
     };
