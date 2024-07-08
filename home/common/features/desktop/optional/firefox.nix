@@ -309,6 +309,9 @@
             user_pref("signon.generation.enabled", false);
 
             user_pref("browser.search.suggest.enabled", false);
+
+            # disable HTTP/3
+            user_pref("network.http.http3.enable", false);
           ''
         ];
       };
