@@ -102,6 +102,11 @@
       url = "github:netblue30/firejail/b89ec818926b4bcd3a58bb4e2a67b68a8090ba1c";
       flake = false;
     };
+
+    reproducible-violentmonkey = {
+      url = "github:hellodword/reproducible-violentmonkey";
+      flake = false;
+    };
   };
 
   outputs =

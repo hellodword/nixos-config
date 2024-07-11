@@ -1,5 +1,8 @@
 { lib, inputs, pkgs, config, persistPath, ... }:
 
+let
+  violentmonkey = builtins.fromJSON (builtins.readFile "${inputs.reproducible-violentmonkey}/info.json");
+in
 {
   # TODO backup
   home = {
@@ -110,11 +113,10 @@
             # https://addons.mozilla.org/en-US/firefox/addon/violentmonkey/
             pname = "violentmonkey";
             addonId = "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}";
-            version = "2.19.0";
-            url =
-              "https://addons.mozilla.org/firefox/downloads/file/4289102/violentmonkey-2.19.0.xpi";
+            version = violentmonkey.version;
+            url = violentmonkey.link;
             # nix hash to-sri --type sha256 "$(nix-prefetch-url $url)"
-            sha256 = "sha256-EFQz4J6HszQx+bRzUcE+GJptnm35611CWz2XZ26j3Dw=";
+            sha256 = violentmonkey.fileHash;
             meta = { };
           })
         ];

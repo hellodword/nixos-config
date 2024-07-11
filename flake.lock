@@ -687,6 +687,22 @@
         "type": "github"
       }
     },
+    "reproducible-violentmonkey": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1720709082,
+        "narHash": "sha256-l1K62d81DUCGtFaQ7mffnlknSAVIJKokYatZShzz3V8=",
+        "owner": "hellodword",
+        "repo": "reproducible-violentmonkey",
+        "rev": "33617123f95ce69c3ebf3b307da03e6fb47e3b6a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "hellodword",
+        "repo": "reproducible-violentmonkey",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "android-nixpkgs": "android-nixpkgs",
@@ -708,6 +724,7 @@
         "nixos-hardware": "nixos-hardware",
         "nixos-privates": "nixos-privates",
         "nixpkgs": "nixpkgs",
+        "reproducible-violentmonkey": "reproducible-violentmonkey",
         "sops-nix": "sops-nix",
         "you-know-who": "you-know-who"
       }
