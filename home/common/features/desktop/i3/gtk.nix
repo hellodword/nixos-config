@@ -11,7 +11,7 @@
     # https://github.com/swaywm/sway/issues/5645
     iconTheme = {
       name = "Adwaita";
-      package = pkgs.gnome.adwaita-icon-theme;
+      package = pkgs.adwaita-icon-theme;
     };
 
     theme = {
