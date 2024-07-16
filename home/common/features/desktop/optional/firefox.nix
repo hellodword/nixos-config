@@ -290,6 +290,10 @@ in
             user_pref("privacy.clearOnShutdown.formdata", false);  // [DEFAULT: true]
             user_pref("privacy.clearOnShutdown.history", false);   // [DEFAULT: true]
             user_pref("privacy.clearOnShutdown_v2.historyFormDataAndDownloads", false); // [FF128+] [DEFAULT: true]
+            user_pref("privacy.clearOnShutdown.cookies", false); // Cookies
+            user_pref("privacy.clearOnShutdown.offlineApps", false); // Site Data
+            user_pref("privacy.clearOnShutdown.sessions", false);  // Active Logins [DEFAULT: true]
+            user_pref("privacy.clearOnShutdown_v2.cookiesAndStorage", false); // Cookies, Site Data, Active Logins [FF128+]
           ''
           ''
             // https://support.mozilla.org/en-US/questions/1283950
