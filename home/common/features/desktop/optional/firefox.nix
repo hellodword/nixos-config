@@ -8,7 +8,10 @@ in
   home = {
     sessionVariables.BROWSER = "firefox";
     persistence = {
-      "${persistPath}${config.home.homeDirectory}".directories = [ ".mozilla/firefox" ];
+      "${persistPath}${config.home.homeDirectory}".directories = [
+        ".mozilla/firefox"
+        ".cache/mozilla/firefox"
+      ];
     };
   };
 
@@ -264,7 +267,6 @@ in
             user_pref("media.eme.enabled", true);
             user_pref("webgl.disabled", false); // 4520
             user_pref("network.http.referer.XOriginTrimmingPolicy", 0);
-            user_pref("privacy.clearOnShutdown.history", false); // 2811: don't clear history on close
             user_pref("browser.startup.page", 3);                 // 0102: enable session restore
             user_pref("signon.rememberSignons", true);           // 5003: enable saving passwords
             /* [UX,-HIST] Remember more closed tabs for undo. */
@@ -277,15 +279,17 @@ in
             user_pref("general.autoScroll", true);
             //user_pref("network.cookie.lifetimePolicy", 0); //keep cookies 2801
             user_pref("network.cookie.cookieBehavior", 5); // 2701
-            user_pref("privacy.clearOnShutdown.offlineApps", false);
             user_pref("privacy.cpd.offlineApps", false);
             user_pref("privacy.cpd.history", false); // 2812 to match when you use Ctrl-Shift-Del
-            user_pref("privacy.clearOnShutdown.cookies", false);
-            user_pref("privacy.clearOnShutdown.downloads", false);
-            user_pref("privacy.clearOnShutdown.formdata", false);
-            user_pref("privacy.clearOnShutdown.sessions", false);
             user_pref("extensions.pocket.enabled", false);        // 0900: disable Pocket
             user_pref("_user.js.baitinq", "Survived the overrides :)");
+
+            user_pref("privacy.clearOnShutdown.cache", false);     // [DEFAULT: true]
+            user_pref("privacy.clearOnShutdown_v2.cache", false);  // [FF128+] [DEFAULT: true]
+            user_pref("privacy.clearOnShutdown.downloads", false); // [DEFAULT: true]
+            user_pref("privacy.clearOnShutdown.formdata", false);  // [DEFAULT: true]
+            user_pref("privacy.clearOnShutdown.history", false);   // [DEFAULT: true]
+            user_pref("privacy.clearOnShutdown_v2.historyFormDataAndDownloads", false); // [FF128+] [DEFAULT: true]
           ''
           ''
             // https://support.mozilla.org/en-US/questions/1283950
