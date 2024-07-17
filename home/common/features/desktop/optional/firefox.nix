@@ -2,6 +2,20 @@
 
 let
   violentmonkey = builtins.fromJSON (builtins.readFile "${inputs.reproducible-violentmonkey}/info.json");
+  userjs = pkgs.runCommand "arkenfox-userjs"
+    {
+      preferLocalBuild = true;
+      allowSubstitutes = false;
+      # take precedence over non-firejailed versions
+      meta.priority = -1;
+    } ''
+    set -x
+    mkdir -p $out
+    cat "${inputs.arkenfox-userjs}/user.js" > $out/user.js
+    grep -i clearonshutdown $out/user.js
+    sed -i -e '/\/\*\*\* \[SECTION 2800\]/,/\/\*\*\* \[SECTION /s/user_pref.*//' $out/user.js
+    ! grep -i clearonshutdown $out/user.js
+  '';
 in
 {
   # TODO backup
@@ -251,7 +265,7 @@ in
         #   修改配置
         #   diff ~/.mozilla/firefox/default/prefs.js /tmp/prefs.js
         extraConfig = lib.strings.concatStrings [
-          (builtins.readFile "${inputs.arkenfox-userjs}/user.js")
+          (builtins.readFile "${userjs}/user.js")
           ''
             // Re-enables URL usages as a search bar.
             /* 0801 */ user_pref("keyword.enabled", true);
