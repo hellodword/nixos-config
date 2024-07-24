@@ -30,10 +30,14 @@ function handle_2() {
 
 ORIGIN="$(jq -r '.outbounds[] | select(.tag | startswith("proxy:us:cf:yes-")).server' /usr/local/etc/sing-box/outbounds.json | sort)"
 
-_DATA="$(curl --doh-url https://120.53.53.53/dns-query --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip --json '{"key":"o1zrmHAF", "type":"v4"}')"
+RESOLVE="$(kdig +short api.hostmonit.com @1.12.12.12 +https | head -1 || kdig +short api.hostmonit.com @223.5.5.5 +https | head -1)"
+
+[ -n "$RESOLVE" ]
+
+_DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip --json '{"key":"o1zrmHAF", "type":"v4"}')"
 handle_2 "v4" "cm" "$_DATA"
 
-_DATA="$(curl --doh-url https://120.53.53.53/dns-query --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip --json '{"key":"o1zrmHAF", "type":"v6"}')"
+_DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip --json '{"key":"o1zrmHAF", "type":"v6"}')"
 handle_2 "v6" "cm" "$_DATA"
 
 NEW="$(jq -r '.outbounds[] | select(.tag | startswith("proxy:us:cf:yes-")).server' /usr/local/etc/sing-box/outbounds.json | sort)"

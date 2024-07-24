@@ -139,7 +139,7 @@ in
       sing-box-cloudflare-yes = {
         enable = true;
         description = "Sing-box cloudflare yes";
-        path = with pkgs; [ curl iproute2 gnugrep jq coreutils gawk systemd ];
+        path = with pkgs; [ curl iproute2 gnugrep jq coreutils gawk systemd knot-dns ];
         script = "${pkgs.bash}/bin/bash ${./sing-box-cloudflare-yes.sh}";
         serviceConfig = {
           Type = "oneshot";
