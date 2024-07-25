@@ -82,11 +82,6 @@
       flake = false;
     };
 
-    microvm = {
-      url = "github:astro/microvm.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     android-nixpkgs = {
       # url = "github:tadfisher/android-nixpkgs/stable";
       url = "github:tadfisher/android-nixpkgs/c500d23a40a7db979537655f914cbc1609b14bbd";
@@ -110,7 +105,7 @@
   };
 
   outputs =
-    { self, nixpkgs, microvm, ... }@ inputs:
+    { self, nixpkgs, ... }@ inputs:
     let
       inherit (self) outputs;
       forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" ];
@@ -193,15 +188,6 @@
           ./hosts/vm-android-studio
         ];
       };
-
-      # nix run .#nixosConfigurations."microvm-minimal".<system>.config.microvm.declaredRunner
-      nixosConfigurations."microvm-minimal" = forEachSystem (system: nixpkgs.lib.nixosSystem {
-        inherit system;
-        modules = [
-          microvm.nixosModules.microvm
-          ./vms/microvm-minimal.nix
-        ];
-      });
 
     };
 }
