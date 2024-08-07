@@ -519,6 +519,14 @@ in
         {
           download_detour = "auto:proxy";
           format = "binary";
+          tag = "geosite:docker";
+          type = "remote";
+          url =
+            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-docker.srs";
+        }
+        {
+          download_detour = "auto:proxy";
+          format = "binary";
           tag = "geoip:telegram";
           type = "remote";
           url =
@@ -621,6 +629,10 @@ in
             "cache.nixos.org"
             "rust-lang.org"
           ];
+        }
+        {
+          outbound = "auto:proxy";
+          rule_set = "geosite:docker";
         }
         {
           outbound = "auto:hideme";
