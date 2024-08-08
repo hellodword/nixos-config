@@ -112,7 +112,7 @@ in
               }
               {
                 name = "Nixpkgs Pull Request Tracker";
-                url = "https://nixpk.gs/pr-tracker.html";
+                url = "https://nixpkgs-tracker.ocfox.me";
               }
               {
                 name = "Nixpkgs";
