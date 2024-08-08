@@ -80,6 +80,7 @@ in
     ../common/features/desktop/optional/zathura.nix
     ../common/features/desktop/optional/scrcpy.nix
     ../common/features/desktop/optional/remmina.nix
+    ../common/features/desktop/optional/blender.nix
   ]
   ++
   [
