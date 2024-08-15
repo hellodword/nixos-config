@@ -75,6 +75,8 @@
       "docker-pull-my-images" = "docker images | grep -v '<none>' | grep -P '(ghcr.io/hellodword)|(mcr.microsoft.com)|(gcr.io/distroless)|(^filebrowser/filebrowser )|(^golang )|(^python )|(^nixos/nix )|(^node )|(lwthiker/curl-impersonate)|(leplusorg/qrcode)|(liwei2633/gopeed)|(mitmproxy/mitmproxy)|(^ubuntu )|(^alpine )' | awk '{print $1 \":\" $2}' | xargs -I {} bash -c 'echo docker pull {}; docker pull {}'";
 
       "gopeed" = ''docker run --rm --name gopeed --runtime runsc -v "$HOME/Downloads/gopeed/Downloads":/app/Downloads -v "$HOME/Downloads/gopeed/storage":/app/storage -p 127.0.0.1:9999:9999 --user "$(id -u)":"$(id -g)" --entrypoint /app/gopeed liwei2633/gopeed'';
+
+      "mitm" = "mkdir -p ~/Downloads/.mitmproxy; docker run --rm -t --name mitm --network host -v ~/Downloads/.mitmproxy:/home/mitmproxy/.mitmproxy -w /home/mitmproxy/.mitmproxy/scripts mitmproxy/mitmproxy:dev mitmweb --mode socks5@8889 --mode regular@8888 --web-host 127.0.0.1 --web-port 8890 --ignore-hosts 8.8.8.8:443 --ignore-hosts 8.8.4.4:443 --ignore-hosts dns.google:443 --ignore-hosts dns.google --ignore-hosts 1.1.1.1:443 --ignore-hosts 1.0.0.1:443";
     };
     shellOptions = [
       "histappend"
