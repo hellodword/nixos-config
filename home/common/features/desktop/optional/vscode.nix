@@ -81,7 +81,8 @@
 
           # esbenp.prettier-vscode
 
-          ms-vscode-remote.remote-ssh
+          # # failed with ref c1fba83fc62263d2ce08e6b85e9fbc8359da0ab9
+          # ms-vscode-remote.remote-ssh
           ms-vscode-remote.remote-containers
           # ms-python.python
         ]
