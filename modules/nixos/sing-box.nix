@@ -18,5 +18,10 @@ with types;
     default = [ ];
   };
 
+  options.me.sing-box-log-disabled = mkOption {
+    type = bool;
+    default = false;
+  };
+
   config = { };
 }

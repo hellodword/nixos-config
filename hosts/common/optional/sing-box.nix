@@ -334,7 +334,7 @@ in
       }
     ];
     log = {
-      disabled = false;
+      disabled = config.me.sing-box-log-disabled;
       level = "trace";
       output = "/var/log/sing-box/log";
       timestamp = true;

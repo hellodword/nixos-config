@@ -1,4 +1,4 @@
-{ config, pkgs, inputs, userName, ... }:
+{ config, pkgs, inputs, userName, lib, ... }:
 
 {
   imports = [
@@ -39,6 +39,7 @@
 
   users.users."${userName}".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
 
+  me.sing-box-log-disabled = lib.mkForce true;
 
   environment.etc =
     (builtins.listToAttrs (map
