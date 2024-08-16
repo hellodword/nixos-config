@@ -193,6 +193,13 @@ gpg --edit-key alice
 # gpg>  1y
 # gpg> save
 
+
+# 更改指定 key 的 action
+gpg --edit-key alice
+# gpg> key 7
+# gpg> change-usage
+# ...
+# gpg> save
 ```
 
 ## known issues
