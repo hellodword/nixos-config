@@ -11,6 +11,4 @@
   # fira-code-novf = pkgs.callPackage ./fira-code-novf { };
   harmonyos-sans = pkgs.callPackage ./harmonyos-sans { };
   lxgw-fusion-kai = pkgs.callPackage ./lxgw-fusion-kai { };
-
-  mosdns = pkgs.callPackage ./mosdns { };
 }
