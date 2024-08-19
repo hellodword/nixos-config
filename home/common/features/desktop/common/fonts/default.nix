@@ -103,7 +103,7 @@
 
     twemoji-color-font
 
-    harmonyos-sans
+    # harmonyos-sans
 
     material-design-icons
   ];
