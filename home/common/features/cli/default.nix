@@ -14,6 +14,7 @@
     nixpkgs-fmt
     nixpkgs-lint
     nil # Nix LSP
+    nixd
     nixfmt-rfc-style # Nix formatter
     flake-checker
   ];

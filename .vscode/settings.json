@@ -5,7 +5,7 @@
         "EDITOR": "code --wait"
     },
     "nix.enableLanguageServer": true,
-    "nix.serverPath": "nil",
+    "nix.serverPath": "nixd",
     // Uncomment these to tweak settings.
     "nix.serverSettings": {
         "nil": {
@@ -79,7 +79,9 @@
                 "workers": 5
             },
             "formatting": {
-                "command": "nixpkgs-fmt"
+                "command": [
+                    "nixpkgs-fmt"
+                ]
             },
             "options": {
                 "enable": true,
