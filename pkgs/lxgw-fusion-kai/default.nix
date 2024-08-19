@@ -1,16 +1,13 @@
 { lib, stdenvNoCC, fetchFromGitHub, ... }:
 
-let
-  rev = "0bd3ae7ffcd1f290b8db5047ef31b74573368407";
-in
-stdenvNoCC.mkDerivation {
+stdenvNoCC.mkDerivation rec {
   pname = "lxgw-fusion-kai";
-  version = "v0.0.0-${rev}";
+  version = "v24.134";
   src = fetchFromGitHub {
     owner = "lxgw";
     repo = "FusionKai";
-    rev = rev;
-    hash = "sha256-aqEGMFlAzis8w5YWJQuWdgRK9gIWaiRW3wZIUA5ri7M=";
+    rev = version;
+    hash = "sha256-pEISoFEsv8SJOGa2ud/nV1yvl8T9kakfKENu3mfYA5A=";
   };
 
   installPhase = ''
