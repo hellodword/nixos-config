@@ -6,7 +6,6 @@
   localsend-discovery = pkgs.callPackage ./localsend-discovery { };
 
   # fonts
-  jigmo = pkgs.callPackage ./jigmo { };
   # noto-fonts-cjk-novf = pkgs.callPackage ./noto-fonts-cjk-novf { };
   # fira-code-novf = pkgs.callPackage ./fira-code-novf { };
   harmonyos-sans = pkgs.callPackage ./harmonyos-sans { };
