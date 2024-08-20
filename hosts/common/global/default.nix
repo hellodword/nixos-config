@@ -37,7 +37,7 @@
     tcpdump
     ipset
     libtree
-    compsize # calc btrfs compression ratio
+    # compsize # calc btrfs compression ratio
     lsof
     git
     screen
