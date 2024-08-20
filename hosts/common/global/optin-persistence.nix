@@ -39,6 +39,7 @@
         # https://www.freedesktop.org/software/systemd/man/systemd-coredump.html
         "/var/lib/systemd/coredump"
 
+        # https://github.com/nix-community/impermanence/issues/178
         "/var/lib/nixos"
 
         # "/srv"
