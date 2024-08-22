@@ -1,4 +1,12 @@
-{ config, lib, persistPath, nixosConfig, userName, pkgs, ... }:
+{
+  config,
+  lib,
+  persistPath,
+  nixosConfig,
+  userName,
+  pkgs,
+  ...
+}:
 
 {
   # Broken symbol link
@@ -22,10 +30,12 @@
     ];
     historySize = 10000;
     # ${pkgs.bash-completion}/share/bash-completion/completions/curl
-    initExtra = lib.mkAfter (lib.strings.concatStringsSep "\n\n" [
-      (lib.optionalString nixosConfig.services.tailscale.enable ''source <(tailscale completion bash)'')
-      "complete -c rp"
-    ]);
+    initExtra = lib.mkAfter (
+      lib.strings.concatStringsSep "\n\n" [
+        (lib.optionalString nixosConfig.services.tailscale.enable ''source <(tailscale completion bash)'')
+        "complete -c rp"
+      ]
+    );
     logoutExtra = "";
     profileExtra = "";
     sessionVariables = { };
@@ -78,7 +88,9 @@
 
       "mitm" = "mkdir -p ~/Downloads/.mitmproxy; docker run --rm -t --name mitm --network host -v ~/Downloads/.mitmproxy:/home/mitmproxy/.mitmproxy -w /home/mitmproxy/.mitmproxy/scripts mitmproxy/mitmproxy:dev mitmweb --mode socks5@8889 --mode regular@8888 --web-host 127.0.0.1 --web-port 8890 --ignore-hosts 8.8.8.8:443 --ignore-hosts 8.8.4.4:443 --ignore-hosts dns.google:443 --ignore-hosts dns.google --ignore-hosts 1.1.1.1:443 --ignore-hosts 1.0.0.1:443";
 
-      "honor-downloader" = ''mkdir -p ~/Downloads/honor-downloader; docker run --rm --name honor-downloader --runtime runsc -v ~/Downloads/honor-downloader:/data --user "$(id -u):$(id -g)" honor-downloader'';
+      "honor-downloader" = ''mkdir -p ~/Downloads/honor-downloader; docker run --rm --name honor-downloader --runtime runsc -v ~/Downloads/honor-downloader:/data --user "$(id -u):$(id -g)" ghcr.io/hellodword/honor-downloader'';
+
+      "charles" = ''mkdir -p ~/Downloads/charles; docker run --rm --name charles -v ~/Downloads/charles:/home/app -p 127.0.0.1:5800:5800 -p 8888:8888 -p 8889:8889 ghcr.io/hellodword/charles'';
     };
     shellOptions = [
       "histappend"
