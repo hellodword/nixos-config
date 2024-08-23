@@ -41,6 +41,7 @@
 
     (pkgs.writeShellApplication {
       name = "docker-pull-my-images";
+      excludeShellChecks = [ "SC2207" ];
       runtimeInputs = with pkgs; [
         coreutils
         gnugrep
