@@ -1,8 +1,17 @@
 diff --git a/adapter/experimental.go b/adapter/experimental.go
-index 2a6776c..1b67240 100644
+index 5e1cbd9d..83e56aaf 100644
 --- a/adapter/experimental.go
 +++ b/adapter/experimental.go
-@@ -38,6 +38,9 @@ type CacheFile interface {
+@@ -9,7 +9,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/sagernet/sing-box/common/urltest"
+-	"github.com/sagernet/sing-dns"
++	dns "github.com/sagernet/sing-dns"
+ 	N "github.com/sagernet/sing/common/network"
+ 	"github.com/sagernet/sing/common/rw"
+ )
+@@ -42,6 +42,9 @@ type CacheFile interface {
  	StoreGroupExpand(group string, expand bool) error
  	LoadRuleSet(tag string) *SavedRuleSet
  	SaveRuleSet(tag string, set *SavedRuleSet) error
@@ -13,7 +22,7 @@ index 2a6776c..1b67240 100644
  
  type SavedRuleSet struct {
 diff --git a/common/urltest/urltest.go b/common/urltest/urltest.go
-index 001f2e1..2a47e54 100644
+index 001f2e15..2a47e546 100644
 --- a/common/urltest/urltest.go
 +++ b/common/urltest/urltest.go
 @@ -2,6 +2,8 @@ package urltest
@@ -138,7 +147,7 @@ index 001f2e1..2a47e54 100644
 +
 +}
 diff --git a/experimental/cachefile/cache.go b/experimental/cachefile/cache.go
-index 1027588..d7a5e50 100644
+index 1027588f..d7a5e508 100644
 --- a/experimental/cachefile/cache.go
 +++ b/experimental/cachefile/cache.go
 @@ -24,12 +24,15 @@ var (
@@ -188,7 +197,7 @@ index 1027588..d7a5e50 100644
 +	})
 +}
 diff --git a/outbound/urltest.go b/outbound/urltest.go
-index aa7cff6..d7ef897 100644
+index c6e38ec5..d7825a6e 100644
 --- a/outbound/urltest.go
 +++ b/outbound/urltest.go
 @@ -3,6 +3,7 @@ package outbound
@@ -329,15 +338,15 @@ index aa7cff6..d7ef897 100644
  		return result, nil
 @@ -387,7 +427,13 @@ func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint
  		b.Go(realTag, func() (any, error) {
- 			ctx, cancel := context.WithTimeout(context.Background(), C.TCPTimeout)
+ 			testCtx, cancel := context.WithTimeout(g.ctx, C.TCPTimeout)
  			defer cancel()
--			t, err := urltest.URLTest(ctx, g.link, p)
+-			t, err := urltest.URLTest(testCtx, g.link, p)
 +			var t uint16
 +			var err error
 +			if g.useHttp2Ping {
-+				t, err = urltest.URLTestH2(ctx, g.link, p, realTag, g.interval)
++				t, err = urltest.URLTestH2(testCtx, g.link, p, realTag, g.interval)
 +			} else {
-+				t, err = urltest.URLTest(ctx, g.link, p)
++				t, err = urltest.URLTest(testCtx, g.link, p)
 +			}
  			if err != nil {
  				g.logger.Debug("outbound ", tag, " unavailable: ", err)
