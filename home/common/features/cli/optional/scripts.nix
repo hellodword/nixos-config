@@ -13,20 +13,43 @@
 
     (pkgs.writeShellApplication {
       name = "coderadio";
-      runtimeInputs = with pkgs; [ curl ffmpeg-full ];
+      runtimeInputs = with pkgs; [
+        curl
+        ffmpeg-full
+      ];
       text = builtins.readFile ../../../../../scripts/coderadio.sh;
     })
 
     (pkgs.writeShellApplication {
       name = "suno-radio";
-      runtimeInputs = with pkgs; [ curl ffmpeg-full jq ];
+      runtimeInputs = with pkgs; [
+        curl
+        ffmpeg-full
+        jq
+      ];
       text = builtins.readFile ../../../../../scripts/suno-radio.sh;
     })
 
     (pkgs.writeShellApplication {
       name = "httpserver";
-      runtimeInputs = with pkgs; [ coreutils docker ];
+      runtimeInputs = with pkgs; [
+        coreutils
+        docker
+      ];
       text = builtins.readFile ../../../../../scripts/httpserver.sh;
+    })
+
+    (pkgs.writeShellApplication {
+      name = "docker-pull-my-images";
+      runtimeInputs = with pkgs; [
+        coreutils
+        gnugrep
+        gawk
+        findutils
+        jq
+        docker
+      ];
+      text = builtins.readFile ../../../../../scripts/docker-pull-my-images.sh;
     })
 
   ];
