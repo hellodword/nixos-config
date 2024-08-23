@@ -1,6 +1,9 @@
 set -e
 set -x
 
+# https://www.v2ex.com/t/1016999
+# https://monitor.gacjie.cn/page/cloudflare/ipv6.html
+
 INTERFACE="$1"
 if [ -z "$INTERFACE" ]; then
     INTERFACE="$(ip route | grep '^default' | grep -oP '(?<=dev )[^ \n]+' | head -1)"
@@ -18,7 +21,8 @@ function handle_2() {
     _TYPE_LOWER="$(echo "$_TYPE" | awk '{print tolower($0)}')"
     _TYPE_UPPER="$(echo "$_TYPE" | awk '{print toupper($0)}')"
 
-    ips=( $(echo "$_DATA" | jq -r ".info.$_TYPE_UPPER[] | .ip") )
+    ips=( $(echo "$_DATA" | jq -r ".info[] | select( .line == \"$_TYPE_UPPER\") | .ip") )
+
     if [ "${#ips[@]}" = "5" ]; then
         for i in ${!ips[@]}; do
                 ip="${ips[$i]}"
@@ -28,19 +32,19 @@ function handle_2() {
     fi
 }
 
-ORIGIN="$(jq -r '.outbounds[] | select(.tag | startswith("proxy:us:cf:yes-")).server' /usr/local/etc/sing-box/outbounds.json | sort)"
+ORIGIN="$(jq -r '.outbounds[] | select(.tag | startswith("proxy:us:cf:yes-")).server' "$CONFIG_FILE" | sort)"
 
 RESOLVE="$(kdig +short api.hostmonit.com @1.12.12.12 +https | head -1 || kdig +short api.hostmonit.com @223.5.5.5 +https | head -1)"
 
 [ -n "$RESOLVE" ]
 
-_DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip --json '{"key":"o1zrmHAF", "type":"v4"}')"
+_DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:129.0) Gecko/20100101 Firefox/129.0' -H 'Accept: application/json, text/plain, */*' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br, zstd' -H 'Content-Type: application/json' -H 'Origin: https://stock.hostmonit.com' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Referer: https://stock.hostmonit.com/' -H 'Sec-Fetch-Dest: empty' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-site' -H 'Priority: u=0' -H 'TE: trailers' --json '{"key":"iDetkOys", "type":"v4"}')"
 handle_2 "v4" "cm" "$_DATA"
 
-_DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip --json '{"key":"o1zrmHAF", "type":"v6"}')"
+_DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:129.0) Gecko/20100101 Firefox/129.0' -H 'Accept: application/json, text/plain, */*' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br, zstd' -H 'Content-Type: application/json' -H 'Origin: https://stock.hostmonit.com' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Referer: https://stock.hostmonit.com/' -H 'Sec-Fetch-Dest: empty' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-site' -H 'Priority: u=0' -H 'TE: trailers' --json '{"key":"iDetkOys", "type":"v6"}')"
 handle_2 "v6" "cm" "$_DATA"
 
-NEW="$(jq -r '.outbounds[] | select(.tag | startswith("proxy:us:cf:yes-")).server' /usr/local/etc/sing-box/outbounds.json | sort)"
+NEW="$(jq -r '.outbounds[] | select(.tag | startswith("proxy:us:cf:yes-")).server' "$CONFIG_FILE" | sort)"
 
 if [ "$ORIGIN" != "$NEW" ]; then
     systemctl restart sing-box
