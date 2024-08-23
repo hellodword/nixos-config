@@ -89,7 +89,7 @@
     };
 
     anytype-flake = {
-      url = "github:squalus/anytype-flake/0b6876785cecbe9817eb0d107485d245151eb229";
+      url = "github:squalus/anytype-flake/eaa0e7c3691a672720997c8ece0bdf63819a739f";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -105,11 +105,14 @@
   };
 
   outputs =
-    { self, nixpkgs, ... }@ inputs:
+    { self, nixpkgs, ... }@inputs:
     let
       inherit (self) outputs;
       forEachSystem = nixpkgs.lib.genAttrs [ "x86_64-linux" ];
-      commonArgs = { persistPath = "/persist"; userName = "ubuntu"; };
+      commonArgs = {
+        persistPath = "/persist";
+        userName = "ubuntu";
+      };
 
     in
     {
@@ -120,16 +123,17 @@
 
       # Your custom packages
       # Accessible through 'nix build', 'nix shell', etc
-      packages = forEachSystem (system:
-        let pkgs = nixpkgs.legacyPackages.${system};
-        in import ./pkgs { inherit pkgs; }
+      packages = forEachSystem (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        import ./pkgs { inherit pkgs; }
       );
 
       # laptop2
       nixosConfigurations."laptop2" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/laptop2
-        ];
+        modules = [ ./hosts/laptop2 ];
         specialArgs = {
           commonArgs = commonArgs;
           inherit inputs outputs;
@@ -138,21 +142,16 @@
 
       # laptop3
       nixosConfigurations."laptop3" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/laptop3
-        ];
+        modules = [ ./hosts/laptop3 ];
         specialArgs = {
           commonArgs = commonArgs;
           inherit inputs outputs;
         } // commonArgs;
       };
 
-
       # r86s
       nixosConfigurations."r86s" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/r86s
-        ];
+        modules = [ ./hosts/r86s ];
         specialArgs = {
           commonArgs = commonArgs;
           inherit inputs outputs;
@@ -164,29 +163,15 @@
       # QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" ./result/bin/run-nixos-vm
       # NIX_DISK_IMAGE=test1.qcow2 QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22" nix run .#nixosConfigurations.vm-minimal.config.system.build.vm
       # ssh -oUserKnownHostsFile=/dev/null -oStrictHostKeyChecking=no admin@localhost -p 2221
-      nixosConfigurations."vm-minimal" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/vm-minimal
-        ];
-      };
+      nixosConfigurations."vm-minimal" = nixpkgs.lib.nixosSystem { modules = [ ./hosts/vm-minimal ]; };
 
       # QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:2221-:22,hostfwd=tcp:127.0.0.1:3389-:3389" ./result/bin/run-nixos-vm
-      nixosConfigurations."vm-x11" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/vm-x11
-        ];
-      };
+      nixosConfigurations."vm-x11" = nixpkgs.lib.nixosSystem { modules = [ ./hosts/vm-x11 ]; };
 
-      nixosConfigurations."vm-wayland" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/vm-wayland
-        ];
-      };
+      nixosConfigurations."vm-wayland" = nixpkgs.lib.nixosSystem { modules = [ ./hosts/vm-wayland ]; };
 
       nixosConfigurations."vm-android-studio" = nixpkgs.lib.nixosSystem {
-        modules = [
-          ./hosts/vm-android-studio
-        ];
+        modules = [ ./hosts/vm-android-studio ];
       };
 
     };
