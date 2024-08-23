@@ -1,7 +1,16 @@
-{ pkgs, lib, persistPath, inputs, config, ... }:
+{
+  pkgs,
+  lib,
+  persistPath,
+  inputs,
+  config,
+  ...
+}:
 
 let
   sbBase = "/var/lib/sing-box";
+  logPath = "/var/log/sing-box/log";
+  logPathReal = "/var/log/private/sing-box/log";
   sbBaseReal = "/var/lib/private/sing-box";
   sbTemplateFile = "/etc/sing-box/template.json";
   sbOutboundsFile = "/usr/local/etc/sing-box/outbounds.json";
@@ -10,7 +19,10 @@ let
   sbGenerate = pkgs.writeShellApplication {
     name = "exe";
     runtimeInputs = with pkgs; [ jq ];
-    excludeShellChecks = [ "SC2086" "SC2027" ];
+    excludeShellChecks = [
+      "SC2086"
+      "SC2027"
+    ];
     text = ''
       set -x
       cd ${sbBase}
@@ -19,12 +31,14 @@ let
 
       uids=()
 
-      ${lib.strings.concatStringsSep "\n" (map (x: ''
-      tmp_val="$(id -u ${x.user} || true)"
-      if [ -n "$tmp_val" ]; then
-        uids+=("$tmp_val")
-      fi
-      '') config.me.sing-box-bypass-services)}
+      ${lib.strings.concatStringsSep "\n" (
+        map (x: ''
+          tmp_val="$(id -u ${x.user} || true)"
+          if [ -n "$tmp_val" ]; then
+            uids+=("$tmp_val")
+          fi
+        '') config.me.sing-box-bypass-services
+      )}
 
       IFS=','
       _uids="''${uids[*]}"
@@ -50,7 +64,12 @@ let
   };
   sbBypassUserDelUnresolved = pkgs.writeShellApplication {
     name = "exe";
-    runtimeInputs = with pkgs; [ iproute2 findutils gnugrep bash ];
+    runtimeInputs = with pkgs; [
+      iproute2
+      findutils
+      gnugrep
+      bash
+    ];
     excludeShellChecks = [ "SC2086" ];
     text = ''
       set -x
@@ -61,7 +80,12 @@ let
   };
   sbBypassUserDel = pkgs.writeShellApplication {
     name = "exe";
-    runtimeInputs = with pkgs; [ iproute2 findutils gnugrep bash ];
+    runtimeInputs = with pkgs; [
+      iproute2
+      findutils
+      gnugrep
+      bash
+    ];
     excludeShellChecks = [ "SC2086" ];
     text = ''
       set -x
@@ -80,7 +104,10 @@ let
   };
   sbBypassUserAdd = pkgs.writeShellApplication {
     name = "exe";
-    runtimeInputs = with pkgs; [ iproute2 gnugrep ];
+    runtimeInputs = with pkgs; [
+      iproute2
+      gnugrep
+    ];
     excludeShellChecks = [ "SC2086" ];
     text = ''
       set -x
@@ -103,9 +130,7 @@ let
   };
 in
 {
-  environment.systemPackages = with pkgs; [
-    sing-box
-  ];
+  environment.systemPackages = with pkgs; [ sing-box ];
 
   # "${config.sops.secrets."wgcf.priv".path}";
   sops.secrets."wgcf.priv" = {
@@ -116,10 +141,10 @@ in
   networking.firewall.enable = lib.mkForce false;
 
   # https://github.com/A1ca7raz/flamework/blob/main/modules/services/client/sing-box/default.nix#L78-L105
-  systemd.services = lib.mergeAttrs
-    (
-      builtins.listToAttrs (builtins.map
-        (x: {
+  systemd.services =
+    lib.mergeAttrs
+      (builtins.listToAttrs (
+        builtins.map (x: {
           name = x.service;
           value = {
             serviceConfig = {
@@ -127,93 +152,103 @@ in
                 "+${sbBypassUserDel}/bin/exe ${x.user}"
                 "+${sbBypassUserAdd}/bin/exe ${x.user}"
               ];
-              ExecStop = lib.mkAfter [
-                "+${sbBypassUserDel}/bin/exe ${x.user}"
-              ];
+              ExecStop = lib.mkAfter [ "+${sbBypassUserDel}/bin/exe ${x.user}" ];
             };
           };
-        })
-        config.me.sing-box-bypass-services)
-    )
-    {
-      sing-box-cloudflare-yes = {
-        enable = true;
-        description = "Sing-box cloudflare yes";
-        path = with pkgs; [ curl iproute2 gnugrep jq coreutils gawk systemd knot-dns ];
-        script = "${pkgs.bash}/bin/bash ${./sing-box-cloudflare-yes.sh}";
-        serviceConfig = {
-          Type = "oneshot";
-        };
-      };
-
-      sing-box = {
-        enable = true;
-        description = "Sing-box networking service";
-        wantedBy = [ "multi-user.target" ];
-        requires = [ "network-online.target" ];
-        after = [
-          "network-online.target"
-          # "nss-lookup.target"
-        ];
-        path = with pkgs; [ curl sing-box ];
-
-        serviceConfig = {
-          Type = "simple";
-
-          Environment = "USE_HTTP2PING=true";
-          ExecStartPre = [
-            "+${sbGenerate}/bin/exe"
+        }) config.me.sing-box-bypass-services
+      ))
+      {
+        sing-box-cloudflare-yes = {
+          enable = true;
+          description = "Sing-box cloudflare yes";
+          path = with pkgs; [
+            curl
+            iproute2
+            gnugrep
+            jq
+            coreutils
+            gawk
+            systemd
+            knot-dns
           ];
-          ExecStop = (map (x: "+${sbBypassUserDel}/bin/exe ${x.user}") config.me.sing-box-bypass-services);
-          ExecStart = "${pkgs.sing-box}/bin/sing-box run --disable-color -D ${sbBase} -c ${sbConfigFile}";
+          script = "${pkgs.bash}/bin/bash ${./sing-box-cloudflare-yes.sh}";
+          serviceConfig = {
+            Type = "oneshot";
+          };
+        };
 
-          # Sing-box Auto Update
-          Restart = "on-failure";
-          RestartPreventExitStatus = 23;
+        sing-box = {
+          enable = true;
+          description = "Sing-box networking service";
+          wantedBy = [ "multi-user.target" ];
+          requires = [ "network-online.target" ];
+          after = [
+            "network-online.target"
+            # "nss-lookup.target"
+          ];
+          path = with pkgs; [
+            curl
+            sing-box
+          ];
 
-          # # OOM Killer
-          # OOMPolicy = "kill";
-          # MemoryMax = "200M";
+          serviceConfig = {
+            Type = "simple";
 
-          DynamicUser = "yes";
-          LogsDirectory = "sing-box";
-          RuntimeDirectory = "sing-box";
-          StateDirectory = "sing-box";
-          # Capabilities
-          CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
-          AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
-          # # Proc filesystem
-          # ProcSubset = "pid";
-          # ProtectProc = "invisible";
-          # Security
-          NoNewPrivileges = true;
-          # Sandboxing
-          LockPersonality = true;
-          MemoryDenyWriteExecute = true;
-          # PrivateDevices = true; # NOT WORK on Tun Mode
-          # DeviceAllow = "/dev/net/tun rw";
-          PrivateMounts = true;
-          PrivateTmp = true;
-          # PrivateUsers = true;          # NOT WORK on Tun Mode
-          ProtectClock = true;
-          ProtectControlGroups = true;
-          ProtectHome = true;
-          ProtectHostname = true;
-          ProtectKernelLogs = true;
-          ProtectKernelModules = true;
-          ProtectKernelTunables = true;
-          ProtectSystem = "strict";
-          RemoveIPC = true;
-          RestrictAddressFamilies = "AF_INET AF_INET6 AF_NETLINK";
-          RestrictNamespaces = true;
-          RestrictRealtime = true;
-          RestrictSUIDSGID = true;
-          # System Call Filtering
-          SystemCallArchitectures = "native";
-          SystemCallFilter = [ "~@cpu-emulation @debug @keyring @mount @obsolete @privileged @setuid" "setrlimit" ];
+            Environment = "USE_HTTP2PING=true";
+            ExecStartPre = [ "+${sbGenerate}/bin/exe" ];
+            ExecStop = (map (x: "+${sbBypassUserDel}/bin/exe ${x.user}") config.me.sing-box-bypass-services);
+            ExecStart = "${pkgs.sing-box}/bin/sing-box run --disable-color -D ${sbBase} -c ${sbConfigFile}";
+
+            # Sing-box Auto Update
+            Restart = "on-failure";
+            RestartPreventExitStatus = 23;
+
+            # # OOM Killer
+            # OOMPolicy = "kill";
+            # MemoryMax = "200M";
+
+            DynamicUser = "yes";
+            LogsDirectory = "sing-box";
+            RuntimeDirectory = "sing-box";
+            StateDirectory = "sing-box";
+            # Capabilities
+            CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+            AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+            # # Proc filesystem
+            # ProcSubset = "pid";
+            # ProtectProc = "invisible";
+            # Security
+            NoNewPrivileges = true;
+            # Sandboxing
+            LockPersonality = true;
+            MemoryDenyWriteExecute = true;
+            # PrivateDevices = true; # NOT WORK on Tun Mode
+            # DeviceAllow = "/dev/net/tun rw";
+            PrivateMounts = true;
+            PrivateTmp = true;
+            # PrivateUsers = true;          # NOT WORK on Tun Mode
+            ProtectClock = true;
+            ProtectControlGroups = true;
+            ProtectHome = true;
+            ProtectHostname = true;
+            ProtectKernelLogs = true;
+            ProtectKernelModules = true;
+            ProtectKernelTunables = true;
+            ProtectSystem = "strict";
+            RemoveIPC = true;
+            RestrictAddressFamilies = "AF_INET AF_INET6 AF_NETLINK";
+            RestrictNamespaces = true;
+            RestrictRealtime = true;
+            RestrictSUIDSGID = true;
+            # System Call Filtering
+            SystemCallArchitectures = "native";
+            SystemCallFilter = [
+              "~@cpu-emulation @debug @keyring @mount @obsolete @privileged @setuid"
+              "setrlimit"
+            ];
+          };
         };
       };
-    };
 
   systemd.timers = {
     sing-box-cloudflare-yes = {
@@ -230,8 +265,7 @@ in
   };
 
   environment.etc."sing-box/template.json".text = builtins.toJSON {
-    "$schema" =
-      "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/83c676c1ec9f37af2bce0505da396b5444b30032/sing-box.schema.json";
+    "$schema" = "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/83c676c1ec9f37af2bce0505da396b5444b30032/sing-box.schema.json";
     dns = {
       disable_cache = true;
       fakeip = {
@@ -275,45 +309,45 @@ in
         strict_route = false;
         tag = "in:tun";
         type = "tun";
-        inet4_route_exclude_address = [
-          # bypass tailscale
-          # https://tailscale.com/kb/1015/100.x-addresses/
-          # https://quanquan.space/viewtopic.php?t=1350
-          "100.64.0.0/10"
-        ] ++ [
-          "10.0.0.0/8"
-          "127.0.0.0/8"
+        inet4_route_exclude_address =
+          [
+            # bypass tailscale
+            # https://tailscale.com/kb/1015/100.x-addresses/
+            # https://quanquan.space/viewtopic.php?t=1350
+            "100.64.0.0/10"
+          ]
+          ++ [
+            "10.0.0.0/8"
+            "127.0.0.0/8"
 
-          # # 172.16.0.0/12 - 172.19.0.1/30
-          "172.16.0.0/15"
-          "172.18.0.0/16"
-          "172.19.0.4/30"
-          "172.19.0.8/29"
-          "172.19.0.16/28"
-          "172.19.0.32/27"
-          "172.19.0.64/26"
-          "172.19.0.128/25"
-          "172.19.1.0/24"
-          "172.19.2.0/23"
-          "172.19.4.0/22"
-          "172.19.8.0/21"
-          "172.19.16.0/20"
-          "172.19.32.0/19"
-          "172.19.64.0/18"
-          "172.19.128.0/17"
-          "172.20.0.0/14"
-          "172.24.0.0/13"
+            # # 172.16.0.0/12 - 172.19.0.1/30
+            "172.16.0.0/15"
+            "172.18.0.0/16"
+            "172.19.0.4/30"
+            "172.19.0.8/29"
+            "172.19.0.16/28"
+            "172.19.0.32/27"
+            "172.19.0.64/26"
+            "172.19.0.128/25"
+            "172.19.1.0/24"
+            "172.19.2.0/23"
+            "172.19.4.0/22"
+            "172.19.8.0/21"
+            "172.19.16.0/20"
+            "172.19.32.0/19"
+            "172.19.64.0/18"
+            "172.19.128.0/17"
+            "172.20.0.0/14"
+            "172.24.0.0/13"
 
-          "192.0.0.0/24"
-          "192.168.0.0/16"
-          "198.18.0.0/15"
-        ];
+            "192.0.0.0/24"
+            "192.168.0.0/16"
+            "198.18.0.0/15"
+          ];
         inet6_route_exclude_address = [
           # tailscale
           "fd7a:115c:a1e0::/48"
-        ] ++ [
-          "::1/128"
-        ];
+        ] ++ [ "::1/128" ];
       }
       # listen on ipv4 all and ipv6 local
       # curl ip.sb --proxy socks5h://localhost:10800 -4
@@ -334,9 +368,9 @@ in
       }
     ];
     log = {
-      disabled = config.me.sing-box-log-disabled;
+      disabled = false;
       level = "trace";
-      output = "/var/log/sing-box/log";
+      output = logPath;
       timestamp = true;
     };
     outbounds = [
@@ -417,168 +451,147 @@ in
           format = "binary";
           tag = "geoip:cn";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:cn";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:protonmail";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-protonmail.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-protonmail.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:telegram";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-telegram.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-telegram.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:imgur";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-imgur.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-imgur.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:paypal";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-paypal.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-paypal.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:pixiv";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-pixiv.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-pixiv.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:category-cryptocurrency";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-cryptocurrency.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-cryptocurrency.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:category-novel";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-novel.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-novel.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:category-porn";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-porn.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-porn.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:cloudflare";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cloudflare.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cloudflare.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:openai";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:reddit";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-reddit.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-reddit.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geosite:docker";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-docker.srs";
+          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-docker.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geoip:telegram";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-telegram.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-telegram.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geoip:cloudflare";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cloudflare.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cloudflare.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geoip:fastly";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-fastly.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-fastly.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geoip:cloudfront";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cloudfront.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cloudfront.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geoip:facebook";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-facebook.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-facebook.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geoip:netflix";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-netflix.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-netflix.srs";
         }
         {
           download_detour = "auto:proxy";
           format = "binary";
           tag = "geoip:twitter";
           type = "remote";
-          url =
-            "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-twitter.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-twitter.srs";
         }
       ];
       rules = [
@@ -716,5 +729,17 @@ in
       "/var/log/private/sing-box"
       "/usr/local/etc/sing-box"
     ];
+  };
+
+  services.logrotate.settings.sing-box = {
+    files = [ logPathReal ];
+    frequency = "daily";
+    rotate = 7;
+    size = "128M";
+    # compress = true;
+    # delaycompress = true;
+    # missingok = true;
+    # notifempty = true;
+    postrotate = "systemctl restart sing-box";
   };
 }

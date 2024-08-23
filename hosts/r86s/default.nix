@@ -1,4 +1,11 @@
-{ config, pkgs, inputs, userName, lib, ... }:
+{
+  config,
+  pkgs,
+  inputs,
+  userName,
+  lib,
+  ...
+}:
 
 {
   imports = [
@@ -26,24 +33,18 @@
     ../common/optional/prefer-ipv4.nix
 
     ../common/optional/docker.nix
-  ]
-  ++
-  [
-    inputs.nixos-hardware.nixosModules.common-cpu-intel
-  ]
-  ;
+  ] ++ [ inputs.nixos-hardware.nixosModules.common-cpu-intel ];
 
   networking.hostName = "r86s";
 
   boot.kernelPackages = pkgs.linuxPackages_6_6;
 
-  users.users."${userName}".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
+  users.users."${userName}".openssh.authorizedKeys.keys =
+    inputs.nixos-privates.ssh."${config.networking.hostName}".authorizedKeys;
 
-  me.sing-box-log-disabled = lib.mkForce true;
-
-  environment.etc =
-    (builtins.listToAttrs (map
-      (x: {
+  environment.etc = (
+    builtins.listToAttrs (
+      map (x: {
         name = "ssh/${x.path}";
         value = {
           text = x.pub;
@@ -51,8 +52,9 @@
           group = config.users.users."${userName}".group;
           mode = "0600";
         };
-      })
-      inputs.nixos-privates.ssh."laptop".keys));
+      }) inputs.nixos-privates.ssh."laptop".keys
+    )
+  );
 
   security.sudo.wheelNeedsPassword = false;
 
