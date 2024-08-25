@@ -1,12 +1,22 @@
 # https://easonyang.com/posts/transparent-proxy-in-router-gateway/
 # https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html
 # https://github.com/AdguardTeam/AdGuardHome/issues/5582#issuecomment-1466946624
-{ pkgs, config, lib, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  ...
+}:
 
 let
   router-adguardhome-bind-interface = pkgs.writeShellApplication {
     name = "exe";
-    runtimeInputs = with pkgs; [ procps iptables iproute2 gawk ];
+    runtimeInputs = with pkgs; [
+      procps
+      iptables
+      iproute2
+      gawk
+    ];
     text = ''
       iface="$1"
       [ -n "$iface" ]
@@ -26,9 +36,14 @@ let
   };
   router-adguardhome-bind-default = pkgs.writeShellApplication {
     name = "exe";
-    runtimeInputs = with pkgs; [ procps iproute2 gawk ];
+    runtimeInputs = with pkgs; [
+      procps
+      iproute2
+      gawk
+    ];
     text = ''
-      iface=$(ip route get 255.255.255.255 | head -n 1 | awk "{print \$4}")
+      # 192.168.0.1 been excluded by sing-tun
+      iface=$(ip route get 192.168.0.1 | head -n 1 | awk "{print \$4}" || true)
       [ -n "$iface" ]
 
       ${router-adguardhome-bind-interface}/bin/exe "$iface"
