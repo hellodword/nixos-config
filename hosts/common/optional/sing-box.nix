@@ -132,6 +132,39 @@ in
 {
   environment.systemPackages = with pkgs; [ sing-box ];
 
+  # sing-tun may not working after networking state changes
+  # https://github.com/SagerNet/sing-box/issues/1415
+  services.networkd-dispatcher = {
+    enable = true;
+    rules = {
+      "restart-sing-box-on-no-carrier" = {
+        onState = [ "no-carrier" ];
+        script = ''
+          #!${pkgs.runtimeShell}
+          if [[ "$AdministrativeState" == "configured" ]]; then
+            echo "Restarting sing-box ..."
+            systemctl restart sing-box
+          fi
+          exit 0
+        '';
+      };
+      "restart-sing-box-on-configured" = {
+        onState = [ "configured" ];
+        script = ''
+          #!${pkgs.runtimeShell}
+          if [[ "$AdministrativeState" == "configured" ]]; then
+            ipv4="$(echo "$ADDR" | ${pkgs.gawk}/bin/awk '{print $1}')"
+            if [[ "$ipv4" =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3} ]]; then
+              echo "Restarting sing-box ..."
+              systemctl restart sing-box
+            fi
+          fi
+          exit 0
+        '';
+      };
+    };
+  };
+
   # "${config.sops.secrets."wgcf.priv".path}";
   sops.secrets."wgcf.priv" = {
     sopsFile = ../../${config.networking.hostName}/secrets/wgcf.priv;
