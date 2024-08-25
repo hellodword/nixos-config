@@ -249,6 +249,11 @@ in
             sing-box
           ];
 
+          unitConfig = {
+            StartLimitInterval = 5;
+            StartLimitBurst = 10;
+          };
+
           serviceConfig = {
             Type = "simple";
 
