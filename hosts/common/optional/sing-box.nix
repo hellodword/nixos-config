@@ -134,36 +134,57 @@ in
 
   # sing-tun may not working after networking state changes
   # https://github.com/SagerNet/sing-box/issues/1415
-  services.networkd-dispatcher = {
-    enable = true;
-    rules = {
-      "restart-sing-box-on-no-carrier" = {
-        onState = [ "no-carrier" ];
-        script = ''
-          #!${pkgs.runtimeShell}
-          if [[ "$AdministrativeState" == "configured" ]]; then
+  services.networkd-dispatcher =
+    let
+      ignore_iface = ''
+        if [[ "$IFACE" == "lo" ||
+          "$IFACE" == "sb-tun" || "$IFACE" == "wgcf" ||
+          "$IFACE" =~ ^wg.* ||
+          "$IFACE" =~ ^docker.* || "$IFACE" =~ ^br-.* || "$IFACE" =~ ^veth.* ||
+          "$IFACE" =~ ^vbox.* ||
+          "$IFACE" =~ ^tailscale.*
+        ]]; then
+          echo "ignored iface $IFACE"
+          exit 0
+        fi
+      '';
+    in
+    {
+      enable = true;
+      rules = {
+        "restart-sing-box-on-no-carrier" = {
+          onState = [ "no-carrier" ];
+          script = ''
+            #!${pkgs.runtimeShell}
+            set -x
+
+            ${ignore_iface}
+
             echo "Restarting sing-box ..."
             systemctl restart sing-box
-          fi
-          exit 0
-        '';
-      };
-      "restart-sing-box-on-configured" = {
-        onState = [ "configured" ];
-        script = ''
-          #!${pkgs.runtimeShell}
-          if [[ "$AdministrativeState" == "configured" ]]; then
+
+            exit 0
+          '';
+        };
+        "restart-sing-box-on-configured" = {
+          onState = [ "configured" ];
+          script = ''
+            #!${pkgs.runtimeShell}
+            set -x
+
+            ${ignore_iface}
+
             ipv4="$(echo "$ADDR" | ${pkgs.gawk}/bin/awk '{print $1}')"
             if [[ "$ipv4" =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3} ]]; then
               echo "Restarting sing-box ..."
               systemctl restart sing-box
             fi
-          fi
-          exit 0
-        '';
+
+            exit 0
+          '';
+        };
       };
     };
-  };
 
   # "${config.sops.secrets."wgcf.priv".path}";
   sops.secrets."wgcf.priv" = {
@@ -191,6 +212,10 @@ in
         }) config.me.sing-box-bypass-services
       ))
       {
+        networkd-dispatcher = {
+          after = [ "sing-box.service" ];
+        };
+
         sing-box-cloudflare-yes = {
           enable = true;
           description = "Sing-box cloudflare yes";
