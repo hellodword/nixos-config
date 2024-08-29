@@ -2,7 +2,16 @@
 
 trap "echo 'interrupted'; exit 1" SIGINT
 
-images=( $(docker images | tail -n +2 | grep -v '<none>' | awk '{print $1 ":" $2}' | xargs docker inspect | jq '.[] | select(.RepoDigests | length > 0)' | jq -r '.RepoTags[]' | sort -u) )
+images=()
+
+if [ $# -eq 0 ]; then
+  images=( $(docker images | tail -n +2 | grep -v '<none>' | awk '{print $1 ":" $2}' | xargs docker inspect | jq '.[] | select(.RepoDigests | length > 0)' | jq -r '.RepoTags[]' | sort -u) )
+else
+  images=( $(docker images | tail -n +2 | grep -v '<none>' | awk '{print $1 ":" $2}' | xargs docker inspect | jq '.[] | select(.RepoDigests | length > 0)' | jq -r '.RepoTags[]' | sort -u | $@) )
+fi
+
+printf '%s\n' "${images[@]}"
+printf '\n'
 
 for i in "${!images[@]}"; do
     image="${images[$i]}"
