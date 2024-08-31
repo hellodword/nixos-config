@@ -5,13 +5,19 @@ trap "echo 'interrupted'; exit 1" SIGINT
 images=()
 
 if [ $# -eq 0 ]; then
-  images=( $(docker images | tail -n +2 | grep -v '<none>' | awk '{print $1 ":" $2}' | xargs docker inspect | jq '.[] | select(.RepoDigests | length > 0)' | jq -r '.RepoTags[]' | sort -u) )
+  images=( $(docker images --format '{{.ID}}' | \
+xargs docker inspect --format '{{json .}}' | \
+jq -r 'select(.RepoDigests | length > 0) | .RepoTags[]' | \
+sort -u) )
 else
-  images=( $(docker images | tail -n +2 | grep -v '<none>' | awk '{print $1 ":" $2}' | xargs docker inspect | jq '.[] | select(.RepoDigests | length > 0)' | jq -r '.RepoTags[]' | sort -u | $@) )
+  images=( $(docker images --format '{{.ID}}' | \
+xargs docker inspect --format '{{json .}}' | \
+jq -r 'select(.RepoDigests | length > 0) | .RepoTags[]' | \
+sort -u | $@) )
 fi
 
 printf '%s\n' "${images[@]}"
-printf '\n'
+printf '\nupgrading %d images\n\n' "${#images[@]}"
 
 for i in "${!images[@]}"; do
     image="${images[$i]}"
