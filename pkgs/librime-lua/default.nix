@@ -1,8 +1,9 @@
 # https://github.com/wuliuqii/nixos-config/blob/87a5d8552973d30b11b800334e816e16dbda0a31/pkgs/librime-lua/default.nix
-{ stdenv
-, lib
-, fetchFromGitHub
-, lua5_4
+{
+  stdenv,
+  lib,
+  fetchFromGitHub,
+  lua5_4,
 }:
 
 stdenv.mkDerivation {

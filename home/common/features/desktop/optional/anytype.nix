@@ -1,4 +1,11 @@
-{ config, pkgs, persistPath, inputs, nixosConfig, ... }:
+{
+  config,
+  pkgs,
+  persistPath,
+  inputs,
+  nixosConfig,
+  ...
+}:
 
 let
   # package = pkgs.anytype;

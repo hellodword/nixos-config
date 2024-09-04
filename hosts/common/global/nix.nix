@@ -1,4 +1,9 @@
-{ lib, inputs, config, ... }:
+{
+  lib,
+  inputs,
+  config,
+  ...
+}:
 
 {
   nix = {
@@ -16,7 +21,11 @@
 
     settings = {
       # Enable flakes and new 'nix' command
-      experimental-features = [ "nix-command" "flakes" "repl-flake" ];
+      experimental-features = [
+        "nix-command"
+        "flakes"
+        "repl-flake"
+      ];
       # Deduplicate and optimize nix store
       auto-optimise-store = true;
       # warn-dirty = false;

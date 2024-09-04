@@ -1,4 +1,11 @@
-{ lib, config, pkgs, persistPath, nixosConfig, ... }:
+{
+  lib,
+  config,
+  pkgs,
+  persistPath,
+  nixosConfig,
+  ...
+}:
 
 let
   mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
@@ -30,7 +37,9 @@ in
   };
 
   # flutter debugger or other apps need this
-  home.sessionVariables.CHROME_EXECUTABLE = lib.mkOverride 100 "${config.programs.chromium.package}/bin/chromium";
+  home.sessionVariables.CHROME_EXECUTABLE =
+    lib.mkOverride 100
+      "${config.programs.chromium.package}/bin/chromium";
 
   # https://github.com/NixOS/nixpkgs/issues/242113#issuecomment-1628379807
   # rm -rf ~/.config/chromium/Default/GPUCache/

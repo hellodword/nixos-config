@@ -1,4 +1,9 @@
-{ config, pkgs, persistPath, ... }:
+{
+  config,
+  pkgs,
+  persistPath,
+  ...
+}:
 
 let
   WORK_DIR = "/var/lib/tailscale-derp-client-verifier-sync";
@@ -18,7 +23,14 @@ in
   systemd.services.tailscale-derp-client-verifier-sync = {
     enable = true;
     description = "tailscale-derp-client-verifier-sync";
-    path = with pkgs; [ rclone gnugrep jq coreutils gawk tailscale ];
+    path = with pkgs; [
+      rclone
+      gnugrep
+      jq
+      coreutils
+      gawk
+      tailscale
+    ];
     script = "${pkgs.bash}/bin/bash ${./tailscale-derp-client-verifier-sync.sh}";
     environment = {
       WORK_DIR = WORK_DIR;

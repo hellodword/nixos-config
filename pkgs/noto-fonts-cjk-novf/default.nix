@@ -1,10 +1,20 @@
 # https://github.com/iori2333/nix-config/blob/26431908e4e183611a4ca8fc090969be542d35d0/system/common/fonts/noto-fonts-cjk-novf.nix
 # Noto Fonts from https://github.com/NixOS/nixpkgs/blob/master/pkgs/data/fonts/noto-fonts/default.nix
 # Disabled variable fonts, as they are not supported by all applications yet.
-{ stdenvNoCC, lib, fetchFromGitHub, nixosTests }:
+{
+  stdenvNoCC,
+  lib,
+  fetchFromGitHub,
+  nixosTests,
+}:
 
 rec {
-  mkNotoCJK = { typeface, version, sha256 }:
+  mkNotoCJK =
+    {
+      typeface,
+      version,
+      sha256,
+    }:
     stdenvNoCC.mkDerivation {
       pname = "noto-fonts-cjk-novf-${lib.toLower typeface}";
       inherit version;
@@ -44,7 +54,10 @@ rec {
         '';
         license = licenses.ofl;
         platforms = platforms.all;
-        maintainers = with maintainers; [ mathnerd314 emily ];
+        maintainers = with maintainers; [
+          mathnerd314
+          emily
+        ];
       };
     };
 

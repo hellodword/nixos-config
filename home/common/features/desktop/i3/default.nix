@@ -1,31 +1,39 @@
-{ pkgs, lib, nixosConfig, config, ... }:
+{
+  pkgs,
+  lib,
+  nixosConfig,
+  config,
+  ...
+}:
 
 let
   mod = "Mod4";
 
   X = nixosConfig.services.xserver.windowManager.i3.enable;
-  lockCmd = "${if X then "${pkgs.i3lock}/bin/i3lock" else "${pkgs.swaylock}/bin/swaylock -f"} -n -c 01544A";
+  lockCmd = "${
+    if X then "${pkgs.i3lock}/bin/i3lock" else "${pkgs.swaylock}/bin/swaylock -f"
+  } -n -c 01544A";
 
   extraConfig = (
     ''
       title_align center
       default_orientation vertical
-    '' +
-    (
-      lib.optionalString (!X) ''
-        for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
-        for_window [app_id="wpa_gui"] floating enable
-        for_window [app_id="mpv"] floating enable
-        for_window [app_id="deadd-notification-center"] move position 1px 1px
-        for_window [class="feh"] floating enable
-        for_window [class="Emulator"] floating enable
-      ''
-    )
+    ''
+    + (lib.optionalString (!X) ''
+      for_window [app_id="flameshot"] border pixel 0, floating enable, fullscreen disable, move absolute position 0 0
+      for_window [app_id="wpa_gui"] floating enable
+      for_window [app_id="mpv"] floating enable
+      for_window [app_id="deadd-notification-center"] move position 1px 1px
+      for_window [class="feh"] floating enable
+      for_window [class="Emulator"] floating enable
+    '')
   );
-  i3ConfigStartupExtra = (lib.optionalAttrs X {
-    notification = false;
-    workspace = null;
-  });
+  i3ConfigStartupExtra = (
+    lib.optionalAttrs X {
+      notification = false;
+      workspace = null;
+    }
+  );
   i3Config = {
     modifier = mod;
     terminal = "kitty";
@@ -38,34 +46,32 @@ let
       size = 10.0;
     };
 
-    startup = [
-      # (
-      #   {
-      #     command = "env XMODIFIERS=@im=fcitx QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx fcitx5 -d";
-      #     always = true;
-
-      #   } // i3ConfigStartupExtra
-      # )
-    ]
-    ++ (
+    startup =
       [
+        # (
+        #   {
+        #     command = "env XMODIFIERS=@im=fcitx QT_IM_MODULE=fcitx GTK_IM_MODULE=fcitx fcitx5 -d";
+        #     always = true;
+
+        #   } // i3ConfigStartupExtra
+        # )
+      ]
+      ++ ([
         {
           # switch to workspace 1 at startup
           command = "${if X then "i3msg" else "swaymsg"} 'workspace number 1'";
           always = false;
         }
-      ]
-    ) ++ (
-      lib.optionals X
-        [
-          (
-            {
-              command = "wpa_gui -q -t -i $(iw dev | grep -oP '(?<=Interface ).*$')";
-              always = true;
-            } // i3ConfigStartupExtra
-          )
-        ]
-    );
+      ])
+      ++ (lib.optionals X [
+        (
+          {
+            command = "wpa_gui -q -t -i $(iw dev | grep -oP '(?<=Interface ).*$')";
+            always = true;
+          }
+          // i3ConfigStartupExtra
+        )
+      ]);
 
     keybindings = lib.mkOptionDefault {
       "${mod}+semicolon" = "exec ${lockCmd}";
@@ -96,7 +102,6 @@ in
     ./wallpaper.nix
     ./gtk.nix
   ];
-
 
   home.packages = with pkgs; [
     alsa-utils

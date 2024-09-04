@@ -1,4 +1,9 @@
-{ pkgs, config, nixosConfig, ... }:
+{
+  pkgs,
+  config,
+  nixosConfig,
+  ...
+}:
 
 let
   X = nixosConfig.services.xserver.windowManager.i3.enable;

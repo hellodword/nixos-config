@@ -44,7 +44,6 @@
       # https://help.riseup.net/en/security/message-security/openpgp/best-practices
       #
 
-
       #-----------------------------
       # default key
       #-----------------------------
@@ -53,7 +52,6 @@
       # the first key found in the secret keyring
 
       #default-key 0xD8692123C4065DEA5E0F3AB5249B39D24F25E3B6
-
 
       #-----------------------------
       # behavior
@@ -78,7 +76,6 @@
       # Try to use the GnuPG-Agent. With this option, GnuPG first tries to connect to
       # the agent before it asks for a passphrase.
       use-agent = true;
-
 
       #-----------------------------
       # keyserver
@@ -105,7 +102,6 @@
       # When searching for a key with --search-keys, include keys that are marked on
       # the keyserver as revoked
       # keyserver-options include-revoked
-
 
       #-----------------------------
       # algorithm and ciphers

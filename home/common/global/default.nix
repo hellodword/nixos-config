@@ -1,4 +1,12 @@
-{ inputs, lib, pkgs, config, outputs, persistPath, ... }:
+{
+  inputs,
+  lib,
+  pkgs,
+  config,
+  outputs,
+  persistPath,
+  ...
+}:
 
 {
   imports = [
@@ -17,7 +25,11 @@
   nix = {
     package = lib.mkDefault pkgs.nix;
     settings = {
-      experimental-features = [ "nix-command" "flakes" "repl-flake" ];
+      experimental-features = [
+        "nix-command"
+        "flakes"
+        "repl-flake"
+      ];
       warn-dirty = false;
     };
   };

@@ -2,17 +2,19 @@
 
 let
   lib = pkgs.lib;
-  mkJailed = { originalPkg, profile, extraArgs ? [ ] }:
+  mkJailed =
+    {
+      originalPkg,
+      profile,
+      extraArgs ? [ ],
+    }:
     let
       name = originalPkg.drvAttrs.name;
       args = lib.escapeShellArgs (
-        extraArgs
-        ++ (lib.optional (profile != null) "--profile=${toString profile}")
+        extraArgs ++ (lib.optional (profile != null) "--profile=${toString profile}")
       );
       outputs =
-        if
-          (lib.hasAttr "outputs" originalPkg)
-        then
+        if (lib.hasAttr "outputs" originalPkg) then
           (map (x: originalPkg.${x}) originalPkg.outputs)
         else
           [ originalPkg ];
@@ -64,21 +66,13 @@ let
 
         mkdir -p $out/bin
 
-        ${
-          lib.concatStringsSep
-          "\n"
-          (map
-            (
-              output:
-              ''
-                if [ -d "${output}" ]; then
-                    sync_dir "${output}" $out
-                fi
-              ''
-            )
-            outputs
-          )
-        }
+        ${lib.concatStringsSep "\n" (
+          map (output: ''
+            if [ -d "${output}" ]; then
+                sync_dir "${output}" $out
+            fi
+          '') outputs
+        )}
       '';
 in
 mkJailed

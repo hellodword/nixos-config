@@ -1,4 +1,10 @@
-{ lib, buildGoModule, makeWrapper, fetchFromGitHub, ... }:
+{
+  lib,
+  buildGoModule,
+  makeWrapper,
+  fetchFromGitHub,
+  ...
+}:
 
 buildGoModule rec {
   pname = "localsend-discovery";
@@ -15,7 +21,10 @@ buildGoModule rec {
 
   vendorHash = null;
 
-  ldflags = [ "-s" "-w" ];
+  ldflags = [
+    "-s"
+    "-w"
+  ];
 
   # subPackages = [ "main" ];
 

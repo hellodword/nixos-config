@@ -1,4 +1,9 @@
-{ lib, pkgs, config, ... }:
+{
+  lib,
+  pkgs,
+  config,
+  ...
+}:
 
 {
   # Wireless secrets stored through sops
@@ -21,7 +26,6 @@
       };
     };
 
-
     # # Imperative
     # allowAuxiliaryImperativeNetworks = true;
     userControlled = {
@@ -33,7 +37,9 @@
     # '';
   };
 
-  environment.systemPackages = lib.optionals config.services.xserver.enable [ pkgs.wpa_supplicant_gui ];
+  environment.systemPackages = lib.optionals config.services.xserver.enable [
+    pkgs.wpa_supplicant_gui
+  ];
 
   # # Ensure group exists
   # users.groups.network = { };

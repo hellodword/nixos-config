@@ -2,7 +2,9 @@
 
 let
   # https://github.com/myme/dotfiles/blob/931de1db198bdd405c1289d17ded2bcafc230e83/home-manager/wm/alacritty/default.nix
-  theme = builtins.fromTOML (builtins.readFile "${inputs.catppuccin-alacritty}/catppuccin-mocha.toml");
+  theme = builtins.fromTOML (
+    builtins.readFile "${inputs.catppuccin-alacritty}/catppuccin-mocha.toml"
+  );
 in
 {
   # https://github.com/telphan/hestia/blob/49c42528ed7daa62c177e705aa9c06b7b3fbd5b0/home-manager/term.nix

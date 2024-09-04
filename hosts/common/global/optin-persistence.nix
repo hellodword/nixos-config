@@ -18,87 +18,88 @@
 
       files = [
         /*
-        t.me/nixos_zhcn/264550
-        machine-id 没persist 导致 /var/log/journal 里面每次启动的日志都存着不会自动清理
+          t.me/nixos_zhcn/264550
+          machine-id 没persist 导致 /var/log/journal 里面每次启动的日志都存着不会自动清理
 
-        https://github.com/systemd/systemd/pull/27330
+          https://github.com/systemd/systemd/pull/27330
         */
         "/etc/machine-id"
       ];
-      directories = [
-        # "/var/backup"
-        # "/var/cache"
-        # "/var/log" # btmp / lastlog / wtmp
-        # "/var/www"
+      directories =
+        [
+          # "/var/backup"
+          # "/var/cache"
+          # "/var/log" # btmp / lastlog / wtmp
+          # "/var/www"
 
-        "/var/lib/systemd"
+          "/var/lib/systemd"
 
-        # (maybe) fix: a stop job is running for dhcp
-        "/var/db/dhcpcd"
+          # (maybe) fix: a stop job is running for dhcp
+          "/var/db/dhcpcd"
 
-        # https://www.freedesktop.org/software/systemd/man/systemd-coredump.html
-        "/var/lib/systemd/coredump"
+          # https://www.freedesktop.org/software/systemd/man/systemd-coredump.html
+          "/var/lib/systemd/coredump"
 
-        # https://github.com/nix-community/impermanence/issues/178
-        "/var/lib/nixos"
+          # https://github.com/nix-community/impermanence/issues/178
+          "/var/lib/nixos"
 
-        # "/srv"
+          # "/srv"
 
-        {
-          directory = "/etc/nixos";
-          user = "1000";
-          group = "root";
-          mode = "0755";
-        }
-
-        {
-          directory = "/var/log/journal";
-          user = "root";
-          group = "systemd-journal";
-          mode = "u=rwx,g=rs,o=rx";
-        }
-
-        "/var/db/sudo/lectured"
-
-        /*
-          # https://github.com/jocelynthode/nixos-config/blob/7a181be17e5f691e457bb49372f091b36777b0b5/modules/base/default.nix#LL120C1-L131C10
-          # https://github.com/nix-community/impermanence/issues/93
           {
-            directory = "/var/lib/private"; # Used when services use DynamicUser and StateDirectory
-            mode = "0700";
+            directory = "/etc/nixos";
+            user = "1000";
+            group = "root";
+            mode = "0755";
           }
+
           {
-            directory = "/var/cache/private"; # Used when services use DynamicUser and CacheDirectory
-            mode = "0700";
+            directory = "/var/log/journal";
+            user = "root";
+            group = "systemd-journal";
+            mode = "u=rwx,g=rs,o=rx";
           }
-          {
-            directory = "/var/log/private"; # Used when services use DynamicUser and LogDirectory
-            mode = "0700";
-          }
-        */
-      ]
-      ++ [
-        # make timers work across reboots
-        # https://github.com/ralismark/nixfiles/blob/d2da77630073b782c03b05e9eb472e3d0483010d/os/ephemeral.nix#L19
-        # https://github.com/systemd/systemd/issues/6036#issuecomment-323850368
-        # https://unix.stackexchange.com/a/387516
-        "/var/lib/systemd/timers"
-      ]
-      ++ [
-        # portablectl
-        # https://www.freedesktop.org/software/systemd/man/portablectl.html#Files%20and%20Directories
-        "/var/lib/portables"
-        "/etc/portables"
-        "/usr/local/lib/portables"
-        # "/usr/lib/portables"
-      ]
-      ++ [
-        # machinectl systemd-nspawn
-        # https://www.freedesktop.org/software/systemd/man/machinectl.html#Files%20and%20Directories
-        "/var/lib/machines"
-        "/usr/local/lib/machines"
-        # "/usr/lib/machines"
-      ];
+
+          "/var/db/sudo/lectured"
+
+          /*
+            # https://github.com/jocelynthode/nixos-config/blob/7a181be17e5f691e457bb49372f091b36777b0b5/modules/base/default.nix#LL120C1-L131C10
+            # https://github.com/nix-community/impermanence/issues/93
+            {
+              directory = "/var/lib/private"; # Used when services use DynamicUser and StateDirectory
+              mode = "0700";
+            }
+            {
+              directory = "/var/cache/private"; # Used when services use DynamicUser and CacheDirectory
+              mode = "0700";
+            }
+            {
+              directory = "/var/log/private"; # Used when services use DynamicUser and LogDirectory
+              mode = "0700";
+            }
+          */
+        ]
+        ++ [
+          # make timers work across reboots
+          # https://github.com/ralismark/nixfiles/blob/d2da77630073b782c03b05e9eb472e3d0483010d/os/ephemeral.nix#L19
+          # https://github.com/systemd/systemd/issues/6036#issuecomment-323850368
+          # https://unix.stackexchange.com/a/387516
+          "/var/lib/systemd/timers"
+        ]
+        ++ [
+          # portablectl
+          # https://www.freedesktop.org/software/systemd/man/portablectl.html#Files%20and%20Directories
+          "/var/lib/portables"
+          "/etc/portables"
+          "/usr/local/lib/portables"
+          # "/usr/lib/portables"
+        ]
+        ++ [
+          # machinectl systemd-nspawn
+          # https://www.freedesktop.org/software/systemd/man/machinectl.html#Files%20and%20Directories
+          "/var/lib/machines"
+          "/usr/local/lib/machines"
+          # "/usr/lib/machines"
+        ];
     };
   };
   programs.fuse.userAllowOther = true;

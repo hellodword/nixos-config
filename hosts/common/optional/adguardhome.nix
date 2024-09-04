@@ -1,5 +1,10 @@
-{ lib, inputs, pkgs, persistPath, ... }:
-
+{
+  lib,
+  inputs,
+  pkgs,
+  persistPath,
+  ...
+}:
 
 let
   # udp:53
@@ -110,14 +115,17 @@ let
 
   upBypass = pkgs.writeShellApplication {
     name = "up";
-    runtimeInputs = with pkgs; [ ipset iptables ];
+    runtimeInputs = with pkgs; [
+      ipset
+      iptables
+    ];
     text = ''
       set -x
 
       ipset list adguardhome_bypass > /dev/null || ipset create adguardhome_bypass hash:ip family inet
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) ChinaDoT)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) DoT)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass "+ip) DoH3)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) ChinaDoT)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) DoT)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) DoH3)}
 
       iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
       iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
@@ -147,14 +155,17 @@ let
 
   upBypass6 = pkgs.writeShellApplication {
     name = "up";
-    runtimeInputs = with pkgs; [ ipset iptables ];
+    runtimeInputs = with pkgs; [
+      ipset
+      iptables
+    ];
     text = ''
       set -x
 
       ipset list adguardhome_bypass6 > /dev/null || ipset create adguardhome_bypass6 hash:ip family inet6
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) ChinaDoT6)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) DoT6)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 "+ip) DoH36)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) ChinaDoT6)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) DoT6)}
+      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) DoH36)}
 
       ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
       ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
@@ -181,7 +192,6 @@ let
       ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
     '';
   };
-
 
 in
 {
@@ -219,7 +229,6 @@ in
       #   StartLimitIntervalSec = 5;
       #   StartLimitBurst = 10;
       # };
-
 
       serviceConfig =
         # let
@@ -275,8 +284,6 @@ in
       service = "mosdns";
     }
   ];
-
-
 
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
   services.adguardhome = {
@@ -362,12 +369,10 @@ in
           "0.0.0.0"
           "::1"
         ];
-        bootstrap_dns = [ ]
-          ++ (map (x: "tls://" + x) ChinaDoT)
-          ++ (map (x: "tls://[" + x + "]") ChinaDoT6)
-        ;
+        bootstrap_dns = [ ] ++ (map (x: "tls://" + x) ChinaDoT) ++ (map (x: "tls://[" + x + "]") ChinaDoT6);
         # upstream_mode = "parallel";
-        upstream_dns = [ ]
+        upstream_dns =
+          [ ]
           ++ (map (x: "tls://" + x) DoT)
           ++ (map (x: "quic://" + x) DoQ)
           ++ (map (x: "h3://" + x) DoH3)
@@ -378,31 +383,35 @@ in
           ++ (map (x: "tls://" + x) DoTProxy)
           ++ (map (x: "tls://[" + x + "]") DoT6Proxy)
           ++ [
-          # mosdns
-          "127.0.0.1:55553"
-        ]
+            # mosdns
+            "127.0.0.1:55553"
+          ]
           #   #   ++ [
           #   #   # https://github.com/AdguardTeam/AdGuardHome/issues/3955#issuecomment-1266942407
           #   #   "h3://cloudflare-dns.com/dns-query"
           #   # ]
-          ++ (
-          builtins.filter
-            (x: builtins.isString x && x != "" && (builtins.substring 0 1 x) == "[")
-            (builtins.split "\n" (builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"))
-        )
+          ++ (builtins.filter (x: builtins.isString x && x != "" && (builtins.substring 0 1 x) == "[") (
+            builtins.split "\n" (
+              builtins.readFile "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt"
+            )
+          ))
           ## tailscale magicdns
           # https://tailscale.com/blog/2021-09-private-dns-with-magicdns
           ++ ([
-          ''[/${lib.concatStringsSep "/" [
-              "ts.net"
-            ]}/]100.100.100.100''
-        ])
+            ''[/${
+              lib.concatStringsSep "/" [
+                "ts.net"
+              ]
+            }/]100.100.100.100''
+          ])
           # 直连
           ++ ([
-          ''[/${lib.concatStringsSep "/" [
-              "swcdn.apple.com"
-            ]}/]https://120.53.53.53:443/dns-query''
-        ]);
+            ''[/${
+              lib.concatStringsSep "/" [
+                "swcdn.apple.com"
+              ]
+            }/]https://120.53.53.53:443/dns-query''
+          ]);
         # upstream_dns_file = "${inputs.you-know-who}/adguard-home/whitelist_full_combine.txt";
         # rewrites = [
         #   { domain = "challenges.cloudflare.com"; answer = "2606:4700::6812:7b9"; }

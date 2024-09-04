@@ -1,4 +1,11 @@
-{ pkgs, config, lib, persistPath, inputs, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  persistPath,
+  inputs,
+  ...
+}:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
@@ -29,11 +36,13 @@ in
     fcitx5.addons = [
       # https://github.com/wuliuqii/nixos-config/blob/87a5d8552973d30b11b800334e816e16dbda0a31/system/configuration.nix#L25-L27
       (pkgs.fcitx5-rime.override {
-        librime = (pkgs.librime.overrideAttrs (old: {
-          buildInputs = old.buildInputs ++ [ pkgs.lua5_4 ];
-        })).override {
-          plugins = [ pkgs.librime-lua ];
-        };
+        librime =
+          (pkgs.librime.overrideAttrs (old: {
+            buildInputs = old.buildInputs ++ [ pkgs.lua5_4 ];
+          })).override
+            {
+              plugins = [ pkgs.librime-lua ];
+            };
         rimeDataPkgs = [ pkgs.rime-ice ];
       })
 

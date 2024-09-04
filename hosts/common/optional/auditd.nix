@@ -1,13 +1,23 @@
-{ pkgs, inputs, persistPath, lib, ... }:
+{
+  pkgs,
+  inputs,
+  persistPath,
+  lib,
+  ...
+}:
 
 {
   # security.auditd.enable = true;
   security.audit = {
     enable = true;
     # TODO some path not working within NixOS
-    rules = [ ] ++
-      (map (x: builtins.replaceStrings [ "'" ] [ "'\"'\"'" ] x)
-        (lib.filter (x: x != "") (lib.splitString "\n" (builtins.readFile "${inputs.auditd-rules}/audit.rules"))));
+    rules =
+      [ ]
+      ++ (map (x: builtins.replaceStrings [ "'" ] [ "'\"'\"'" ] x) (
+        lib.filter (x: x != "") (
+          lib.splitString "\n" (builtins.readFile "${inputs.auditd-rules}/audit.rules")
+        )
+      ));
   };
 
   environment.systemPackages = with pkgs; [

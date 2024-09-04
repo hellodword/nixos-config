@@ -1,4 +1,5 @@
-{ pkgs, lib, ... }: {
+{ pkgs, lib, ... }:
+{
 
   nixpkgs.hostPlatform = "x86_64-linux";
 
@@ -38,8 +39,10 @@
     pkgs.android-studio
   ];
 
-  nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
-    "android-studio-stable"
-  ];
+  nixpkgs.config.allowUnfreePredicate =
+    pkg:
+    builtins.elem (lib.getName pkg) [
+      "android-studio-stable"
+    ];
 
 }

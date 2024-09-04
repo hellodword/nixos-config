@@ -68,7 +68,12 @@ in
             content = {
               type = "filesystem";
               format = "vfat";
-              extraArgs = [ "-F" "32" "-n" "boot" ];
+              extraArgs = [
+                "-F"
+                "32"
+                "-n"
+                "boot"
+              ];
               mountpoint = "/boot";
             };
           }
@@ -82,11 +87,17 @@ in
               subvolumes = {
                 "/nix" = {
                   mountpoint = "/nix";
-                  mountOptions = [ "compress=zstd" "noatime" ];
+                  mountOptions = [
+                    "compress=zstd"
+                    "noatime"
+                  ];
                 };
                 "/persist" = {
                   mountpoint = "/persist";
-                  mountOptions = [ "compress=zstd" "noatime" ];
+                  mountOptions = [
+                    "compress=zstd"
+                    "noatime"
+                  ];
                 };
               };
             };

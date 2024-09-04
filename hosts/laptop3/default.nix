@@ -1,16 +1,20 @@
-{ pkgs, inputs, userName, ... }:
+{
+  pkgs,
+  inputs,
+  userName,
+  ...
+}:
 
 {
-  imports = [
-    ./hardware-configuration.nix
-    ../common/optional/fix-sleep.nix
-    ../common/optional/intel-tearing.nix
-  ]
-  ++
-  [
-    ../common/optional/laptop
-  ]
-  ;
+  imports =
+    [
+      ./hardware-configuration.nix
+      ../common/optional/fix-sleep.nix
+      ../common/optional/intel-tearing.nix
+    ]
+    ++ [
+      ../common/optional/laptop
+    ];
 
   networking.hostName = "laptop3";
 
@@ -40,7 +44,8 @@
     # "lkrg" 
   ];
 
-  users.users."${userName}".openssh.authorizedKeys.keys = inputs.nixos-privates.ssh."laptop".authorizedKeys;
+  users.users."${userName}".openssh.authorizedKeys.keys =
+    inputs.nixos-privates.ssh."laptop".authorizedKeys;
 
   home-manager.users."${userName}" = import ../../home/laptop;
 

@@ -1,21 +1,32 @@
-{ lib, inputs, pkgs, config, persistPath, ... }:
+{
+  lib,
+  inputs,
+  pkgs,
+  config,
+  persistPath,
+  ...
+}:
 
 let
-  violentmonkey = builtins.fromJSON (builtins.readFile "${inputs.reproducible-violentmonkey}/info.json");
-  userjs = pkgs.runCommand "arkenfox-userjs"
-    {
-      preferLocalBuild = true;
-      allowSubstitutes = false;
-      # take precedence over non-firejailed versions
-      meta.priority = -1;
-    } ''
-    set -x
-    mkdir -p $out
-    cat "${inputs.arkenfox-userjs}/user.js" > $out/user.js
-    grep -i clearonshutdown $out/user.js
-    sed -i -e '/\/\*\*\* \[SECTION 2800\]/,/\/\*\*\* \[SECTION /s/user_pref.*//' $out/user.js
-    ! grep -i clearonshutdown $out/user.js
-  '';
+  violentmonkey = builtins.fromJSON (
+    builtins.readFile "${inputs.reproducible-violentmonkey}/info.json"
+  );
+  userjs =
+    pkgs.runCommand "arkenfox-userjs"
+      {
+        preferLocalBuild = true;
+        allowSubstitutes = false;
+        # take precedence over non-firejailed versions
+        meta.priority = -1;
+      }
+      ''
+        set -x
+        mkdir -p $out
+        cat "${inputs.arkenfox-userjs}/user.js" > $out/user.js
+        grep -i clearonshutdown $out/user.js
+        sed -i -e '/\/\*\*\* \[SECTION 2800\]/,/\/\*\*\* \[SECTION /s/user_pref.*//' $out/user.js
+        ! grep -i clearonshutdown $out/user.js
+      '';
 in
 {
   # TODO backup
@@ -137,7 +148,7 @@ in
             meta = { };
           })
         ];
-        /* 
+        /*
           ff 的 alias 使用起来没有 chrome 灵活。
           例如 alias 是 git：
           在 chrome 中输入 git+空格，会进入搜索待输入模式，但这时退格删除掉空格，git 就变成了待搜索词；
@@ -159,93 +170,146 @@ in
           ];
           engines = {
             "Github Actions" = {
-              urls = [{
-                template = "https://github.com/search?q={searchTerms}+%28path%3A.github%2Fworkflows%2F*.yml+OR+path%3A.github%2Fworkflows%2F*.yaml%29&type=code";
-              }];
-              definedAliases = [ "@actions" "@ci" ];
+              urls = [
+                {
+                  template = "https://github.com/search?q={searchTerms}+%28path%3A.github%2Fworkflows%2F*.yml+OR+path%3A.github%2Fworkflows%2F*.yaml%29&type=code";
+                }
+              ];
+              definedAliases = [
+                "@actions"
+                "@ci"
+              ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "Github" = {
-              urls = [{
-                template = "https://github.com/search?q={searchTerms}";
-              }];
+              urls = [
+                {
+                  template = "https://github.com/search?q={searchTerms}";
+                }
+              ];
               definedAliases = [ "@git" ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "Github Nix" = {
-              urls = [{
-                template = "https://github.com/search?q={searchTerms}+language%3Anix&type=code";
-              }];
-              definedAliases = [ "@gitnix" "gitnix" ];
+              urls = [
+                {
+                  template = "https://github.com/search?q={searchTerms}+language%3Anix&type=code";
+                }
+              ];
+              definedAliases = [
+                "@gitnix"
+                "gitnix"
+              ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "Nix Noogle" = {
-              urls = [{
-                template = "https://noogle.dev/q?term={searchTerms}";
-              }];
-              definedAliases = [ "@noogle" "noogle" "@nix1" ];
+              urls = [
+                {
+                  template = "https://noogle.dev/q?term={searchTerms}";
+                }
+              ];
+              definedAliases = [
+                "@noogle"
+                "noogle"
+                "@nix1"
+              ];
               iconUpdateURL = "https://noogle.dev/favicon.png";
             };
             "Nix Nixhub" = {
-              urls = [{
-                template = "https://www.nixhub.io/search?q={searchTerms}";
-              }];
-              definedAliases = [ "@nixhub" "nixhub" "@nix2" ];
+              urls = [
+                {
+                  template = "https://www.nixhub.io/search?q={searchTerms}";
+                }
+              ];
+              definedAliases = [
+                "@nixhub"
+                "nixhub"
+                "@nix2"
+              ];
               iconUpdateURL = "https://www.nixhub.io/favicon.ico";
             };
             "Nix MyNixOS" = {
-              urls = [{
-                template = "https://mynixos.com/search?q={searchTerms}";
-              }];
-              definedAliases = [ "@mynixos" "mynixos" "@nix3" ];
+              urls = [
+                {
+                  template = "https://mynixos.com/search?q={searchTerms}";
+                }
+              ];
+              definedAliases = [
+                "@mynixos"
+                "mynixos"
+                "@nix3"
+              ];
               iconUpdateURL = "https://mynixos.com/favicon.ico";
             };
             "Nix package versions" = {
-              urls = [{
-                template = "https://lazamar.co.uk/nix-versions/?channel=nixpkgs-unstable&package={searchTerms}";
-              }];
+              urls = [
+                {
+                  template = "https://lazamar.co.uk/nix-versions/?channel=nixpkgs-unstable&package={searchTerms}";
+                }
+              ];
               definedAliases = [ "@nix4" ];
               iconUpdateURL = "https://nixos.org/favicon.png";
             };
             "Nixpkgs" = {
-              urls = [{
-                template = "https://github.com/search?q=repo%3ANixOS%2Fnixpkgs+{searchTerms}+language%3Anix&type=code";
-              }];
+              urls = [
+                {
+                  template = "https://github.com/search?q=repo%3ANixOS%2Fnixpkgs+{searchTerms}+language%3Anix&type=code";
+                }
+              ];
               definedAliases = [ "@nixpkgs" ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "home-manager" = {
-              urls = [{
-                template = "https://github.com/search?q=repo%3Anix-community%2Fhome-manager+{searchTerms}+language%3Anix&type=code";
-              }];
-              definedAliases = [ "@hm" "hm" ];
+              urls = [
+                {
+                  template = "https://github.com/search?q=repo%3Anix-community%2Fhome-manager+{searchTerms}+language%3Anix&type=code";
+                }
+              ];
+              definedAliases = [
+                "@hm"
+                "hm"
+              ];
               iconUpdateURL = "https://github.com/favicon.ico";
             };
             "Hacker News" = {
-              urls = [{
-                template = "https://google.com/search?q=site%3Anews.ycombinator.com+{searchTerms}";
-              }];
-              definedAliases = [ "@hn" "hn" ];
+              urls = [
+                {
+                  template = "https://google.com/search?q=site%3Anews.ycombinator.com+{searchTerms}";
+                }
+              ];
+              definedAliases = [
+                "@hn"
+                "hn"
+              ];
               iconUpdateURL = "https://www.ycombinator.com/favicon.ico";
             };
             "V2ex" = {
-              urls = [{
-                template = "https://google.com/search?q={searchTerms}+site:v2ex.com";
-              }];
+              urls = [
+                {
+                  template = "https://google.com/search?q={searchTerms}+site:v2ex.com";
+                }
+              ];
               definedAliases = [ "@v2ex" ];
               iconUpdateURL = "https://www.v2ex.com/favicon.ico";
             };
             "presearch" = {
-              urls = [{
-                template = "https://presearch.com/search?q={searchTerms}";
-              }];
-              definedAliases = [ "@presearch" "@p" ];
+              urls = [
+                {
+                  template = "https://presearch.com/search?q={searchTerms}";
+                }
+              ];
+              definedAliases = [
+                "@presearch"
+                "@p"
+              ];
               iconUpdateURL = "https://presearch.com/favicon.ico";
             };
             "Google Translate" = {
-              urls = [{
-                template = "https://translate.google.com/?sl=auto&tl=zh-CN&op=translate&text={searchTerms}";
-              }];
+              urls = [
+                {
+                  template = "https://translate.google.com/?sl=auto&tl=zh-CN&op=translate&text={searchTerms}";
+                }
+              ];
               definedAliases = [ "@translate" ];
               iconUpdateURL = "https://translate.google.com/favicon.ico";
             };

@@ -1,6 +1,11 @@
 # https://github.com/zendo/nsworld/blob/369247cb4520c689781f1bc3874b5b3ec8b10679/overlays/rime-ice/default.nix
 
-{ lib, stdenvNoCC, fetchFromGitHub, ... }:
+{
+  lib,
+  stdenvNoCC,
+  fetchFromGitHub,
+  ...
+}:
 
 let
   rev = "37ca416a9c755716d049c549b131276ddc440688";

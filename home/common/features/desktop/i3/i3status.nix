@@ -1,17 +1,25 @@
-{ pkgs, config, lib, nixosConfig, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  nixosConfig,
+  ...
+}:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
   X = nixosConfig.services.xserver.windowManager.i3.enable;
-  bars = [{
-    position = "top";
-    statusCommand = "i3status";
-    fonts = {
-      names = [ "JetBrainsMono Nerd Font" ];
-      style = "Bold Semi-Condensed";
-      size = 10.0;
-    };
-  }];
+  bars = [
+    {
+      position = "top";
+      statusCommand = "i3status";
+      fonts = {
+        names = [ "JetBrainsMono Nerd Font" ];
+        style = "Bold Semi-Condensed";
+        size = 10.0;
+      };
+    }
+  ];
   sway-inhibit-idle = pkgs.writeShellApplication {
     name = "sway-inhibit-idle";
     text = ''
@@ -31,7 +39,7 @@ in
 {
   home.packages = with pkgs; [
     i3status # gives you the default i3 status bar
-    i3blocks #if you are planning on using i3blocks over i3status
+    i3blocks # if you are planning on using i3blocks over i3status
   ];
 
   xsession.windowManager.i3.config.bars = (lib.optionals (X) bars);

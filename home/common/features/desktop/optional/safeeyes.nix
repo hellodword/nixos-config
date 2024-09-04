@@ -1,4 +1,9 @@
-{ config, pkgs, persistPath, ... }:
+{
+  config,
+  pkgs,
+  persistPath,
+  ...
+}:
 
 {
   services.safeeyes = {

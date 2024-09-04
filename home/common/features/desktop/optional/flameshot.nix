@@ -1,4 +1,9 @@
-{ pkgs, lib, nixosConfig, ... }:
+{
+  pkgs,
+  lib,
+  nixosConfig,
+  ...
+}:
 
 let
   mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
@@ -8,11 +13,14 @@ let
     "Shift+Print" = "exec flameshot full --clipboard";
   };
   # https://github.com/flameshot-org/flameshot/issues/2848#issuecomment-1199643659
-  flameshotPkg = if X then pkgs.flameshot else
-  (pkgs.flameshot.overrideAttrs (o: {
-    cmakeFlags = [ "-DUSE_WAYLAND_CLIPBOARD=true" ];
-    nativeBuildInputs = o.nativeBuildInputs ++ [ pkgs.libsForQt5.kguiaddons ];
-  }));
+  flameshotPkg =
+    if X then
+      pkgs.flameshot
+    else
+      (pkgs.flameshot.overrideAttrs (o: {
+        cmakeFlags = [ "-DUSE_WAYLAND_CLIPBOARD=true" ];
+        nativeBuildInputs = o.nativeBuildInputs ++ [ pkgs.libsForQt5.kguiaddons ];
+      }));
 in
 {
   services.flameshot = {

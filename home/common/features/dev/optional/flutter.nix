@@ -1,4 +1,10 @@
-{ pkgs, lib, config, persistPath, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  persistPath,
+  ...
+}:
 
 let
   flutterAss = pkgs.symlinkJoin {
@@ -12,16 +18,17 @@ let
       sdk = flutterAss;
     };
     paths = [
-      (
-        pkgs.writeShellApplication {
-          name = "flutter";
-          runtimeInputs = with pkgs; [ android-studio gnugrep ];
-          text = ''
-            fhs="$(grep -oP '^[^ ]+-fhs-env' ${pkgs.android-studio.outPath}/bin/android-studio)"
-            "$fhs" "${pkgs.flutter}/bin/flutter" "$@"
-          '';
-        }
-      )
+      (pkgs.writeShellApplication {
+        name = "flutter";
+        runtimeInputs = with pkgs; [
+          android-studio
+          gnugrep
+        ];
+        text = ''
+          fhs="$(grep -oP '^[^ ]+-fhs-env' ${pkgs.android-studio.outPath}/bin/android-studio)"
+          "$fhs" "${pkgs.flutter}/bin/flutter" "$@"
+        '';
+      })
       pkgs.flutter
       pkgs.flutter.cacheDir
       pkgs.flutter.sdk
@@ -45,19 +52,15 @@ in
     flutterAss
   ];
 
-  programs.vscode.userSettings = lib.optionalAttrs
-    config.programs.vscode.enable
-    {
-      "dart.checkForSdkUpdates" = false;
-    };
+  programs.vscode.userSettings = lib.optionalAttrs config.programs.vscode.enable {
+    "dart.checkForSdkUpdates" = false;
+  };
 
   # https://github.com/NixOS/nixpkgs/pull/76420#issuecomment-615344955
-  programs.vscode.extensions = lib.optionals
-    config.programs.vscode.enable
-    [
-      pkgs.vscode-extensions.dart-code.dart-code
-      pkgs.vscode-extensions.dart-code.flutter
-    ];
+  programs.vscode.extensions = lib.optionals config.programs.vscode.enable [
+    pkgs.vscode-extensions.dart-code.dart-code
+    pkgs.vscode-extensions.dart-code.flutter
+  ];
 
   # programs.bash.initExtra = lib.mkAfter ''
   #   source <(flutter bash-completion)

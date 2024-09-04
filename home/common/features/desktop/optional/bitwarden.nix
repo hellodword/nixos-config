@@ -1,4 +1,10 @@
-{ config, pkgs, persistPath, nixosConfig, ... }:
+{
+  config,
+  pkgs,
+  persistPath,
+  nixosConfig,
+  ...
+}:
 
 let
   mkJailed = import ../../../../../modules/common/jailed.nix pkgs;

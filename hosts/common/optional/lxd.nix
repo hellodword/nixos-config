@@ -1,4 +1,10 @@
-{ lib, config, persistPath, userName, ... }:
+{
+  lib,
+  config,
+  persistPath,
+  userName,
+  ...
+}:
 
 {
   # https://jnsgr.uk/2024/06/desktop-vms-lxd-multipass/
@@ -36,7 +42,9 @@
   # This sets up a bridge called "mylxdbr0".  This is used to provide NAT'd
   # internet to the guest.  This bridge is manipulated directly by lxd, so we
   # don't need to specify any bridged interfaces here.
-  networking.bridges = { mylxdbr0.interfaces = [ ]; };
+  networking.bridges = {
+    mylxdbr0.interfaces = [ ];
+  };
 
   # Add an IP address to the bridge interface.
   networking.localCommands = ''
@@ -67,7 +75,9 @@
   # kernel module for forwarding to work
   boot.kernelModules = [ "nf_nat_ftp" ];
 
-  systemd.services.lxd.after = lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
+  systemd.services.lxd.after = lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [
+    "sing-box.service"
+  ];
 
   environment.persistence = {
     "${persistPath}".directories = [

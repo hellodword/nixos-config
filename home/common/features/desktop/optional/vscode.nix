@@ -1,4 +1,11 @@
-{ inputs, config, lib, pkgs, persistPath, ... }:
+{
+  inputs,
+  config,
+  lib,
+  pkgs,
+  persistPath,
+  ...
+}:
 
 {
   # https://github.com/NixOS/nixpkgs/blob/a40b1a0c8296ffdfe90bd34ccfab19857586c005/pkgs/applications/editors/vscode/extensions/mktplcExtRefToFetchArgs.nix#L6C10-L6C179
@@ -63,30 +70,32 @@
         "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";
         # "editor.tabSize" = 2;
       };
-      extensions = (
-        # with pkgs.vscode-extensions; [
-        #   jnoortheen.nix-ide
-        #   # ms-python.python
-        #   # ms-vscode.makefile-tools
-        #   # ms-vscode.cmake-tools
-        #   # ms-vscode.cpptools
-        #   # ms-azuretools.vscode-docker
-        #   # ms-python.vscode-pylance
-        #   # ms-vscode-remote.remote-ssh
-        # ]
-        [ ]
-      ) ++ (
-        with (inputs.nix-vscode-extensions.extensions.${pkgs.system}.forVSCodeVersion package.version).vscode-marketplace; [
-          jnoortheen.nix-ide
+      extensions =
+        (
+          # with pkgs.vscode-extensions; [
+          #   jnoortheen.nix-ide
+          #   # ms-python.python
+          #   # ms-vscode.makefile-tools
+          #   # ms-vscode.cmake-tools
+          #   # ms-vscode.cpptools
+          #   # ms-azuretools.vscode-docker
+          #   # ms-python.vscode-pylance
+          #   # ms-vscode-remote.remote-ssh
+          # ]
+          [ ]
+        )
+        ++ (
+          with (inputs.nix-vscode-extensions.extensions.${pkgs.system}.forVSCodeVersion package.version)
+            .vscode-marketplace; [
+            jnoortheen.nix-ide
 
-          # esbenp.prettier-vscode
+            # esbenp.prettier-vscode
 
-          # # failed with ref c1fba83fc62263d2ce08e6b85e9fbc8359da0ab9
-          # ms-vscode-remote.remote-ssh
-          ms-vscode-remote.remote-containers
-          # ms-python.python
-        ]
-      );
+            # # failed with ref c1fba83fc62263d2ce08e6b85e9fbc8359da0ab9
+            # ms-vscode-remote.remote-ssh
+            ms-vscode-remote.remote-containers
+            # ms-python.python
+          ]);
     };
 
   home.persistence = {

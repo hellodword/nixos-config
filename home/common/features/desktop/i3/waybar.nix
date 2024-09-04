@@ -1,4 +1,10 @@
-{ pkgs, lib, nixosConfig, persistPath, ... }:
+{
+  pkgs,
+  lib,
+  nixosConfig,
+  persistPath,
+  ...
+}:
 
 {
   # xdg.configFile."waybar" = {
@@ -32,33 +38,35 @@
         "modules-center" = [
           "sway/window"
         ];
-        "modules-right" = [
-          "systemd-failed-units"
-          # "mpd"
-          "idle_inhibitor"
-          "pulseaudio"
-          "network#ethernet"
-          "network#wireless"
-          "network#wgcf"
-        ] ++
-        (lib.optionals nixosConfig.services.tailscale.enable [
-          "network#${nixosConfig.services.tailscale.interfaceName}"
-        ]) ++ [
-          "network#goose"
-          "network#fastest"
-          "cpu"
-          "memory"
-          "disk"
-          "temperature"
-          "backlight"
-          # // "keyboard-state",// https://www.reddit.com/r/linuxquestions/comments/bh4ex1/is_adding_a_user_to_input_group_secure/
-          # // "sway/language",
-          "battery"
-          "battery#bat2"
-          "clock"
-          "clock#china"
-          "tray"
-        ];
+        "modules-right" =
+          [
+            "systemd-failed-units"
+            # "mpd"
+            "idle_inhibitor"
+            "pulseaudio"
+            "network#ethernet"
+            "network#wireless"
+            "network#wgcf"
+          ]
+          ++ (lib.optionals nixosConfig.services.tailscale.enable [
+            "network#${nixosConfig.services.tailscale.interfaceName}"
+          ])
+          ++ [
+            "network#goose"
+            "network#fastest"
+            "cpu"
+            "memory"
+            "disk"
+            "temperature"
+            "backlight"
+            # // "keyboard-state",// https://www.reddit.com/r/linuxquestions/comments/bh4ex1/is_adding_a_user_to_input_group_secure/
+            # // "sway/language",
+            "battery"
+            "battery#bat2"
+            "clock"
+            "clock#china"
+            "tray"
+          ];
         # Modules configuration
         # "sway/workspaces"={
         #     "disable-scroll"=true,

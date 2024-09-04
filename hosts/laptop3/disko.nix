@@ -71,7 +71,12 @@ in
             content = {
               type = "filesystem";
               format = "vfat";
-              extraArgs = [ "-F" "32" "-n" "boot" ];
+              extraArgs = [
+                "-F"
+                "32"
+                "-n"
+                "boot"
+              ];
               mountpoint = "/boot";
             };
           }
@@ -83,14 +88,20 @@ in
               type = "luks";
               name = "crypt0";
               keyFile = "/tmp/crypt.key";
-              extraFormatArgs = [ "--type" "luks2" ]; # "--label" "crypt"
+              extraFormatArgs = [
+                "--type"
+                "luks2"
+              ]; # "--label" "crypt"
               content = {
                 type = "btrfs";
                 extraArgs = [ "-f" ]; # Override existing partition
                 subvolumes = {
                   "/nix" = {
                     mountpoint = "/nix";
-                    mountOptions = [ "compress=zstd" "noatime" ];
+                    mountOptions = [
+                      "compress=zstd"
+                      "noatime"
+                    ];
                   };
                 };
               };
@@ -124,14 +135,20 @@ in
               type = "luks";
               name = "crypt1";
               keyFile = "/tmp/crypt.key";
-              extraFormatArgs = [ "--type" "luks2" ];
+              extraFormatArgs = [
+                "--type"
+                "luks2"
+              ];
               content = {
                 type = "btrfs";
                 extraArgs = [ "-f" ]; # Override existing partition
                 subvolumes = {
                   "/persist" = {
                     mountpoint = "/persist";
-                    mountOptions = [ "compress=zstd" "noatime" ];
+                    mountOptions = [
+                      "compress=zstd"
+                      "noatime"
+                    ];
                   };
                 };
               };

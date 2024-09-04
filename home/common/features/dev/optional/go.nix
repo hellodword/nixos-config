@@ -1,4 +1,9 @@
-{ lib, pkgs, config, ... }:
+{
+  lib,
+  pkgs,
+  config,
+  ...
+}:
 
 {
   programs.go = {
@@ -17,19 +22,15 @@
     go-tools # installing staticcheck (technically available in golangci-lint, but for use in lsp)
   ];
 
-  programs.vscode.extensions = lib.optionals
-    config.programs.vscode.enable
-    [
-      # pkgs.vscode-extensions.golang.go
-    ];
+  programs.vscode.extensions = lib.optionals config.programs.vscode.enable [
+    # pkgs.vscode-extensions.golang.go
+  ];
 
-  programs.vscode.userSettings = lib.optionalAttrs
-    config.programs.vscode.enable
-    {
-      "go.toolsManagement.checkForUpdates" = "off";
-      "go.toolsManagement.autoUpdate" = false;
-      "go.logging.level" = "verbose";
-    };
+  programs.vscode.userSettings = lib.optionalAttrs config.programs.vscode.enable {
+    "go.toolsManagement.checkForUpdates" = "off";
+    "go.toolsManagement.autoUpdate" = false;
+    "go.logging.level" = "verbose";
+  };
 
   # https://github.com/void-linux/void-packages/issues/44578
   home.sessionVariables.GOTOOLCHAIN = "local";

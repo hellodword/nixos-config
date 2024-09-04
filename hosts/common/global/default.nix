@@ -1,5 +1,11 @@
 # This file (and the global directory) holds config that i use on all hosts
-{ inputs, outputs, pkgs, commonArgs, ... }:
+{
+  inputs,
+  outputs,
+  pkgs,
+  commonArgs,
+  ...
+}:
 
 {
   imports = [
@@ -27,7 +33,9 @@
     ];
   };
 
-  home-manager.extraSpecialArgs = { inherit inputs outputs; } // commonArgs;
+  home-manager.extraSpecialArgs = {
+    inherit inputs outputs;
+  } // commonArgs;
 
   environment.systemPackages = with pkgs; [
     wget
@@ -77,5 +85,12 @@
     "NIXPKGS_SOURCE" = "${inputs.nixpkgs}";
   };
 
-  environment.etc = builtins.listToAttrs (map (x: { name = "flake-inputs/${x}"; value = { source = inputs."${x}".outPath; }; }) (builtins.attrNames inputs));
+  environment.etc = builtins.listToAttrs (
+    map (x: {
+      name = "flake-inputs/${x}";
+      value = {
+        source = inputs."${x}".outPath;
+      };
+    }) (builtins.attrNames inputs)
+  );
 }

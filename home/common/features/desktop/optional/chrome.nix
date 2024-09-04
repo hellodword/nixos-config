@@ -1,4 +1,10 @@
-{ lib, config, persistPath, pkgs, ... }:
+{
+  lib,
+  config,
+  persistPath,
+  pkgs,
+  ...
+}:
 
 {
   me.allowedUnfreePkg = [ pkgs.google-chrome ];
@@ -14,5 +20,7 @@
   };
 
   # flutter debugger or other apps need this
-  home.sessionVariables.CHROME_EXECUTABLE = lib.mkOverride 1000 "${config.programs."google-chrome".package}/bin/google-chrome-stable";
+  home.sessionVariables.CHROME_EXECUTABLE =
+    lib.mkOverride 1000
+      "${config.programs."google-chrome".package}/bin/google-chrome-stable";
 }

@@ -1,4 +1,11 @@
-{ pkgs, lib, config, persistPath, userName, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  persistPath,
+  userName,
+  ...
+}:
 
 let
   greetd = false;
@@ -59,13 +66,11 @@ in
   ##############################
 
   environment.systemPackages = [
-    (
-      pkgs.catppuccin-sddm.override {
-        flavor = "mocha";
-        font = "Noto Sans";
-        fontSize = "12";
-      }
-    )
+    (pkgs.catppuccin-sddm.override {
+      flavor = "mocha";
+      font = "Noto Sans";
+      fontSize = "12";
+    })
   ];
 
   # services.xserver.displayManager.defaultSession = "sway";

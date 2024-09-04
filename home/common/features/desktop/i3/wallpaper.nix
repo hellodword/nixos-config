@@ -1,10 +1,20 @@
-{ lib, pkgs, config, nixosConfig, ... }:
+{
+  lib,
+  pkgs,
+  config,
+  nixosConfig,
+  ...
+}:
 
 let
   wallpapers = "${config.home.homeDirectory}/Pictures/wallpaper";
   fetch-bing-wallpaper = pkgs.writeShellApplication {
     name = "fetch-bing-wallpaper";
-    runtimeInputs = with pkgs; [ curl coreutils gnugrep ];
+    runtimeInputs = with pkgs; [
+      curl
+      coreutils
+      gnugrep
+    ];
     text = ''
       result="$(curl -s -f 'http://www.bing.com/HPImageArchive.aspx?format=xml&idx=0&n=1&mkt=en-WW')"
       fullstartdate="$(echo "$result" | grep -oP '(?<=<fullstartdate>)\d+(?=</fullstartdate>)')"
@@ -19,7 +29,11 @@ let
   };
   random-background-sway = pkgs.writeShellApplication {
     name = "random-background-sway";
-    runtimeInputs = with pkgs; [ jq sway findutils ];
+    runtimeInputs = with pkgs; [
+      jq
+      sway
+      findutils
+    ];
     # https://forum.manjaro.org/t/is-there-a-simple-way-to-set-up-dynamic-wallpaper-switching-in-sway-for-dual-displays/85568/4
     text = ''
       Display=(${wallpapers}/*)
@@ -50,18 +64,27 @@ in
     imageDirectory = "${config.home.homeDirectory}/Pictures/wallpaper";
   };
 
-  systemd.user.services.random-background.Service = if X then { } else {
-    ExecStart = lib.mkForce "${lib.getExe random-background-sway}";
-  };
+  systemd.user.services.random-background.Service =
+    if X then
+      { }
+    else
+      {
+        ExecStart = lib.mkForce "${lib.getExe random-background-sway}";
+      };
 
   home.activation.copyWallpapers = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     mkdir -p "${wallpapers}"
 
-    ${lib.concatStringsSep "\n" (
-      lib.mapAttrsToList (name: value: lib.optionalString
-          (lib.hasAttrByPath ["kdeFilePath"] value)
-          ''cp -f ${value.kdeFilePath} ${wallpapers}/'')
-        pkgs.nixos-artwork.wallpapers)};
+    ${
+      lib.concatStringsSep "\n" (
+        lib.mapAttrsToList (
+          name: value:
+          lib.optionalString (lib.hasAttrByPath [
+            "kdeFilePath"
+          ] value) ''cp -f ${value.kdeFilePath} ${wallpapers}/''
+        ) pkgs.nixos-artwork.wallpapers
+      )
+    };
 
     rm -f ${wallpapers}/nix-wallpaper-simple-dark-gray_bootloader.png
     rm -f ${wallpapers}/nix-wallpaper-simple-red.png
@@ -80,6 +103,8 @@ in
       OnBootSec = "10m";
       OnUnitInactiveSec = "1h";
     };
-    Install = { WantedBy = [ "timers.target" ]; };
+    Install = {
+      WantedBy = [ "timers.target" ];
+    };
   };
 }

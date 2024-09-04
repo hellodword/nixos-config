@@ -1,8 +1,9 @@
 # https://github.com/Icy-Thought/snowflake/blob/005878d0c0656fa4d6f39d7ccba4be6c414d96c5/modules/desktop/extensions/mimeApps.nix#L13
 # env XDG_UTILS_DEBUG_LEVEL=2 xdg-mime query default application/pdf
-{ config
-, lib
-, ...
+{
+  config,
+  lib,
+  ...
 }:
 let
   inherit (builtins) listToAttrs;
@@ -63,7 +64,14 @@ in
         let
           defaultApps =
             let
-              inherit (cfg.defApps) editor fileBrowser imageViewer mediaPlayer webBrowser reader;
+              inherit (cfg.defApps)
+                editor
+                fileBrowser
+                imageViewer
+                mediaPlayer
+                webBrowser
+                reader
+                ;
             in
             {
               pdf = [ reader ];
@@ -327,10 +335,11 @@ in
             ];
           };
         in
-        listToAttrs (flatten (mapAttrsToList
-          (key: types:
-            map (type: nameValuePair type (defaultApps."${key}")) types)
-          mimeMap));
+        listToAttrs (
+          flatten (
+            mapAttrsToList (key: types: map (type: nameValuePair type (defaultApps."${key}")) types) mimeMap
+          )
+        );
     };
   };
 }

@@ -3,7 +3,11 @@
 let
   systemd-failed-notifier = pkgs.writeShellApplication {
     name = "systemd-failed-notifier";
-    runtimeInputs = with pkgs; [ findutils libnotify systemd ];
+    runtimeInputs = with pkgs; [
+      findutils
+      libnotify
+      systemd
+    ];
     # https://forum.manjaro.org/t/is-there-a-simple-way-to-set-up-dynamic-wallpaper-switching-in-sway-for-dual-displays/85568/4
     text = ''
       systemctl --failed --quiet --no-pager | xargs -I {} notify-send --expire-time=0 --urgency=critical 'systemd' '{}'
@@ -31,6 +35,8 @@ in
       OnUnitInactiveSec = "30s";
       # AccuracySec = "1us";
     };
-    Install = { WantedBy = [ "timers.target" ]; };
+    Install = {
+      WantedBy = [ "timers.target" ];
+    };
   };
 }

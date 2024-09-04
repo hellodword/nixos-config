@@ -1,7 +1,11 @@
 # https://github.com/iori2333/nix-config/blob/26431908e4e183611a4ca8fc090969be542d35d0/system/common/fonts/fira-code-novf.nix
 # FiraCode from https://github.com/NixOS/nixpkgs/blob/nixos-23.05/pkgs/data/fonts/fira-code/default.nix
 # Disabled variable fonts, as they are not supported by all applications yet.
-{ lib, stdenvNoCC, fetchzip }:
+{
+  lib,
+  stdenvNoCC,
+  fetchzip,
+}:
 
 stdenvNoCC.mkDerivation rec {
   pname = "fira-code-novf";

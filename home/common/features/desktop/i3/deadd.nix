@@ -1,21 +1,32 @@
-{ pkgs, config, lib, nixosConfig, ... }:
+{
+  pkgs,
+  config,
+  lib,
+  nixosConfig,
+  ...
+}:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
   X = nixosConfig.services.xserver.windowManager.i3.enable;
-  i3ConfigStartupExtra = (lib.optionalAttrs X {
-    notification = false;
-    workspace = null;
-  });
+  i3ConfigStartupExtra = (
+    lib.optionalAttrs X {
+      notification = false;
+      workspace = null;
+    }
+  );
   startup = [
     (
       {
         command = "deadd-notification-center &";
         always = true;
-      } // i3ConfigStartupExtra
+      }
+      // i3ConfigStartupExtra
     )
   ];
-  keybindings = { "${mod}+z" = "exec kill -s USR1 $(pidof deadd-notification-center)"; };
+  keybindings = {
+    "${mod}+z" = "exec kill -s USR1 $(pidof deadd-notification-center)";
+  };
 in
 {
   home.packages = with pkgs; [

@@ -1,11 +1,19 @@
-{ pkgs, config, persistPath, lib, ... }:
+{
+  pkgs,
+  config,
+  persistPath,
+  lib,
+  ...
+}:
 
 let
   mod = config.xsession.windowManager.i3.config.modifier;
   rofi-power-menu-with-check = pkgs.writeShellApplication {
     name = "rofi-power-menu-with-check";
     text = ''
-      if ${lib.concatStringsSep " || " (map (x: "[ \"$(pgrep -x \"${x}\")\" ]") config.me.exitProcess)}; then
+      if ${
+        lib.concatStringsSep " || " (map (x: "[ \"$(pgrep -x \"${x}\")\" ]") config.me.exitProcess)
+      }; then
         ${pkgs.libnotify}/bin/notify-send --urgency critical --expire-time=10000 "关机提示:" "你应该先关闭重要进程!"
       else
         rofi -show power-menu -modi 'power-menu:rofi-power-menu --choices=shutdown/reboot/logout' -width 20 -lines 3 -font 'monospace 16'
@@ -32,7 +40,11 @@ in
 
   programs.rofi = {
     enable = true;
-    plugins = with pkgs; [ rofi-calc rofi-emoji rofi-power-menu ];
+    plugins = with pkgs; [
+      rofi-calc
+      rofi-emoji
+      rofi-power-menu
+    ];
     terminal = "${pkgs.kitty}/bin/kitty";
     # theme = ./theme.rafi;
     extraConfig = {
@@ -48,9 +60,7 @@ in
       display-window = " 﩯 Window ";
       display-power-menu = "  Power Menu ";
 
-      modi = "run,drun,filebrowser,emoji,power-menu:${
-          lib.getExe pkgs.rofi-power-menu
-        }";
+      modi = "run,drun,filebrowser,emoji,power-menu:${lib.getExe pkgs.rofi-power-menu}";
 
       xoffset = 0;
       yoffset = 0;

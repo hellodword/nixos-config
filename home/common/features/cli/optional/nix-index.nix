@@ -1,4 +1,9 @@
-{ inputs, config, persistPath, ... }:
+{
+  inputs,
+  config,
+  persistPath,
+  ...
+}:
 
 {
   imports = [

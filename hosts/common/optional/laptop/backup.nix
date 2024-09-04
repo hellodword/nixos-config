@@ -1,9 +1,13 @@
-{ lib, pkgs, config, persistPath, userName, ... }:
-
-
+{
+  lib,
+  pkgs,
+  config,
+  persistPath,
+  userName,
+  ...
+}:
 
 # TODO fix \n https://github.com/NixOS/nixpkgs/blob/7eabbc2829806a1fa896b82f674c3e0bd23b9dbc/nixos/modules/services/backup/restic.nix#L363-L365
-
 
 # TODO add --latest=1 to restic snapshots
 # snapshots is expensive https://github.com/NixOS/nixpkgs/blob/7eabbc2829806a1fa896b82f674c3e0bd23b9dbc/nixos/modules/services/backup/restic.nix#L358
@@ -24,7 +28,8 @@ let
     "telnyx"
   ];
 
-  mkResticS3 = name:
+  mkResticS3 =
+    name:
     let
       package = pkgs.restic;
       extraOptions = [ ];
@@ -115,74 +120,100 @@ in
     restic
   ];
 
-  sops.secrets = (lib.listToAttrs (
-    (map (name: lib.nameValuePair "restic-repo-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) resticS3Providers) ++
-    (map (name: lib.nameValuePair "restic-s3-${name}" { sopsFile = ../../../${config.networking.hostName}/secrets/restic-s3-${name}; format = "binary"; }) resticS3Providers) ++
-    [ (lib.nameValuePair "restic-password" { sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml; }) ]
-  ));
+  sops.secrets = (
+    lib.listToAttrs (
+      (map (
+        name:
+        lib.nameValuePair "restic-repo-${name}" {
+          sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml;
+        }
+      ) resticS3Providers)
+      ++ (map (
+        name:
+        lib.nameValuePair "restic-s3-${name}" {
+          sopsFile = ../../../${config.networking.hostName}/secrets/restic-s3-${name};
+          format = "binary";
+        }
+      ) resticS3Providers)
+      ++ [
+        (lib.nameValuePair "restic-password" {
+          sopsFile = ../../../${config.networking.hostName}/secrets/secrets.yaml;
+        })
+      ]
+    )
+  );
 
-  services.restic.backups = (lib.listToAttrs (map (name: lib.nameValuePair "${config.networking.hostName}-${name}" (mkResticS3 name)) resticS3Providers));
+  services.restic.backups = (
+    lib.listToAttrs (
+      map (
+        name: lib.nameValuePair "${config.networking.hostName}-${name}" (mkResticS3 name)
+      ) resticS3Providers
+    )
+  );
 
-  systemd.services = (lib.listToAttrs (
-    map
-      (name:
-        lib.nameValuePair
-          "restic-backups-${config.networking.hostName}-${name}"
-          (
-            let
-              after = [ "network.target" ]
-                ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
-              backup = config.services.restic.backups."${config.networking.hostName}-${name}";
-              extraOptions = lib.concatMapStrings (arg: " -o ${arg}") backup.extraOptions;
-              resticCmd = "${backup.package}/bin/restic${extraOptions}";
-              shouldCheckWithoutCache = lib.optionalString (name == "scaleway" || name == "r2") "true";
-              checkScript = pkgs.writeShellApplication {
-                name = "exe";
-                runtimeInputs = with pkgs; [ restic gawk ];
-                excludeShellChecks = [ ];
-                text = ''
-                  set -e
-                  set -x
-                  shouldCheckWithoutCache="${shouldCheckWithoutCache}"
-                  [ -f "$RESTIC_REPOSITORY_FILE" ]
-                  key="$(sha256sum < "$RESTIC_REPOSITORY_FILE" | head -1 | awk '{print $1}')"
-                  last_check="$(cat "$RESTIC_CACHE_DIR/.last_check.$key" 2>/dev/null || echo "0")"
-                  current_time="$(date +%s)"
-                  if [[ "$shouldCheckWithoutCache" = "true" && $((current_time - last_check)) -ge "$((60*60*24*7))" ]]; then
-                    echo "$current_time" | tee "$RESTIC_CACHE_DIR/.last_check.$key"
-                    "${resticCmd}" check --no-cache --verbose=2
-                  else
-                    "${resticCmd}" check --with-cache --cache-dir="$RESTIC_CACHE_DIR"
-                  fi
-                '';
-              };
-            in
-            {
-              after = after;
-              onSuccess = lib.optionals withBark [ "systemd-notify-success@%i.service" ];
-              onFailure = lib.optionals withBark [ "systemd-notify-failure@%i.service" ];
-              serviceConfig.ExecStart = lib.mkAfter [ "${lib.getExe checkScript}" ];
-            }
-          )
-      )
-      resticS3Providers
-  ));
+  systemd.services = (
+    lib.listToAttrs (
+      map (
+        name:
+        lib.nameValuePair "restic-backups-${config.networking.hostName}-${name}" (
+          let
+            after = [
+              "network.target"
+            ] ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
+            backup = config.services.restic.backups."${config.networking.hostName}-${name}";
+            extraOptions = lib.concatMapStrings (arg: " -o ${arg}") backup.extraOptions;
+            resticCmd = "${backup.package}/bin/restic${extraOptions}";
+            shouldCheckWithoutCache = lib.optionalString (name == "scaleway" || name == "r2") "true";
+            checkScript = pkgs.writeShellApplication {
+              name = "exe";
+              runtimeInputs = with pkgs; [
+                restic
+                gawk
+              ];
+              excludeShellChecks = [ ];
+              text = ''
+                set -e
+                set -x
+                shouldCheckWithoutCache="${shouldCheckWithoutCache}"
+                [ -f "$RESTIC_REPOSITORY_FILE" ]
+                key="$(sha256sum < "$RESTIC_REPOSITORY_FILE" | head -1 | awk '{print $1}')"
+                last_check="$(cat "$RESTIC_CACHE_DIR/.last_check.$key" 2>/dev/null || echo "0")"
+                current_time="$(date +%s)"
+                if [[ "$shouldCheckWithoutCache" = "true" && $((current_time - last_check)) -ge "$((60*60*24*7))" ]]; then
+                  echo "$current_time" | tee "$RESTIC_CACHE_DIR/.last_check.$key"
+                  "${resticCmd}" check --no-cache --verbose=2
+                else
+                  "${resticCmd}" check --with-cache --cache-dir="$RESTIC_CACHE_DIR"
+                fi
+              '';
+            };
+          in
+          {
+            after = after;
+            onSuccess = lib.optionals withBark [ "systemd-notify-success@%i.service" ];
+            onFailure = lib.optionals withBark [ "systemd-notify-failure@%i.service" ];
+            serviceConfig.ExecStart = lib.mkAfter [ "${lib.getExe checkScript}" ];
+          }
+        )
+      ) resticS3Providers
+    )
+  );
 
   environment.persistence = {
-    "${persistPath}".directories = (map
-      (name: {
+    "${persistPath}".directories =
+      (map (name: {
         directory = "/var/cache/restic-backups-laptop2-${name}";
         user = "root";
         group = "root";
         mode = "0700";
-      })
-      resticS3Providers) ++ [
-      # {
-      #   directory = "/root/.cache/borg";
-      #   user = "root";
-      #   group = "root";
-      #   mode = "0755";
-      # }
-    ];
+      }) resticS3Providers)
+      ++ [
+        # {
+        #   directory = "/root/.cache/borg";
+        #   user = "root";
+        #   group = "root";
+        #   mode = "0755";
+        # }
+      ];
   };
 }

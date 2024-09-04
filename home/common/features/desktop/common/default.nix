@@ -1,4 +1,10 @@
-{ config, persistPath, nixosConfig, lib, ... }:
+{
+  config,
+  persistPath,
+  nixosConfig,
+  lib,
+  ...
+}:
 
 let
   X = nixosConfig.services.xserver.windowManager.i3.enable;
