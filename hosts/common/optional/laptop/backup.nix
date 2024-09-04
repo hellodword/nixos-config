@@ -94,6 +94,10 @@ let
         find "${persistPath}/home/${userName}/.android" -type f -name adbkey* || true
 
         # find "${persistPath}/home/${userName}/.cache" -type f -name rofi3.druncache || true
+
+        if [ -d "${persistPath}/home/${userName}/.config/anytype/data" ]; then
+          echo "${persistPath}/home/${userName}/.config/anytype/data"
+        fi
       '';
       exclude = [ ];
       paths = [
