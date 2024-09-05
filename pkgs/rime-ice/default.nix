@@ -8,7 +8,7 @@
 }:
 
 let
-  rev = "37ca416a9c755716d049c549b131276ddc440688";
+  rev = "0367c85243ecf22d064f45cab29a47a3a1652e80";
 in
 stdenvNoCC.mkDerivation rec {
   pname = "rime-ice";
@@ -17,7 +17,7 @@ stdenvNoCC.mkDerivation rec {
     owner = "iDvel";
     repo = pname;
     rev = rev;
-    hash = "sha256-uEE+KWkIjCvB/cuLNm94lFm7HLb9cCgFE7t6NCTVEoo=";
+    hash = "sha256-uzEN8xjfpEdYMDX2AisS0Df+V0+gdOeJGQxQJZIuffo=";
   };
 
   installPhase = ''
