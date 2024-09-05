@@ -19,7 +19,12 @@
     daemon.settings = {
       fixed-cidr-v6 = "fd00::/80";
       ipv6 = true;
-      runtimes.runsc.path = "${pkgs.gvisor}/bin/runsc";
+      runtimes.runsc = {
+        path = "${pkgs.gvisor}/bin/runsc";
+        "runtimeArgs" = [
+          "--platform=systrap"
+        ];
+      };
     };
     # extraOptions = ''
     #   --default-ulimit nofile=104857600:104857600
