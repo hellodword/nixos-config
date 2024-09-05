@@ -12,7 +12,7 @@
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
     impermanence.url = "github:nix-community/impermanence";
     sops-nix = {
-      url = "github:Mic92/sops-nix/b6cb5de2ce57acb10ecdaaf9bbd62a5ff24fa02e";
+      url = "github:Mic92/sops-nix/d9d781523a1463965cd1e1333a306e70d9feff07";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
