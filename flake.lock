@@ -238,17 +238,17 @@
     "firejail-src": {
       "flake": false,
       "locked": {
-        "lastModified": 1718467113,
-        "narHash": "sha256-+YgDHHYwPeCLCT4Ey89AhC5F0EWVPOrbeJ7Tu4e1MW4=",
+        "lastModified": 1725207710,
+        "narHash": "sha256-KwZRe2KF8dWtKSsVgauFn6Uxvhx1Vny5q64FPeddWOM=",
         "owner": "netblue30",
         "repo": "firejail",
-        "rev": "b89ec818926b4bcd3a58bb4e2a67b68a8090ba1c",
+        "rev": "897f12dd88c1add667ecb211b61b6126a49c7065",
         "type": "github"
       },
       "original": {
         "owner": "netblue30",
         "repo": "firejail",
-        "rev": "b89ec818926b4bcd3a58bb4e2a67b68a8090ba1c",
+        "rev": "897f12dd88c1add667ecb211b61b6126a49c7065",
         "type": "github"
       }
     },
