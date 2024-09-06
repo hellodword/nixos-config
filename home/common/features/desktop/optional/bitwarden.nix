@@ -16,7 +16,7 @@ in
       if nixosConfig.programs.firejail.enable then
         (mkJailed {
           originalPkg = bitwarden;
-          profile = "${pkgs.firejail}/etc/firejail/bitwarden.profile";
+          profile = ./bitwarden.profile;
         })
       else
         bitwarden
