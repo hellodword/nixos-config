@@ -33,17 +33,17 @@
         "systems": "systems_3"
       },
       "locked": {
-        "lastModified": 1725638485,
-        "narHash": "sha256-xl5LtTkD24FZAfMY45YRpBR9xi5PVjIgiLwt0dslpQM=",
+        "lastModified": 1725675710,
+        "narHash": "sha256-S0t1xZPWDlgzYX/x/PzA8pRyxKgGkRu9LKCELLp5q5U=",
         "owner": "squalus",
         "repo": "anytype-flake",
-        "rev": "194c79b3abdc5c4e552b8bd50ed7fa7c305dd448",
+        "rev": "0625536db09d025b75b7ac38258da4e1eaa104d2",
         "type": "github"
       },
       "original": {
         "owner": "squalus",
         "repo": "anytype-flake",
-        "rev": "194c79b3abdc5c4e552b8bd50ed7fa7c305dd448",
+        "rev": "0625536db09d025b75b7ac38258da4e1eaa104d2",
         "type": "github"
       }
     },
