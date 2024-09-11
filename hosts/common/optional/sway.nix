@@ -70,6 +70,7 @@ in
       flavor = "mocha";
       font = "Noto Sans";
       fontSize = "12";
+      loginBackground = true;
     })
   ];
 
@@ -80,6 +81,7 @@ in
       ({
         enable = true;
         wayland.enable = true;
+        package = pkgs.kdePackages.sddm;
         theme = "catppuccin-mocha";
       })
     else
