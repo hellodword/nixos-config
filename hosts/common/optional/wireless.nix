@@ -24,6 +24,9 @@
       "@TRAVEL_SSID@" = {
         psk = "@TRAVEL_PSK@";
       };
+      "@IPHONE_SSID@" = {
+        psk = "@IPHONE_PSK@";
+      };
     };
 
     # # Imperative
