@@ -27,6 +27,9 @@
       "@IPHONE_SSID@" = {
         psk = "@IPHONE_PSK@";
       };
+      "@MIFI_SSID@" = {
+        psk = "@MIFI_PSK@";
+      };
     };
 
     # # Imperative
