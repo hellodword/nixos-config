@@ -16,19 +16,19 @@
     enable = true;
     fallbackToWPA2 = false;
     # Declarative
-    environmentFile = config.sops.secrets."wireless".path;
+    secretsFile = config.sops.secrets."wireless".path;
     networks = {
       "@HOME_SSID@" = {
-        psk = "@HOME_PSK@";
+        pskRaw = "ext:HOME_PSK";
       };
       "@TRAVEL_SSID@" = {
-        psk = "@TRAVEL_PSK@";
+        pskRaw = "ext:TRAVEL_PSK";
       };
       "@IPHONE_SSID@" = {
-        psk = "@IPHONE_PSK@";
+        pskRaw = "ext:IPHONE_PSK";
       };
       "@MIFI_SSID@" = {
-        psk = "@MIFI_PSK@";
+        pskRaw = "ext:MIFI_PSK";
       };
     };
 
