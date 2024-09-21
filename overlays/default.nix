@@ -71,11 +71,21 @@
       postInstall = "sed -i 's/Exec=feh/Exec=feh --scale-down --auto-zoom/' $out/share/applications/feh.desktop";
     });
 
-    sing-box = prev.sing-box.overrideDerivation (oldAttrs: {
+    sing-box = prev.sing-box.overrideDerivation (oldAttrs: rec {
       patches = (oldAttrs.patches or [ ]) ++ [
         # https://github.com/SagerNet/sing-box/issues/1494
         ./sing-box-http2ping.patch
       ];
+      version = "1.9.6";
+
+      src = prev.fetchFromGitHub {
+        owner = "SagerNet";
+        repo = oldAttrs.pname;
+        rev = "v${version}";
+        hash = "sha256-A9FfATNCS3UaW6YLORIApsgj0VK2jPyg+Ha2gcq6Keo=";
+      };
+
+      vendorHash = "sha256-/lp+3mPkGMABpvnxqpuC/7NiKrmcEWYQ80Wb7Ng1eBI=";
     });
 
     firejail = prev.firejail.overrideDerivation (oldAttrs: {
