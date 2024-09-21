@@ -1,12 +1,5 @@
 { inputs, ... }:
 
-let
-  addPatches =
-    pkg: patches:
-    pkg.overrideAttrs (oldAttrs: {
-      patches = (oldAttrs.patches or [ ]) ++ patches;
-    });
-in
 {
   # For every flake input, aliases 'pkgs.inputs.${flake}' to
   # 'inputs.${flake}.packages.${pkgs.system}' or
@@ -26,32 +19,34 @@ in
   modifications = final: prev: {
 
     # https://github.com/Guanran928/flake/blob/32524d8f91f85936616bb7f0859113dfc3cf46a5/overlays/sway/default.nix
-    sway-unwrapped = addPatches prev.sway-unwrapped [
-      # https://github.com/swaywm/sway/compare/1.9...NickHu:sway:feature/tray-dbus-menu-1.9.patch
-      # https://github.com/swaywm/sway/pull/6249#issuecomment-1974771913
-      (prev.fetchpatch {
-        name = "tray-dbus-menu-1.9.patch";
-        url = "https://github.com/swaywm/sway/compare/1.9...NickHu:sway:feature/tray-dbus-menu-1.9.patch";
-        hash = "sha256-P7ede/4csFycKq5dW9Z5PrqVg+8if3xIm+T8dT4Z7b0=";
-      })
+    sway-unwrapped = prev.sway-unwrapped.overrideAttrs (oldAttrs: {
+      patches = (oldAttrs.patches or [ ]) ++ [
+        # https://github.com/swaywm/sway/compare/1.9...NickHu:sway:feature/tray-dbus-menu-1.9.patch
+        # https://github.com/swaywm/sway/pull/6249#issuecomment-1974771913
+        (prev.fetchpatch {
+          name = "tray-dbus-menu-1.9.patch";
+          url = "https://github.com/swaywm/sway/compare/1.9...NickHu:sway:feature/tray-dbus-menu-1.9.patch";
+          hash = "sha256-P7ede/4csFycKq5dW9Z5PrqVg+8if3xIm+T8dT4Z7b0=";
+        })
 
-      # https://aur.archlinux.org/cgit/aur.git/tree/?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94
-      (prev.fetchpatch {
-        name = "0001-text_input-Implement-input-method-popups.patch";
-        url = "https://aur.archlinux.org/cgit/aur.git/plain/0001-text_input-Implement-input-method-popups.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
-        hash = "sha256-A+rBaWMWs616WllVoo21AJaf9lxg/oCG0b9tHLfuJII=";
-      })
-      (prev.fetchpatch {
-        name = "0002-chore-fractal-scale-handle.patch";
-        url = "https://aur.archlinux.org/cgit/aur.git/plain/0002-chore-fractal-scale-handle.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
-        hash = "sha256-YOFm0A4uuRSuiwnvF9xbp8Wl7oGicFGnq61vLegqJ0E=";
-      })
-      (prev.fetchpatch {
-        name = "0003-chore-left_pt-on-method-popup.patch";
-        url = "https://aur.archlinux.org/cgit/aur.git/plain/0003-chore-left_pt-on-method-popup.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
-        hash = "sha256-PzhQBRpyB1WhErn05UBtBfaDW5bxnQLRKWu8jy7dEiM=";
-      })
-    ];
+        # https://aur.archlinux.org/cgit/aur.git/tree/?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94
+        (prev.fetchpatch {
+          name = "0001-text_input-Implement-input-method-popups.patch";
+          url = "https://aur.archlinux.org/cgit/aur.git/plain/0001-text_input-Implement-input-method-popups.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
+          hash = "sha256-A+rBaWMWs616WllVoo21AJaf9lxg/oCG0b9tHLfuJII=";
+        })
+        (prev.fetchpatch {
+          name = "0002-chore-fractal-scale-handle.patch";
+          url = "https://aur.archlinux.org/cgit/aur.git/plain/0002-chore-fractal-scale-handle.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
+          hash = "sha256-YOFm0A4uuRSuiwnvF9xbp8Wl7oGicFGnq61vLegqJ0E=";
+        })
+        (prev.fetchpatch {
+          name = "0003-chore-left_pt-on-method-popup.patch";
+          url = "https://aur.archlinux.org/cgit/aur.git/plain/0003-chore-left_pt-on-method-popup.patch?h=sway-im&id=b8434b3ad9e8c6946dbf7b14b0f7ef5679452b94";
+          hash = "sha256-PzhQBRpyB1WhErn05UBtBfaDW5bxnQLRKWu8jy7dEiM=";
+        })
+      ];
+    });
 
     # electron_27 = prev.electron_27.overrideAttrs (oldAttrs: {
     #   buildCommand = prev.lib.replaceStrings
@@ -76,10 +71,12 @@ in
       postInstall = "sed -i 's/Exec=feh/Exec=feh --scale-down --auto-zoom/' $out/share/applications/feh.desktop";
     });
 
-    sing-box = addPatches prev.sing-box [
-      # https://github.com/SagerNet/sing-box/issues/1494
-      ./sing-box-http2ping.patch
-    ];
+    sing-box = prev.sing-box.overrideDerivation (oldAttrs: {
+      patches = (oldAttrs.patches or [ ]) ++ [
+        # https://github.com/SagerNet/sing-box/issues/1494
+        ./sing-box-http2ping.patch
+      ];
+    });
 
     firejail = prev.firejail.overrideDerivation (oldAttrs: {
       src = inputs.firejail-src;
