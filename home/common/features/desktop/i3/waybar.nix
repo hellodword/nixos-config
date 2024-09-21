@@ -47,6 +47,7 @@
             "network#ethernet"
             "network#wireless"
             "network#wgcf"
+            "network#sb-tun"
           ]
           ++ (lib.optionals nixosConfig.services.tailscale.enable [
             "network#${nixosConfig.services.tailscale.interfaceName}"
@@ -240,6 +241,13 @@
         };
         "network#wgcf" = {
           "interface" = "wgcf*";
+          "format-ethernet" = "{ifname}";
+          "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
+          "format-linked" = "{ifname} (No IP)";
+          "format-disconnected" = "{ifname}";
+        };
+        "network#sb-tun" = {
+          "interface" = "sb-tun";
           "format-ethernet" = "{ifname}";
           "tooltip-format" = "{ifname}/{ipaddr} via {gwaddr} 🖧";
           "format-linked" = "{ifname} (No IP)";
