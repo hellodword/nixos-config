@@ -258,7 +258,11 @@ in
             Type = "simple";
 
             Environment = "USE_HTTP2PING=true";
-            ExecStartPre = [ "+${sbGenerate}/bin/exe" ];
+            ExecStartPre = [
+              # Fix perm after debugging sing-box with sudo
+              "+${lib.getExe' pkgs.coreutils "coreutils"} --coreutils-prog=chown -R sing-box:sing-box ${sbBaseReal}"
+              "+${sbGenerate}/bin/exe"
+            ];
             ExecStop = (map (x: "+${sbBypassUserDel}/bin/exe ${x.user}") config.me.sing-box-bypass-services);
             ExecStart = "${pkgs.sing-box}/bin/sing-box run --disable-color -D ${sbBase} -c ${sbConfigFile}";
 
