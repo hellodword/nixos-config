@@ -482,7 +482,7 @@ in
         tag = "auto:proxy";
         tolerance = 25;
         type = "urltest";
-        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
+        url = "https://github.com"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
       {
         idle_timeout = "30m";
@@ -494,7 +494,7 @@ in
         tag = "auto:hideme";
         tolerance = 25;
         type = "urltest";
-        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
+        url = "https://github.com"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
       {
         idle_timeout = "30m";
@@ -506,7 +506,7 @@ in
         tag = "auto:crypto";
         tolerance = 25;
         type = "urltest";
-        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
+        url = "https://github.com"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
     ];
     route = {
