@@ -89,7 +89,7 @@
     };
 
     anytype-flake = {
-      url = "github:squalus/anytype-flake/4ec4d40a0a7ca906429b633acd2a52f4e4da8103";
+      url = "github:squalus/anytype-flake/6086700d517ad6fb09fddbb8d55ebdbe4e61bfc9";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
