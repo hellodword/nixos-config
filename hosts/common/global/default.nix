@@ -93,4 +93,19 @@
       };
     }) (builtins.attrNames inputs)
   );
+
+  # Revert hardening https://github.com/NixOS/nixpkgs/pull/339050
+  services.logrotate.allowNetworking = true;
+  systemd.services.logrotate.serviceConfig = {
+    # ReadWritePaths = [
+    #   "/var/log"
+    #   "/var/log/private"
+    # ];
+    CapabilityBoundingSet = [
+      "CAP_SETUID"
+      "CAP_DAC_OVERRIDE"
+    ];
+    SystemCallFilter = [ "@setuid" ];
+    # NoNewPrivileges = lib.mkForce false;
+  };
 }
