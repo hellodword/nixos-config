@@ -4,6 +4,7 @@
   outputs,
   pkgs,
   commonArgs,
+  lib,
   ...
 }:
 
@@ -94,18 +95,8 @@
     }) (builtins.attrNames inputs)
   );
 
-  # Revert hardening https://github.com/NixOS/nixpkgs/pull/339050
-  services.logrotate.allowNetworking = true;
+  # for systemctl restart/reload in postrotate
   systemd.services.logrotate.serviceConfig = {
-    # ReadWritePaths = [
-    #   "/var/log"
-    #   "/var/log/private"
-    # ];
-    CapabilityBoundingSet = [
-      "CAP_SETUID"
-      "CAP_DAC_OVERRIDE"
-    ];
-    SystemCallFilter = [ "@setuid" ];
-    # NoNewPrivileges = lib.mkForce false;
+    RestrictAddressFamilies = lib.mkForce "AF_UNIX";
   };
 }
