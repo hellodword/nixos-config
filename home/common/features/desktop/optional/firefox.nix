@@ -400,6 +400,9 @@ in
 
             # disable HTTP/3
             user_pref("network.http.http3.enable", false);
+
+            # do not upgrade extensions automatically
+            user_pref("extensions.update.autoUpdateDefault", false);
           ''
         ];
       };
