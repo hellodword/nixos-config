@@ -94,7 +94,7 @@
     };
 
     firejail-src = {
-      url = "github:netblue30/firejail/897f12dd88c1add667ecb211b61b6126a49c7065";
+      url = "github:netblue30/firejail/116f7bf833b1dd73391f10884f66ad1670608f23";
       flake = false;
     };
 
