@@ -4,6 +4,10 @@ mkdir ${HOME}/.config/anytype
 noblacklist ${HOME}/.config/anytype
 whitelist ${HOME}/.config/anytype
 
+# https://github.com/netblue30/firejail/issues/3982#issuecomment-778480897
+whitelist ${HOME}/.mozilla/firefox/profiles.ini
+read-only ${HOME}/.mozilla/firefox/profiles.ini
+
 # https://github.com/anyproto/anytype-ts/blob/e9bdf53c82e6f7686a42c082072f8a05bc74673b/electron/js/lib/installNativeMessagingHost.js#L152-L155
 noblacklist ${HOME}/.config/BraveSoftware/Brave-Browser
 mkdir ${HOME}/.config/BraveSoftware/Brave-Browser/NativeMessagingHosts
