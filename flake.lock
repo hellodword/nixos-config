@@ -33,28 +33,28 @@
         "systems": "systems_3"
       },
       "locked": {
-        "lastModified": 1728402579,
-        "narHash": "sha256-fvVQoy0tUVjiHQwlKKR2CyEn9cqecwcCA9F9ZkYmpC4=",
+        "lastModified": 1729046974,
+        "narHash": "sha256-LnXS1W2e0kn91m/yIuhhUv/1Xbs/tmKvVTfCisAPFEI=",
         "owner": "squalus",
         "repo": "anytype-flake",
-        "rev": "3805886be48304431dec1de0b00e5a21322c337b",
+        "rev": "a1f0fe0c65d1e5153f7e9a2094b12e051aa1b163",
         "type": "github"
       },
       "original": {
         "owner": "squalus",
         "repo": "anytype-flake",
-        "rev": "3805886be48304431dec1de0b00e5a21322c337b",
+        "rev": "a1f0fe0c65d1e5153f7e9a2094b12e051aa1b163",
         "type": "github"
       }
     },
     "anytype-l10n": {
       "flake": false,
       "locked": {
-        "lastModified": 1728147633,
-        "narHash": "sha256-Fm/yF+yg+Eo+FLCJuk2TVFKwfJrflNKFSiG1GVhyIOw=",
+        "lastModified": 1729010539,
+        "narHash": "sha256-q1ASRwspxb2YLtnU6ffN7CCkmUD69dYALwD3Moh1Chk=",
         "owner": "anyproto",
         "repo": "l10n-anytype-ts",
-        "rev": "32e9d218c18d34be4680136346c8d18f0b8329af",
+        "rev": "c0d214404b224aae51d1597a8de8fb32ff9b597f",
         "type": "github"
       },
       "original": {
