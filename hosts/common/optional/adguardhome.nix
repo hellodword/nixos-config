@@ -251,7 +251,7 @@ in
           ExecStartPre = [
             # 直连
             "+${upBypass}/bin/up"
-            "+${upBypass6}/bin/up"
+            # "+${upBypass6}/bin/up"
           ];
         };
     };
