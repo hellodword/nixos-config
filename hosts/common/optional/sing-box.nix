@@ -369,52 +369,52 @@ in
     inbounds = [
       {
         auto_route = true;
-        inet4_address = "172.19.0.1/30";
-        inet6_address = "fdfe:dcba:9876::1/126";
+        address = [
+          "172.19.0.1/30"
+          "fdfe:dcba:9876::1/126"
+        ];
         interface_name = "sb-tun";
         sniff = true;
         strict_route = false;
         tag = "in:tun";
         type = "tun";
-        inet4_route_exclude_address =
-          [
-            # bypass tailscale
-            # https://tailscale.com/kb/1015/100.x-addresses/
-            # https://quanquan.space/viewtopic.php?t=1350
-            "100.64.0.0/10"
-          ]
-          ++ [
-            "10.0.0.0/8"
-            "127.0.0.0/8"
+        route_exclude_address = [
+          # https://en.wikipedia.org/wiki/Reserved_IP_addresses
+          "10.0.0.0/8"
+          "127.0.0.0/8"
+          "192.0.0.0/24"
+          "192.168.0.0/16"
+          "198.18.0.0/15"
+          "::1/128"
 
-            # # 172.16.0.0/12 - 172.19.0.1/30
-            "172.16.0.0/15"
-            "172.18.0.0/16"
-            "172.19.0.4/30"
-            "172.19.0.8/29"
-            "172.19.0.16/28"
-            "172.19.0.32/27"
-            "172.19.0.64/26"
-            "172.19.0.128/25"
-            "172.19.1.0/24"
-            "172.19.2.0/23"
-            "172.19.4.0/22"
-            "172.19.8.0/21"
-            "172.19.16.0/20"
-            "172.19.32.0/19"
-            "172.19.64.0/18"
-            "172.19.128.0/17"
-            "172.20.0.0/14"
-            "172.24.0.0/13"
+          # bypass tailscale
+          # https://tailscale.com/kb/1015/100.x-addresses/
+          # https://quanquan.space/viewtopic.php?t=1350
+          "100.64.0.0/10"
 
-            "192.0.0.0/24"
-            "192.168.0.0/16"
-            "198.18.0.0/15"
-          ];
-        inet6_route_exclude_address = [
-          # tailscale
           "fd7a:115c:a1e0::/48"
-        ] ++ [ "::1/128" ];
+
+          # # for docker bridge network
+          # # 172.16.0.0/12 exclude 172.19.0.1/30 because it's the sing-tun inet4_address
+          "172.16.0.0/15"
+          "172.18.0.0/16"
+          "172.19.0.4/30"
+          "172.19.0.8/29"
+          "172.19.0.16/28"
+          "172.19.0.32/27"
+          "172.19.0.64/26"
+          "172.19.0.128/25"
+          "172.19.1.0/24"
+          "172.19.2.0/23"
+          "172.19.4.0/22"
+          "172.19.8.0/21"
+          "172.19.16.0/20"
+          "172.19.32.0/19"
+          "172.19.64.0/18"
+          "172.19.128.0/17"
+          "172.20.0.0/14"
+          "172.24.0.0/13"
+        ];
       }
       # listen on ipv4 all and ipv6 local
       # curl ip.sb --proxy socks5h://localhost:10800 -4
