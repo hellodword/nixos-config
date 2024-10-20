@@ -63,11 +63,6 @@ let
     # "162.159.46.1"
   ];
 
-  PlainProxy = [
-    # "1.1.1.1"
-    # "8.8.8.8"
-  ];
-
   DoTProxy = [
     # # google
     # "8.8.4.4"
@@ -113,85 +108,85 @@ let
   DoH3 = [ ];
   DoH36 = [ ];
 
-  upBypass = pkgs.writeShellApplication {
-    name = "up";
-    runtimeInputs = with pkgs; [
-      ipset
-      iptables
-    ];
-    text = ''
-      set -x
+  # upBypass = pkgs.writeShellApplication {
+  #   name = "up";
+  #   runtimeInputs = with pkgs; [
+  #     ipset
+  #     iptables
+  #   ];
+  #   text = ''
+  #     set -x
 
-      ipset list adguardhome_bypass > /dev/null || ipset create adguardhome_bypass hash:ip family inet
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) ChinaDoT)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) DoT)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) DoH3)}
+  #     ipset list adguardhome_bypass > /dev/null || ipset create adguardhome_bypass hash:ip family inet
+  #     ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) ChinaDoT)}
+  #     ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) DoT)}
+  #     ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass " + ip) DoH3)}
 
-      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
-      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
+  #     iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
 
-      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820 || \
-      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820
+  #     iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820
 
-      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
-      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
+  #     iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
 
-      iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820 || \
-      iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820
+  #     iptables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820
 
-      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
-      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
+  #     iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 53  -j MARK --set-mark 41820
 
-      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820 || \
-      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820
+  #     iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 53  -j MARK --set-mark 41820
 
-      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
-      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
+  #     iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p tcp --dport 853 -j MARK --set-mark 41820
 
-      iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820 || \
-      iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820
-    '';
-  };
+  #     iptables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+  #     iptables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass dst -p udp --dport 443 -j MARK --set-mark 41820
+  #   '';
+  # };
 
-  upBypass6 = pkgs.writeShellApplication {
-    name = "up";
-    runtimeInputs = with pkgs; [
-      ipset
-      iptables
-    ];
-    text = ''
-      set -x
+  # upBypass6 = pkgs.writeShellApplication {
+  #   name = "up";
+  #   runtimeInputs = with pkgs; [
+  #     ipset
+  #     iptables
+  #   ];
+  #   text = ''
+  #     set -x
 
-      ipset list adguardhome_bypass6 > /dev/null || ipset create adguardhome_bypass6 hash:ip family inet6
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) ChinaDoT6)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) DoT6)}
-      ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) DoH36)}
+  #     ipset list adguardhome_bypass6 > /dev/null || ipset create adguardhome_bypass6 hash:ip family inet6
+  #     ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) ChinaDoT6)}
+  #     ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) DoT6)}
+  #     ${lib.concatStringsSep "\n" (map (ip: "ipset add -! adguardhome_bypass6 " + ip) DoH36)}
 
-      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
+  #     ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
 
-      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820
+  #     ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820
 
-      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
+  #     ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
 
-      ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
+  #     ip6tables -t mangle -C OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I OUTPUT     -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
 
-      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
+  #     ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 53  -j MARK --set-mark 41820
 
-      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820
+  #     ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 53  -j MARK --set-mark 41820
 
-      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
+  #     ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p tcp --dport 853 -j MARK --set-mark 41820
 
-      ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820 || \
-      ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
-    '';
-  };
+  #     ip6tables -t mangle -C PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820 || \
+  #     ip6tables -t mangle -I PREROUTING -m set --match-set adguardhome_bypass6 dst -p udp --dport 443 -j MARK --set-mark 41820
+  #   '';
+  # };
 
 in
 {
@@ -250,7 +245,7 @@ in
 
           ExecStartPre = [
             # 直连
-            "+${upBypass}/bin/up"
+            # "+${upBypass}/bin/up"
             # "+${upBypass6}/bin/up"
           ];
         };
@@ -379,7 +374,6 @@ in
           ++ (map (x: "tls://[" + x + "]") DoT6)
           ++ (map (x: "quic://[" + x + "]") DoQ6)
           ++ (map (x: "h3://[" + x + "]") DoH36)
-          ++ PlainProxy
           ++ (map (x: "tls://" + x) DoTProxy)
           ++ (map (x: "tls://[" + x + "]") DoT6Proxy)
           ++ [
