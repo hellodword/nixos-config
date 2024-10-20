@@ -71,6 +71,13 @@
     ];
   };
 
+  me.sing-box-bypass-services = [
+    {
+      user = "systemd-timesync";
+      service = "systemd-timesyncd";
+    }
+  ];
+
   # # # 直连
   # # systemd.services.chronyd.serviceConfig.ExecStartPre = lib.optionals config.services.v2ray.enable [
   # #   "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner chrony -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner chrony -j RETURN || true'"
