@@ -46,9 +46,13 @@ done
 
 _DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:129.0) Gecko/20100101 Firefox/129.0' -H 'Accept: application/json, text/plain, */*' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br, zstd' -H 'Content-Type: application/json' -H 'Origin: https://stock.hostmonit.com' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Referer: https://stock.hostmonit.com/' -H 'Sec-Fetch-Dest: empty' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-site' -H 'Priority: u=0' -H 'TE: trailers' --json '{"key":"iDetkOys", "type":"v4"}')"
 handle_2 "v4" "cm" "$_DATA"
+handle_2 "v4" "cu" "$_DATA"
+handle_2 "v4" "ct" "$_DATA"
 
 _DATA="$(curl --resolve "api.hostmonit.com:443:$RESOLVE" --interface "$INTERFACE" -X POST -fsSL https://api.hostmonit.com/get_optimization_ip -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:129.0) Gecko/20100101 Firefox/129.0' -H 'Accept: application/json, text/plain, */*' -H 'Accept-Language: en-US,en;q=0.5' -H 'Accept-Encoding: gzip, deflate, br, zstd' -H 'Content-Type: application/json' -H 'Origin: https://stock.hostmonit.com' -H 'DNT: 1' -H 'Connection: keep-alive' -H 'Referer: https://stock.hostmonit.com/' -H 'Sec-Fetch-Dest: empty' -H 'Sec-Fetch-Mode: cors' -H 'Sec-Fetch-Site: same-site' -H 'Priority: u=0' -H 'TE: trailers' --json '{"key":"iDetkOys", "type":"v6"}')"
 handle_2 "v6" "cm" "$_DATA"
+handle_2 "v6" "cu" "$_DATA"
+handle_2 "v6" "ct" "$_DATA"
 
 NEW="$(jq -r '.outbounds[] | select(.tag | startswith("proxy:us:cf:yes-")).server' "$CONFIG_FILE" | sort)"
 
