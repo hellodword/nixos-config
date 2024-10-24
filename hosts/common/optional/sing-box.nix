@@ -130,8 +130,6 @@ let
   };
 in
 {
-  environment.systemPackages = with pkgs; [ sing-box ];
-
   # sing-tun may not working after networking state changes
   # https://github.com/SagerNet/sing-box/issues/1415
   services.networkd-dispatcher =
