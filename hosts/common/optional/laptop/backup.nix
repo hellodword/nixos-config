@@ -25,7 +25,7 @@ let
     # # "wasabi"
     "r2"
     "b2"
-    "telnyx"
+    # "telnyx"
   ];
 
   mkResticS3 =
