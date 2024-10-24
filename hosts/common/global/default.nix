@@ -99,4 +99,10 @@
   systemd.services.logrotate.serviceConfig = {
     RestrictAddressFamilies = lib.mkForce "AF_UNIX";
   };
+
+  boot.kernel.sysctl = {
+    # https://www.debian.org/doc/manuals/securing-debian-manual/restrict-sysrq.html
+    # https://security.stackexchange.com/a/138660
+    "kernel.sysrq" = "1";
+  };
 }
