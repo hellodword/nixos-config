@@ -104,5 +104,11 @@
     # https://www.debian.org/doc/manuals/securing-debian-manual/restrict-sysrq.html
     # https://security.stackexchange.com/a/138660
     "kernel.sysrq" = "1";
+
+    ## Disable io_uring
+    ## https://lore.kernel.org/lkml/20230629132711.1712536-1-matteorizzo@google.com/T/
+    ## https://security.googleblog.com/2023/06/learnings-from-kctf-vrps-42-linux.html
+    # FIXME: always hang during buildNpmPackage, the `npm ci` or `webpack` will be D state in nixbuilder
+    "kernel.io_uring_disabled" = "1";
   };
 }
