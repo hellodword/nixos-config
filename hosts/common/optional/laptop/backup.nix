@@ -20,7 +20,7 @@ let
   withBark = (lib.hasAttr "sops" config && lib.hasAttr "bark-device-token" config.sops.secrets);
 
   resticS3Providers = [
-    "idrive"
+    # "idrive"
     "scaleway"
     # # "wasabi"
     "r2"
