@@ -111,4 +111,10 @@
     # FIXME: always hang during buildNpmPackage, the `npm ci` or `webpack` will be D state in nixbuilder
     "kernel.io_uring_disabled" = "1";
   };
+
+  # https://github.com/NickCao/flakes/blob/bdd0ef6fa7a5cf17922e0dc6af94f484e0409d51/modules/baseline.nix#L74-L76
+  # systemd-machine-id-commit.service fail with "/etc/machine-id is not on a temporary file system"
+  systemd.suppressedSystemUnits = [
+    "systemd-machine-id-commit.service"
+  ];
 }
