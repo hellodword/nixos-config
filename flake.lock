@@ -33,11 +33,11 @@
         "systems": "systems_3"
       },
       "locked": {
-        "lastModified": 1730378593,
-        "narHash": "sha256-s0JsN7ibXlHYm1sTqEiZPI/5eVUeABCN/gKCkP9N7GM=",
+        "lastModified": 1730446948,
+        "narHash": "sha256-LsHgGODvUH6+R8P+offi0AtFU0aRnSvvpORcIPcY+Yk=",
         "owner": "hellodword",
         "repo": "anytype-flake",
-        "rev": "44a51f0901cf8106f0fb552b478c6f655b556516",
+        "rev": "632f49b1082d2ef6e16ada3dcc494075f8668c52",
         "type": "github"
       },
       "original": {
