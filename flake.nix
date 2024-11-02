@@ -31,7 +31,7 @@
 
     # https://github.com/Baitinq/nixos-config/blob/1ab479c29c7dc2629664ffb80653616666019b9e/flake.nix#L32
     arkenfox-userjs = {
-      url = "github:arkenfox/user.js/ff5c959cb9b5a65ede9aab82b00cbb283b160e14";
+      url = "github:arkenfox/user.js";
       flake = false;
     };
     # thunderbird-userjs = {
