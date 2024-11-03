@@ -79,7 +79,13 @@
     });
 
     firejail = prev.firejail.overrideDerivation (oldAttrs: {
-      src = inputs.firejail-src;
+      src = prev.fetchFromGitHub {
+        owner = "netblue30";
+        repo = "firejail";
+        rev = "116f7bf833b1dd73391f10884f66ad1670608f23";
+        hash = "sha256-lwDG6GsEjBm63m1wYDx3PYYW3tLUy65sIaWMRece8HQ=";
+        fetchSubmodules = false;
+      };
     });
   };
 }

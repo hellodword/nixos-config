@@ -93,11 +93,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    firejail-src = {
-      url = "github:netblue30/firejail/116f7bf833b1dd73391f10884f66ad1670608f23";
-      flake = false;
-    };
-
     reproducible-violentmonkey = {
       url = "github:hellodword/reproducible-violentmonkey";
       flake = false;
