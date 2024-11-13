@@ -33,11 +33,11 @@
         "systems": "systems_3"
       },
       "locked": {
-        "lastModified": 1731373734,
-        "narHash": "sha256-W3W1ZItjHxWcUGtMYnW5Aec/fDefeZvMMhelFL+Bd1s=",
+        "lastModified": 1731460022,
+        "narHash": "sha256-7vOSvfAnEHJSAPmgUinnJuLod0lbxqZ9R2anQvu9myo=",
         "owner": "hellodword",
         "repo": "anytype-flake",
-        "rev": "d11d6a301793da8fb26987cbe19d77b787e82fe0",
+        "rev": "5d6f0a9bdd0d1e00225f2c696118ee3e879e0c75",
         "type": "github"
       },
       "original": {
@@ -50,11 +50,11 @@
     "anytype-l10n": {
       "flake": false,
       "locked": {
-        "lastModified": 1731344894,
-        "narHash": "sha256-HW2DN2ofShjdQcPr4UYX4K0L6GhZnK9kXhsbVhAiE8E=",
+        "lastModified": 1731427353,
+        "narHash": "sha256-5xZLMFRogk0Dk5S4tTyySadfyKpa862j2eMQplqkR9U=",
         "owner": "anyproto",
         "repo": "l10n-anytype-ts",
-        "rev": "df3b010d07c20df2705b92dfbbbd4aae0ca649ac",
+        "rev": "036b42b15799c4777d8ae08d142e1934aa493961",
         "type": "github"
       },
       "original": {
@@ -610,11 +610,11 @@
     "reproducible-violentmonkey": {
       "flake": false,
       "locked": {
-        "lastModified": 1730509320,
-        "narHash": "sha256-MF/WoN1mxABuMHaZ9Ns+bbgmC6XU0fJjaPkVP0oKVQ4=",
+        "lastModified": 1731418893,
+        "narHash": "sha256-xfS3j6B4qs1P8BmJ1sJtYxFJPLEFSQVU4mqqS56o/58=",
         "owner": "hellodword",
         "repo": "reproducible-violentmonkey",
-        "rev": "7145b5107a5a8a0df8605d640cd9e4f7882b3cce",
+        "rev": "7a89dc250f55e75364be615f643eaeda205887fb",
         "type": "github"
       },
       "original": {
