@@ -278,6 +278,10 @@ in
       user = "mosdns";
       service = "mosdns";
     }
+    {
+      user = "adguardhome";
+      service = "adguardhome";
+    }
   ];
 
   # https://github.com/NixOS/nixpkgs/blob/master/nixos/modules/services/networking/adguardhome.nix
