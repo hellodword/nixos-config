@@ -33,11 +33,11 @@
         "systems": "systems_3"
       },
       "locked": {
-        "lastModified": 1732670116,
-        "narHash": "sha256-MtOoYBG0/zO+hDINJGh5Y0MzqntOATNt/Z/oNxFGD2w=",
+        "lastModified": 1732842996,
+        "narHash": "sha256-Ib775pBlmV7YDu5ta4T6Ol730au8gBG/CC9JllLg6Vg=",
         "owner": "hellodword",
         "repo": "anytype-flake",
-        "rev": "3ea1ff86651986a31fc940d461f33b96f37ac510",
+        "rev": "eabc5d2185b96e86d0baed9652449d54aca6e823",
         "type": "github"
       },
       "original": {
@@ -50,11 +50,11 @@
     "anytype-l10n": {
       "flake": false,
       "locked": {
-        "lastModified": 1732628942,
-        "narHash": "sha256-OCIJH1QorCnq59LdMB4In+YR6pk3P84QbV1Ws6/J92w=",
+        "lastModified": 1732806945,
+        "narHash": "sha256-5qoPWwuBqtaFFlXkuymsA/AHXSO8VkSb0z1HzAYmUj8=",
         "owner": "anyproto",
         "repo": "l10n-anytype-ts",
-        "rev": "d1bb664d48d52e5e175e3cc3c80ea3e7cce9e885",
+        "rev": "17feb9180e216f916cebc1eafe231cfbd235b0fe",
         "type": "github"
       },
       "original": {
