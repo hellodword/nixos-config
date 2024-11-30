@@ -12,20 +12,9 @@
     # enableDefaultFonts = false;
     fontDir.enable = true;
     packages = with pkgs; [
-      (nerdfonts.override {
-        fonts = [
-          "JetBrainsMono"
-          # "RobotoMono"
-          # "FiraCode"
-          "Noto"
-          # "FiraMono"
-          # "Terminus"
-          # "Ubuntu"
-          # "UbuntuMono"
-          # "Iosevka"
-          "NerdFontsSymbolsOnly"
-        ];
-      })
+      nerd-fonts.jetbrains-mono
+      nerd-fonts.noto
+      nerd-fonts.symbols-only
 
       jigmo
 
