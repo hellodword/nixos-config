@@ -19,7 +19,6 @@
     # inputs.nixos-hardware.nixosModules.common-gpu-intel
     inputs.nixos-hardware.nixosModules.common-pc-laptop
     inputs.nixos-hardware.nixosModules.common-pc-laptop-ssd
-    inputs.nixos-hardware.nixosModules.common-pc-laptop-acpi_call
   ];
 
   boot.initrd.availableKernelModules = [
