@@ -313,6 +313,15 @@ in
               definedAliases = [ "@translate" ];
               iconUpdateURL = "https://translate.google.com/favicon.ico";
             };
+            "LET" = {
+              urls = [
+                {
+                  template = "https://google.com/search?q={searchTerms}+site:lowendtalk.com";
+                }
+              ];
+              definedAliases = [ "@let" ];
+              iconUpdateURL = "https://lowendtalk.com/uploads/LowEndTalk.ico";
+            };
 
             "Bing".metaData.hidden = true;
             "eBay".metaData.hidden = true;
