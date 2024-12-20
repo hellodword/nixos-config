@@ -214,25 +214,6 @@ in
           after = [ "sing-box.service" ];
         };
 
-        sing-box-cloudflare-yes = {
-          enable = true;
-          description = "Sing-box cloudflare yes";
-          path = with pkgs; [
-            curl
-            iproute2
-            gnugrep
-            jq
-            coreutils
-            gawk
-            systemd
-            knot-dns
-          ];
-          script = "${pkgs.bash}/bin/bash ${./sing-box-cloudflare-yes.sh}";
-          serviceConfig = {
-            Type = "oneshot";
-          };
-        };
-
         sing-box = {
           enable = true;
           description = "Sing-box networking service";
@@ -315,22 +296,9 @@ in
         };
       };
 
-  systemd.timers = {
-    sing-box-cloudflare-yes = {
-      enable = true;
-      description = "Sing-box cloudflare yes";
-      after = [ "sing-box.service" ];
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnUnitInactiveSec = 3600 * 6;
-        OnBootSec = 900;
-        AccuracySec = 300;
-      };
-    };
-  };
-
   environment.etc."sing-box/template.json".text = builtins.toJSON {
-    "$schema" = "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/83c676c1ec9f37af2bce0505da396b5444b30032/sing-box.schema.json";
+    "$schema" =
+      "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/83c676c1ec9f37af2bce0505da396b5444b30032/sing-box.schema.json";
     dns = {
       disable_cache = true;
       fakeip = {
