@@ -446,7 +446,7 @@ in
         #   "proxy:"
         # ];
         tag = "auto:proxy";
-        tolerance = 25;
+        tolerance = 300;
         type = "urltest";
         url = "https://github.com"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
@@ -458,7 +458,7 @@ in
         #   "hideme:"
         # ];
         tag = "auto:hideme";
-        tolerance = 25;
+        tolerance = 300;
         type = "urltest";
         url = "https://github.com"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
@@ -470,7 +470,7 @@ in
         #   "crypto:"
         # ];
         tag = "auto:crypto";
-        tolerance = 25;
+        tolerance = 300;
         type = "urltest";
         url = "https://github.com"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
@@ -680,58 +680,58 @@ in
           outbound = "auto:proxy";
           rule_set = "geosite:docker";
         }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:protonmail";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:telegram";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:imgur";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:paypal";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:pixiv";
-        }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:protonmail";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:telegram";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:imgur";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:paypal";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:pixiv";
+        # }
         {
           outbound = "auto:crypto";
           rule_set = "geosite:category-cryptocurrency";
         }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:category-novel";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:category-porn";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:cloudflare";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:openai";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geosite:reddit";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geoip:telegram";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geoip:cloudflare";
-        }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:category-novel";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:category-porn";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:cloudflare";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:openai";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geosite:reddit";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geoip:telegram";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geoip:cloudflare";
+        # }
         {
           outbound = "auto:proxy";
           rule_set = "geoip:fastly";
@@ -740,18 +740,18 @@ in
           outbound = "auto:proxy";
           rule_set = "geoip:cloudfront";
         }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geoip:facebook";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geoip:netflix";
-        }
-        {
-          outbound = "auto:hideme";
-          rule_set = "geoip:twitter";
-        }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geoip:facebook";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geoip:netflix";
+        # }
+        # {
+        #   outbound = "auto:hideme";
+        #   rule_set = "geoip:twitter";
+        # }
       ];
     };
   };
