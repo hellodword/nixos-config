@@ -33,11 +33,11 @@
         "systems": "systems_3"
       },
       "locked": {
-        "lastModified": 1734657005,
-        "narHash": "sha256-4Z3Qmgwf6zmVWq/B9RtTm0y53m5SGos3b4Eu0U0ewZ8=",
+        "lastModified": 1734852033,
+        "narHash": "sha256-gdk3St4WpfM5LwSgIuuCK1JHJ8s7Cw1u/pf30AUKxqo=",
         "owner": "hellodword",
         "repo": "anytype-flake",
-        "rev": "4bca0aa7defc66d4225902c9a1d0dc0d1c5a5b91",
+        "rev": "a38527cb25980ec8fd84ff629256f3f602848d79",
         "type": "github"
       },
       "original": {
@@ -50,11 +50,11 @@
     "anytype-l10n": {
       "flake": false,
       "locked": {
-        "lastModified": 1734632686,
-        "narHash": "sha256-9eErPTjW/p4GgaauLJLi9cgK7b8ljnT5x3fr56+tJuE=",
+        "lastModified": 1734763707,
+        "narHash": "sha256-TT4BZ4gQQYCvy+OEVqitdg9y+Q6nKsBL720n5+XSm5E=",
         "owner": "anyproto",
         "repo": "l10n-anytype-ts",
-        "rev": "01273d8d47f765b27b0c8e85e304a2ba25625332",
+        "rev": "52209be3bd66e48872a7d5fb6fc7704f7f9e0e78",
         "type": "github"
       },
       "original": {
@@ -405,11 +405,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1734622215,
-        "narHash": "sha256-OOfI0XhSJGHblfdNDhfnn8QnZxng63rWk9eeJ2tCbiI=",
+        "lastModified": 1734821669,
+        "narHash": "sha256-F7Z2tIJsUEhErpK0sGMep4xG/eTVuK2eBpvgh3cS2H8=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "1395379a7a36e40f2a76e7b9936cc52950baa1be",
+        "rev": "51160a097a850839b7eae7ef08d0d3e7e353dfc3",
         "type": "github"
       },
       "original": {
@@ -420,11 +420,11 @@
     },
     "impermanence": {
       "locked": {
-        "lastModified": 1734200366,
-        "narHash": "sha256-0NursoP4BUdnc+wy+Mq3icHkXu/RgP1Sjo0MJxV2+Dw=",
+        "lastModified": 1734772301,
+        "narHash": "sha256-mQEQQzCTUlDiEw/EbblB510P/GQOmIPtKoJrqDqeGVc=",
         "owner": "nix-community",
         "repo": "impermanence",
-        "rev": "c6323585fa0035d780e3d8906eb1b24b65d19a48",
+        "rev": "0ab2f858dfefe73402eb53fbe6a3bad4f6702d5f",
         "type": "github"
       },
       "original": {
@@ -466,11 +466,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1734234111,
-        "narHash": "sha256-icEMqBt4HtGH52PU5FHidgBrNJvOfXH6VQKNtnD1aw8=",
+        "lastModified": 1734838217,
+        "narHash": "sha256-zvMLS8BGn+kMG7tLLT3PJ67/S9yqZ9B7V8hKBa9cRRY=",
         "owner": "Mic92",
         "repo": "nix-index-database",
-        "rev": "311d6cf3ad3f56cb051ffab1f480b2909b3f754d",
+        "rev": "d583b2d142f0428313df099f4a2dcf2a0496aa78",
         "type": "github"
       },
       "original": {
@@ -488,11 +488,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1734659394,
-        "narHash": "sha256-rI7fcI4+J+iAiCvQ0J3hECJJGD9cAVTAFRTj1xrX6Qo=",
+        "lastModified": 1734832456,
+        "narHash": "sha256-gyp5aVMSA83OV8kP/a1FBA6KGJqNkswUK9VdAh1hLS4=",
         "owner": "nix-community",
         "repo": "nix-vscode-extensions",
-        "rev": "1792f1bbfccbd5ebcb745250e4fc57067c6dfd9c",
+        "rev": "c567c5f3bc53723d726f286ea94d5aebac55d4c5",
         "type": "github"
       },
       "original": {
@@ -534,11 +534,11 @@
     },
     "nixpkgs": {
       "locked": {
-        "lastModified": 1734424634,
-        "narHash": "sha256-cHar1vqHOOyC7f1+tVycPoWTfKIaqkoe1Q6TnKzuti4=",
+        "lastModified": 1734649271,
+        "narHash": "sha256-4EVBRhOjMDuGtMaofAIqzJbg4Ql7Ai0PSeuVZTHjyKQ=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "d3c42f187194c26d9f0309a8ecc469d6c878ce33",
+        "rev": "d70bd19e0a38ad4790d3913bf08fcbfc9eeca507",
         "type": "github"
       },
       "original": {
@@ -753,11 +753,11 @@
     "you-know-who": {
       "flake": false,
       "locked": {
-        "lastModified": 1734658469,
-        "narHash": "sha256-rnwLD1Bz2UgmBorldzXH7qtMaiUJm0/0CuaEXN1D5v4=",
+        "lastModified": 1734795134,
+        "narHash": "sha256-ELbNT0oWpXIjBCK5IafbFkkm/cwJJn/PRjc7azxzAiE=",
         "owner": "hellodword",
         "repo": "you-know-who",
-        "rev": "b178658da10fd41272d389d4763f4924af76f84e",
+        "rev": "f77d519047a0ec99ba3497ff57b275f024ba21df",
         "type": "github"
       },
       "original": {
