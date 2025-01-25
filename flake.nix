@@ -17,7 +17,7 @@
     };
 
     lanzaboote = {
-      url = "github:nix-community/lanzaboote/e7bd94e0b5ff3c1e686f2101004ebf4fcea9d871";
+      url = "github:nix-community/lanzaboote/a65905a09e2c43ff63be8c0e86a93712361f871e";
 
       # Optional but recommended to limit the size of your system closure.
       inputs.nixpkgs.follows = "nixpkgs";
