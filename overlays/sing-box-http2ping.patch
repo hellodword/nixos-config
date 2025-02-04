@@ -1,17 +1,17 @@
 diff --git a/adapter/experimental.go b/adapter/experimental.go
-index 5e1cbd9d..83e56aaf 100644
+index f22ff9b2..2ce8c8f0 100644
 --- a/adapter/experimental.go
 +++ b/adapter/experimental.go
-@@ -9,7 +9,7 @@ import (
+@@ -7,7 +7,7 @@ import (
  	"time"
  
  	"github.com/sagernet/sing-box/common/urltest"
 -	"github.com/sagernet/sing-dns"
 +	dns "github.com/sagernet/sing-dns"
- 	N "github.com/sagernet/sing/common/network"
- 	"github.com/sagernet/sing/common/rw"
+ 	"github.com/sagernet/sing/common/varbin"
  )
-@@ -42,6 +42,9 @@ type CacheFile interface {
+ 
+@@ -41,6 +41,9 @@ type CacheFile interface {
  	StoreGroupExpand(group string, expand bool) error
  	LoadRuleSet(tag string) *SavedRuleSet
  	SaveRuleSet(tag string, set *SavedRuleSet) error
@@ -22,7 +22,7 @@ index 5e1cbd9d..83e56aaf 100644
  
  type SavedRuleSet struct {
 diff --git a/common/urltest/urltest.go b/common/urltest/urltest.go
-index 001f2e15..2a47e546 100644
+index 9efd0404..3340c489 100644
 --- a/common/urltest/urltest.go
 +++ b/common/urltest/urltest.go
 @@ -2,6 +2,8 @@ package urltest
@@ -34,7 +34,7 @@ index 001f2e15..2a47e546 100644
  	"net"
  	"net/http"
  	"net/url"
-@@ -11,6 +13,7 @@ import (
+@@ -12,6 +14,7 @@ import (
  	"github.com/sagernet/sing/common"
  	M "github.com/sagernet/sing/common/metadata"
  	N "github.com/sagernet/sing/common/network"
@@ -42,7 +42,7 @@ index 001f2e15..2a47e546 100644
  )
  
  type History struct {
-@@ -123,3 +126,103 @@ func URLTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err e
+@@ -125,3 +128,103 @@ func URLTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err e
  	t = uint16(time.Since(start) / time.Millisecond)
  	return
  }
@@ -147,7 +147,7 @@ index 001f2e15..2a47e546 100644
 +
 +}
 diff --git a/experimental/cachefile/cache.go b/experimental/cachefile/cache.go
-index 1027588f..d7a5e508 100644
+index 498b9474..d9044d38 100644
 --- a/experimental/cachefile/cache.go
 +++ b/experimental/cachefile/cache.go
 @@ -24,12 +24,15 @@ var (
@@ -166,11 +166,10 @@ index 1027588f..d7a5e508 100644
  	}
  
  	cacheIDDefault = []byte("default")
-@@ -313,3 +316,29 @@ func (c *CacheFile) SaveRuleSet(tag string, set *adapter.SavedRuleSet) error {
+@@ -316,3 +319,28 @@ func (c *CacheFile) SaveRuleSet(tag string, set *adapter.SavedRuleSet) error {
  		return bucket.Put([]byte(tag), setBinary)
  	})
  }
-+
 +func (c *CacheFile) LoadURLTestSelected(group, network string) string {
 +	var selected string
 +	c.DB.View(func(t *bbolt.Tx) error {
@@ -196,11 +195,11 @@ index 1027588f..d7a5e508 100644
 +		return bucket.Put([]byte(group+":"+network), []byte(selected))
 +	})
 +}
-diff --git a/outbound/urltest.go b/outbound/urltest.go
-index c6e38ec5..d7825a6e 100644
---- a/outbound/urltest.go
-+++ b/outbound/urltest.go
-@@ -3,6 +3,7 @@ package outbound
+diff --git a/protocol/group/urltest.go b/protocol/group/urltest.go
+index 564c2373..58134279 100644
+--- a/protocol/group/urltest.go
++++ b/protocol/group/urltest.go
+@@ -3,6 +3,7 @@ package group
  import (
  	"context"
  	"net"
@@ -208,15 +207,32 @@ index c6e38ec5..d7825a6e 100644
  	"sync"
  	"time"
  
-@@ -83,6 +84,7 @@ func (s *URLTest) Start() error {
- 		s.tolerance,
- 		s.idleTimeout,
- 		s.interruptExternalConnections,
-+		s.tag,
- 	)
+@@ -46,6 +47,7 @@ type URLTest struct {
+ 	idleTimeout                  time.Duration
+ 	group                        *URLTestGroup
+ 	interruptExternalConnections bool
++	tag                          string
+ }
+ 
+ func NewURLTest(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.URLTestOutboundOptions) (adapter.Outbound, error) {
+@@ -62,6 +64,7 @@ func NewURLTest(ctx context.Context, router adapter.Router, logger log.ContextLo
+ 		tolerance:                    options.Tolerance,
+ 		idleTimeout:                  time.Duration(options.IdleTimeout),
+ 		interruptExternalConnections: options.InterruptExistConnections,
++		tag:                          tag,
+ 	}
+ 	if len(outbound.tags) == 0 {
+ 		return nil, E.New("missing tags")
+@@ -78,7 +81,7 @@ func (s *URLTest) Start() error {
+ 		}
+ 		outbounds = append(outbounds, detour)
+ 	}
+-	group, err := NewURLTestGroup(s.ctx, s.outbound, s.logger, outbounds, s.link, s.interval, s.tolerance, s.idleTimeout, s.interruptExternalConnections)
++	group, err := NewURLTestGroup(s.ctx, s.outbound, s.logger, outbounds, s.link, s.interval, s.tolerance, s.idleTimeout, s.interruptExternalConnections, s.tag)
  	if err != nil {
  		return err
-@@ -204,6 +206,12 @@ type URLTestGroup struct {
+ 	}
+@@ -200,9 +203,15 @@ type URLTestGroup struct {
  	close      chan struct{}
  	started    bool
  	lastActive atomic.TypedValue[time.Time]
@@ -228,16 +244,12 @@ index c6e38ec5..d7825a6e 100644
 +	beenChecked              bool
  }
  
- func NewURLTestGroup(
-@@ -216,6 +224,7 @@ func NewURLTestGroup(
- 	tolerance uint16,
- 	idleTimeout time.Duration,
- 	interruptExternalConnections bool,
-+	tag string,
- ) (*URLTestGroup, error) {
+-func NewURLTestGroup(ctx context.Context, outboundManager adapter.OutboundManager, logger log.Logger, outbounds []adapter.Outbound, link string, interval time.Duration, tolerance uint16, idleTimeout time.Duration, interruptExternalConnections bool) (*URLTestGroup, error) {
++func NewURLTestGroup(ctx context.Context, outboundManager adapter.OutboundManager, logger log.Logger, outbounds []adapter.Outbound, link string, interval time.Duration, tolerance uint16, idleTimeout time.Duration, interruptExternalConnections bool, tag string) (*URLTestGroup, error) {
  	if interval == 0 {
  		interval = C.DefaultURLTestInterval
-@@ -250,13 +259,17 @@ func NewURLTestGroup(
+ 	}
+@@ -236,13 +245,17 @@ func NewURLTestGroup(ctx context.Context, outboundManager adapter.OutboundManage
  		pauseManager:                 service.FromContext[pause.Manager](ctx),
  		interruptGroup:               interrupt.NewGroup(),
  		interruptExternalConnections: interruptExternalConnections,
@@ -255,7 +267,7 @@ index c6e38ec5..d7825a6e 100644
  }
  
  func (g *URLTestGroup) Touch() {
-@@ -286,8 +299,10 @@ func (g *URLTestGroup) Close() error {
+@@ -272,8 +285,10 @@ func (g *URLTestGroup) Close() error {
  }
  
  func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
@@ -266,7 +278,7 @@ index c6e38ec5..d7825a6e 100644
  	switch network {
  	case N.NetworkTCP:
  		if g.selectedOutboundTCP != nil {
-@@ -308,16 +323,27 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+@@ -294,16 +309,27 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
  		if !common.Contains(detour.Network(), network) {
  			continue
  		}
@@ -294,7 +306,7 @@ index c6e38ec5..d7825a6e 100644
  		for _, detour := range g.outbounds {
  			if !common.Contains(detour.Network(), network) {
  				continue
-@@ -326,6 +352,10 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
+@@ -312,6 +338,10 @@ func (g *URLTestGroup) Select(network string) (adapter.Outbound, bool) {
  		}
  		return nil, false
  	}
@@ -305,7 +317,7 @@ index c6e38ec5..d7825a6e 100644
  	return minOutbound, true
  }
  
-@@ -334,6 +364,7 @@ func (g *URLTestGroup) loopCheck() {
+@@ -320,6 +350,7 @@ func (g *URLTestGroup) loopCheck() {
  		g.lastActive.Store(time.Now())
  		g.CheckOutbounds(false)
  	}
@@ -313,7 +325,7 @@ index c6e38ec5..d7825a6e 100644
  	for {
  		select {
  		case <-g.close:
-@@ -349,6 +380,14 @@ func (g *URLTestGroup) loopCheck() {
+@@ -335,6 +366,14 @@ func (g *URLTestGroup) loopCheck() {
  		}
  		g.pauseManager.WaitActive()
  		g.CheckOutbounds(false)
@@ -328,7 +340,7 @@ index c6e38ec5..d7825a6e 100644
  	}
  }
  
-@@ -361,6 +400,7 @@ func (g *URLTestGroup) URLTest(ctx context.Context) (map[string]uint16, error) {
+@@ -347,6 +386,7 @@ func (g *URLTestGroup) URLTest(ctx context.Context) (map[string]uint16, error) {
  }
  
  func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint16, error) {
@@ -336,7 +348,7 @@ index c6e38ec5..d7825a6e 100644
  	result := make(map[string]uint16)
  	if g.checking.Swap(true) {
  		return result, nil
-@@ -387,7 +427,13 @@ func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint
+@@ -373,7 +413,13 @@ func (g *URLTestGroup) urlTest(ctx context.Context, force bool) (map[string]uint
  		b.Go(realTag, func() (any, error) {
  			testCtx, cancel := context.WithTimeout(g.ctx, C.TCPTimeout)
  			defer cancel()
@@ -351,7 +363,7 @@ index c6e38ec5..d7825a6e 100644
  			if err != nil {
  				g.logger.Debug("outbound ", tag, " unavailable: ", err)
  				g.history.DeleteURLTestHistory(realTag)
-@@ -423,3 +469,49 @@ func (g *URLTestGroup) performUpdateCheck() {
+@@ -409,3 +455,49 @@ func (g *URLTestGroup) performUpdateCheck() {
  		g.interruptGroup.Interrupt(g.interruptExternalConnections)
  	}
  }
