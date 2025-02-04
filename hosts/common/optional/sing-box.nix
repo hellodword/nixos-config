@@ -392,13 +392,6 @@ in
         tag = "in:mixed";
         type = "mixed";
       }
-      {
-        listen = "::1";
-        listen_port = 10800;
-        sniff = true;
-        tag = "in:mixed";
-        type = "mixed";
-      }
     ];
     log = {
       disabled = false;
