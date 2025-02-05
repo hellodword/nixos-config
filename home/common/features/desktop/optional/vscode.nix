@@ -71,19 +71,19 @@
         # "editor.tabSize" = 2;
       };
       extensions =
-        (
-          # with pkgs.vscode-extensions; [
-          #   jnoortheen.nix-ide
-          #   # ms-python.python
-          #   # ms-vscode.makefile-tools
-          #   # ms-vscode.cmake-tools
-          #   # ms-vscode.cpptools
-          #   # ms-azuretools.vscode-docker
-          #   # ms-python.vscode-pylance
-          #   # ms-vscode-remote.remote-ssh
-          # ]
-          [ ]
-        )
+        # (
+        #   # with pkgs.vscode-extensions; [
+        #   #   jnoortheen.nix-ide
+        #   #   # ms-python.python
+        #   #   # ms-vscode.makefile-tools
+        #   #   # ms-vscode.cmake-tools
+        #   #   # ms-vscode.cpptools
+        #   #   # ms-azuretools.vscode-docker
+        #   #   # ms-python.vscode-pylance
+        #   #   # ms-vscode-remote.remote-ssh
+        #   # ]
+        # )
+        [ ]
         ++ (
           with (inputs.nix-vscode-extensions.extensions.${pkgs.system}.forVSCodeVersion package.version)
             .vscode-marketplace; [
