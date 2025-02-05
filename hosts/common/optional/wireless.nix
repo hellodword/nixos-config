@@ -41,9 +41,9 @@
       enable = true;
       # group = "network";
     };
-    # extraConfig = ''
-    #   update_config=1
-    # '';
+    extraConfig = ''
+      p2p_disabled=1
+    '';
   };
 
   environment.systemPackages = lib.optionals config.services.xserver.enable [
