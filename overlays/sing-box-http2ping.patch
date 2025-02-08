@@ -1,5 +1,5 @@
 diff --git a/adapter/experimental.go b/adapter/experimental.go
-index f22ff9b2..2ce8c8f0 100644
+index 648eb418..67d1c52a 100644
 --- a/adapter/experimental.go
 +++ b/adapter/experimental.go
 @@ -7,7 +7,7 @@ import (
@@ -13,16 +13,16 @@ index f22ff9b2..2ce8c8f0 100644
  
 @@ -41,6 +41,9 @@ type CacheFile interface {
  	StoreGroupExpand(group string, expand bool) error
- 	LoadRuleSet(tag string) *SavedRuleSet
- 	SaveRuleSet(tag string, set *SavedRuleSet) error
+ 	LoadRuleSet(tag string) *SavedBinary
+ 	SaveRuleSet(tag string, set *SavedBinary) error
 +
 +	LoadURLTestSelected(group, network string) string
 +	StoreURLTestSelected(group, network, selected string) error
  }
  
- type SavedRuleSet struct {
+ type SavedBinary struct {
 diff --git a/common/urltest/urltest.go b/common/urltest/urltest.go
-index 9efd0404..3340c489 100644
+index 9efd0404..bae387e8 100644
 --- a/common/urltest/urltest.go
 +++ b/common/urltest/urltest.go
 @@ -2,6 +2,8 @@ package urltest
@@ -42,7 +42,7 @@ index 9efd0404..3340c489 100644
  )
  
  type History struct {
-@@ -125,3 +128,103 @@ func URLTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err e
+@@ -125,3 +128,101 @@ func URLTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err e
  	t = uint16(time.Since(start) / time.Millisecond)
  	return
  }
@@ -130,7 +130,6 @@ index 9efd0404..3340c489 100644
 +			return
 +		}
 +	}
-+
 +	// FIXME limit creations with frequent failures
 +	h2, err := getHttp2Conn(ctx, hostname, port, detour, tag)
 +	if err != nil {
@@ -144,10 +143,9 @@ index 9efd0404..3340c489 100644
 +		return
 +	}
 +	return uint16(time.Since(start) / time.Millisecond), nil
-+
 +}
 diff --git a/experimental/cachefile/cache.go b/experimental/cachefile/cache.go
-index 498b9474..d9044d38 100644
+index 88cffdbe..307d0f52 100644
 --- a/experimental/cachefile/cache.go
 +++ b/experimental/cachefile/cache.go
 @@ -24,12 +24,15 @@ var (
@@ -166,10 +164,11 @@ index 498b9474..d9044d38 100644
  	}
  
  	cacheIDDefault = []byte("default")
-@@ -316,3 +319,28 @@ func (c *CacheFile) SaveRuleSet(tag string, set *adapter.SavedRuleSet) error {
+@@ -316,3 +319,29 @@ func (c *CacheFile) SaveRuleSet(tag string, set *adapter.SavedBinary) error {
  		return bucket.Put([]byte(tag), setBinary)
  	})
  }
++
 +func (c *CacheFile) LoadURLTestSelected(group, network string) string {
 +	var selected string
 +	c.DB.View(func(t *bbolt.Tx) error {
