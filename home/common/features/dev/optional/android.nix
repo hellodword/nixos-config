@@ -51,7 +51,7 @@
       # sources-android-34
       platform-tools
     ]
-    ++ lib.optionals (lib.strings.hasInfix "x86_64" nixosConfig.nixpkgs.hostPlatform) [
+    ++ lib.optionals nixosConfig.nixpkgs.hostPlatform.isx86_64 [
       # # https://android.googlesource.com/platform/external/qemu/+/refs/heads/aosp-emu-34-dev/android/emulator/main-emulator.cpp#1080
       # system-images-android-27-default-arm64-v8a
       # system-images-android-27-google-apis-arm64-v8a
