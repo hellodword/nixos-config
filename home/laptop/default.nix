@@ -104,7 +104,7 @@ in
       ../common/features/desktop/optional/zathura.nix
       ../common/features/desktop/optional/scrcpy.nix
       ../common/features/desktop/optional/remmina.nix
-      ../common/features/desktop/optional/blender.nix
+      # ../common/features/desktop/optional/blender.nix
     ]
     ++ [
       ../common/features/cli/optional/sqlite.nix
@@ -127,9 +127,10 @@ in
       inputs.nixos-privates.firefox."laptop".bookmarks;
   programs.gpg.publicKeys = lib.mkAfter inputs.nixos-privates.gpg."laptop".publicKeys;
   services.gpg-agent.sshKeys = lib.mkForce inputs.nixos-privates.gpg."laptop".sshKeys;
-  programs.git.aliases."signing" = "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${
-    inputs.nixos-privates.gpg."laptop".git-signingkey
-  }";
+  programs.git.aliases."signing" =
+    "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${
+      inputs.nixos-privates.gpg."laptop".git-signingkey
+    }";
 
   # https://github.com/nix-community/home-manager/issues/4804#issuecomment-1871272189
   # services.gpg-agent.pinentryFlavor = "qt";
@@ -174,8 +175,8 @@ in
     profiles = {
       default = {
         fingerprint = {
-          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name
-          }" = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".fingerprint}";
+          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" =
+            "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".fingerprint}";
         };
         config = {
           "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" = {
@@ -189,10 +190,10 @@ in
       };
       "with-dell-1" = {
         fingerprint = {
-          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name
-          }" = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".fingerprint}";
-          "${inputs.nixos-privates.monitors."dell-1".name
-          }" = "${inputs.nixos-privates.monitors."dell-1".fingerprint}";
+          "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" =
+            "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".fingerprint}";
+          "${inputs.nixos-privates.monitors."dell-1".name}" =
+            "${inputs.nixos-privates.monitors."dell-1".fingerprint}";
         };
         config = {
           "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}" = {
