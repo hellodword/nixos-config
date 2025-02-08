@@ -135,15 +135,6 @@
         } // commonArgs;
       };
 
-      # laptop3
-      nixosConfigurations."laptop3" = nixpkgs.lib.nixosSystem {
-        modules = [ ./hosts/laptop3 ];
-        specialArgs = {
-          commonArgs = commonArgs;
-          inherit inputs outputs;
-        } // commonArgs;
-      };
-
       # r86s
       nixosConfigurations."r86s" = nixpkgs.lib.nixosSystem {
         modules = [ ./hosts/r86s ];
