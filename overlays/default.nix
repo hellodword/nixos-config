@@ -78,6 +78,12 @@
       ];
     });
 
+    mosdns = prev.mosdns.overrideDerivation (oldAttrs: {
+      patches = (oldAttrs.patches or [ ]) ++ [
+        ./mosdns-apply-ttl-for-servfail.patch
+      ];
+    });
+
     firejail = prev.firejail.overrideDerivation (oldAttrs: {
       src = prev.fetchFromGitHub {
         owner = "netblue30";

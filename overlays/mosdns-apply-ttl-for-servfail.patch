@@ -1,0 +1,20 @@
+diff --git a/pkg/server_handler/entry_handler.go b/pkg/server_handler/entry_handler.go
+index c30fcd7..7ef6708 100644
+--- a/pkg/server_handler/entry_handler.go
++++ b/pkg/server_handler/entry_handler.go
+@@ -24,6 +24,7 @@ import (
+ 	"time"
+ 
+ 	"github.com/IrineSistiana/mosdns/v5/mlog"
++	"github.com/IrineSistiana/mosdns/v5/pkg/dnsutils"
+ 	"github.com/IrineSistiana/mosdns/v5/pkg/query_context"
+ 	"github.com/IrineSistiana/mosdns/v5/pkg/server"
+ 	"github.com/IrineSistiana/mosdns/v5/pkg/utils"
+@@ -104,6 +105,7 @@ func (h *EntryHandler) Handle(ctx context.Context, q *dns.Msg, serverMeta server
+ 		resp = new(dns.Msg)
+ 		resp.SetReply(q)
+ 		resp.Rcode = dns.RcodeServerFailure
++		dnsutils.ApplyMinimalTTL(resp, 1)
+ 	} else {
+ 		resp = qCtx.R()
+ 	}
