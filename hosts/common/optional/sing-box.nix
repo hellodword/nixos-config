@@ -260,9 +260,9 @@ in
             # Capabilities
             CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
             AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
-            # # Proc filesystem
-            # ProcSubset = "pid";
-            # ProtectProc = "invisible";
+            # Proc filesystem
+            ProcSubset = "pid";
+            ProtectProc = "invisible";
             # Security
             NoNewPrivileges = true;
             # Sandboxing
@@ -270,6 +270,8 @@ in
             MemoryDenyWriteExecute = true;
             # PrivateDevices = true; # NOT WORK on Tun Mode
             # DeviceAllow = "/dev/net/tun rw";
+            DeviceAllow = "/dev/net/tun";
+            DevicePolicy = "closed";
             PrivateMounts = true;
             PrivateTmp = true;
             # PrivateUsers = true;          # NOT WORK on Tun Mode
@@ -282,7 +284,11 @@ in
             ProtectKernelTunables = true;
             ProtectSystem = "strict";
             RemoveIPC = true;
-            RestrictAddressFamilies = "AF_INET AF_INET6 AF_NETLINK";
+            RestrictAddressFamilies = [
+              "AF_INET"
+              "AF_INET6"
+              "AF_NETLINK"
+            ];
             RestrictNamespaces = true;
             RestrictRealtime = true;
             RestrictSUIDSGID = true;
