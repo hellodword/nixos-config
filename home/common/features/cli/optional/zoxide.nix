@@ -7,6 +7,8 @@
     options = [ ];
   };
 
+  home.sessionVariables._ZO_DOCTOR = "0";
+
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [
       ".local/share/zoxide"
