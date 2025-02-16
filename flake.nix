@@ -97,6 +97,11 @@
       url = "github:hellodword/reproducible-violentmonkey";
       flake = false;
     };
+
+    sing-box-schema = {
+      url = "git+https://gist.github.com/artiga033/fea992d95ad44dc8d024b229223b1002.git";
+      flake = false;
+    };
   };
 
   outputs =

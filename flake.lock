@@ -637,6 +637,7 @@
         "nixos-privates": "nixos-privates",
         "nixpkgs": "nixpkgs",
         "reproducible-violentmonkey": "reproducible-violentmonkey",
+        "sing-box-schema": "sing-box-schema",
         "sops-nix": "sops-nix",
         "you-know-who": "you-know-who"
       }
@@ -660,6 +661,22 @@
         "owner": "oxalica",
         "repo": "rust-overlay",
         "type": "github"
+      }
+    },
+    "sing-box-schema": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1701700351,
+        "narHash": "sha256-WGQUU5Kt6+dl9U/hxn2Jt7ZWqwJCGHyNM+6nSl+W4Jo=",
+        "ref": "refs/heads/main",
+        "rev": "83c676c1ec9f37af2bce0505da396b5444b30032",
+        "revCount": 6,
+        "type": "git",
+        "url": "https://gist.github.com/artiga033/fea992d95ad44dc8d024b229223b1002.git"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://gist.github.com/artiga033/fea992d95ad44dc8d024b229223b1002.git"
       }
     },
     "sops-nix": {

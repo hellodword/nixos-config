@@ -304,7 +304,7 @@ in
 
   environment.etc."sing-box/template.json".text = builtins.toJSON {
     "$schema" =
-      "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/83c676c1ec9f37af2bce0505da396b5444b30032/sing-box.schema.json";
+      "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/${inputs.sing-box-schema.rev}/sing-box.schema.json";
     dns = {
       disable_cache = true;
       fakeip = {
