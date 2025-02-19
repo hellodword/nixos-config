@@ -319,8 +319,8 @@ in
         bootstrap_prefer_ipv6 = false;
         cache_optimistic = false;
         cache_size = 4194304;
-        cache_ttl_max = 0;
-        cache_ttl_min = 0;
+        cache_ttl_max = 60 * 5;
+        cache_ttl_min = 1;
         disallowed_clients = [ ];
         dns64_prefixes = [ ];
         edns_client_subnet = {
