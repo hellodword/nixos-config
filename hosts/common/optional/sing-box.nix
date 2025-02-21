@@ -425,7 +425,7 @@ in
       #   override_port = 53;
       # }
       {
-        detour = "out:jump:wgcf";
+        detour = "auto:proxy";
         interface_name = "wgcf";
         local_address = inputs.nixos-privates.wgcf."${config.networking.hostName}".address;
         mtu = 1280;
