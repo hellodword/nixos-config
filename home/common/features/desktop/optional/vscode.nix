@@ -33,7 +33,7 @@
     {
       inherit package;
       enable = true;
-      userSettings = {
+      profiles.default.userSettings = {
         "git.enabled" = true;
         "git.enableSmartCommit" = false;
         "git.enableCommitSigning" = false;
@@ -70,7 +70,7 @@
         "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";
         # "editor.tabSize" = 2;
       };
-      extensions =
+      profiles.default.extensions =
         # (
         #   # with pkgs.vscode-extensions; [
         #   #   jnoortheen.nix-ide

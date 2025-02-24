@@ -52,12 +52,12 @@ in
     flutterAss
   ];
 
-  programs.vscode.userSettings = lib.optionalAttrs config.programs.vscode.enable {
+  programs.vscode.profiles.default.userSettings = lib.optionalAttrs config.programs.vscode.enable {
     "dart.checkForSdkUpdates" = false;
   };
 
   # https://github.com/NixOS/nixpkgs/pull/76420#issuecomment-615344955
-  programs.vscode.extensions = lib.optionals config.programs.vscode.enable [
+  programs.vscode.profiles.default.extensions = lib.optionals config.programs.vscode.enable [
     pkgs.vscode-extensions.dart-code.dart-code
     pkgs.vscode-extensions.dart-code.flutter
   ];
