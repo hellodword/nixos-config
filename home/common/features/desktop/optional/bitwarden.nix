@@ -8,18 +8,30 @@
 
 let
   mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
-  bitwarden = pkgs.bitwarden-desktop;
+  bitwarden-desktop = pkgs.bitwarden-desktop;
+  bitwarden-cli = pkgs.bitwarden-cli;
 in
 {
   home.packages = [
     (
       if nixosConfig.programs.firejail.enable then
         (mkJailed {
-          originalPkg = bitwarden;
+          originalPkg = bitwarden-desktop;
           profile = ./bitwarden.profile;
         })
       else
-        bitwarden
+        bitwarden-desktop
+    )
+
+    (
+      if nixosConfig.programs.firejail.enable then
+        (mkJailed {
+          originalPkg = bitwarden-cli;
+          profile = ./bitwarden.profile;
+          extraArgs = [ "--quiet" ];
+        })
+      else
+        bitwarden-cli
     )
   ];
 
@@ -28,6 +40,9 @@ in
   ];
 
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".config/Bitwarden" ];
+    "${persistPath}${config.home.homeDirectory}".directories = [
+      ".config/Bitwarden"
+      ".config/Bitwarden CLI"
+    ];
   };
 }

@@ -26,4 +26,7 @@ dbus-user.own org.mozilla.firefox.*
 # private-bin awk,basename,cut,env,grep,head,realpath,sed,tr,uname,xdg-mime
 # private-bin chromium,chromium-browser,elinks,epiphany,firefox,google-chrome,iceweasel,konqueror,links,links2,lynx,mozilla,seamonkey,w3m,www-browser,x-www-browser
 
+noblacklist ${HOME}/.config/Bitwarden CLI
+mkdir ${HOME}/.config/Bitwarden CLI
+whitelist ${HOME}/.config/Bitwarden CLI
 include bitwarden.profile
