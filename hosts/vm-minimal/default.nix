@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, inputs, ... }:
 {
 
   nixpkgs.hostPlatform = "x86_64-linux";
@@ -29,5 +29,13 @@
   networking.firewall.allowedTCPPorts = [ 22 ];
 
   boot.kernelPackages = pkgs.linuxPackages_latest;
+
+  imports = [
+    inputs.home-manager.nixosModules.home-manager
+  ];
+
+  home-manager.extraSpecialArgs = { inherit inputs; };
+
+  home-manager.users.admin = import ./home.nix;
 
 }

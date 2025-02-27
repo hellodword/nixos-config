@@ -42,7 +42,7 @@ in
   home.persistence = {
     "${persistPath}${config.home.homeDirectory}".directories = [
       ".config/Bitwarden"
-      ".config/Bitwarden CLI"
+      ".config/Bitwarden\ CLI"
     ];
   };
 }
