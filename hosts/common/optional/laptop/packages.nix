@@ -8,5 +8,6 @@
     sops
 
     inotify-tools
+    colmena
   ];
 }
