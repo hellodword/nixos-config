@@ -120,8 +120,24 @@ in
   home.username = lib.mkDefault "${userName}";
 
   programs.ssh.matchBlocks =
-    lib.mergeAttrs inputs.nixos-privates.ssh."common".matchBlocks
-      inputs.nixos-privates.ssh."laptop".matchBlocks;
+    lib.mergeAttrs
+      (lib.mergeAttrs inputs.nixos-privates.ssh."common".matchBlocks
+        inputs.nixos-privates.ssh."laptop".matchBlocks
+      )
+      (
+        lib.attrsets.concatMapAttrs (
+          k: v:
+          lib.mergeAttrs { ${k} = v.ssh; } (
+            builtins.listToAttrs (
+              map (alias: {
+                name = alias;
+                value = v.ssh;
+              }) v.alias
+            )
+          )
+        ) inputs.nixos-privates.servers
+      );
+
   programs.firefox.profiles.default.bookmarks =
     lib.mkAfter
       inputs.nixos-privates.firefox."laptop".bookmarks;
