@@ -392,7 +392,7 @@ in
       # curl ip.sb --proxy socks5h://localhost:10800 -4
       # curl ip.sb --proxy socks5h://localhost:10800 -6
       {
-        listen = "0.0.0.0";
+        listen = "::0";
         listen_port = 10800;
         sniff = true;
         tag = "in:mixed";
