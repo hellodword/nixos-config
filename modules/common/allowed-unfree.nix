@@ -13,6 +13,9 @@ with types;
 
   config = {
     nixpkgs.config.allowUnfreePredicate =
-      pkg: builtins.elem (lib.getName pkg) (map (x: lib.getName x) config.me.allowedUnfreePkg);
+      pkg:
+      builtins.elem (lib.getName pkg) (
+        map (x: if typeOf x == "string" then x else (lib.getName x)) config.me.allowedUnfreePkg
+      );
   };
 }

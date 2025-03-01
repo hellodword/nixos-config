@@ -12,13 +12,7 @@
   # https://marketplace.visualstudio.com/items?itemName=${publisher}.${name}
   # https://${publisher}.gallery.vsassets.io/_apis/public/gallery/publisher/${publisher}/extension/${name}/${version}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage
 
-  me.allowedUnfreePkg = with pkgs; [
-    vscode
-
-    vscode-extensions.ms-python.vscode-pylance
-    vscode-extensions.ms-vscode-remote.remote-ssh
-    vscode-extensions.ms-vscode.cpptools
-  ];
+  me.allowedUnfreePkg = [ pkgs.vscode ] ++ config.programs.vscode.profiles.default.extensions;
 
   me.mimeApps.defApps.editor = "code.desktop";
 
@@ -92,7 +86,7 @@
             # esbenp.prettier-vscode
 
             # failed with ref c1fba83fc62263d2ce08e6b85e9fbc8359da0ab9
-            ms-vscode-remote.remote-ssh
+            # ms-vscode-remote.remote-ssh
             ms-vscode-remote.remote-containers
             # ms-python.python
           ]);
