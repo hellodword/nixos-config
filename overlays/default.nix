@@ -85,31 +85,8 @@
     });
 
     firejail = prev.firejail.overrideDerivation (oldAttrs: {
-      src = prev.fetchFromGitHub {
-        owner = "netblue30";
-        repo = "firejail";
-        rev = "116f7bf833b1dd73391f10884f66ad1670608f23";
-        hash = "sha256-lwDG6GsEjBm63m1wYDx3PYYW3tLUy65sIaWMRece8HQ=";
-        fetchSubmodules = false;
-      };
+      src = inputs.firejail;
     });
 
-    # dnsmasq = prev.dnsmasq.overrideAttrs (oldAttrs: {
-    #   version = "2.91rc1";
-    #   src = prev.fetchurl {
-    #     url = "https://www.thekelleys.org.uk/dnsmasq/release-candidates/dnsmasq-2.91rc1.tar.xz";
-    #     hash = "sha256-x5s9Pqnd27siw6UW2tZsqdt3WY6enuACbj9iY0IuIAg=";
-    #   };
-    #   patches = [
-    #     (builtins.fetchurl {
-    #       url = "https://github.com/lixingcong/dnsmasq-regex/raw/refs/heads/master/patches/001-regex-server.patch";
-    #       sha256 = "1zdvnapqspdh4n9i0hmbd6q5jy5np4pr428srkb5qxlk7rsjlcn0";
-    #     })
-    #   ];
-    #   preBuild =
-    #     builtins.replaceStrings [ "-DHAVE_NFTSET" ] [ "-DHAVE_NFTSET -DHAVE_REGEX" ]
-    #       oldAttrs.preBuild;
-    #   buildInputs = oldAttrs.buildInputs ++ [ prev.pcre ];
-    # });
   };
 }

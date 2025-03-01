@@ -102,6 +102,11 @@
       url = "git+https://gist.github.com/artiga033/fea992d95ad44dc8d024b229223b1002.git";
       flake = false;
     };
+
+    firejail = {
+      url = "github:netblue30/firejail/116f7bf833b1dd73391f10884f66ad1670608f23";
+      flake = false;
+    };
   };
 
   outputs =
