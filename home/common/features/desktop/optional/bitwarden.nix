@@ -45,4 +45,18 @@ in
       ".config/Bitwarden\ CLI"
     ];
   };
+
+  programs.starship = {
+    settings = {
+      custom = {
+        bw_unlocked = {
+          command = ''[ -z "$BW_SESSION" ] || echo 🔑🔑🔑 UNLOCKED'';
+          require_repo = false;
+          when = true;
+          ignore_timeout = true;
+          style = "bold yellow";
+        };
+      };
+    };
+  };
 }
