@@ -1,0 +1,13 @@
+diff --git a/plugin/executable/forward/forward.go b/plugin/executable/forward/forward.go
+index 8a024e6..69abea8 100644
+--- a/plugin/executable/forward/forward.go
++++ b/plugin/executable/forward/forward.go
+@@ -46,7 +46,7 @@ func init() {
+ }
+ 
+ const (
+-	maxConcurrentQueries = 3
++	maxConcurrentQueries = 10
+ 	queryTimeout         = time.Second * 5
+ )
+ 

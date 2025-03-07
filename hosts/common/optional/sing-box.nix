@@ -14,8 +14,9 @@ let
   sbBaseReal = "/var/lib/private/sing-box";
   sbTemplateFile = "/etc/sing-box/template.json";
   sbOutboundsFile = "/usr/local/etc/sing-box/outbounds.json";
-  sbRulesFile = "/usr/local/etc/sing-box/rules.json";
+  # sbRulesFile = "/usr/local/etc/sing-box/rules.json";
   sbConfigFile = "${sbBase}/sing-box.json";
+
   sbGenerate = pkgs.writeShellApplication {
     name = "exe";
     runtimeInputs = with pkgs; [ jq ];
@@ -46,22 +47,25 @@ let
       jq "(.inbounds[] | select(.type == \"tun\")).exclude_uid = [$_uids]" ${sbTemplateFile} > config.json.tmp.0
 
       wgcf_priv="$(cat "${config.sops.secrets."wgcf.priv".path}")"
-      jq "(.outbounds[] | select(.tag == \"wgcf\")).private_key = \"$wgcf_priv\"" config.json.tmp.0 > config.json.tmp.1
+      jq "(.endpoints[] | select(.name == \"wgcf\")).private_key = \"$wgcf_priv\"" config.json.tmp.0 > config.json.tmp.1
 
-      proxy_tags="$(jq '.outbounds[] | select(.tag | startswith("proxy:")).tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
-      hideme_tags="$(jq '.outbounds[] | select(.tag | startswith("hideme:")).tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
-      crypto_tags="$(jq '.outbounds[] | select(.tag | startswith("crypto:")).tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
+      tags="$(jq '.outbounds[] | .tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
 
-      jq "(.outbounds[] | select(.tag == \"auto:proxy\")).outbounds = [$proxy_tags]" config.json.tmp.1 > config.json.tmp.2
-      jq "(.outbounds[] | select(.tag == \"auto:hideme\")).outbounds = [$hideme_tags]" config.json.tmp.2 > config.json.tmp.3
-      jq "(.outbounds[] | select(.tag == \"auto:crypto\")).outbounds = [$crypto_tags]" config.json.tmp.3 > config.json.tmp.4
+      jq --argjson tags "[$tags]" '
+        .outbounds |= map(
+          if .type == "selector" or .type == "urltest" then
+            .outbounds += $tags
+          else
+            .
+          end
+      )' config.json.tmp.1 > config.json.tmp.2
 
-      PRE_RULES="$(jq -c '.route.rules' ${sbRulesFile} | sed -E 's@^\[@@' | sed -E 's@\]$@,@')"
-      sed -E "/\"rules\": ?\[/a\\$PRE_RULES" "config.json.tmp.4" | jq > "config.json.tmp.5"
-      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.5" ${sbOutboundsFile} > ${sbConfigFile}
+      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.2" ${sbOutboundsFile} > ${sbConfigFile}
+
       rm -rf config.json.tmp.*
     '';
   };
+
   sbBypassUserDelUnresolved = pkgs.writeShellApplication {
     name = "exe";
     runtimeInputs = with pkgs; [
@@ -78,6 +82,7 @@ let
       ip -6 rule list | grep -oP "(?<=\d:\t)from all uidrange \d+-\d+ goto \d+(?= \[unresolved\])" | xargs -I {} bash -xc 'ip -6 rule del {}' || true
     '';
   };
+
   sbBypassUserDel = pkgs.writeShellApplication {
     name = "exe";
     runtimeInputs = with pkgs; [
@@ -102,6 +107,7 @@ let
       fi
     '';
   };
+
   sbBypassUserAdd = pkgs.writeShellApplication {
     name = "exe";
     runtimeInputs = with pkgs; [
@@ -305,52 +311,146 @@ in
   environment.etc."sing-box/template.json".text = builtins.toJSON {
     "$schema" =
       "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/${inputs.sing-box-schema.rev}/sing-box.schema.json";
+
     dns = {
-      disable_cache = true;
       fakeip = {
         enabled = true;
         inet4_range = "198.18.0.0/15";
         inet6_range = "fc00::/18";
       };
-      final = "dns:global";
-      # rules = [ ];
+      final = "dns:proxy";
+      independent_cache = true;
+      rules = [
+        {
+          rule_set = [ "lyc8503:geosite:private" ];
+          server = "dns:local";
+        }
+        {
+          clash_mode = "direct";
+          server = "dns:direct";
+        }
+        {
+          clash_mode = "global";
+          server = "dns:proxy";
+        }
+        {
+          query_type = [
+            "A"
+            "AAAA"
+          ];
+          rewrite_ttl = 1;
+          rule_set = [
+            "lyc8503:geosite:geolocation@!cn"
+            "lyc8503:geosite:alibaba@!cn"
+            "lyc8503:geosite:alibabacloud@!cn"
+            "lyc8503:geosite:aliyun@!cn"
+            "lyc8503:geosite:bilibili@!cn"
+            "lyc8503:geosite:bytedance@!cn"
+            "lyc8503:geosite:huawei@!cn"
+            "lyc8503:geosite:huaweicloud@!cn"
+            "lyc8503:geosite:jd@!cn"
+            "lyc8503:geosite:qcloud@!cn"
+            "lyc8503:geosite:tencent-games@!cn"
+            "lyc8503:geosite:tencent@!cn"
+            "lyc8503:geosite:tiktok@!cn"
+            "lyc8503:geosite:xiaomi@!cn"
+          ];
+          server = "dns:fakeip";
+        }
+        {
+          rule_set = [
+            "lyc8503:geosite:cn"
+            "lyc8503:geosite:geolocation@cn"
+          ];
+          server = "dns:direct";
+        }
+        {
+          query_type = [
+            "A"
+            "AAAA"
+          ];
+          rewrite_ttl = 1;
+          server = "dns:fakeip";
+        }
+      ];
       servers = [
         {
-          # adguardhome
-          address = "udp://127.0.0.1";
-          address_strategy = "prefer_ipv4";
-          # https://github.com/SagerNet/sing-box/issues/1320#issuecomment-1881237086
-          detour = "out:direct:default";
+          address = "127.0.0.1:55554";
+          client_subnet = "140.82.112.3";
+          detour = "节点选择";
           strategy = "prefer_ipv4";
-          tag = "dns:global";
+          tag = "dns:proxy";
+        }
+        {
+          address = "127.0.0.1:55553";
+          detour = "out:DIRECT";
+          strategy = "prefer_ipv4";
+          tag = "dns:direct";
+        }
+        {
+          address = "local";
+          tag = "dns:local";
+        }
+        {
+          address = "rcode://refused";
+          tag = "dns:refused";
         }
         {
           address = "fakeip";
-          address_strategy = "prefer_ipv4";
-          strategy = "prefer_ipv4";
           tag = "dns:fakeip";
         }
       ];
+      strategy = "prefer_ipv4";
     };
+
+    endpoints = [
+      {
+        address = inputs.nixos-privates.wgcf."${config.networking.hostName}".address;
+        detour = "跳板";
+        mtu = 1280;
+        name = "wgcf";
+        peers = [
+          {
+            address = "162.159.192.1"; # "engage.cloudflareclient.com";
+            allowed_ips = [
+              "0.0.0.0/0"
+              "::/0"
+            ];
+            persistent_keepalive_interval = 30;
+            port = 2408;
+            public_key = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=";
+            reserved = [
+              0
+              0
+              0
+            ];
+          }
+        ];
+        private_key = "";
+        system = true;
+        tag = "out:WARP";
+        type = "wireguard";
+      }
+    ];
+
     experimental = {
       cache_file = {
         enabled = true;
         store_fakeip = true;
       };
     };
+
     inbounds = [
       {
-        auto_route = true;
         address = [
           "172.19.0.1/30"
           "fdfe:dcba:9876::1/126"
         ];
+        auto_route = true;
+        exclude_uid = [ ];
         interface_name = "sb-tun";
-        sniff = true;
-        strict_route = false;
-        tag = "in:tun";
-        type = "tun";
         route_exclude_address = [
+
           # https://en.wikipedia.org/wiki/Reserved_IP_addresses
           "10.0.0.0/8"
           "127.0.0.0/8"
@@ -387,10 +487,13 @@ in
           "172.20.0.0/14"
           "172.24.0.0/13"
         ];
+        route_exclude_address_set = [ "lyc8503:geoip:private" ];
+        sniff = true;
+        stack = "mixed";
+        strict_route = true;
+        tag = "in:tun";
+        type = "tun";
       }
-      # listen on ipv4 all and ipv6 local
-      # curl ip.sb --proxy socks5h://localhost:10800 -4
-      # curl ip.sb --proxy socks5h://localhost:10800 -6
       {
         listen = "::0";
         listen_port = 10800;
@@ -398,361 +501,606 @@ in
         tag = "in:mixed";
         type = "mixed";
       }
+      {
+        listen = "127.0.0.1";
+        listen_port = 2081;
+        tag = "in:REJECT";
+        type = "socks";
+      }
     ];
+
     log = {
       disabled = false;
       level = "trace";
       output = logPath;
       timestamp = true;
     };
+
+    ntp = {
+      detour = "out:DIRECT";
+      enabled = true;
+      interval = "30m";
+      server = "time.apple.com";
+      server_port = 123;
+    };
+
     outbounds = [
       {
-        tag = "out:block";
-        type = "block";
+        server = "127.0.0.1";
+        server_port = 2081;
+        tag = "out:REJECT";
+        type = "socks";
       }
       {
-        tag = "out:direct:default";
+        domain_strategy = "prefer_ipv4";
+        tag = "out:DIRECT";
         type = "direct";
       }
       {
-        tag = "out:dns";
-        type = "dns";
-      }
-      # {
-      #   tag = "out:dns:local";
-      #   type = "direct";
-      #   override_address = "127.0.0.1";
-      #   override_port = 53;
-      # }
-      {
-        detour = "auto:proxy";
-        interface_name = "wgcf";
-        local_address = inputs.nixos-privates.wgcf."${config.networking.hostName}".address;
-        mtu = 1280;
-        private_key = "";
-        peer_public_key = inputs.nixos-privates.wgcf."${config.networking.hostName}".publicKey;
-        server = "162.159.192.1";
-        server_port = 2408;
-        system_interface = true;
-        tag = "wgcf";
-        type = "wireguard";
+        outbounds = [
+          "自动选择"
+          "out:REJECT"
+          "out:DIRECT"
+          "out:WARP"
+        ];
+        tag = "节点选择";
+        type = "selector";
       }
       {
-        idle_timeout = "30m";
-        interrupt_exist_connections = false;
-        interval = "1s";
-        # _outbounds = [
-        #   "proxy:"
-        # ];
-        tag = "auto:proxy";
-        tolerance = 300;
+        outbounds = [ ];
+        tag = "自动选择";
         type = "urltest";
-        url = "https://8.8.8.8"; # "https://connectivitycheck.gstatic.com/generate_204";
       }
       {
-        idle_timeout = "30m";
-        interrupt_exist_connections = false;
-        interval = "1s";
-        # _outbounds = [
-        #   "hideme:"
-        # ];
-        tag = "auto:hideme";
-        tolerance = 300;
-        type = "urltest";
-        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
+        outbounds = [
+          "节点选择"
+          "out:DIRECT"
+          "out:REJECT"
+          "out:WARP"
+          "自动选择"
+        ];
+        tag = "GLOBAL";
+        type = "selector";
       }
       {
-        idle_timeout = "30m";
-        interrupt_exist_connections = false;
-        interval = "1s";
-        # _outbounds = [
-        #   "crypto:"
-        # ];
-        tag = "auto:crypto";
-        tolerance = 300;
-        type = "urltest";
-        url = "https://1.1.1.1"; # "https://connectivitycheck.gstatic.com/generate_204";
+        outbounds = [
+          "out:DIRECT"
+          "out:REJECT"
+          "节点选择"
+          "自动选择"
+        ];
+        tag = "私有网络";
+        type = "selector";
+      }
+      {
+        outbounds = [
+          "out:DIRECT"
+          "节点选择"
+          "out:REJECT"
+          "out:WARP"
+          "自动选择"
+        ];
+        tag = "国内服务";
+        type = "selector";
+      }
+      {
+        outbounds = [
+          "节点选择"
+          "out:REJECT"
+          "out:DIRECT"
+          "out:WARP"
+          "自动选择"
+        ];
+        tag = "加密货币";
+        type = "selector";
+      }
+      {
+        outbounds = [
+          "节点选择"
+          "out:DIRECT"
+          "out:REJECT"
+          "out:WARP"
+          "自动选择"
+        ];
+        tag = "隐私相关";
+        type = "selector";
+      }
+      {
+        outbounds = [
+          "节点选择"
+          "out:DIRECT"
+          "out:REJECT"
+          "out:WARP"
+          "自动选择"
+        ];
+        tag = "流媒体";
+        type = "selector";
+      }
+      {
+        outbounds = [
+          "节点选择"
+          "out:DIRECT"
+          "out:REJECT"
+          "out:WARP"
+          "自动选择"
+        ];
+        tag = "非中国";
+        type = "selector";
+      }
+      {
+        outbounds = [
+          "节点选择"
+          "out:DIRECT"
+          "out:REJECT"
+          "out:WARP"
+          "自动选择"
+        ];
+        tag = "漏网之鱼";
+        type = "selector";
+      }
+      {
+        outbounds = [
+          "自动选择"
+          "out:DIRECT"
+        ];
+        tag = "跳板";
+        type = "selector";
       }
     ];
     route = {
       auto_detect_interface = true;
-      final = "auto:proxy"; # "auto:hideme";
+      final = "漏网之鱼";
       rule_set = [
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:cn";
+          tag = "lyc8503:geosite:cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:cn";
+          tag = "lyc8503:geoip:cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:protonmail";
+          tag = "lyc8503:geosite:geolocation@cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-protonmail.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-geolocation-cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:telegram";
+          tag = "lyc8503:geosite:private";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-telegram.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-private.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:imgur";
+          tag = "lyc8503:geoip:private";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-imgur.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-private.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:paypal";
+          tag = "lyc8503:geosite:geolocation@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-paypal.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-geolocation-!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:pixiv";
+          tag = "lyc8503:geosite:alibaba@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-pixiv.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-alibaba@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:category-cryptocurrency";
+          tag = "lyc8503:geosite:alibabacloud@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-cryptocurrency.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-alibabacloud@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:category-novel";
+          tag = "lyc8503:geosite:aliyun@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-novel.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-aliyun@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:category-porn";
+          tag = "lyc8503:geosite:bilibili@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-category-porn.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-bilibili@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:cloudflare";
+          tag = "lyc8503:geosite:bytedance@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cloudflare.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-bytedance@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:openai";
+          tag = "lyc8503:geosite:huawei@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-openai.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-huawei@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:reddit";
+          tag = "lyc8503:geosite:huaweicloud@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-reddit.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-huaweicloud@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geosite:docker";
+          tag = "lyc8503:geosite:jd@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-docker.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-jd@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:telegram";
+          tag = "lyc8503:geosite:qcloud@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-telegram.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-qcloud@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:cloudflare";
+          tag = "lyc8503:geosite:tencent-games@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cloudflare.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-tencent-games@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:fastly";
+          tag = "lyc8503:geosite:tencent@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-fastly.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-tencent@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:cloudfront";
+          tag = "lyc8503:geosite:tiktok@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cloudfront.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-tiktok@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:facebook";
+          tag = "lyc8503:geosite:xiaomi@!cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-facebook.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-xiaomi@!cn.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:netflix";
+          tag = "lyc8503:geosite:category:cryptocurrency";
           type = "remote";
-          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-netflix.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-category-cryptocurrency.srs";
         }
         {
-          download_detour = "auto:proxy";
+          download_detour = "自动选择";
           format = "binary";
-          tag = "geoip:twitter";
+          tag = "lyc8503:geosite:category:cryptocurrency@cn";
           type = "remote";
-          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-twitter.srs";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-category-cryptocurrency@cn.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:protonmail";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-protonmail.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:telegram";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-telegram.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:telegram";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-telegram.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:tor";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-tor.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:tor";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-tor.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:torproject";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-torproject.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:category:porn";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-category-porn.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:netflix";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-netflix.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:netflix";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-netflix.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:hulu";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-hulu.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:hbo";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-hbo.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:disney";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-disney.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:spotify";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-spotify.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:primevideo";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-primevideo.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:youtube";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-youtube.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "DustinWin:geosite:appletv";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/DustinWin/ruleset_geodata/refs/heads/sing-box-ruleset/appletv.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:imgur";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-imgur.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:paypal";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-paypal.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:pixiv";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-pixiv.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:cloudflare";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-cloudflare.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:cloudflare";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-cloudflare.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:openai";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-openai.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:reddit";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-reddit.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:fastly";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-fastly.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:fastly";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-fastly.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:cloudfront";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-cloudfront.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:facebook";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-facebook.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:facebook";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-facebook.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geoip:twitter";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geoip/geoip-twitter.srs";
+        }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:twitter";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-twitter.srs";
         }
       ];
       rules = [
         {
-          ip_is_private = true;
-          outbound = "out:direct:default";
+          action = "reject";
+          inbound = [ "in:REJECT" ];
         }
-        # {
-        #   outbound = "out:dns:local";
-        #   protocol = "dns";
-        #   source_ip_cidr = [
-        #     # docker bridge network
-        #     "172.17.0.1/16"
-        #   ];
-        # }
+        { action = "sniff"; }
         {
-          outbound = "out:dns";
+          action = "hijack-dns";
           protocol = "dns";
         }
         {
-          outbound = "out:direct:default";
-          rule_set = "geoip:cn";
+          clash_mode = "direct";
+          outbound = "out:DIRECT";
         }
         {
-          outbound = "out:direct:default";
-          rule_set = "geosite:cn";
+          clash_mode = "global";
+          outbound = "GLOBAL";
         }
         {
-          ip_version = 6;
-          outbound = "auto:hideme"; # "wgcf";
-        }
-        {
-          outbound = "auto:hideme";
-          port = 22;
-        }
-        {
-          outbound = "auto:hideme";
-          port = 222;
-        }
-        {
-          outbound = "auto:hideme";
-          port = 2222;
-        }
-        {
-          outbound = "auto:proxy";
-          domain_suffix = [
-            "sourceforge.net"
-            "cache.nixos.org"
-            "rust-lang.org"
+          outbound = "私有网络";
+          rule_set = [
+            "lyc8503:geosite:private"
+            "lyc8503:geoip:private"
           ];
         }
         {
-          outbound = "auto:proxy";
-          rule_set = "geosite:docker";
-        }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:protonmail";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:telegram";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:imgur";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:paypal";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:pixiv";
-        # }
-        {
-          outbound = "auto:crypto";
-          rule_set = "geosite:category-cryptocurrency";
-        }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:category-novel";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:category-porn";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:cloudflare";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:openai";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geosite:reddit";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geoip:telegram";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geoip:cloudflare";
-        # }
-        {
-          outbound = "auto:proxy";
-          rule_set = "geoip:fastly";
+          ip_is_private = true;
+          outbound = "私有网络";
         }
         {
-          outbound = "auto:proxy";
-          rule_set = "geoip:cloudfront";
+          outbound = "加密货币";
+          rule_set = [
+            "lyc8503:geosite:category:cryptocurrency"
+            "lyc8503:geosite:category:cryptocurrency@cn"
+          ];
         }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geoip:facebook";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geoip:netflix";
-        # }
-        # {
-        #   outbound = "auto:hideme";
-        #   rule_set = "geoip:twitter";
-        # }
+        {
+          outbound = "隐私相关";
+          rule_set = [
+            "lyc8503:geosite:protonmail"
+            "lyc8503:geoip:telegram"
+            "lyc8503:geosite:telegram"
+            "lyc8503:geoip:tor"
+            "lyc8503:geosite:tor"
+            "lyc8503:geosite:torproject"
+            "lyc8503:geosite:category:porn"
+          ];
+        }
+        {
+          outbound = "流媒体";
+          rule_set = [
+            "lyc8503:geoip:netflix"
+            "lyc8503:geosite:netflix"
+            "lyc8503:geosite:hulu"
+            "lyc8503:geosite:hbo"
+            "lyc8503:geosite:disney"
+            "lyc8503:geosite:spotify"
+            "lyc8503:geosite:primevideo"
+            "lyc8503:geosite:youtube"
+            "DustinWin:geosite:appletv"
+          ];
+        }
+        {
+          outbound = "非中国";
+          rule_set = [
+            "lyc8503:geosite:geolocation@!cn"
+            "lyc8503:geosite:alibaba@!cn"
+            "lyc8503:geosite:alibabacloud@!cn"
+            "lyc8503:geosite:aliyun@!cn"
+            "lyc8503:geosite:bilibili@!cn"
+            "lyc8503:geosite:bytedance@!cn"
+            "lyc8503:geosite:huawei@!cn"
+            "lyc8503:geosite:huaweicloud@!cn"
+            "lyc8503:geosite:jd@!cn"
+            "lyc8503:geosite:qcloud@!cn"
+            "lyc8503:geosite:tencent-games@!cn"
+            "lyc8503:geosite:tencent@!cn"
+            "lyc8503:geosite:tiktok@!cn"
+            "lyc8503:geosite:xiaomi@!cn"
+          ];
+        }
+        {
+          outbound = "国内服务";
+          rule_set = [
+            "lyc8503:geoip:cn"
+            "lyc8503:geosite:cn"
+            "lyc8503:geosite:geolocation@cn"
+          ];
+        }
       ];
     };
+
   };
 
   environment.persistence = {

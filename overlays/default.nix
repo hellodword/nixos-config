@@ -71,12 +71,12 @@
       postInstall = "sed -i 's/Exec=feh/Exec=feh --scale-down --auto-zoom/' $out/share/applications/feh.desktop";
     });
 
-    sing-box = prev.sing-box.overrideDerivation (oldAttrs: {
-      patches = (oldAttrs.patches or [ ]) ++ [
-        # https://github.com/SagerNet/sing-box/issues/1494
-        ./sing-box-http2ping.patch
-      ];
-    });
+    # sing-box = prev.sing-box.overrideDerivation (oldAttrs: {
+    #   patches = (oldAttrs.patches or [ ]) ++ [
+    #     # https://github.com/SagerNet/sing-box/issues/1494
+    #     ./sing-box-http2ping.patch
+    #   ];
+    # });
 
     mosdns = prev.mosdns.overrideDerivation (oldAttrs: {
       patches = (oldAttrs.patches or [ ]) ++ [

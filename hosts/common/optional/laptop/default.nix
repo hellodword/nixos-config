@@ -17,6 +17,8 @@
       ../../../common/users/common
       ../../../common/users/common/persist.nix
 
+      ../../../common/optional/dns.nix
+
       ../../../common/optional/secureboot.nix
       ../../../common/optional/tmp.nix
       ../../../common/optional/gc.nix
@@ -29,7 +31,6 @@
 
       ../../../common/optional/prefer-ipv4.nix
       ../../../common/optional/sing-box.nix
-      ../../../common/optional/adguardhome.nix
 
       ../../../common/optional/docker.nix
       ../../../common/optional/podman.nix
