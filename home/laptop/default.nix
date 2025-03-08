@@ -132,7 +132,7 @@ in
               map (alias: {
                 name = alias;
                 value = v.ssh;
-              }) v.alias
+              }) (v.alias ++ (map (alias: "${k}-${alias}") v.alias))
             )
           )
         ) inputs.nixos-privates.servers
