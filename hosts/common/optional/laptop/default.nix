@@ -23,8 +23,6 @@
       ../../../common/optional/tmp.nix
       ../../../common/optional/gc.nix
 
-      ../../../common/optional/openssh-server.nix
-
       ../../../common/optional/ntfs.nix
       ../../../common/optional/vfat.nix
       ../../../common/optional/ext4.nix

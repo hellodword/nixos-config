@@ -1,7 +1,7 @@
-{ inputs, config, ... }:
+{ inputs, privates, ... }:
 
 let
-  device0 = "/dev/disk/by-id/${inputs.nixos-privates.disk."${config.networking.hostName}".id.disk0}";
+  device0 = privates.laptops.laptop2.hardware.disk.primary.device;
   swapSize = "64GiB";
 in
 {

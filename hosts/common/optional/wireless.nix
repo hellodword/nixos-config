@@ -3,6 +3,7 @@
   pkgs,
   config,
   inputs,
+  privates,
   ...
 }:
 
@@ -18,22 +19,16 @@
     fallbackToWPA2 = false;
     # Declarative
     secretsFile = config.sops.secrets."wireless".path;
-    # 先在 nixos-privates 里添加 ssid
-    # 再在 secrets 里添加 psk
-    networks = {
-      "${inputs.nixos-privates.wireless.HOME.ssid}" = {
-        pskRaw = "ext:HOME_PSK";
-      };
-      "${inputs.nixos-privates.wireless.TRAVEL.ssid}" = {
-        pskRaw = "ext:TRAVEL_PSK";
-      };
-      "${inputs.nixos-privates.wireless.IPHONE.ssid}" = {
-        pskRaw = "ext:IPHONE_PSK";
-      };
-      "${inputs.nixos-privates.wireless.MIFI.ssid}" = {
-        pskRaw = "ext:MIFI_PSK";
-      };
-    };
+    # 先在 nixos-privates 的 wireless 里添加 ssid
+    # psk 在 sops secrets 里， wireless.FOO_PSK
+    networks = builtins.listToAttrs (
+      map (v: {
+        name = v.ssid;
+        value = {
+          pskRaw = "ext:${v.psk}";
+        };
+      }) (builtins.attrValues privates.wireless)
+    );
 
     # # Imperative
     # allowAuxiliaryImperativeNetworks = true;

@@ -138,6 +138,7 @@
         specialArgs = {
           commonArgs = commonArgs;
           inherit inputs outputs;
+          privates = inputs.nixos-privates;
         } // commonArgs;
       };
 

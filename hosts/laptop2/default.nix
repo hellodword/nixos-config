@@ -1,6 +1,5 @@
 {
   pkgs,
-  inputs,
   userName,
   ...
 }:
@@ -23,9 +22,6 @@
   boot.kernelModules = [
     # "lkrg"
   ];
-
-  users.users."${userName}".openssh.authorizedKeys.keys =
-    inputs.nixos-privates.ssh."laptop".authorizedKeys;
 
   home-manager.users."${userName}" = import ../../home/laptop;
 
