@@ -13,6 +13,7 @@ in
             include ${pkgs.firejail}/etc/firejail/sqlitebrowser.profile
             private-etc machine-id
           ''}";
+          attr = "postInstall";
         })
       else
         pkgs.sqlitebrowser

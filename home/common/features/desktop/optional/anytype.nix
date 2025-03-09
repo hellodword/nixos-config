@@ -2,21 +2,22 @@
   config,
   pkgs,
   persistPath,
+  nixosConfig,
   ...
 }:
 
 let
+  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
   originalPkg = pkgs.anytype;
-  package = originalPkg.overrideAttrs (oldAttrs: {
-    postInstall = ''
-      mv $out/bin/anytype $out/bin/.anytype-unwrapped
-      cat > $out/bin/anytype << EOF
-      #! ${pkgs.runtimeShell} -e
-      exec firejail --profile=${./anytype.profile} -- $out/bin/.anytype-unwrapped "\$@"
-      EOF
-      chmod +x $out/bin/anytype
-    '';
-  });
+  package =
+    if nixosConfig.programs.firejail.enable then
+      (mkJailed {
+        inherit originalPkg;
+        profile = ./anytype.profile;
+        attr = "postInstall";
+      })
+    else
+      originalPkg;
 in
 {
   home.packages = [ package ];

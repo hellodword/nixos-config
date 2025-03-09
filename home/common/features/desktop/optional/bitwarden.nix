@@ -18,6 +18,7 @@ in
         (mkJailed {
           originalPkg = bitwarden-desktop;
           profile = ./bitwarden.profile;
+          attr = "postInstall";
         })
       else
         bitwarden-desktop
@@ -28,6 +29,7 @@ in
         (mkJailed {
           originalPkg = bitwarden-cli;
           profile = ./bitwarden.profile;
+          attr = "postInstall";
           extraArgs = [ "--quiet" ];
         })
       else

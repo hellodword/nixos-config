@@ -67,24 +67,24 @@
     #     oldAttrs.installPhase;
     # });
 
-    feh = prev.feh.overrideDerivation (oldAttrs: {
+    feh = prev.feh.overrideAttrs (oldAttrs: {
       postInstall = "sed -i 's/Exec=feh/Exec=feh --scale-down --auto-zoom/' $out/share/applications/feh.desktop";
     });
 
-    sing-box = prev.sing-box.overrideDerivation (oldAttrs: {
+    sing-box = prev.sing-box.overrideAttrs (oldAttrs: {
       patches = (oldAttrs.patches or [ ]) ++ [
         # https://github.com/SagerNet/sing-box/issues/1494
         ./sing-box-http2ping.patch
       ];
     });
 
-    mosdns = prev.mosdns.overrideDerivation (oldAttrs: {
+    mosdns = prev.mosdns.overrideAttrs (oldAttrs: {
       patches = (oldAttrs.patches or [ ]) ++ [
         ./mosdns-apply-ttl-for-servfail.patch
       ];
     });
 
-    firejail = prev.firejail.overrideDerivation (oldAttrs: {
+    firejail = prev.firejail.overrideAttrs (oldAttrs: {
       src = inputs.firejail;
     });
 

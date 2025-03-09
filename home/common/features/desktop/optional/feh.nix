@@ -11,6 +11,7 @@ in
         (mkJailed {
           originalPkg = pkgs.feh;
           profile = "${pkgs.firejail}/etc/firejail/feh.profile";
+          attr = "postInstall";
         })
       else
         pkgs.feh;

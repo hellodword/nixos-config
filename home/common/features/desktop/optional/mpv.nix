@@ -11,6 +11,7 @@ in
         (mkJailed {
           originalPkg = pkgs.mpv;
           profile = "${pkgs.firejail}/etc/firejail/mpv.profile";
+          attr = "buildCommand";
         })
       else
         pkgs.mpv;

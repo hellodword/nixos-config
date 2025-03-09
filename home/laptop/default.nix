@@ -77,7 +77,6 @@ in
         else
           ../common/features/desktop/optional/grimshot.nix
       )
-      ../common/features/desktop/optional/thunar.nix
       ../common/features/desktop/optional/mpv.nix
       ../common/features/desktop/optional/feh.nix
       ../common/features/desktop/optional/low-battery.nix
@@ -101,7 +100,6 @@ in
       ../common/features/desktop/optional/anytype.nix
       ../common/features/desktop/optional/bitwarden.nix
       ../common/features/desktop/optional/libreoffice.nix
-      ../common/features/desktop/optional/zathura.nix
       ../common/features/desktop/optional/scrcpy.nix
       ../common/features/desktop/optional/remmina.nix
       # ../common/features/desktop/optional/blender.nix

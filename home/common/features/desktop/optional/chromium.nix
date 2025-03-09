@@ -26,6 +26,7 @@ in
         (mkJailed {
           originalPkg = pkgs.chromium;
           profile = "${pkgs.firejail}/etc/firejail/chromium.profile";
+          attr = "buildCommand";
         })
       else
         pkgs.chromium;
@@ -37,9 +38,7 @@ in
   };
 
   # flutter debugger or other apps need this
-  home.sessionVariables.CHROME_EXECUTABLE =
-    lib.mkOverride 100
-      "${config.programs.chromium.package}/bin/chromium";
+  home.sessionVariables.CHROME_EXECUTABLE = lib.mkOverride 100 "${config.programs.chromium.package}/bin/chromium";
 
   # https://github.com/NixOS/nixpkgs/issues/242113#issuecomment-1628379807
   # rm -rf ~/.config/chromium/Default/GPUCache/
