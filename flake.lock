@@ -23,46 +23,6 @@
         "type": "github"
       }
     },
-    "anytype-flake": {
-      "inputs": {
-        "anytype-l10n": "anytype-l10n",
-        "flake-utils": "flake-utils_3",
-        "nixpkgs": [
-          "nixpkgs"
-        ],
-        "systems": "systems_3"
-      },
-      "locked": {
-        "lastModified": 1740794724,
-        "narHash": "sha256-xMakDPj+0eo6JDs36Y+9qDfBixQjDUeayFf1560ShG8=",
-        "owner": "hellodword",
-        "repo": "anytype-flake",
-        "rev": "2abeb0c56c2cf55e842eb4af867f9526770ea9b3",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hellodword",
-        "ref": "full",
-        "repo": "anytype-flake",
-        "type": "github"
-      }
-    },
-    "anytype-l10n": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1740763786,
-        "narHash": "sha256-npHZ4bLDhRqfGkFokKH1lxZ79EXNnzT0apu6x4ChcpU=",
-        "owner": "anyproto",
-        "repo": "l10n-anytype-ts",
-        "rev": "c3bc4c0ec93b9e44799391377f13206ed4837b1e",
-        "type": "github"
-      },
-      "original": {
-        "owner": "anyproto",
-        "repo": "l10n-anytype-ts",
-        "type": "github"
-      }
-    },
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
@@ -206,7 +166,7 @@
     },
     "firefox-addons": {
       "inputs": {
-        "flake-utils": "flake-utils_4",
+        "flake-utils": "flake-utils_3",
         "nixpkgs": [
           "nixpkgs"
         ]
@@ -335,26 +295,6 @@
       }
     },
     "flake-utils_3": {
-      "inputs": {
-        "systems": [
-          "anytype-flake",
-          "systems"
-        ]
-      },
-      "locked": {
-        "lastModified": 1731533236,
-        "narHash": "sha256-l0KFg5HjrsfsO/JpG+r7fRrqm12kzFHyUHqHCVpMMbI=",
-        "owner": "numtide",
-        "repo": "flake-utils",
-        "rev": "11707dc2f618dd54ca8739b309ec4fc024de578b",
-        "type": "github"
-      },
-      "original": {
-        "id": "flake-utils",
-        "type": "indirect"
-      }
-    },
-    "flake-utils_4": {
       "locked": {
         "lastModified": 1629284811,
         "narHash": "sha256-JHgasjPR0/J1J3DRm4KxM4zTyAj4IOJY8vIl75v/kPI=",
@@ -369,9 +309,9 @@
         "type": "github"
       }
     },
-    "flake-utils_5": {
+    "flake-utils_4": {
       "inputs": {
-        "systems": "systems_4"
+        "systems": "systems_3"
       },
       "locked": {
         "lastModified": 1710146030,
@@ -493,7 +433,7 @@
     "nix-vscode-extensions": {
       "inputs": {
         "flake-compat": "flake-compat_2",
-        "flake-utils": "flake-utils_5",
+        "flake-utils": "flake-utils_4",
         "nixpkgs": [
           "nixpkgs"
         ]
@@ -637,7 +577,6 @@
     "root": {
       "inputs": {
         "android-nixpkgs": "android-nixpkgs",
-        "anytype-flake": "anytype-flake",
         "arkenfox-userjs": "arkenfox-userjs",
         "auditd-rules": "auditd-rules",
         "catppuccin-alacritty": "catppuccin-alacritty",
@@ -749,21 +688,6 @@
       }
     },
     "systems_3": {
-      "locked": {
-        "lastModified": 1689347949,
-        "narHash": "sha256-12tWmuL2zgBgZkdoB6qXZsgJEH9LR3oUgpaQq2RbI80=",
-        "owner": "nix-systems",
-        "repo": "default-linux",
-        "rev": "31732fcf5e8fea42e59c2488ad31a0e651500f68",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nix-systems",
-        "repo": "default-linux",
-        "type": "github"
-      }
-    },
-    "systems_4": {
       "locked": {
         "lastModified": 1681028828,
         "narHash": "sha256-Vy1rq5AaRuLzOxct8nz4T6wlgyUR7zLU309k9mBC768=",

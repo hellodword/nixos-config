@@ -83,11 +83,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    anytype-flake = {
-      url = "github:hellodword/anytype-flake/full";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     reproducible-violentmonkey = {
       url = "github:hellodword/reproducible-violentmonkey";
       flake = false;

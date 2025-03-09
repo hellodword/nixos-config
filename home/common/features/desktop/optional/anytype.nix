@@ -2,28 +2,29 @@
   config,
   pkgs,
   persistPath,
-  inputs,
-  nixosConfig,
   ...
 }:
 
 let
-  # package = pkgs.anytype;
-  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
-  originalPkg = inputs.anytype-flake.packages.${pkgs.system}.anytype;
-  package =
-    if nixosConfig.programs.firejail.enable then
-      (mkJailed {
-        inherit originalPkg;
-        profile = ./anytype.profile;
-      })
-    else
-      originalPkg;
+  originalPkg = pkgs.anytype;
+  package = originalPkg.overrideAttrs (oldAttrs: {
+    postInstall = ''
+      mv $out/bin/anytype $out/bin/.anytype-unwrapped
+      cat > $out/bin/anytype << EOF
+      #! ${pkgs.runtimeShell} -e
+      exec firejail --profile=${./anytype.profile} -- $out/bin/.anytype-unwrapped "\$@"
+      EOF
+      chmod +x $out/bin/anytype
+    '';
+  });
 in
 {
   home.packages = [ package ];
 
-  me.allowedUnfreePkg = [ originalPkg ];
+  me.allowedUnfreePkg = [
+    originalPkg
+    "anytype-heart"
+  ];
 
   me.exitProcess = [ "anytype" ];
 
