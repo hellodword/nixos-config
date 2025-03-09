@@ -134,6 +134,8 @@ let
       fi
     '';
   };
+
+  patched = true;
 in
 {
   # sing-tun may not working after networking state changes
@@ -546,11 +548,20 @@ in
         tag = "节点选择";
         type = "selector";
       }
-      {
-        outbounds = [ ];
-        tag = "自动选择";
-        type = "urltest";
-      }
+      (
+        {
+          outbounds = [ ];
+          tag = "自动选择";
+          type = "urltest";
+        }
+        // (lib.optionalAttrs patched {
+          idle_timeout = "30m";
+          interrupt_exist_connections = false;
+          interval = "1s";
+          tolerance = 300;
+          url = "https://1.1.1.1";
+        })
+      )
       {
         outbounds = [
           "节点选择"
