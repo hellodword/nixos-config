@@ -1026,10 +1026,10 @@ in
           inbound = [ "in:REJECT" ];
         }
         { action = "sniff"; }
-        {
-          action = "hijack-dns";
-          protocol = "dns";
-        }
+        # {
+        #   action = "hijack-dns";
+        #   protocol = "dns";
+        # }
         {
           clash_mode = "direct";
           outbound = "out:DIRECT";
