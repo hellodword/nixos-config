@@ -35,7 +35,7 @@
 
       ../../../common/optional/access-tokens.nix
 
-      ../../../common/optional/auditd.nix
+      # ../../../common/optional/auditd.nix
       ../../../common/optional/virtualbox.nix
 
       ../../../common/optional/wireless.nix
