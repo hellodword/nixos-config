@@ -42,34 +42,15 @@
     nixos-privates.url = "git+ssh://git@hellodword.github.com/hellodword/nixos-privates.git";
 
     firefox-addons = {
+      # DO NOT UPGRADE, only using the `buildFirefoxXpiAddon`
       # https://gitlab.com/rycee/nur-expressions/-/compare/58848c079b92abf27e92786681fe771da505599f...master
       url = "gitlab:rycee/nur-expressions/58848c079b92abf27e92786681fe771da505599f?dir=pkgs/firefox-addons";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nix-index-database = {
-      url = "github:Mic92/nix-index-database";
+      url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    nix-vscode-extensions = {
-      url = "github:nix-community/nix-vscode-extensions";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    auditd-rules = {
-      url = "github:Neo23x0/auditd";
-      flake = false;
-    };
-
-    catppuccin-kitty = {
-      url = "github:catppuccin/kitty/d7d61716a83cd135344cbb353af9d197c5d7cec1";
-      flake = false;
-    };
-
-    catppuccin-alacritty = {
-      url = "github:catppuccin/alacritty/94800165c13998b600a9da9d29c330de9f28618e";
-      flake = false;
     };
 
     catppuccin-fcitx5 = {
@@ -85,11 +66,6 @@
 
     reproducible-violentmonkey = {
       url = "github:hellodword/reproducible-violentmonkey";
-      flake = false;
-    };
-
-    sing-box-schema = {
-      url = "git+https://gist.github.com/artiga033/fea992d95ad44dc8d024b229223b1002.git";
       flake = false;
     };
 

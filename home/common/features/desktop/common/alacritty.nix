@@ -1,10 +1,13 @@
-{ inputs, ... }:
+{ pkgs, ... }:
 
 let
+  mocha = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/catppuccin/alacritty/94800165c13998b600a9da9d29c330de9f28618e/catppuccin-mocha.toml";
+    hash = "sha256-/N3rwIZ0SJBiE7TiBs4pEjhzM1f2hr26WXM3ifUzzOY=";
+  };
+
   # https://github.com/myme/dotfiles/blob/931de1db198bdd405c1289d17ded2bcafc230e83/home-manager/wm/alacritty/default.nix
-  theme = builtins.fromTOML (
-    builtins.readFile "${inputs.catppuccin-alacritty}/catppuccin-mocha.toml"
-  );
+  theme = builtins.fromTOML (builtins.readFile "${mocha}");
 in
 {
   # https://github.com/telphan/hestia/blob/49c42528ed7daa62c177e705aa9c06b7b3fbd5b0/home-manager/term.nix

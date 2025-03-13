@@ -1,11 +1,16 @@
 {
   pkgs,
-  inputs,
   persistPath,
   lib,
   ...
 }:
 
+let
+  rule = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/Neo23x0/auditd/ddf2603dbc985f97538d102f13b4e4446b402bae/audit.rules";
+    hash = "sha256-wd9b0jg+nN1xgxrFl1zUmtwSHa9lep2+5n/+0IS9KPQ=";
+  };
+in
 {
   # security.auditd.enable = true;
   security.audit = {
@@ -14,9 +19,7 @@
     rules =
       [ ]
       ++ (map (x: builtins.replaceStrings [ "'" ] [ "'\"'\"'" ] x) (
-        lib.filter (x: x != "") (
-          lib.splitString "\n" (builtins.readFile "${inputs.auditd-rules}/audit.rules")
-        )
+        lib.filter (x: x != "") (lib.splitString "\n" (builtins.readFile "${rule}"))
       ));
   };
 

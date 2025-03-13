@@ -1,10 +1,11 @@
-{
-  lib,
-  inputs,
-  pkgs,
-  ...
-}:
+{ lib, pkgs, ... }:
 
+let
+  mocha = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/catppuccin/kitty/d7d61716a83cd135344cbb353af9d197c5d7cec1/themes/mocha.conf";
+    hash = "sha256-MGte5LelzzdM9SL+zFC4agVfFcluVVYaq/+fKopyON4=";
+  };
+in
 {
   # ~~滚动条~~ https://github.com/kovidgoyal/kitty/issues/2502#issuecomment-606996263
   # WARNING: terminal is not fully functional https://sw.kovidgoyal.net/kitty/faq/#i-get-errors-about-the-terminal-being-unknown-or-opening-the-terminal-failing-or-functional-keys-like-arrow-keys-don-t-work
@@ -48,7 +49,7 @@
       # modify_font underline_position +3
       # modify_font underline_thickness 150%
 
-      include ${inputs.catppuccin-kitty}/themes/mocha.conf
+      include ${mocha}
     '';
     keybindings = {
       "kitty_mod+n" = "new_os_window_with_cwd";
