@@ -5,6 +5,7 @@ set -e
 sing_box_rules=(
     "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-cn.json"
     "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-geolocation-cn.json"
+    "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-google-trust-services%40cn.json"
 )
 DNS="127.0.0.1#55554"
 

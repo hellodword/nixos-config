@@ -363,6 +363,7 @@ in
           rule_set = [
             "lyc8503:geosite:cn"
             "lyc8503:geosite:geolocation@cn"
+            "lyc8503:geosite:google-trust-services@cn"
           ];
           server = "dns:direct";
         }
@@ -1019,6 +1020,13 @@ in
           type = "remote";
           url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-twitter.srs";
         }
+        {
+          download_detour = "自动选择";
+          format = "binary";
+          tag = "lyc8503:geosite:google-trust-services@cn";
+          type = "remote";
+          url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/refs/heads/rule-set-geosite/geosite-google-trust-services%40cn.srs";
+        }
       ];
       rules = [
         {
@@ -1107,6 +1115,7 @@ in
             "lyc8503:geoip:cn"
             "lyc8503:geosite:cn"
             "lyc8503:geosite:geolocation@cn"
+            "lyc8503:geosite:google-trust-services@cn"
           ];
         }
       ];
