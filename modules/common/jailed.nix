@@ -13,8 +13,10 @@ let
       args = lib.escapeShellArgs (
         extraArgs ++ (lib.optional (profile != null) "--profile=${toString profile}")
       );
+      overrideFuc =
+        if builtins.hasAttr "overrideDerivation" originalPkg then "overrideDerivation" else "overrideAttrs";
     in
-    originalPkg.overrideAttrs (oldAttrs: {
+    originalPkg."${overrideFuc}" (oldAttrs: {
       ${attr} = ''
         ${if builtins.hasAttr attr oldAttrs then oldAttrs.${attr} else ""}
 
