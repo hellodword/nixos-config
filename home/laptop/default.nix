@@ -136,7 +136,7 @@ in
         ) inputs.nixos-privates.servers
       );
 
-  programs.firefox.profiles.default.bookmarks =
+  programs.firefox.profiles.default.bookmarks.settings =
     lib.mkAfter
       inputs.nixos-privates.firefox."laptop".bookmarks;
   programs.gpg.publicKeys = lib.mkAfter inputs.nixos-privates.gpg."laptop".publicKeys;

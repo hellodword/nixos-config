@@ -66,7 +66,8 @@ in
         isDefault = true;
         # userChrome = "";
         # userContent = "";
-        bookmarks = [
+        bookmarks.force = true;
+        bookmarks.settings = [
           {
             name = "Chat";
             toolbar = true;
@@ -155,11 +156,10 @@ in
           而在 ff 中则以 git+空格 开头永远是识别为 alias。
         */
         search = {
-          default = "Google";
+          default = "google";
           force = true;
           order = [
-            "Google"
-            "presearch"
+            "google"
             "Hacker News"
             "Github"
             "Github Actions"
@@ -179,7 +179,7 @@ in
                 "@actions"
                 "@ci"
               ];
-              iconUpdateURL = "https://github.com/favicon.ico";
+              icon = "https://github.com/favicon.ico";
             };
             "Github" = {
               urls = [
@@ -188,7 +188,7 @@ in
                 }
               ];
               definedAliases = [ "@git" ];
-              iconUpdateURL = "https://github.com/favicon.ico";
+              icon = "https://github.com/favicon.ico";
             };
             "Github Nix" = {
               urls = [
@@ -200,7 +200,7 @@ in
                 "@gitnix"
                 "gitnix"
               ];
-              iconUpdateURL = "https://github.com/favicon.ico";
+              icon = "https://github.com/favicon.ico";
             };
             "Nix Noogle" = {
               urls = [
@@ -213,7 +213,7 @@ in
                 "noogle"
                 "@nix1"
               ];
-              iconUpdateURL = "https://noogle.dev/favicon.png";
+              icon = "https://noogle.dev/favicon.png";
             };
             "Nix Nixhub" = {
               urls = [
@@ -226,7 +226,7 @@ in
                 "nixhub"
                 "@nix2"
               ];
-              iconUpdateURL = "https://www.nixhub.io/favicon.ico";
+              icon = "https://www.nixhub.io/favicon.ico";
             };
             "Nix MyNixOS" = {
               urls = [
@@ -239,7 +239,7 @@ in
                 "mynixos"
                 "@nix3"
               ];
-              iconUpdateURL = "https://mynixos.com/favicon.ico";
+              icon = "https://mynixos.com/favicon.ico";
             };
             "Nix package versions" = {
               urls = [
@@ -248,7 +248,7 @@ in
                 }
               ];
               definedAliases = [ "@nix4" ];
-              iconUpdateURL = "https://nixos.org/favicon.png";
+              icon = "https://nixos.org/favicon.png";
             };
             "Nixpkgs" = {
               urls = [
@@ -257,7 +257,7 @@ in
                 }
               ];
               definedAliases = [ "@nixpkgs" ];
-              iconUpdateURL = "https://github.com/favicon.ico";
+              icon = "https://github.com/favicon.ico";
             };
             "home-manager" = {
               urls = [
@@ -269,7 +269,7 @@ in
                 "@hm"
                 "hm"
               ];
-              iconUpdateURL = "https://github.com/favicon.ico";
+              icon = "https://github.com/favicon.ico";
             };
             "Hacker News" = {
               urls = [
@@ -281,7 +281,7 @@ in
                 "@hn"
                 "hn"
               ];
-              iconUpdateURL = "https://www.ycombinator.com/favicon.ico";
+              icon = "https://www.ycombinator.com/favicon.ico";
             };
             "V2ex" = {
               urls = [
@@ -290,19 +290,7 @@ in
                 }
               ];
               definedAliases = [ "@v2ex" ];
-              iconUpdateURL = "https://www.v2ex.com/favicon.ico";
-            };
-            "presearch" = {
-              urls = [
-                {
-                  template = "https://presearch.com/search?q={searchTerms}";
-                }
-              ];
-              definedAliases = [
-                "@presearch"
-                "@p"
-              ];
-              iconUpdateURL = "https://presearch.com/favicon.ico";
+              icon = "https://www.v2ex.com/favicon.ico";
             };
             "Google Translate" = {
               urls = [
@@ -311,7 +299,7 @@ in
                 }
               ];
               definedAliases = [ "@translate" ];
-              iconUpdateURL = "https://translate.google.com/favicon.ico";
+              icon = "https://translate.google.com/favicon.ico";
             };
             "LET" = {
               urls = [
@@ -320,14 +308,14 @@ in
                 }
               ];
               definedAliases = [ "@let" ];
-              iconUpdateURL = "https://lowendtalk.com/uploads/LowEndTalk.ico";
+              icon = "https://lowendtalk.com/uploads/LowEndTalk.ico";
             };
 
-            "Bing".metaData.hidden = true;
-            "eBay".metaData.hidden = true;
-            "Amazon.com".metaData.hidden = true;
-            "DuckDuckGo".metaData.hidden = true;
-            "Google".metaData.alias = "@g"; # builtin engines only support specifying one additional alias
+            "bing".metaData.hidden = true;
+            "ebay".metaData.hidden = true;
+            "amazondotcom-us".metaData.hidden = true;
+            "ddg".metaData.hidden = true;
+            "google".metaData.alias = "@g"; # builtin engines only support specifying one additional alias
           };
         };
         # https://gist.github.com/0XDE57/fbd302cef7693e62c769
