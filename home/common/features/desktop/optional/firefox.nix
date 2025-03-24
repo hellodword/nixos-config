@@ -108,6 +108,14 @@ in
                 name = "Google Translate";
                 url = "https://translate.google.com/?sl=auto&tl=zh-CN&op=translate";
               }
+              {
+                name = "Buddy's Github Events";
+                url = "https://lawvs.github.io/buddy-github-events/";
+              }
+              {
+                name = "番組表";
+                url = "https://bgmlist.com";
+              }
             ];
           }
           {

@@ -136,9 +136,6 @@ in
         ) inputs.nixos-privates.servers
       );
 
-  programs.firefox.profiles.default.bookmarks.settings =
-    lib.mkAfter
-      inputs.nixos-privates.firefox."laptop".bookmarks;
   programs.gpg.publicKeys = lib.mkAfter inputs.nixos-privates.gpg."laptop".publicKeys;
   services.gpg-agent.sshKeys = lib.mkForce inputs.nixos-privates.gpg."laptop".sshKeys;
   programs.git.aliases."signing" =
