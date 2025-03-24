@@ -25,7 +25,7 @@ let
         cat "${inputs.arkenfox-userjs}/user.js" > $out/user.js
         grep -i clearonshutdown $out/user.js
         sed -i -e '/\/\*\*\* \[SECTION 2800\]/,/\/\*\*\* \[SECTION /s/user_pref.*//' $out/user.js
-        ! grep -i clearonshutdown $out/user.js
+        ! grep -iP '^user_pref\("[^\n"]+\.clearonshutdown' $out/user.js
       '';
 in
 {
