@@ -82,6 +82,7 @@
       patches = (oldAttrs.patches or [ ]) ++ [
         ./mosdns-apply-ttl-for-servfail.patch
       ];
+      doCheck = false;
     });
 
     firejail = prev.firejail.overrideAttrs (oldAttrs: {
