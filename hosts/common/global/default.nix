@@ -51,6 +51,17 @@
     screen
     openssl_legacy
     iptables
+
+    jq # JSON pretty printer and manipulator
+
+    # nixpkgs-fmt
+    # nixpkgs-lint
+    # nil # Nix LSP
+    nixd
+    nixfmt-rfc-style # Nix formatter
+    # flake-checker
+
+    nix-tree
   ];
 
   # # https://github.com/mcdonc/.nixconfig/blob/bb1d1458f2558c16d1451f30a619fa9e14733996/videos/stopdhcp/script.rst
