@@ -455,11 +455,11 @@
     "reproducible-violentmonkey": {
       "flake": false,
       "locked": {
-        "lastModified": 1738759472,
-        "narHash": "sha256-EwnUX1qaWakyv5kMBjl8f5fAzMEaOMJfzMzmQMsqMQg=",
+        "lastModified": 1743165893,
+        "narHash": "sha256-bW0+o7GxrIM3FTN87xNdZq/Kz66KH3Ml32XCV0u2Uag=",
         "owner": "hellodword",
         "repo": "reproducible-violentmonkey",
-        "rev": "1e0c2c27572ec86ee0cdb7b67e35986000761132",
+        "rev": "a7797116346c7b3a7a0b0045b52eb5873e5e8ee6",
         "type": "github"
       },
       "original": {
