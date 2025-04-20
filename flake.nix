@@ -10,7 +10,8 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixos-hardware.url = "github:NixOS/nixos-hardware/master";
-    impermanence.url = "github:nix-community/impermanence";
+    # https://github.com/nix-community/impermanence/pull/264
+    impermanence.url = "github:nix-community/impermanence/b7bb54ae85279863a2892d6aecf396da18a1cb02";
     sops-nix = {
       url = "github:Mic92/sops-nix/d9d781523a1463965cd1e1333a306e70d9feff07";
       inputs.nixpkgs.follows = "nixpkgs";
