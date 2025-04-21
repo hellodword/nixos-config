@@ -1046,17 +1046,18 @@ in
           clash_mode = "global";
           outbound = "GLOBAL";
         }
-        {
-          outbound = "私有网络";
-          rule_set = [
-            "lyc8503:geosite:private"
-            "lyc8503:geoip:private"
-          ];
-        }
-        {
-          ip_is_private = true;
-          outbound = "私有网络";
-        }
+        # These rules break the route_exclude_address of tun
+        # {
+        #   outbound = "私有网络";
+        #   rule_set = [
+        #     "lyc8503:geosite:private"
+        #     "lyc8503:geoip:private"
+        #   ];
+        # }
+        # {
+        #   ip_is_private = true;
+        #   outbound = "私有网络";
+        # }
         {
           outbound = "加密货币";
           rule_set = [
