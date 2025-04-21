@@ -523,7 +523,7 @@ in
       detour = "out:DIRECT";
       enabled = true;
       interval = "30m";
-      server = "time.apple.com";
+      server = "106.55.184.199"; # "time.apple.com";
       server_port = 123;
     };
 
