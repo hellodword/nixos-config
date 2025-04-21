@@ -493,7 +493,6 @@ in
           "172.24.0.0/13"
         ];
         route_exclude_address_set = [ "lyc8503:geoip:private" ];
-        sniff = true;
         stack = "mixed";
         strict_route = true;
         tag = "in:tun";
@@ -502,7 +501,6 @@ in
       {
         listen = "::0";
         listen_port = 10800;
-        sniff = true;
         tag = "in:mixed";
         type = "mixed";
       }
