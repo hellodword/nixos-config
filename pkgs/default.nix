@@ -4,8 +4,6 @@
 }:
 
 {
-  rime-ice = pkgs.callPackage ./rime-ice { };
-  librime-lua = pkgs.callPackage ./librime-lua { };
   localsend-discovery = pkgs.callPackage ./localsend-discovery { };
 
   # fonts

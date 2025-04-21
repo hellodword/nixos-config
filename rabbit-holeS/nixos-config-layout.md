@@ -41,7 +41,7 @@
   - X11 + plasma
   - Wayland + plasma
   - Wayland + sway
-  - rime
+  - fcitx5
   - audio
   - video
   - touchpad
@@ -77,7 +77,7 @@
   - X11 + plasma
   - Wayland + plasma
   - Wayland + sway
-  - rime
+  - fcitx5
   - font config
   - dbus
   - qt / gtk

@@ -2,7 +2,6 @@
   pkgs,
   config,
   lib,
-  persistPath,
   inputs,
   ...
 }:
@@ -21,30 +20,10 @@ let
   '';
 in
 {
-  home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [
-      # 使用新的 rimeDataPkgs 的时候要把文件清空
-      ".config/ibus/rime"
-      ".local/share/fcitx5/rime"
-    ];
-  };
-
   i18n.inputMethod = {
     enabled = "fcitx5";
-    # fcitx.engines = with pkgs.fcitx-engines; [ rime ];
-    # fcitx5.enableRimeData = true;
     fcitx5.addons = [
-      # https://github.com/wuliuqii/nixos-config/blob/87a5d8552973d30b11b800334e816e16dbda0a31/system/configuration.nix#L25-L27
-      (pkgs.fcitx5-rime.override {
-        librime =
-          (pkgs.librime.overrideAttrs (old: {
-            buildInputs = old.buildInputs ++ [ pkgs.lua5_4 ];
-          })).override
-            {
-              plugins = [ pkgs.librime-lua ];
-            };
-        rimeDataPkgs = [ pkgs.rime-ice ];
-      })
+      pkgs.fcitx5-chinese-addons
 
       pkgs.fcitx5-configtool
       pkgs.fcitx5-gtk

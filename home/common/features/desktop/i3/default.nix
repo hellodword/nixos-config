@@ -97,7 +97,7 @@ in
     ./cursor.nix
     (if X then ./deadd.nix else ./mako.nix)
     (if X then ./i3status.nix else ./waybar.nix)
-    ./rime.nix
+    ./ime.nix
     ./rofi
     ./wallpaper.nix
     ./gtk.nix
