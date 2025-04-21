@@ -135,7 +135,7 @@ let
     '';
   };
 
-  patched = true;
+  patched = false;
 in
 {
   # sing-tun may not working after networking state changes
@@ -246,7 +246,7 @@ in
           serviceConfig = {
             Type = "simple";
 
-            Environment = "USE_HTTP2PING=true";
+            # Environment = "USE_HTTP2PING=true";
             ExecStartPre = [
               # Fix perm after debugging sing-box with sudo
               "+${lib.getExe' pkgs.coreutils "coreutils"} --coreutils-prog=chown -R sing-box:sing-box ${sbBaseReal}"
