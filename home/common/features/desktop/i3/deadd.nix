@@ -40,7 +40,7 @@ in
     force = true;
   };
 
-  xsession.windowManager.i3.config.startup = (lib.optionals (X) startup);
+  xsession.windowManager.i3.config.startup = (lib.optionals X startup);
   wayland.windowManager.sway.config.startup = (lib.optionals (!X) startup);
 
   xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault keybindings;

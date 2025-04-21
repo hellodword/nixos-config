@@ -2,8 +2,6 @@
 # https://wiki.archlinux.org/title/Dnsmasq
 
 {
-  lib,
-  inputs,
   pkgs,
   persistPath,
   ...

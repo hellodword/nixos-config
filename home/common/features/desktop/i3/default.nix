@@ -56,13 +56,13 @@ let
         #   } // i3ConfigStartupExtra
         # )
       ]
-      ++ ([
+      ++ [
         {
           # switch to workspace 1 at startup
           command = "${if X then "i3msg" else "swaymsg"} 'workspace number 1'";
           always = false;
         }
-      ])
+      ]
       ++ (lib.optionals X [
         (
           {

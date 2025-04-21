@@ -42,7 +42,7 @@ in
     i3blocks # if you are planning on using i3blocks over i3status
   ];
 
-  xsession.windowManager.i3.config.bars = (lib.optionals (X) bars);
+  xsession.windowManager.i3.config.bars = (lib.optionals X bars);
   wayland.windowManager.sway.config.bars = (lib.optionals (!X) bars);
 
   wayland.windowManager.sway.config.keybindings = lib.mkOptionDefault keybindings;
