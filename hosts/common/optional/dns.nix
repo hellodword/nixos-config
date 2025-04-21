@@ -76,13 +76,17 @@ in
   };
 
   systemd.services = {
-    # dnsmasq = {
-    #   serviceConfig = {
-    #     ExecStartPre = [
-    #       "+${lib.getExe' pkgs.coreutils "mkdir"} -p /usr/local/etc/dnsmasq/dnsmasq.d"
-    #     ];
-    #   };
-    # };
+    dnsmasq = {
+      # serviceConfig = {
+      #   ExecStartPre = [
+      #     "+${lib.getExe' pkgs.coreutils "mkdir"} -p /usr/local/etc/dnsmasq/dnsmasq.d"
+      #   ];
+      # };
+      after = [ "systemd-resolved.service" ];
+    };
+    systemd-resolved = {
+      before = [ "dnsmasq.service" ];
+    };
 
     mosdns = {
       description = "mosdns: 一个 DNS 转发器";

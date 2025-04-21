@@ -230,6 +230,8 @@ in
           after = [
             "network-online.target"
             # "nss-lookup.target"
+            "systemd-resolved.service"
+            "dnsmasq.service"
           ];
           path = with pkgs; [
             curl
