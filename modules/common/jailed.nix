@@ -14,7 +14,7 @@ let
         extraArgs ++ (lib.optional (profile != null) "--profile=${toString profile}")
       );
       overrideFuc =
-        if builtins.hasAttr "overrideDerivation" originalPkg then "overrideDerivation" else "overrideAttrs";
+        if builtins.hasAttr "overrideAttrs" originalPkg then "overrideAttrs" else "overrideDerivation";
     in
     originalPkg."${overrideFuc}" (oldAttrs: {
       ${attr} = ''
