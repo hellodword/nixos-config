@@ -9,9 +9,10 @@ let
       systemd
     ];
     # https://forum.manjaro.org/t/is-there-a-simple-way-to-set-up-dynamic-wallpaper-switching-in-sway-for-dual-displays/85568/4
+    # https://gitlab.gnome.org/GNOME/libnotify/-/blob/caa115a7b9414a9d39363bc1191c962c7bde5a5f/tools/notify-send.c#L254
     text = ''
-      systemctl --failed --quiet --no-pager | xargs -I {} notify-send --expire-time=0 --urgency=critical 'systemd' '{}'
-      systemctl --user --failed --quiet --no-pager | xargs -I {} notify-send --expire-time=0 --urgency=critical 'systemd --user' '{}'
+      systemctl --failed --quiet --no-pager | xargs -I {} notify-send --expire-time=2147483647 --urgency=critical 'systemd' '{}'
+      systemctl --user --failed --quiet --no-pager | xargs -I {} notify-send --expire-time=2147483647 --urgency=critical 'systemd --user' '{}'
     '';
   };
 in
