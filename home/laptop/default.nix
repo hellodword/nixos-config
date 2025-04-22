@@ -89,18 +89,9 @@ in
     ++ [
       ../common/features/desktop/optional/kdeconnect.nix
       ../common/features/desktop/optional/safeeyes.nix
-      (
-        if X then
-          ../common/features/desktop/optional/peek.nix
-        else
-          ../common/features/desktop/optional/kooha.nix
-      )
-      # ../common/features/desktop/optional/thunderbird.nix
-      ../common/features/desktop/optional/joplin.nix
       ../common/features/desktop/optional/anytype.nix
       ../common/features/desktop/optional/bitwarden.nix
       ../common/features/desktop/optional/libreoffice.nix
-      ../common/features/desktop/optional/scrcpy.nix
       ../common/features/desktop/optional/remmina.nix
       # ../common/features/desktop/optional/blender.nix
     ]
