@@ -1,5 +1,7 @@
 #! /usr/bin/env bash
 
+set -o pipefail
+
 trap "echo 'interrupted'; exit 1" SIGINT
 
 images=()
@@ -25,8 +27,10 @@ for i in "${!images[@]}"; do
 
     while true; do
         tmpfile=$(mktemp)
+        set +e
         (docker pull "$image" 2>&1 | tee "$tmpfile")
         status=${PIPESTATUS[0]}
+        set -e
         # Error response from daemon: pull access denied for hellodword/foo, repository does not exist or may require 'docker login': denied: requested access to the resource is denied
         # Error response from daemon: manifest for sickcodes/docker-osx:catalina not found: manifest unknown: manifest unknown
         # Error response from daemon: Head "https://ghcr.io/v2/hellodword/foo/manifests/latest": denied
