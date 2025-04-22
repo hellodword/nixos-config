@@ -19,6 +19,7 @@ in
           originalPkg = bitwarden-desktop;
           profile = ./bitwarden.profile;
           attr = "postInstall";
+          withoutMan = true;
         })
       else
         bitwarden-desktop
@@ -31,6 +32,7 @@ in
           profile = ./bitwarden.profile;
           attr = "postInstall";
           extraArgs = [ "--quiet" ];
+          withoutMan = true;
         })
       else
         bitwarden-cli
