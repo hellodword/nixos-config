@@ -9,15 +9,15 @@
 
 let
   dnsmasq = pkgs.dnsmasq.overrideAttrs (oldAttrs: {
-    version = "2.91rc1";
+    version = "2.91";
     src = pkgs.fetchurl {
-      url = "https://www.thekelleys.org.uk/dnsmasq/release-candidates/dnsmasq-2.91rc1.tar.xz";
-      hash = "sha256-x5s9Pqnd27siw6UW2tZsqdt3WY6enuACbj9iY0IuIAg=";
+      url = "https://www.thekelleys.org.uk/dnsmasq/dnsmasq-2.91.tar.xz";
+      hash = "sha256-9iJoKEizNnetsratCCZGGKKuCgHaSGqT/YzZEYaz0VM=";
     };
     patches = [
       (builtins.fetchurl {
         url = "https://github.com/lixingcong/dnsmasq-regex/raw/refs/heads/master/patches/001-regex-server.patch";
-        sha256 = "1zdvnapqspdh4n9i0hmbd6q5jy5np4pr428srkb5qxlk7rsjlcn0";
+        sha256 = "18hk8c1h9s4p860fzf45qqsp71m9135l6v4hxy0xpi39dn49rpzl";
       })
     ];
     preBuild =
