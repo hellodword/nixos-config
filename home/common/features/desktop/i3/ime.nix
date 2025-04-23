@@ -32,6 +32,13 @@ in
     ];
   };
 
+  xdg.configFile."fcitx5" = {
+    source = ./fcitx5;
+    recursive = true;
+    # https://github.com/nix-community/home-manager/issues/1213#issuecomment-626240819
+    force = true;
+  };
+
   xdg.configFile."fcitx5/conf/classicui.conf".text = fcitx5Theme;
   home.file.".local/share/fcitx5/conf/classicui.conf".text = fcitx5Theme;
   home.file.".local/share/fcitx5/themes/catppuccin-mocha" = {
