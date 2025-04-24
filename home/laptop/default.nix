@@ -63,11 +63,8 @@ in
 
       ../common/features/cli/optional/bat.nix
       ../common/features/cli/optional/nix-index.nix
-      ../common/features/cli/optional/ffmpeg.nix
-      ../common/features/cli/optional/ranger.nix
       ../common/features/cli/optional/starship.nix
       ../common/features/cli/optional/zoxide.nix
-      ../common/features/cli/optional/calculator.nix
     ]
     ++ [
       ../common/features/desktop/i3
