@@ -57,7 +57,8 @@
             "network#fastest"
             "cpu"
             "memory"
-            "disk"
+            "disk#persist"
+            "disk#tmpfs"
             "temperature"
             "backlight"
             # // "keyboard-state",// https://www.reddit.com/r/linuxquestions/comments/bh4ex1/is_adding_a_user_to_input_group_secure/
@@ -85,10 +86,15 @@
         #         "default"=""
         #     }
         # },
-        "disk" = {
+        "disk#persist" = {
           "interval" = 30;
           "format" = "{used}/{total}";
           "path" = persistPath;
+        };
+        "disk#tmpfs" = {
+          "interval" = 30;
+          "format" = "{used}/{total}";
+          "path" = "/";
         };
         "systemd-failed-units" = {
           "hide-on-ok" = false; # // Do not hide if there is zero failed units.
@@ -120,7 +126,8 @@
           "tooltip-format" = "{app}: {title}";
         };
         "mpd" = {
-          "format" = "{stateIcon} {consumeIcon}{randomIcon}{repeatIcon}{singleIcon}{artist} - {album} - {title} ({elapsedTime:%M:%S}/{totalTime:%M:%S}) ⸨{songPosition}|{queueLength}⸩ {volume}% ";
+          "format" =
+            "{stateIcon} {consumeIcon}{randomIcon}{repeatIcon}{singleIcon}{artist} - {album} - {title} ({elapsedTime:%M:%S}/{totalTime:%M:%S}) ⸨{songPosition}|{queueLength}⸩ {volume}% ";
           "format-disconnected" = "Disconnected ";
           "format-stopped" = "{consumeIcon}{randomIcon}{repeatIcon}{singleIcon}Stopped ";
           "unknown-tag" = "N/A";
