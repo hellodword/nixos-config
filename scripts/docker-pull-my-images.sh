@@ -7,15 +7,37 @@ trap "echo 'interrupted'; exit 1" SIGINT
 images=()
 
 if [ $# -eq 0 ]; then
-  images=( $(docker images --format '{{.ID}}' | \
-xargs docker inspect --format '{{json .}}' | \
-jq -r 'select(.RepoDigests | length > 0) | .RepoTags[]' | \
-sort -u) )
+  images=(
+    $(
+      (
+        # images pulled from remote
+        docker images --format '{{.ID}}' | \
+          xargs docker inspect --format '{{json .}}' | \
+          jq -r 'select(.RepoDigests | length > 0) | .RepoTags[]';
+        # pull ghcr images even they've been built locally
+        docker images --format '{{.ID}}' | \
+          xargs docker inspect --format '{{json .}}' | \
+          jq '.RepoTags | map(select(startswith("ghcr.io/")))' | \
+          jq -r '.[]'
+      ) | \
+      sort -u
+    )
+  )
 else
-  images=( $(docker images --format '{{.ID}}' | \
-xargs docker inspect --format '{{json .}}' | \
-jq -r 'select(.RepoDigests | length > 0) | .RepoTags[]' | \
-sort -u | $@) )
+  images=(
+    $(
+      (
+        docker images --format '{{.ID}}' | \
+          xargs docker inspect --format '{{json .}}' | \
+          jq -r 'select(.RepoDigests | length > 0) | .RepoTags[]';
+        docker images --format '{{.ID}}' | \
+          xargs docker inspect --format '{{json .}}' | \
+          jq '.RepoTags | map(select(startswith("ghcr.io/")))' | \
+          jq -r '.[]'
+      ) | \
+      sort -u | $@
+    )
+  )
 fi
 
 printf '%s\n' "${images[@]}"
