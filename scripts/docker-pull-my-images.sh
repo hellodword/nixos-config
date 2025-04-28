@@ -57,6 +57,7 @@ for i in "${!images[@]}"; do
         # Error response from daemon: manifest for sickcodes/docker-osx:catalina not found: manifest unknown: manifest unknown
         # Error response from daemon: Head "https://ghcr.io/v2/hellodword/foo/manifests/latest": denied
         if [ "$status" -eq 0 ] || grep -q 'does not exist' "$tmpfile" || grep -q 'manifest unknown' "$tmpfile" || grep -q 'Head .\+/manifests/.\+: denied' "$tmpfile"; then
+            echo "status=$status"
             rm -f "$tmpfile"
             break
         fi
