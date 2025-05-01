@@ -133,7 +133,7 @@ in
 
   # https://github.com/nix-community/home-manager/issues/4804#issuecomment-1871272189
   # services.gpg-agent.pinentryFlavor = "qt";
-  services.gpg-agent.pinentryPackage = pkgs.pinentry-qt;
+  services.gpg-agent.pinentry.package = pkgs.pinentry-qt;
 
   wayland.windowManager.sway.config.startup = (lib.optionals (!X) startup);
 
