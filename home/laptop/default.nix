@@ -90,7 +90,7 @@ in
       ../common/features/desktop/optional/bitwarden.nix
       ../common/features/desktop/optional/libreoffice.nix
       ../common/features/desktop/optional/remmina.nix
-      # ../common/features/desktop/optional/blender.nix
+      ../common/features/desktop/optional/blender.nix
     ]
     ++ [
       ../common/features/cli/optional/sqlite.nix
