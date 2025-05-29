@@ -24,6 +24,9 @@
 
   system.configurationRevision = inputs.self.rev or "dirty";
 
+  security.sudo.enable = false;
+  security.sudo-rs.enable = true;
+
   nixpkgs = {
     # You can add overlays here
     overlays = [
