@@ -98,9 +98,9 @@ in
     ]
     ++ [
       ../common/features/desktop/optional/vscode.nix
-      ../common/features/dev/optional/go.nix
+      # ../common/features/dev/optional/go.nix
       # ../common/features/dev/optional/flutter.nix
-      ../common/features/dev/optional/android.nix
+      # ../common/features/dev/optional/android.nix
     ];
 
   home.username = lib.mkDefault "${userName}";
