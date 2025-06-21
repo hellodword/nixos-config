@@ -10,5 +10,7 @@
     inotify-tools
     colmena
     ffmpeg-full
+
+    librecad
   ];
 }
