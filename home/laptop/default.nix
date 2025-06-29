@@ -80,8 +80,8 @@ in
       ../common/features/desktop/optional/services-failed.nix
 
       ../common/features/desktop/optional/firefox.nix
-      ../common/features/desktop/optional/chromium.nix
-      # ../common/features/desktop/optional/chrome.nix
+      # ../common/features/desktop/optional/chromium.nix
+      ../common/features/desktop/optional/chrome.nix
     ]
     ++ [
       ../common/features/desktop/optional/kdeconnect.nix

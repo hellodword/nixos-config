@@ -13,6 +13,10 @@
     "${persistPath}${config.home.homeDirectory}".directories = [ ".config/google-chrome" ];
   };
 
+  me.exitProcess = [
+    "chrome"
+  ];
+
   programs."google-chrome" = {
     enable = true;
     commandLineArgs = [ ];
@@ -20,7 +24,7 @@
   };
 
   # flutter debugger or other apps need this
-  home.sessionVariables.CHROME_EXECUTABLE =
-    lib.mkOverride 1000
-      "${config.programs."google-chrome".package}/bin/google-chrome-stable";
+  home.sessionVariables.CHROME_EXECUTABLE = lib.mkOverride 1000 "${
+    config.programs."google-chrome".package
+  }/bin/google-chrome-stable";
 }
