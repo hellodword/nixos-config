@@ -75,6 +75,7 @@
       url = "github:netblue30/firejail/30ba35f0b331dc488ac666b3644d9508027b20d7";
       flake = false;
     };
+    nixpkgs-anytype.url = "github:NixOS/nixpkgs/6a609087b63728acc8d4c3a6d9b679359fd30854";
   };
 
   outputs =
@@ -111,7 +112,8 @@
           commonArgs = commonArgs;
           inherit inputs outputs;
           privates = inputs.nixos-privates;
-        } // commonArgs;
+        }
+        // commonArgs;
       };
 
       # r86s
@@ -120,7 +122,8 @@
         specialArgs = {
           commonArgs = commonArgs;
           inherit inputs outputs;
-        } // commonArgs;
+        }
+        // commonArgs;
       };
 
       # nix build .#nixosConfigurations.vm-minimal.config.system.build.vm
