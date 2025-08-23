@@ -18,3 +18,4 @@ for i in ${!sing_box_rules[@]}; do
 done
 
 # ./scripts/generate-dnsmasq.sh | sort -u | sudo tee /usr/local/etc/dnsmasq/dnsmasq.d/cn.conf
+# echo "server=/ts.net/127.0.0.1#55555" | sudo tee /usr/local/etc/dnsmasq/dnsmasq.d/ts.conf

@@ -127,12 +127,37 @@ in
         LogDirectory = "mosdns-cn";
       };
     };
+
+    mosdns-ts = {
+      description = "mosdns: 一个 DNS 转发器（TS）";
+      after = [ "network.target" ];
+      wantedBy = [ "multi-user.target" ];
+      unitConfig = {
+        StartLimitIntervalSec = 5;
+        StartLimitBurst = 10;
+      };
+
+      serviceConfig = {
+        DynamicUser = true;
+        ExecStart = "${pkgs.mosdns}/bin/mosdns start --config ${./mosdns-ts.yaml} --dir /var/lib/mosdns-ts";
+        # AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ] ++ optionals cfg.allowDHCP [ "CAP_NET_RAW" ];
+        Restart = "always";
+        RestartSec = 10;
+        RuntimeDirectory = "mosdns-ts";
+        StateDirectory = "mosdns-ts";
+        LogDirectory = "mosdns-ts";
+      };
+    };
   };
 
   me.sing-box-bypass-services = [
     {
       user = "mosdns-cn";
       service = "mosdns-cn";
+    }
+    {
+      user = "mosdns-ts";
+      service = "mosdns-ts";
     }
     {
       user = "systemd-resolve";
