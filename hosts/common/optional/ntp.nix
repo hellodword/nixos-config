@@ -71,13 +71,6 @@
     ];
   };
 
-  me.sing-box-bypass-services = [
-    {
-      user = "systemd-timesync";
-      service = "systemd-timesyncd";
-    }
-  ];
-
   # # # 直连
   # # systemd.services.chronyd.serviceConfig.ExecStartPre = lib.optionals config.services.v2ray.enable [
   # #   "+${pkgs.bash}/bin/bash -c '${pkgs.iptables}/bin/iptables -w 3 -t mangle -C V2RAY_MARK -m owner --uid-owner chrony -j RETURN || ${pkgs.iptables}/bin/iptables -w 3 -t mangle -I V2RAY_MARK -m owner --uid-owner chrony -j RETURN || true'"
@@ -99,8 +92,8 @@
 
   #     # # Netnod (Sweden)
   #     # "nts.netnod.se:4460" # Anycast
-  #     # "sth1.nts.netnod.se:4460" # Stockholm 
-  #     # "sth2.nts.netnod.se:4460" # Stockholm 
+  #     # "sth1.nts.netnod.se:4460" # Stockholm
+  #     # "sth2.nts.netnod.se:4460" # Stockholm
   #     # "nts.netnod.se"
 
   #     # # Physikalisch-Technische Bundesanstalt / PTB (Germany)

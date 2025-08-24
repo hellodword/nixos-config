@@ -45,13 +45,6 @@
     };
   };
 
-  me.sing-box-bypass-services = [
-    {
-      user = "tailscaled";
-      service = "tailscaled";
-    }
-  ];
-
   environment.persistence = {
     "${persistPath}".directories = [
       # https://www.reddit.com/r/NixOS/comments/14w1404/every_nixos_rebuild_creates_a_new_tailscale/

@@ -150,25 +150,6 @@ in
     };
   };
 
-  me.sing-box-bypass-services = [
-    {
-      user = "mosdns-cn";
-      service = "mosdns-cn";
-    }
-    {
-      user = "mosdns-ts";
-      service = "mosdns-ts";
-    }
-    {
-      user = "systemd-resolve";
-      service = "systemd-resolved";
-    }
-    {
-      user = "dnsmasq";
-      service = "dnsmasq";
-    }
-  ];
-
   environment.persistence = {
     "${persistPath}".directories = [
       {

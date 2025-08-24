@@ -30,21 +30,9 @@ let
       rm -rf ${sbConfigFile}
       rm -rf config.json.tmp.*
 
-      uids=()
-
-      ${lib.strings.concatStringsSep "\n" (
-        map (x: ''
-          tmp_val="$(id -u ${x.user} || true)"
-          if [ -n "$tmp_val" ]; then
-            uids+=("$tmp_val")
-          fi
-        '') config.me.sing-box-bypass-services
-      )}
-
       IFS=','
-      _uids="''${uids[*]}"
 
-      jq "(.inbounds[] | select(.type == \"tun\")).exclude_uid = [$_uids]" ${sbTemplateFile} > config.json.tmp.0
+      cat ${sbTemplateFile} > config.json.tmp.0
 
       wgcf_priv="$(cat "${config.sops.secrets."wgcf.priv".path}")"
       jq "(.endpoints[] | select(.name == \"wgcf\")).private_key = \"$wgcf_priv\"" config.json.tmp.0 > config.json.tmp.1
@@ -63,75 +51,6 @@ let
       jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.2" ${sbOutboundsFile} > ${sbConfigFile}
 
       rm -rf config.json.tmp.*
-    '';
-  };
-
-  sbBypassUserDelUnresolved = pkgs.writeShellApplication {
-    name = "exe";
-    runtimeInputs = with pkgs; [
-      iproute2
-      findutils
-      gnugrep
-      bash
-    ];
-    excludeShellChecks = [ "SC2086" ];
-    text = ''
-      set -x
-
-      ip -4 rule list | grep -oP "(?<=\d:\t)from all uidrange \d+-\d+ goto \d+(?= \[unresolved\])" | xargs -I {} bash -xc 'ip -4 rule del {}' || true
-      ip -6 rule list | grep -oP "(?<=\d:\t)from all uidrange \d+-\d+ goto \d+(?= \[unresolved\])" | xargs -I {} bash -xc 'ip -6 rule del {}' || true
-    '';
-  };
-
-  sbBypassUserDel = pkgs.writeShellApplication {
-    name = "exe";
-    runtimeInputs = with pkgs; [
-      iproute2
-      findutils
-      gnugrep
-      bash
-    ];
-    excludeShellChecks = [ "SC2086" ];
-    text = ''
-      set -x
-
-      ${sbBypassUserDelUnresolved}/bin/exe
-
-      _USER_NAME="$1"
-      [ -n "$_USER_NAME" ]
-
-      _USER_ID="$(id -u "$_USER_NAME" || true)"
-      if [ -n "$_USER_ID" ]; then
-          ip -4 rule list | grep -oP "(?<=\d:\t)from all uidrange $_USER_ID-$_USER_ID goto \d+" | xargs -I {} bash -xc 'ip -4 rule del {}' || true
-          ip -6 rule list | grep -oP "(?<=\d:\t)from all uidrange $_USER_ID-$_USER_ID goto \d+" | xargs -I {} bash -xc 'ip -6 rule del {}' || true
-      fi
-    '';
-  };
-
-  sbBypassUserAdd = pkgs.writeShellApplication {
-    name = "exe";
-    runtimeInputs = with pkgs; [
-      iproute2
-      gnugrep
-    ];
-    excludeShellChecks = [ "SC2086" ];
-    text = ''
-      set -x
-
-      _USER_NAME="$1"
-      [ -n "$_USER_NAME" ]
-
-      _IPV4_ID="$(ip -4 rule list | grep -oP '^\d+(?=:\tfrom all nop$)' || true)"
-      _IPV6_ID="$(ip -6 rule list | grep -oP '^\d+(?=:\tfrom all nop$)' || true)"
-      _USER_ID="$(id -u "$_USER_NAME" || true)"
-      if [ -n "$_USER_ID" ]; then
-          if [ -n "$_IPV4_ID" ]; then
-              ip -4 rule add from all uidrange $_USER_ID-$_USER_ID goto "$_IPV4_ID"
-          fi
-          if [ -n "$_IPV6_ID" ]; then
-              ip -6 rule add from all uidrange $_USER_ID-$_USER_ID goto "$_IPV6_ID"
-          fi
-      fi
     '';
   };
 
@@ -201,116 +120,99 @@ in
   networking.firewall.enable = lib.mkForce false;
 
   # https://github.com/A1ca7raz/flamework/blob/main/modules/services/client/sing-box/default.nix#L78-L105
-  systemd.services =
-    lib.mergeAttrs
-      (builtins.listToAttrs (
-        builtins.map (x: {
-          name = x.service;
-          value = {
-            serviceConfig = {
-              ExecStartPre = lib.mkAfter [
-                "+${sbBypassUserDel}/bin/exe ${x.user}"
-                "+${sbBypassUserAdd}/bin/exe ${x.user}"
-              ];
-              ExecStop = lib.mkAfter [ "+${sbBypassUserDel}/bin/exe ${x.user}" ];
-            };
-          };
-        }) config.me.sing-box-bypass-services
-      ))
-      {
-        networkd-dispatcher = {
-          after = [ "sing-box.service" ];
-        };
+  systemd.services = {
+    networkd-dispatcher = {
+      after = [ "sing-box.service" ];
+    };
 
-        sing-box = {
-          enable = true;
-          description = "Sing-box networking service";
-          wantedBy = [ "multi-user.target" ];
-          requires = [ "network-online.target" ];
-          after = [
-            "network-online.target"
-            # "nss-lookup.target"
-            "systemd-resolved.service"
-            "dnsmasq.service"
-          ];
-          path = with pkgs; [
-            curl
-            sing-box
-          ];
+    sing-box = {
+      enable = true;
+      description = "Sing-box networking service";
+      wantedBy = [ "multi-user.target" ];
+      requires = [ "network-online.target" ];
+      after = [
+        "network-online.target"
+        # "nss-lookup.target"
+        "systemd-resolved.service"
+        "dnsmasq.service"
+      ];
+      path = with pkgs; [
+        curl
+        sing-box
+      ];
 
-          unitConfig = {
-            StartLimitInterval = 5;
-            StartLimitBurst = 10;
-          };
-
-          serviceConfig = {
-            Type = "simple";
-
-            # Environment = "USE_HTTP2PING=true";
-            ExecStartPre = [
-              # Fix perm after debugging sing-box with sudo
-              "+${lib.getExe' pkgs.coreutils "coreutils"} --coreutils-prog=chown -R sing-box:sing-box ${sbBaseReal}"
-              "+${sbGenerate}/bin/exe"
-            ];
-            ExecStop = (map (x: "+${sbBypassUserDel}/bin/exe ${x.user}") config.me.sing-box-bypass-services);
-            ExecStart = "${pkgs.sing-box}/bin/sing-box run --disable-color -D ${sbBase} -c ${sbConfigFile}";
-
-            # Sing-box Auto Update
-            Restart = "on-failure";
-            RestartPreventExitStatus = 23;
-
-            # # OOM Killer
-            # OOMPolicy = "kill";
-            # MemoryMax = "200M";
-
-            DynamicUser = "yes";
-            LogsDirectory = "sing-box";
-            RuntimeDirectory = "sing-box";
-            StateDirectory = "sing-box";
-            # Capabilities
-            CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
-            AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
-            # Proc filesystem
-            ProcSubset = "pid";
-            ProtectProc = "invisible";
-            # Security
-            NoNewPrivileges = true;
-            # Sandboxing
-            LockPersonality = true;
-            MemoryDenyWriteExecute = true;
-            # PrivateDevices = true; # NOT WORK on Tun Mode
-            # DeviceAllow = "/dev/net/tun rw";
-            DeviceAllow = "/dev/net/tun";
-            DevicePolicy = "closed";
-            PrivateMounts = true;
-            PrivateTmp = true;
-            # PrivateUsers = true;          # NOT WORK on Tun Mode
-            ProtectClock = true;
-            ProtectControlGroups = true;
-            ProtectHome = true;
-            ProtectHostname = true;
-            ProtectKernelLogs = true;
-            ProtectKernelModules = true;
-            ProtectKernelTunables = true;
-            ProtectSystem = "strict";
-            RemoveIPC = true;
-            RestrictAddressFamilies = [
-              "AF_INET"
-              "AF_INET6"
-              "AF_NETLINK"
-            ];
-            RestrictNamespaces = true;
-            RestrictRealtime = true;
-            RestrictSUIDSGID = true;
-            # System Call Filtering
-            SystemCallArchitectures = "native";
-            SystemCallFilter = [
-              "~@cpu-emulation @debug @keyring @mount @obsolete @privileged @setuid"
-              "setrlimit"
-            ];
-          };
-        };
+      unitConfig = {
+        StartLimitInterval = 5;
+        StartLimitBurst = 10;
       };
+
+      serviceConfig = {
+        Type = "simple";
+
+        # Environment = "USE_HTTP2PING=true";
+        ExecStartPre = [
+          # Fix perm after debugging sing-box with sudo
+          "+${lib.getExe' pkgs.coreutils "coreutils"} --coreutils-prog=chown -R sing-box:sing-box ${sbBaseReal}"
+          "+${sbGenerate}/bin/exe"
+        ];
+        ExecStart = "${pkgs.sing-box}/bin/sing-box run --disable-color -D ${sbBase} -c ${sbConfigFile}";
+
+        # Sing-box Auto Update
+        Restart = "on-failure";
+        RestartPreventExitStatus = 23;
+
+        # # OOM Killer
+        # OOMPolicy = "kill";
+        # MemoryMax = "200M";
+
+        DynamicUser = "yes";
+        LogsDirectory = "sing-box";
+        RuntimeDirectory = "sing-box";
+        StateDirectory = "sing-box";
+        # Capabilities
+        CapabilityBoundingSet = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+        AmbientCapabilities = "CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW";
+        # Proc filesystem
+        ProcSubset = "pid";
+        ProtectProc = "invisible";
+        # Security
+        NoNewPrivileges = true;
+        # Sandboxing
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
+        # PrivateDevices = true; # NOT WORK on Tun Mode
+        # DeviceAllow = "/dev/net/tun rw";
+        DeviceAllow = "/dev/net/tun";
+        DevicePolicy = "closed";
+        PrivateMounts = true;
+        PrivateTmp = true;
+        # PrivateUsers = true;          # NOT WORK on Tun Mode
+        ProtectClock = true;
+        ProtectControlGroups = true;
+        ProtectHome = true;
+        ProtectHostname = true;
+        ProtectKernelLogs = true;
+        ProtectKernelModules = true;
+        ProtectKernelTunables = true;
+        ProtectSystem = "strict";
+        RemoveIPC = true;
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+          "AF_NETLINK"
+        ];
+        RestrictNamespaces = true;
+        RestrictRealtime = true;
+        RestrictSUIDSGID = true;
+        # System Call Filtering
+        SystemCallArchitectures = "native";
+        SystemCallFilter = [
+          "~@cpu-emulation @debug @keyring @mount @obsolete @privileged @setuid"
+          "setrlimit"
+        ];
+      };
+    };
+  };
 
   environment.etc."sing-box/template.json".text = builtins.toJSON {
     "$schema" =
