@@ -26,8 +26,6 @@ let
         oldAttrs.preBuild;
     buildInputs = oldAttrs.buildInputs ++ [ pkgs.pcre ];
   });
-
-  dnsmasqPort = 53;
 in
 {
 
@@ -38,9 +36,6 @@ in
     coreutils
     iproute2
     q
-    dogdns
-    mosdns
-    dnsmasq
   ];
 
   services.dnsmasq = {
