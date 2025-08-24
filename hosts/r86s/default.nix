@@ -28,11 +28,11 @@
 
     ../common/optional/netdata.nix
 
-    ../common/optional/discovery.nix
     ../common/optional/prefer-ipv4.nix
 
     ../common/optional/docker.nix
-  ] ++ [ inputs.nixos-hardware.nixosModules.common-cpu-intel ];
+  ]
+  ++ [ inputs.nixos-hardware.nixosModules.common-cpu-intel ];
 
   networking.hostName = "r86s";
 
