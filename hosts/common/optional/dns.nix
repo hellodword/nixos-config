@@ -3,6 +3,7 @@
 
 {
   pkgs,
+  lib,
   persistPath,
   ...
 }:
@@ -26,7 +27,7 @@ let
     buildInputs = oldAttrs.buildInputs ++ [ pkgs.pcre ];
   });
 
-  dnsmasqPort = 5353;
+  dnsmasqPort = 53;
 in
 {
 
@@ -47,14 +48,38 @@ in
     package = dnsmasq;
     resolveLocalQueries = false;
     settings = {
-      port = dnsmasqPort;
-      listen-address = [
-        "127.0.0.1"
-        "::1"
-      ];
+      # port = dnsmasqPort;
+      # listen-address = [
+      #   "127.0.0.1"
+      #   "::1"
+      # ];
+
+      # forces dnsmasq to try each query with each server strictly
+      # in the order they appear in the config.
+      strict-order = true;
+
+      # Never forward plain names (without a dot or domain part)
+      domain-needed = true;
+      # Never forward addresses in the non-routed address spaces(e.g. private IP).
+      bogus-priv = true;
+      # don't needlessly read /etc/resolv.conf which only contains the localhost addresses of dnsmasq itself.
       no-resolv = true;
-      no-poll = true;
+
+      # Cache dns queries.
+      cache-size = 1000;
+
+      # local domains
+      local = "/lan/";
+      domain = "lan";
+      expand-hosts = true;
+
+      # don't use /etc/hosts
       no-hosts = true;
+      address = [
+        # "/surfer.lan/192.168.10.1"
+      ];
+
+      no-poll = true;
       log-queries = true;
       log-dhcp = true;
       server = [ "127.0.0.1#55553" ];
@@ -63,15 +88,19 @@ in
   };
 
   services.resolved = {
-    enable = true;
-    dnsovertls = "false";
-    llmnr = "false";
-    fallbackDns = [ "127.0.0.1:${toString dnsmasqPort}" ];
-    extraConfig = ''
-      DNS=127.0.0.1:${toString dnsmasqPort}
-      MulticastDNS=false
-    '';
+    enable = lib.mkForce false;
+    # dnsovertls = "false";
+    # llmnr = "false";
+    # fallbackDns = [ "127.0.0.1:${toString dnsmasqPort}" ];
+    # extraConfig = ''
+    #   DNS=127.0.0.1:${toString dnsmasqPort}
+    #   MulticastDNS=false
+    # '';
   };
+
+  environment.etc."resolv.conf".text = ''
+    nameserver 127.0.0.53
+  '';
 
   systemd.services = {
     dnsmasq = {
@@ -80,11 +109,11 @@ in
       #     "+${lib.getExe' pkgs.coreutils "mkdir"} -p /usr/local/etc/dnsmasq/dnsmasq.d"
       #   ];
       # };
-      after = [ "systemd-resolved.service" ];
+      after = lib.mkForce [ "network.target" ];
     };
-    systemd-resolved = {
-      before = [ "dnsmasq.service" ];
-    };
+    # systemd-resolved = {
+    #   before = [ "dnsmasq.service" ];
+    # };
 
     mosdns = {
       description = "mosdns: 一个 DNS 转发器";

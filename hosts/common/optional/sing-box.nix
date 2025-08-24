@@ -133,7 +133,7 @@ in
       after = [
         "network-online.target"
         # "nss-lookup.target"
-        "systemd-resolved.service"
+        # "systemd-resolved.service"
         "dnsmasq.service"
       ];
       path = with pkgs; [
