@@ -69,7 +69,9 @@ else
 fi
 
 # https://github.com/Finb/bark-server/blob/3aa064e5d98eaaed7e1f28f79510586109347e1e/apns/apns.go#L98
-curl -s --header "apns-topic: $TOPIC" \
+curl -s \
+     --fail --doh-url https://1.12.12.12/dns-query \
+     --header "apns-topic: $TOPIC" \
      --header "apns-push-type: alert" \
      --header "authorization: bearer $AUTHENTICATION_TOKEN" \
      --http2 "https://$APNS_HOST_NAME/3/device/$BARK_DEVICE_TOKEN" \
