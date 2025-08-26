@@ -219,11 +219,6 @@ in
       "https://gist.githubusercontent.com/artiga033/fea992d95ad44dc8d024b229223b1002/raw/83c676c1ec9f37af2bce0505da396b5444b30032/sing-box.schema.json";
 
     dns = {
-      fakeip = {
-        enabled = true;
-        inet4_range = "198.18.0.0/15";
-        inet6_range = "fc00::/18";
-      };
       final = "dns:proxy";
       independent_cache = true;
       rules = [
@@ -282,29 +277,27 @@ in
       ];
       servers = [
         {
-          address = "127.0.0.1:55554";
-          client_subnet = "140.82.112.3";
+          type = "udp";
+          server = "127.0.0.1";
+          server_port = 55554;
           detour = "节点选择";
-          strategy = "prefer_ipv4";
           tag = "dns:proxy";
         }
         {
-          address = "127.0.0.1:55553";
-          detour = "out:DIRECT";
-          strategy = "prefer_ipv4";
+          type = "udp";
+          server = "127.0.0.1";
+          server_port = 55553;
           tag = "dns:direct";
         }
         {
-          address = "local";
+          type = "local";
           tag = "dns:local";
         }
         {
-          address = "rcode://refused";
-          tag = "dns:refused";
-        }
-        {
-          address = "fakeip";
+          type = "fakeip";
           tag = "dns:fakeip";
+          inet4_range = "198.18.0.0/15";
+          inet6_range = "fc00::/18";
         }
       ];
       strategy = "prefer_ipv4";
@@ -422,7 +415,6 @@ in
     };
 
     ntp = {
-      detour = "out:DIRECT";
       enabled = true;
       interval = "30m";
       server = "106.55.184.199"; # "time.apple.com";
@@ -437,7 +429,10 @@ in
         type = "socks";
       }
       {
-        domain_strategy = "prefer_ipv4";
+        domain_resolver = {
+          server = "dns:local";
+          strategy = "prefer_ipv4";
+        };
         tag = "out:DIRECT";
         type = "direct";
       }
@@ -564,6 +559,10 @@ in
     route = {
       auto_detect_interface = true;
       final = "漏网之鱼";
+      default_domain_resolver = {
+        server = "dns:proxy";
+        client_subnet = "140.82.112.3";
+      };
       rule_set = [
         {
           download_detour = "自动选择";
