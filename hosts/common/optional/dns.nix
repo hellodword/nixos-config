@@ -157,6 +157,54 @@ in
     };
   };
 
+  systemd.services."update-dnsmasq-rule" = {
+    after = [
+      "dnsmasq.service"
+      "sing-box.service"
+    ];
+    path = with pkgs; [
+      bashInteractive
+      curl
+      jq
+      coreutils
+    ];
+    serviceConfig = {
+      Type = "oneshot";
+      User = "root";
+      Restart = "on-failure";
+      RestartSec = "5m";
+    };
+    script =
+      let
+        update-dnsmasq-rule = pkgs.writeShellApplication {
+          name = "update-dnsmasq-rule";
+          text = ''
+            mkdir -p /usr/local/etc/dnsmasq/dnsmasq.d
+
+            DATA_ORI="$(cat /usr/local/etc/dnsmasq/dnsmasq.d/cn.conf || true)"
+            echo "fetching..."
+            DATA_NEW="$(${../../../scripts/generate-dnsmasq.sh} | sort -u)"
+
+            if [ "$DATA_NEW" != "$DATA_ORI" ]; then
+              echo "updating..."
+              echo "$DATA_NEW" > /usr/local/etc/dnsmasq/dnsmasq.d/cn.conf
+              echo "rebooting..."
+              systemctl restart dnsmasq
+            fi
+          '';
+        };
+      in
+      "${update-dnsmasq-rule}/bin/update-dnsmasq-rule";
+  };
+  systemd.timers."update-dnsmasq-rule" = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "daily";
+      Persistent = true;
+      Unit = "update-dnsmasq-rule.service";
+    };
+  };
+
   environment.persistence = {
     "${persistPath}".directories = [
       {
