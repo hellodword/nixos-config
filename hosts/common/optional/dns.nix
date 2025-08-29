@@ -105,7 +105,7 @@ in
           "+${lib.getExe' pkgs.coreutils "mkdir"} -p /usr/local/etc/dnsmasq/dnsmasq.d"
         ]
         ++ (lib.optionals config.services.tailscale.enable [
-          "+${lib.getExe pkgs.bashInteractive} -c 'echo server=/ts.net/100.100.100.100 > /usr/local/etc/dnsmasq/dnsmasq.d/ts.conf'"
+          "+${lib.getExe pkgs.bashInteractive} -c 'echo server=/ts.net/100.100.100.100 > /usr/local/etc/dnsmasq/dnsmasq.d/01-ts.conf'"
         ]);
       };
       after = lib.mkForce [ "network.target" ];
@@ -181,13 +181,23 @@ in
           text = ''
             mkdir -p /usr/local/etc/dnsmasq/dnsmasq.d
 
-            DATA_ORI="$(cat /usr/local/etc/dnsmasq/dnsmasq.d/cn.conf || true)"
-            echo "fetching..."
-            DATA_NEW="$(${../../../scripts/generate-dnsmasq.sh} | sort -u)"
+            DATA_CN_ORI="$(cat /usr/local/etc/dnsmasq/dnsmasq.d/99-cn.conf || true)"
+            echo "fetching cn..."
+            DATA_CN_NEW="$(${../../../scripts/generate-dnsmasq.sh} | sort -u)"
+            if [ "$DATA_CN_NEW" != "$DATA_CN_ORI" ]; then
+              echo "updating cn..."
+              echo "$DATA_CN_NEW" > /usr/local/etc/dnsmasq/dnsmasq.d/99-cn.conf
+            fi
 
-            if [ "$DATA_NEW" != "$DATA_ORI" ]; then
-              echo "updating..."
-              echo "$DATA_NEW" > /usr/local/etc/dnsmasq/dnsmasq.d/cn.conf
+            DATA_NCN_ORI="$(cat /usr/local/etc/dnsmasq/dnsmasq.d/98-ncn.conf || true)"
+            echo "fetching ncn..."
+            DATA_NCN_NEW="$(env NCN=true ${../../../scripts/generate-dnsmasq.sh} | sort -u)"
+            if [ "$DATA_NCN_NEW" != "$DATA_NCN_ORI" ]; then
+              echo "updating ncn..."
+              echo "$DATA_NCN_NEW" > /usr/local/etc/dnsmasq/dnsmasq.d/98-ncn.conf
+            fi
+
+            if [ "$DATA_CN_NEW" != "$DATA_CN_ORI" ] || [ "$DATA_NCN_NEW" != "$DATA_NCN_ORI" ]; then
               echo "rebooting..."
               systemctl restart dnsmasq
             fi
