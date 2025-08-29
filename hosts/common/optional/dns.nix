@@ -4,6 +4,7 @@
 {
   pkgs,
   lib,
+  config,
   persistPath,
   ...
 }:
@@ -99,11 +100,14 @@ in
 
   systemd.services = {
     dnsmasq = {
-      # serviceConfig = {
-      #   ExecStartPre = [
-      #     "+${lib.getExe' pkgs.coreutils "mkdir"} -p /usr/local/etc/dnsmasq/dnsmasq.d"
-      #   ];
-      # };
+      serviceConfig = {
+        ExecStartPre = [
+          "+${lib.getExe' pkgs.coreutils "mkdir"} -p /usr/local/etc/dnsmasq/dnsmasq.d"
+        ]
+        ++ (lib.optionals config.services.tailscale.enable [
+          "+${lib.getExe pkgs.bashInteractive} -c 'echo server=/ts.net/100.100.100.100 > /usr/local/etc/dnsmasq/dnsmasq.d/ts.conf'"
+        ]);
+      };
       after = lib.mkForce [ "network.target" ];
     };
     # systemd-resolved = {
@@ -149,27 +153,6 @@ in
         RuntimeDirectory = "mosdns-cn";
         StateDirectory = "mosdns-cn";
         LogDirectory = "mosdns-cn";
-      };
-    };
-
-    mosdns-ts = {
-      description = "mosdns: 一个 DNS 转发器（TS）";
-      after = [ "network.target" ];
-      wantedBy = [ "multi-user.target" ];
-      unitConfig = {
-        StartLimitIntervalSec = 5;
-        StartLimitBurst = 10;
-      };
-
-      serviceConfig = {
-        DynamicUser = true;
-        ExecStart = "${pkgs.mosdns}/bin/mosdns start --config ${./mosdns-ts.yaml} --dir /var/lib/mosdns-ts";
-        # AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ] ++ optionals cfg.allowDHCP [ "CAP_NET_RAW" ];
-        Restart = "always";
-        RestartSec = 10;
-        RuntimeDirectory = "mosdns-ts";
-        StateDirectory = "mosdns-ts";
-        LogDirectory = "mosdns-ts";
       };
     };
   };
