@@ -113,6 +113,9 @@
         ''mkdir -p ~/Downloads/wireguard-config; docker run --rm --name=wireguard --cap-add=NET_ADMIN -v ~/Downloads/wireguard-config:/config -e PUID="$(id -u)" -e PGID="$(id -g)" -e TZ=Etc/UTC -e PEERS=1 -e PEERDNS="1.1.1.1" -e PERSISTENTKEEPALIVE_PEERS="all" -e LOG_CONFS=true -p 51820:51820/udp --sysctl="net.ipv4.conf.all.src_valid_mark=1" linuxserver/wireguard:latest'';
 
       "bw-unlock" = ''export BW_SESSION="$(bw unlock --raw)"'';
+
+      # docker run -d --runtime runsc --name ollama --restart always --user `id -u`:`id -g` -p 127.0.0.1:11434:11434 -v ~/Downloads/ollama:/home/ubuntu/.ollama ollama/ollama:latest
+      "ollama" = "docker exec -it ollama ollama";
     };
     shellOptions = [
       "histappend"
