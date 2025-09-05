@@ -14,7 +14,7 @@ let
   sbBaseReal = "/var/lib/private/sing-box";
   sbTemplateFile = "/etc/sing-box/template.json";
   sbOutboundsFile = "/usr/local/etc/sing-box/outbounds.json";
-  # sbRulesFile = "/usr/local/etc/sing-box/rules.json";
+  sbRulesFile = "/usr/local/etc/sing-box/rules.json";
   sbConfigFile = "${sbBase}/sing-box.json";
 
   sbGenerate = pkgs.writeShellApplication {
@@ -48,7 +48,24 @@ let
           end
       )' config.json.tmp.1 > config.json.tmp.2
 
-      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.2" ${sbOutboundsFile} > ${sbConfigFile}
+      jq --slurpfile rules ${sbRulesFile} '
+        . as $config_ori
+        | ($rules[0] | if . != null then .route?.rules? else null end) as $rules_rules
+        | if $rules_rules and ($rules_rules | type) == "array" then
+            .route.rules |= (
+              (index(map(select(.action? == "sniff"))[0]) // -1) as $idx
+              | if $idx >= 0 then
+                  .[:$idx+1] + $rules_rules + .[$idx+1:]
+                else
+                  $rules_rules + .
+                end
+            )
+          else
+            .
+          end
+      ' "config.json.tmp.2" > "config.json.tmp.3"
+
+      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.3" ${sbOutboundsFile} > ${sbConfigFile}
 
       rm -rf config.json.tmp.*
     '';
