@@ -15,6 +15,7 @@ let
   sbTemplateFile = "/etc/sing-box/template.json";
   sbOutboundsFile = "/usr/local/etc/sing-box/outbounds.json";
   sbRulesFile = "/usr/local/etc/sing-box/rules.json";
+  sbExperimentalFile = "/usr/local/etc/sing-box/experimental.json";
   sbConfigFile = "${sbBase}/sing-box.json";
 
   sbGenerate = pkgs.writeShellApplication {
@@ -32,13 +33,13 @@ let
 
       IFS=','
 
-      cat ${sbTemplateFile} > config.json.tmp.0
+      cat ${sbTemplateFile} > config.json.tmp
 
       wgcf_priv="$(cat "${config.sops.secrets."wgcf.priv".path}")"
-      jq "(.endpoints[] | select(.name == \"wgcf\")).private_key = \"$wgcf_priv\"" config.json.tmp.0 > config.json.tmp.1
+      jq "(.endpoints[] | select(.name == \"wgcf\")).private_key = \"$wgcf_priv\"" config.json.tmp > config.json.tmp.1
+      mv config.json.tmp.1 config.json.tmp
 
       tags="$(jq '.outbounds[] | .tag' ${sbOutboundsFile} | sed ':a;N;$!ba;s/\n/, /g')"
-
       jq --argjson tags "[$tags]" '
         .outbounds |= map(
           if .type == "selector" or .type == "urltest" then
@@ -46,28 +47,44 @@ let
           else
             .
           end
-      )' config.json.tmp.1 > config.json.tmp.2
+      )' config.json.tmp > config.json.tmp.1
+      mv config.json.tmp.1 config.json.tmp
 
-      jq --slurpfile rules ${sbRulesFile} '
-        . as $config_ori
-        | ($rules[0] | if . != null then .route?.rules? else null end) as $rules_rules
-        | if $rules_rules and ($rules_rules | type) == "array" then
-            .route.rules |= (
-              (index(map(select(.action? == "sniff"))[0]) // -1) as $idx
-              | if $idx >= 0 then
-                  .[:$idx+1] + $rules_rules + .[$idx+1:]
-                else
-                  $rules_rules + .
-                end
+      if [ -f ${sbRulesFile} ]; then
+        jq --slurpfile rules ${sbRulesFile} '
+          . as $config_ori
+          | ($rules[0] | if . != null then .route?.rules? else null end) as $rules_rules
+          | if $rules_rules and ($rules_rules | type) == "array" then
+              .route.rules |= (
+                (index(map(select(.action? == "sniff"))[0]) // -1) as $idx
+                | if $idx >= 0 then
+                    .[:$idx+1] + $rules_rules + .[$idx+1:]
+                  else
+                    $rules_rules + .
+                  end
+              )
+            else
+              .
+            end
+        ' config.json.tmp > config.json.tmp.1
+        mv config.json.tmp.1 config.json.tmp
+      fi
+
+      if [ -f ${sbExperimentalFile} ]; then
+        jq -n --slurpfile config_ori config.json.tmp --slurpfile experimental ${sbExperimentalFile} '
+            ($config_ori[0] // {}) as $config_ori_obj | ($experimental[0] // {}) as $experimental_obj
+            | $config_ori_obj * $experimental_obj
+            | .experimental = (
+                ($config_ori_obj.experimental // {}) * ($experimental_obj.experimental // {})
             )
-          else
-            .
-          end
-      ' "config.json.tmp.2" > "config.json.tmp.3"
+            | if .experimental == {} then del(.experimental) else . end
+        ' > config.json.tmp.1
+        mv config.json.tmp.1 config.json.tmp
+      fi
 
-      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' "config.json.tmp.3" ${sbOutboundsFile} > ${sbConfigFile}
+      jq -s '[.[] | to_entries] | flatten | reduce .[] as $dot ({}; .[$dot.key] += $dot.value)' config.json.tmp ${sbOutboundsFile} > ${sbConfigFile}
 
-      rm -rf config.json.tmp.*
+      rm -rf config.json.tmp*
     '';
   };
 
