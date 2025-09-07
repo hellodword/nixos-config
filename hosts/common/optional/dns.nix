@@ -50,6 +50,10 @@ in
       #   "::1"
       # ];
 
+      # https://www.thomasaldrian.net/linux-mobile/2023/03/06/dnscrypt/
+      listen-address = "127.0.0.53";
+      bind-interfaces = true;
+
       # forces dnsmasq to try each query with each server strictly
       # in the order they appear in the config.
       strict-order = true;

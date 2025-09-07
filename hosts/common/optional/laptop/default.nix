@@ -52,6 +52,8 @@
     ../../../common/optional/tailscale.nix
 
     ../../../common/optional/extra-cli.nix
+
+    ../../../common/optional/waydroid.nix
   ]
   ++ [
     ../../../common/optional/opengl.nix
