@@ -163,7 +163,8 @@ in
           let
             after = [
               "network.target"
-            ] ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
+            ]
+            ++ lib.optionals (builtins.hasAttr "sing-box" config.systemd.services) [ "sing-box.service" ];
             backup = config.services.restic.backups."${config.networking.hostName}-${name}";
             extraOptions = lib.concatMapStrings (arg: " -o ${arg}") backup.extraOptions;
             resticCmd = "${backup.package}/bin/restic${extraOptions}";

@@ -50,58 +50,57 @@ let
   ];
 in
 {
-  imports =
-    [
-      ../common/global
-    ]
-    ++ [
-      ../common/features/cli
-      ../common/features/cli/optional/scripts.nix
+  imports = [
+    ../common/global
+  ]
+  ++ [
+    ../common/features/cli
+    ../common/features/cli/optional/scripts.nix
 
-      ../common/features/cli/optional/gpg.nix
-      ../common/features/cli/optional/gpg-agent.nix
+    ../common/features/cli/optional/gpg.nix
+    ../common/features/cli/optional/gpg-agent.nix
 
-      ../common/features/cli/optional/bat.nix
-      ../common/features/cli/optional/nix-index.nix
-      ../common/features/cli/optional/starship.nix
-      ../common/features/cli/optional/zoxide.nix
-    ]
-    ++ [
-      ../common/features/desktop/i3
-      (
-        if X then
-          ../common/features/desktop/optional/flameshot.nix
-        else
-          ../common/features/desktop/optional/grimshot.nix
-      )
-      ../common/features/desktop/optional/mpv.nix
-      ../common/features/desktop/optional/feh.nix
-      ../common/features/desktop/optional/low-battery.nix
-      ../common/features/desktop/optional/services-failed.nix
+    ../common/features/cli/optional/bat.nix
+    ../common/features/cli/optional/nix-index.nix
+    ../common/features/cli/optional/starship.nix
+    ../common/features/cli/optional/zoxide.nix
+  ]
+  ++ [
+    ../common/features/desktop/i3
+    (
+      if X then
+        ../common/features/desktop/optional/flameshot.nix
+      else
+        ../common/features/desktop/optional/grimshot.nix
+    )
+    ../common/features/desktop/optional/mpv.nix
+    ../common/features/desktop/optional/feh.nix
+    ../common/features/desktop/optional/low-battery.nix
+    ../common/features/desktop/optional/services-failed.nix
 
-      ../common/features/desktop/optional/firefox.nix
-      # ../common/features/desktop/optional/chromium.nix
-      ../common/features/desktop/optional/chrome.nix
-    ]
-    ++ [
-      ../common/features/desktop/optional/kdeconnect.nix
-      ../common/features/desktop/optional/safeeyes.nix
-      ../common/features/desktop/optional/anytype.nix
-      ../common/features/desktop/optional/bitwarden.nix
-      ../common/features/desktop/optional/libreoffice.nix
-      ../common/features/desktop/optional/remmina.nix
-      ../common/features/desktop/optional/blender.nix
-    ]
-    ++ [
-      ../common/features/cli/optional/sqlite.nix
-      ../common/features/desktop/optional/sqlitebrowser.nix
-    ]
-    ++ [
-      ../common/features/desktop/optional/vscode.nix
-      # ../common/features/dev/optional/go.nix
-      # ../common/features/dev/optional/flutter.nix
-      # ../common/features/dev/optional/android.nix
-    ];
+    ../common/features/desktop/optional/firefox.nix
+    # ../common/features/desktop/optional/chromium.nix
+    ../common/features/desktop/optional/chrome.nix
+  ]
+  ++ [
+    ../common/features/desktop/optional/kdeconnect.nix
+    ../common/features/desktop/optional/safeeyes.nix
+    ../common/features/desktop/optional/anytype.nix
+    ../common/features/desktop/optional/bitwarden.nix
+    ../common/features/desktop/optional/libreoffice.nix
+    ../common/features/desktop/optional/remmina.nix
+    ../common/features/desktop/optional/blender.nix
+  ]
+  ++ [
+    ../common/features/cli/optional/sqlite.nix
+    ../common/features/desktop/optional/sqlitebrowser.nix
+  ]
+  ++ [
+    ../common/features/desktop/optional/vscode.nix
+    # ../common/features/dev/optional/go.nix
+    # ../common/features/dev/optional/flutter.nix
+    # ../common/features/dev/optional/android.nix
+  ];
 
   home.username = lib.mkDefault "${userName}";
 

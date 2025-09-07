@@ -5,16 +5,15 @@
 }:
 
 {
-  imports =
-    [
-      ./hardware-configuration.nix
-      ../common/optional/fix-sleep.nix
-      ../common/optional/intel-tearing.nix
-    ]
-    ++ [
-      ../common/optional/laptop
-      # ../common/optional/chromium-based-security-issue.nix
-    ];
+  imports = [
+    ./hardware-configuration.nix
+    ../common/optional/fix-sleep.nix
+    ../common/optional/intel-tearing.nix
+  ]
+  ++ [
+    ../common/optional/laptop
+    # ../common/optional/chromium-based-security-issue.nix
+  ];
 
   networking.hostName = "laptop2";
 

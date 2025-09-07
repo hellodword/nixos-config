@@ -20,7 +20,8 @@
     ./systemd-initrd.nix
     ./inetutils.nix
     ./openssh-client.nix
-  ] ++ (builtins.attrValues outputs.nixosModules);
+  ]
+  ++ (builtins.attrValues outputs.nixosModules);
 
   system.configurationRevision = inputs.self.rev or "dirty";
 
@@ -38,7 +39,8 @@
 
   home-manager.extraSpecialArgs = {
     inherit inputs outputs;
-  } // commonArgs;
+  }
+  // commonArgs;
 
   environment.systemPackages = with pkgs; [
     wget

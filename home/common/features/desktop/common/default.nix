@@ -15,7 +15,8 @@ in
     ./alacritty.nix
     ./autolock.nix
     ./keyring.nix
-  ] ++ (lib.optionals X [ ./autorandr.nix ]);
+  ]
+  ++ (lib.optionals X [ ./autorandr.nix ]);
 
   # xdg.mimeApps.enable = true;
   me.mimeApps.enable = true;

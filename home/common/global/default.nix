@@ -13,7 +13,8 @@
     inputs.impermanence.nixosModules.home-manager.impermanence
     ../features/cli
     ./sops.nix
-  ] ++ (builtins.attrValues outputs.homeManagerModules);
+  ]
+  ++ (builtins.attrValues outputs.homeManagerModules);
 
   # https://github.com/nix-community/home-manager/tree/master/modules/programs
   # https://nix-community.github.io/home-manager/options.html
