@@ -54,6 +54,10 @@
     ../../../common/optional/extra-cli.nix
 
     ../../../common/optional/waydroid.nix
+    ../../../common/optional/blender.nix
+    ../../../common/optional/anytype.nix
+    ../../../common/optional/remmina.nix
+    ../../../common/optional/libreoffice.nix
   ]
   ++ [
     ../../../common/optional/opengl.nix

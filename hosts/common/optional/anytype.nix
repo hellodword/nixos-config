@@ -2,8 +2,8 @@
   config,
   pkgs,
   persistPath,
-  nixosConfig,
   inputs,
+  userName,
   ...
 }:
 
@@ -12,10 +12,10 @@ let
     system = "x86_64-linux";
     config.allowUnfree = true;
   };
-  mkJailed = import ../../../../../modules/common/jailed.nix pkgs;
+  mkJailed = import ../../../modules/common/jailed.nix pkgs;
   originalPkg = nixpkgs-anytype.anytype;
   package =
-    if nixosConfig.programs.firejail.enable then
+    if config.programs.firejail.enable then
       (mkJailed {
         inherit originalPkg;
         profile = ./anytype.profile;
@@ -25,16 +25,20 @@ let
       originalPkg;
 in
 {
-  home.packages = [ package ];
+  environment.systemPackages = [ package ];
 
   me.allowedUnfreePkg = [
     originalPkg
     "anytype-heart"
   ];
 
-  me.exitProcess = [ "anytype" ];
-
-  home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".config/anytype" ];
+  environment.persistence = {
+    "${persistPath}" = {
+      users."${userName}" = {
+        directories = [
+          ".config/anytype"
+        ];
+      };
+    };
   };
 }

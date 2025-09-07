@@ -85,15 +85,7 @@ in
   ++ [
     ../common/features/desktop/optional/kdeconnect.nix
     ../common/features/desktop/optional/safeeyes.nix
-    ../common/features/desktop/optional/anytype.nix
     ../common/features/desktop/optional/bitwarden.nix
-    ../common/features/desktop/optional/libreoffice.nix
-    ../common/features/desktop/optional/remmina.nix
-    ../common/features/desktop/optional/blender.nix
-  ]
-  ++ [
-    ../common/features/cli/optional/sqlite.nix
-    ../common/features/desktop/optional/sqlitebrowser.nix
   ]
   ++ [
     ../common/features/desktop/optional/vscode.nix
