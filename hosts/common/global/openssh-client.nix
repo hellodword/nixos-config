@@ -1,4 +1,9 @@
-{ pkgs, ... }:
+{
+  pkgs,
+  userName,
+  persistPath,
+  ...
+}:
 
 {
   environment.systemPackages = with pkgs; [
@@ -51,5 +56,15 @@
         gitlab.freedesktop.org ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOzdNH/aTnOOINO/iGupQ/rYnmKF40ESCrkRg+5JkLVN
       '')
     ];
+  };
+
+  environment.persistence = {
+    "${persistPath}" = {
+      users."${userName}" = {
+        directories = [
+          ".ssh"
+        ];
+      };
+    };
   };
 }

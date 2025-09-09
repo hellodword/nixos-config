@@ -44,6 +44,14 @@
         "go"
 
         ".docker"
+
+        # 个人文件
+        "Desktop"
+        "Documents"
+        "Downloads"
+        "Music"
+        "Pictures"
+        "Videos"
       ]
       ++ lib.optionals config.virtualisation.virtualbox.host.enable [
         ".config/VirtualBox"

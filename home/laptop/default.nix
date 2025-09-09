@@ -84,7 +84,6 @@ in
   ]
   ++ [
     ../common/features/desktop/optional/kdeconnect.nix
-    ../common/features/desktop/optional/safeeyes.nix
     ../common/features/desktop/optional/bitwarden.nix
   ]
   ++ [

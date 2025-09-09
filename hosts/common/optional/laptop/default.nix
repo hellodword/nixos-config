@@ -58,6 +58,7 @@
     ../../../common/optional/anytype.nix
     ../../../common/optional/remmina.nix
     ../../../common/optional/libreoffice.nix
+    ../../../common/optional/safeeyes.nix
   ]
   ++ [
     ../../../common/optional/opengl.nix

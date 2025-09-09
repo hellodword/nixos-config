@@ -1,4 +1,4 @@
-{ config, persistPath, ... }:
+{ ... }:
 
 {
   # https://serverfault.com/questions/581367/amazon-ec2-instance-ssh-rsa-fingerprint/581458#581458
@@ -36,9 +36,5 @@
   programs.bash.shellAliases = {
     "ssh-passwordonly" = "ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password";
     "ssh-skip-checking" = "ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no";
-  };
-
-  home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".ssh" ];
   };
 }
