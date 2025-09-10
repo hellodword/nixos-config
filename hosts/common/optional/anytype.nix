@@ -2,18 +2,13 @@
   config,
   pkgs,
   persistPath,
-  inputs,
   userName,
   ...
 }:
 
 let
-  nixpkgs-anytype = import inputs.nixpkgs-anytype {
-    system = "x86_64-linux";
-    config.allowUnfree = true;
-  };
   mkJailed = import ../../../modules/common/jailed.nix pkgs;
-  originalPkg = nixpkgs-anytype.anytype;
+  originalPkg = pkgs.anytype;
   package =
     if config.programs.firejail.enable then
       (mkJailed {

@@ -75,7 +75,6 @@
       url = "github:netblue30/firejail/30ba35f0b331dc488ac666b3644d9508027b20d7";
       flake = false;
     };
-    nixpkgs-anytype.url = "github:NixOS/nixpkgs/327eae33cd776a8bb7f1ab07682edb52a7aa4c56";
   };
 
   outputs =
