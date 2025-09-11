@@ -29,6 +29,7 @@
       auto-optimise-store = true;
       # warn-dirty = false;
       # system-features = [ "kvm" "big-parallel" "nixos-test" ];
+      download-buffer-size = 512 * 1024 * 1024;
     };
   };
 }
