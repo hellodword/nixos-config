@@ -132,4 +132,11 @@
   systemd.suppressedSystemUnits = [
     "systemd-machine-id-commit.service"
   ];
+
+  services.logrotate.settings.journal = {
+    files = [ "/var/log/journal" ];
+    frequency = "daily";
+    rotate = 14;
+    size = "128M";
+  };
 }
