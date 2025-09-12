@@ -31,6 +31,9 @@
     # '';
   };
 
+  # wait for persistence mounts
+  systemd.services.docker.after = [ "local-fs.target" ];
+
   environment.persistence = {
     "${persistPath}".directories = [
       "/var/lib/docker"
