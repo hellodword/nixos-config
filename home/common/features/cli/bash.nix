@@ -66,8 +66,10 @@
       "sha3-512sum" = "openssl dgst -sha3-512";
 
       "rp" = "rp() { realpath \"\$(which \"\$1\")\" ;}; rp";
+
+      # fb hash admin
       "fb" =
-        "touch /home/${userName}/Downloads/fb.db; mkdir -p /home/${userName}/Downloads/fb; docker run --name filebrowser --rm -u `id -u`:`id -g` -p 8000:80 -v /home/${userName}/Downloads/fb.db:/database.db -v /home/${userName}/Downloads/fb:/srv filebrowser/filebrowser";
+        "touch /home/${userName}/Downloads/fb.db; mkdir -p /home/${userName}/Downloads/fb; docker run --runtime runsc --name filebrowser --rm -e PUID=$(id -u) -e PGID=$(id -g) -p 8000:80 -v /home/${userName}/Downloads/fb.db:/database.db -v /home/${userName}/Downloads/fb:/srv filebrowser/filebrowser --password '$2a$10$0pAHur.o8M0qtqteRy7/..51338k3VFYc9NvJ9ckltEhAmdYaUE6a'";
 
       "sing-box-log" = "sudo tail -f /var/log/sing-box/log";
       "sing-box-config" = "sudo cat /var/lib/sing-box/sing-box.json | jq";
@@ -98,7 +100,7 @@
       # "docker-pull-my-images" = "docker images | tail -n +2 | grep -v '<none>' | awk '{print $1 \":\" $2}' | xargs docker inspect | jq '.[] | select(.RepoDigests | length > 0)' | jq -r '.RepoTags[0]' | xargs -I {} bash -c 'echo docker pull {}; docker pull {}'";
 
       "gopeed" =
-        ''docker run --rm --name gopeed -v "$HOME/Downloads/gopeed/Downloads":/app/Downloads -v "$HOME/Downloads/gopeed/storage":/app/storage -p 127.0.0.1:9999:9999 --user "$(id -u)":"$(id -g)" --entrypoint /app/gopeed liwei2633/gopeed'';
+        ''docker run --rm --runtime runsc --name gopeed -v "$HOME/Downloads/gopeed/Downloads":/app/Downloads -v "$HOME/Downloads/gopeed/storage":/app/storage -p 127.0.0.1:9999:9999 --user "$(id -u)":"$(id -g)" --entrypoint /app/gopeed liwei2633/gopeed'';
 
       "mitm" =
         "mkdir -p ~/Downloads/.mitmproxy; docker run --rm -t --name mitm --network host -v ~/Downloads/.mitmproxy:/home/mitmproxy/.mitmproxy -v ~/dev/playground/mitmproxy-playground/scripts:/home/mitmproxy/.mitmproxy/scripts -w /home/mitmproxy/.mitmproxy/scripts mitmproxy/mitmproxy:dev mitmweb --mode socks5@8889 --mode regular@8888 --web-host 127.0.0.1 --web-port 8890 --ignore-hosts 8.8.8.8:443 --ignore-hosts 8.8.4.4:443 --ignore-hosts dns.google:443 --ignore-hosts dns.google --ignore-hosts 1.1.1.1:443 --ignore-hosts 1.0.0.1:443";
@@ -114,7 +116,8 @@
 
       "bw-unlock" = ''export BW_SESSION="$(bw unlock --raw)"'';
 
-      # docker run -d --runtime runsc --name ollama --restart always --user `id -u`:`id -g` -p 127.0.0.1:11434:11434 -v ~/Downloads/ollama:/home/ubuntu/.ollama ollama/ollama:latest
+      "ollama-up" =
+        ''docker kill ollama || true; docker rm ollama || true; docker run -d --runtime runsc --name ollama --restart always --user "$(id -u)":"$(id -g)" -p 127.0.0.1:11434:11434 -v ~/Downloads/ollama:/home/ubuntu/.ollama ollama/ollama'';
       "ollama" = "docker exec -it ollama ollama";
     };
     shellOptions = [
