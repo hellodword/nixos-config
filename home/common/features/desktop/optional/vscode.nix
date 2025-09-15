@@ -62,6 +62,27 @@
         "remote.autoForwardPortsSource" = "hybrid";
         "editor.fontFamily" = "'JetBrainsMono Nerd Font', 'monospace', monospace";
         # "editor.tabSize" = 2;
+
+        "extensions.ignoreRecommendations" = true;
+
+        "github.gitAuthentication" = false;
+        "github.branchProtection" = false;
+        "github.showAvatar" = false;
+        "files.eol" = "\n";
+
+        # disable copilot
+        "chat.agent.enabled" = false;
+        "chat.mcp.enabled" = false;
+        "chat.edits2.enabled" = false;
+        "chat.commandCenter.enabled" = false;
+        "chat.mcp.discovery.enabled" = false;
+        "chat.extensionTools.enabled" = false;
+        "chat.implicitContext.enabled" = {
+          "panel" = "never";
+          "editing-session" = "never";
+        };
+        "chat.detectParticipant.enabled" = false;
+        "chat.mcp.access" = "none";
       };
       profiles.default.extensions = with pkgs.vscode-extensions; [
         jnoortheen.nix-ide
