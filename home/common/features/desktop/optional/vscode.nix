@@ -75,7 +75,12 @@
         "chat.mcp.enabled" = false;
         "chat.edits2.enabled" = false;
         "chat.commandCenter.enabled" = false;
-        "chat.mcp.discovery.enabled" = false;
+        "chat.mcp.discovery.enabled" = {
+          "claude-desktop" = false;
+          "windsurf" = false;
+          "cursor-global" = false;
+          "cursor-workspace" = false;
+        };
         "chat.extensionTools.enabled" = false;
         "chat.implicitContext.enabled" = {
           "panel" = "never";
@@ -83,6 +88,7 @@
         };
         "chat.detectParticipant.enabled" = false;
         "chat.mcp.access" = "none";
+        "chat.disableAIFeatures" = true;
       };
       profiles.default.extensions = with pkgs.vscode-extensions; [
         jnoortheen.nix-ide
