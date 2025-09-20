@@ -1,4 +1,9 @@
-{ pkgs, ... }:
+{
+  pkgs,
+  persistPath,
+  userName,
+  ...
+}:
 
 {
   # https://github.com/colemickens/nixcfg/blob/15905d9e42dad17fa609c204f2dc3367db96d6ce/mixins/android.nix#L6
@@ -17,4 +22,15 @@
     adb connect 1.2.3.4
     scrcpy --serial=1.2.3.4
   */
+
+  # ".android"
+  environment.persistence = {
+    "${persistPath}" = {
+      users."${userName}" = {
+        directories = [
+          ".android"
+        ];
+      };
+    };
+  };
 }
