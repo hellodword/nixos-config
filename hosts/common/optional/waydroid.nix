@@ -1,4 +1,9 @@
-{ persistPath, userName, ... }:
+{
+  # pkgs,
+  persistPath,
+  userName,
+  ...
+}:
 
 {
   # bug:
@@ -12,6 +17,10 @@
   # github.com/waydroid/waydroid/issues/700
   # echo "ro.sf.lcd_density=215" | sudo tee -a /var/lib/waydroid/waydroid_base.prop
 
+  # environment.systemPackages = with pkgs; [
+  #   waydroid-helper
+  # ];
+
   virtualisation.waydroid.enable = true;
 
   environment.persistence = {
@@ -23,6 +32,9 @@
       users."${userName}" = {
         directories = [
           ".local/share/waydroid"
+          # ".cache/waydroid-helper"
+          # ".local/share/waydroid-helper"
+          # ".config/waydroid-helper"
         ];
       };
     };
