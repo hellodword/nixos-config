@@ -42,17 +42,17 @@
     "catppuccin-fcitx5": {
       "flake": false,
       "locked": {
-        "lastModified": 1664946380,
-        "narHash": "sha256-uFaCbyrEjv4oiKUzLVFzw+UY54/h7wh2cntqeyYwGps=",
+        "lastModified": 1747425237,
+        "narHash": "sha256-ss0kW+ulvMhxeZKBrjQ7E5Cya+02eJrGsE4OLEkqKks=",
         "owner": "catppuccin",
         "repo": "fcitx5",
-        "rev": "ce244cfdf43a648d984719fdfd1d60aab09f5c97",
+        "rev": "393845cf3ed0e0000bfe57fe1b9ad75748e2547f",
         "type": "github"
       },
       "original": {
         "owner": "catppuccin",
         "repo": "fcitx5",
-        "rev": "ce244cfdf43a648d984719fdfd1d60aab09f5c97",
+        "rev": "393845cf3ed0e0000bfe57fe1b9ad75748e2547f",
         "type": "github"
       }
     },

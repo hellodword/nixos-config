@@ -55,7 +55,8 @@
     };
 
     catppuccin-fcitx5 = {
-      url = "github:catppuccin/fcitx5/ce244cfdf43a648d984719fdfd1d60aab09f5c97";
+      # https://github.com/catppuccin/fcitx5/compare/393845cf3ed0e0000bfe57fe1b9ad75748e2547f...main
+      url = "github:catppuccin/fcitx5/393845cf3ed0e0000bfe57fe1b9ad75748e2547f";
       flake = false;
     };
 
