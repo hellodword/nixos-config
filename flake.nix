@@ -62,6 +62,7 @@
 
     android-nixpkgs = {
       # url = "github:tadfisher/android-nixpkgs/stable";
+      # https://github.com/tadfisher/android-nixpkgs/compare/c500d23a40a7db979537655f914cbc1609b14bbd...stable
       url = "github:tadfisher/android-nixpkgs/c500d23a40a7db979537655f914cbc1609b14bbd";
       inputs.nixpkgs.follows = "nixpkgs";
     };
@@ -71,11 +72,11 @@
       flake = false;
     };
 
-    firejail = {
-      # https://github.com/netblue30/firejail/compare/30ba35f0b331dc488ac666b3644d9508027b20d7...master
-      url = "github:netblue30/firejail/30ba35f0b331dc488ac666b3644d9508027b20d7";
-      flake = false;
-    };
+    # firejail = {
+    #   # https://github.com/netblue30/firejail/compare/30ba35f0b331dc488ac666b3644d9508027b20d7...master
+    #   url = "github:netblue30/firejail/30ba35f0b331dc488ac666b3644d9508027b20d7";
+    #   flake = false;
+    # };
   };
 
   outputs =

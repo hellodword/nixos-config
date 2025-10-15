@@ -88,9 +88,9 @@
           doCheck = false;
         });
 
-        firejail = prev.firejail.overrideAttrs (oldAttrs: {
-          src = inputs.firejail;
-        });
+        # firejail = prev.firejail.overrideAttrs (oldAttrs: {
+        #   src = inputs.firejail;
+        # });
 
       }
       // prev.lib.optionalAttrs (inputs.nixpkgs.rev == "c9b6fb798541223bbb396d287d16f43520250518") {
