@@ -14,9 +14,9 @@ let
   };
   fcitx5Theme = ''
     # Theme
-    Theme=catppuccin-mocha
+    Theme=catppuccin-mocha-pink
     # Dark Theme
-    DarkTheme=catppuccin-mocha
+    DarkTheme=catppuccin-mocha-pink
   '';
 in
 {
@@ -41,8 +41,8 @@ in
 
   xdg.configFile."fcitx5/conf/classicui.conf".text = fcitx5Theme;
   home.file.".local/share/fcitx5/conf/classicui.conf".text = fcitx5Theme;
-  home.file.".local/share/fcitx5/themes/catppuccin-mocha" = {
-    source = inputs.catppuccin-fcitx5 + /src/catppuccin-mocha;
+  home.file.".local/share/fcitx5/themes/catppuccin-mocha-pink" = {
+    source = inputs.catppuccin-fcitx5 + /src/catppuccin-mocha-pink;
     recursive = true;
   };
 
