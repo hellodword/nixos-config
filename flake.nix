@@ -44,8 +44,8 @@
 
     firefox-addons = {
       # DO NOT UPGRADE, only using the `buildFirefoxXpiAddon`
-      # https://gitlab.com/rycee/nur-expressions/-/compare/58848c079b92abf27e92786681fe771da505599f...master
-      url = "gitlab:rycee/nur-expressions/58848c079b92abf27e92786681fe771da505599f?dir=pkgs/firefox-addons";
+      # https://gitlab.com/rycee/nur-expressions/-/compare/435c7a1ce417f375269a04ec2a70fa53dcf6c36d...master
+      url = "gitlab:rycee/nur-expressions/435c7a1ce417f375269a04ec2a70fa53dcf6c36d?dir=pkgs/firefox-addons";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
