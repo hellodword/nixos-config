@@ -116,7 +116,7 @@ in
 
   programs.gpg.publicKeys = lib.mkAfter inputs.nixos-privates.gpg."laptop".publicKeys;
   services.gpg-agent.sshKeys = lib.mkForce inputs.nixos-privates.gpg."laptop".sshKeys;
-  programs.git.aliases."signing" =
+  programs.git.settings.alias."signing" =
     "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${
       inputs.nixos-privates.gpg."laptop".git-signingkey
     }";

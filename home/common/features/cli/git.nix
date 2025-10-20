@@ -8,10 +8,8 @@ in
   programs.git = {
     enable = true;
     package = pkgs.gitAndTools.gitFull;
-    extraConfig = {
-      core.editor = "vim";
-    };
-    aliases = {
+    settings.core.editor = "vim";
+    settings.aliases = {
       "config-github" =
         "!git config user.name hellodword && git config user.email 46193371+hellodword@users.noreply.github.com";
       "config-dependabot" =
