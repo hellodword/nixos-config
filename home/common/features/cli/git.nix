@@ -9,7 +9,7 @@ in
     enable = true;
     package = pkgs.gitAndTools.gitFull;
     settings.core.editor = "vim";
-    settings.aliases = {
+    settings.alias = {
       "config-github" =
         "!git config user.name hellodword && git config user.email 46193371+hellodword@users.noreply.github.com";
       "config-dependabot" =
