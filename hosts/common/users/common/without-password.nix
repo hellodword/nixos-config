@@ -25,19 +25,6 @@
       "adbusers"
       "kvm"
     ]
-    ++
-      lib.optionals
-        (
-          (builtins.length (
-            builtins.filter (
-              x: builtins.hasAttr "pname" x && x.pname == "android-udev-rules"
-            ) config.services.udev.packages
-          )) == 1
-        )
-        [
-          "adbusers"
-          "kvm"
-        ]
     ++ [ ];
   };
 
