@@ -107,6 +107,7 @@
     "${persistPath}${config.home.homeDirectory}".directories = [
       ".config/Code"
       ".cache/vscode-cpptools"
+      ".vscode"
     ];
   };
 
