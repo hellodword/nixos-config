@@ -7,7 +7,7 @@ in
 {
   programs.git = {
     enable = true;
-    package = pkgs.gitAndTools.gitFull;
+    package = pkgs.gitFull;
     settings.core.editor = "vim";
     settings.alias = {
       "config-github" =
