@@ -1,4 +1,10 @@
-{ pkgs, config, ... }:
+{
+  pkgs,
+  config,
+  persistPath,
+  userName,
+  ...
+}:
 
 let
   mkJailed = import ../../../../modules/common/jailed.nix pkgs;
@@ -31,4 +37,14 @@ in
         pkgs.sqlitebrowser
     )
   ];
+
+  environment.persistence = {
+    "${persistPath}" = {
+      users."${userName}" = {
+        directories = [
+          ".config/LibreCAD"
+        ];
+      };
+    };
+  };
 }
