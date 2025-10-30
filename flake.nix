@@ -15,21 +15,21 @@
     sops-nix = {
       # https://github.com/Mic92/sops-nix/compare/ab8d56e85b8be14cff9d93735951e30c3e86a437...master
       url = "github:Mic92/sops-nix/ab8d56e85b8be14cff9d93735951e30c3e86a437";
-      inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.nixpkgs.follows = "nixpkgs";
     };
 
     lanzaboote = {
       # https://github.com/nix-community/lanzaboote/compare/747b7912f49e2885090c83364d88cf853a020ac1...master
       url = "github:nix-community/lanzaboote/747b7912f49e2885090c83364d88cf853a020ac1";
 
-      # Optional but recommended to limit the size of your system closure.
-      inputs.nixpkgs.follows = "nixpkgs";
+      # # Optional but recommended to limit the size of your system closure.
+      # inputs.nixpkgs.follows = "nixpkgs";
     };
 
     disko = {
       # DO NOT UPGRADE https://github.com/nix-community/disko/issues/586
       url = "github:nix-community/disko/5a2dc95464080764b9ca1b82b5d6d981157522be";
-      inputs.nixpkgs.follows = "nixpkgs";
+      # inputs.nixpkgs.follows = "nixpkgs";
     };
 
     # https://github.com/Baitinq/nixos-config/blob/1ab479c29c7dc2629664ffb80653616666019b9e/flake.nix#L32
