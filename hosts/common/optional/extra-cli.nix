@@ -7,7 +7,7 @@
     nix-prefetch
     nix-prefetch-scripts
     sysstat
-    aria
+    aria2
     usbutils
     brotli
     fzf

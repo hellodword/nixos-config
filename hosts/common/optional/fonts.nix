@@ -37,9 +37,9 @@
       # noto-fonts-cjk-novf.sans
       # noto-fonts-cjk-novf.serif
 
-      noto-fonts-emoji
+      noto-fonts-color-emoji
       noto-fonts-emoji-blob-bin
-      noto-fonts-extra
+      noto-fonts
       # source-code-pro
       # source-han-code-jp
       # source-han-mono
