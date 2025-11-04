@@ -146,7 +146,7 @@ in
           }
         ];
         extensions.packages = [
-          (inputs.firefox-addons.lib.${pkgs.system}.buildFirefoxXpiAddon {
+          (inputs.firefox-addons.lib.${pkgs.stdenv.hostPlatform.system}.buildFirefoxXpiAddon {
             # https://addons.mozilla.org/en-US/firefox/addon/violentmonkey/
             pname = "violentmonkey";
             addonId = "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}";
