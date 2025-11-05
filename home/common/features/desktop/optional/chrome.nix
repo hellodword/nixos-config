@@ -19,7 +19,10 @@
 
   programs."google-chrome" = {
     enable = true;
-    commandLineArgs = [ ];
+    commandLineArgs = [
+      # https://github.com/violentmonkey/violentmonkey/issues/2284#issuecomment-3425714429
+      "--disable-features=ExtensionManifestV2Unsupported,ExtensionManifestV2Disabled"
+    ];
     # https://github.com/nix-community/home-manager/blob/d1f04b0f365a34896a37d9015637796537ec88a3/modules/programs/chromium.nix#L184
   };
 
