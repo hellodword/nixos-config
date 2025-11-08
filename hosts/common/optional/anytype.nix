@@ -22,6 +22,11 @@ in
 {
   environment.systemPackages = [ package ];
 
+  # https://github.com/anyproto/anytype-ts/blob/a82c83b24d6364b47f47910fe1a33e3696c48da6/electron/js/menu.js#L564
+  environment.variables = {
+    ORIGINAL_XDG_CURRENT_DESKTOP = "";
+  };
+
   me.allowedUnfreePkg = [
     originalPkg
     "anytype-heart"
