@@ -11,7 +11,7 @@
       gpg --list-keys --with-keygrip | grep -A 1 '\[A'
       ~/.gnupg/sshcontrol
     */
-    # sshKeys = inputs.privates.gpg."<...>".sshKeys;
+    # sshKeys = inputs.nixos-privates.gpg."<...>".sshKeys;
     verbose = false;
   };
 }

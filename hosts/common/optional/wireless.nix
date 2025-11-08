@@ -2,7 +2,7 @@
   lib,
   pkgs,
   config,
-  privates,
+  inputs,
   ...
 }:
 
@@ -26,7 +26,7 @@
         value = {
           pskRaw = "ext:${v.psk}";
         };
-      }) (builtins.attrValues privates.wireless)
+      }) (builtins.attrValues inputs.nixos-privates.wireless)
     );
 
     # # Imperative

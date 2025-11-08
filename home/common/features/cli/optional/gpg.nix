@@ -6,7 +6,7 @@
     gnupg
   ];
 
-  # programs.git.settings.alias."signing" = "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${inputs.privates.gpg."<...>".git-signingkey}";
+  # programs.git.settings.alias."signing" = "!git config commit.gpgsign true && git config tag.gpgsign true && git config user.signingkey ${inputs.nixos-privates.gpg."<...>".git-signingkey}";
 
   programs.gpg = {
     enable = true;
