@@ -38,16 +38,10 @@ in
     lib.optionalAttrs (!X) {
       enable = true;
       systemdTarget = "sway-session.target";
-      events = [
-        {
-          event = "before-sleep";
-          command = lockCmd;
-        }
-        {
-          event = "lock";
-          command = lockCmd;
-        }
-      ];
+      events = {
+        "before-sleep" = lockCmd;
+        "lock" = lockCmd;
+      };
       timeouts = [
         {
           timeout = 60;
