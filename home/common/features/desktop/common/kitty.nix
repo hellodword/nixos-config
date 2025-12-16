@@ -13,7 +13,8 @@ in
     enable = true;
     package = pkgs.kitty;
     font = {
-      name = "monospace";
+      package = pkgs.jetbrains-mono;
+      name = "JetBrains Mono";
       size = 11.0;
     };
     # theme = "Catppuccin-Macchiato";
