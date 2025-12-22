@@ -25,7 +25,7 @@ in
 
       font = {
         normal = {
-          family = "monospace";
+          family = "JetBrains Mono";
           style = "Medium";
         };
         size = 11.0;

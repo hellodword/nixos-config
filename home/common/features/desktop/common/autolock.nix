@@ -8,7 +8,10 @@
 let
   X = nixosConfig.services.xserver.windowManager.i3.enable;
   lockCmd = "${
-    if X then "${pkgs.i3lock}/bin/i3lock" else "${pkgs.swaylock}/bin/swaylock -f"
+    if X then
+      "${pkgs.i3lock}/bin/i3lock"
+    else
+      "${pkgs.swaylock}/bin/swaylock -f --font 'JetBrains Mono'"
   } -n -c 01544A";
 in
 {
