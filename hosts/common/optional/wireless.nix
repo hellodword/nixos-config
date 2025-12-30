@@ -6,6 +6,9 @@
   ...
 }:
 
+let
+  secretPath = "wpa_supplicant/wireless.secret";
+in
 {
   # Wireless secrets stored through sops
   sops.secrets."wireless" = {
@@ -13,11 +16,19 @@
     neededForUsers = true;
   };
 
+  environment.etc."${secretPath}" = {
+    enable = true;
+    user = "wpa_supplicant";
+    group = "wpa_supplicant";
+    mode = "0440";
+    source = config.sops.secrets."wireless".path;
+  };
+
   networking.wireless = {
     enable = true;
     fallbackToWPA2 = false;
     # Declarative
-    secretsFile = config.sops.secrets."wireless".path;
+    secretsFile = "/etc/${secretPath}";
     # 先在 nixos-privates 的 wireless 里添加 ssid
     # psk 在 sops secrets 里， wireless.FOO_PSK
     networks = builtins.listToAttrs (
@@ -31,10 +42,7 @@
 
     # # Imperative
     # allowAuxiliaryImperativeNetworks = true;
-    userControlled = {
-      enable = true;
-      # group = "network";
-    };
+    userControlled = true;
     extraConfig = ''
       p2p_disabled=1
     '';

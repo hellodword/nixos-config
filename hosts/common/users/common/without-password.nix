@@ -25,6 +25,7 @@
       "adbusers"
       "kvm"
     ]
+    ++ lib.optionals config.networking.wireless.enable [ "wpa_supplicant" ]
     ++ [ ];
   };
 
