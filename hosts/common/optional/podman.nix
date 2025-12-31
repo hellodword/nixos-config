@@ -1,6 +1,8 @@
-{ persistPath, ... }:
+{ persistPath, userName, ... }:
 
 {
+  users.users."${userName}".extraGroups = [ "podman" ];
+
   virtualisation.podman = {
     enable = true;
     autoPrune = {

@@ -3,6 +3,7 @@
   pkgs,
   config,
   inputs,
+  userName,
   ...
 }:
 
@@ -23,6 +24,9 @@ in
     mode = "0440";
     source = config.sops.secrets."wireless".path;
   };
+
+  # required by wpa_gui
+  users.users."${userName}".extraGroups = [ "wpa_supplicant" ];
 
   networking.wireless = {
     enable = true;

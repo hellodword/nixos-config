@@ -1,6 +1,8 @@
-{ persistPath, ... }:
+{ persistPath, userName, ... }:
 
 {
+  users.users."${userName}".extraGroups = [ "libvirtd" ];
+
   virtualisation.libvirtd = {
     enable = true;
   };

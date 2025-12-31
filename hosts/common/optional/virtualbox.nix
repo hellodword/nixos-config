@@ -1,8 +1,11 @@
-{ pkgs, ... }:
+{ pkgs, userName, ... }:
 
 {
   # wget https://download.virtualbox.org/virtualbox/7.0.10/VBoxGuestAdditions_7.0.10.iso
   me.allowedUnfreePkg = [ pkgs.virtualboxExtpack ];
+
+  # VirtualBox is not currently allowed to access USB devices
+  users.users."${userName}".extraGroups = [ "vboxusers" ];
 
   virtualisation.virtualbox = {
     host = {

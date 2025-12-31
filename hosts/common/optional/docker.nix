@@ -2,11 +2,14 @@
   pkgs,
   lib,
   persistPath,
+  userName,
   ...
 }:
 
 {
   environment.systemPackages = with pkgs; [ dive ];
+
+  users.users."${userName}".extraGroups = [ "docker" ];
 
   virtualisation.docker = {
     enable = true;
