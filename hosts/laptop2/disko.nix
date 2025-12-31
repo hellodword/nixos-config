@@ -27,7 +27,7 @@ in
   boot.supportedFilesystems = [ "btrfs" ];
 
   disko.devices.disk = {
-    ${builtins.baseNameOf device0} = {
+    ${baseNameOf device0} = {
       device = device0;
       type = "disk";
       content = {
