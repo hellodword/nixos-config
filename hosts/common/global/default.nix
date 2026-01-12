@@ -63,7 +63,7 @@
     # nixpkgs-lint
     # nil # Nix LSP
     nixd
-    nixfmt-rfc-style # Nix formatter
+    nixfmt # Nix formatter
     # flake-checker
 
     nix-tree
