@@ -32,7 +32,7 @@
     # ${pkgs.bash-completion}/share/bash-completion/completions/curl
     initExtra = lib.mkAfter (
       lib.strings.concatStringsSep "\n\n" [
-        (lib.optionalString nixosConfig.services.tailscale.enable ''source <(tailscale completion bash)'')
+        (lib.optionalString nixosConfig.services.tailscale.enable "source <(tailscale completion bash)")
         "complete -c rp"
       ]
     );
@@ -91,7 +91,9 @@
       "ffmpeg" = "ffmpeg -hide_banner";
       "ffplay" = "ffplay -hide_banner -nodisp -autoexit";
 
-      "qrencode" = "docker run --rm -i --network none --runtime runsc leplusorg/qrcode qrencode";
+      "qrencode" = "docker run --rm -i --network none --runtime runsc leplusorg/qrcode qrencode -t utf8";
+      "qrencode-png" =
+        "docker run --rm -i --network none --runtime runsc leplusorg/qrcode qrencode -t png -o /dev/stdout";
 
       "nix-repl" = "nix repl --impure --expr 'import <nixpkgs>{}'";
 
@@ -110,7 +112,7 @@
         ''mkdir -p ~/Downloads/honor-downloader; docker run --rm --name honor-downloader --runtime runsc -v ~/Downloads/honor-downloader:/tmp --user "$(id -u):$(id -g)" ghcr.io/hellodword/honor-downloader'';
 
       "charles" =
-        ''mkdir -p ~/Downloads/charles; docker run --rm --name charles -v ~/Downloads/charles:/home/app -p 127.0.0.1:5800:5800 -p 8888:8888 -p 8889:8889 ghcr.io/hellodword/charles'';
+        "mkdir -p ~/Downloads/charles; docker run --rm --name charles -v ~/Downloads/charles:/home/app -p 127.0.0.1:5800:5800 -p 8888:8888 -p 8889:8889 ghcr.io/hellodword/charles";
 
       "wg-serve" =
         ''mkdir -p ~/Downloads/wireguard-config; docker run --rm --name=wireguard --cap-add=NET_ADMIN -v ~/Downloads/wireguard-config:/config -e PUID="$(id -u)" -e PGID="$(id -g)" -e TZ=Etc/UTC -e PEERS=1 -e PEERDNS="1.1.1.1" -e PERSISTENTKEEPALIVE_PEERS="all" -e LOG_CONFS=true -p 51820:51820/udp --sysctl="net.ipv4.conf.all.src_valid_mark=1" linuxserver/wireguard:latest'';
