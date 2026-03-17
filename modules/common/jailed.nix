@@ -46,7 +46,14 @@ let
     else
       originalPkg."${overrideFuc}" (oldAttrs: {
         ${attr} = ''
-          ${if builtins.hasAttr attr oldAttrs then oldAttrs.${attr} else ""}
+          ${
+            if builtins.hasAttr attr oldAttrs then
+              # https://github.com/NixOS/nixpkgs/pull/495064
+              # not sure if it's bug
+              (if (lib.isList oldAttrs.${attr} && oldAttrs.${attr} == [ ]) then "" else oldAttrs.${attr})
+            else
+              ""
+          }
 
           for file in $out/bin/*; do
               if [ -f "$file" ] && [ -x "$file" ]; then
