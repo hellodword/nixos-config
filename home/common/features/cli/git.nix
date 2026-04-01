@@ -9,6 +9,7 @@ in
     enable = true;
     package = pkgs.gitFull;
     settings.core.editor = "vim";
+    signing.format = "openpgp";
     settings.alias = {
       "config-github" =
         "!git config user.name hellodword && git config user.email 46193371+hellodword@users.noreply.github.com";

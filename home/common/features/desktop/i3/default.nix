@@ -151,4 +151,5 @@ in
     config = i3Config;
   };
 
+  programs.swaylock.enable = config.programs.swaylock.settings != { };
 }

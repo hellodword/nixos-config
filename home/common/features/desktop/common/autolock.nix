@@ -40,7 +40,7 @@ in
   services.swayidle = (
     lib.optionalAttrs (!X) {
       enable = true;
-      systemdTarget = "sway-session.target";
+      systemdTargets = [ "sway-session.target" ];
       events = {
         "before-sleep" = lockCmd;
         "lock" = lockCmd;
