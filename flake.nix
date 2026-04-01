@@ -13,8 +13,8 @@
     # https://github.com/nix-community/impermanence/pull/264
     impermanence.url = "github:nix-community/impermanence/9128a383177ceb510e3d55535466d264e860c54b";
     sops-nix = {
-      # https://github.com/Mic92/sops-nix/compare/ab8d56e85b8be14cff9d93735951e30c3e86a437...master
-      url = "github:Mic92/sops-nix/ab8d56e85b8be14cff9d93735951e30c3e86a437";
+      # https://github.com/Mic92/sops-nix/compare/19bf3d8678fbbfbc173beaa0b5b37d37938db301...master
+      url = "github:Mic92/sops-nix/19bf3d8678fbbfbc173beaa0b5b37d37938db301";
       # inputs.nixpkgs.follows = "nixpkgs";
     };
 
