@@ -151,8 +151,22 @@ in
             status = "disable";
           }
           {
-            criteria = "${inputs.nixos-privates.monitors."dell-1".kanshi}";
+            criteria = "${inputs.nixos-privates.monitors."dell-1".description}";
             status = "enable";
+          }
+        ];
+      }
+      {
+        profile.name = "workroom-hz-4f";
+        profile.outputs = [
+          {
+            criteria = "${inputs.nixos-privates.monitors."${nixosConfig.networking.hostName}-embedded".name}";
+            status = "enable";
+          }
+          {
+            criteria = "${inputs.nixos-privates.monitors."workroom-hz-4f".description}";
+            status = "enable";
+            inherit (inputs.nixos-privates.monitors."workroom-hz-4f") mode scale;
           }
         ];
       }
