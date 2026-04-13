@@ -91,6 +91,7 @@ in
     # ../common/features/dev/optional/go.nix
     # ../common/features/dev/optional/flutter.nix
     # ../common/features/dev/optional/android.nix
+    ../common/features/dev/optional/ai.nix
   ];
 
   home.username = lib.mkDefault "${userName}";
