@@ -1,5 +1,4 @@
 {
-  inputs,
   lib,
   pkgs,
   config,
@@ -10,7 +9,7 @@
 
 {
   imports = [
-    inputs.impermanence.nixosModules.home-manager.impermanence
+    # inputs.impermanence.nixosModules.home-manager.impermanence
     ../features/cli
     ./sops.nix
   ]
@@ -45,12 +44,12 @@
     sessionPath = [ "$HOME/.local/bin" ];
 
     persistence = {
-      "${persistPath}${config.home.homeDirectory}" = {
+      "${persistPath}" = {
         directories = [
           ".local/bin"
           ".local/share/nix" # ~/.local/share/nix/repl-history for nix repl
         ];
-        allowOther = true;
+        # allowOther = true;
       };
     };
 

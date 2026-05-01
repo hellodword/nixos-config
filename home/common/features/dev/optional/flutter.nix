@@ -69,7 +69,7 @@ in
   # /home/ubuntu/.config/flutter/tool_state
   home = {
     persistence = {
-      "${persistPath}${config.home.homeDirectory}" = {
+      "${persistPath}" = {
         directories = [
           ".config/flutter"
           ".cache/flutter"

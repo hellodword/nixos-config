@@ -11,7 +11,7 @@
 {
   # Broken symbol link
   # home.persistence = {
-  #   "${persistPath}${config.home.homeDirectory}".files = [ ".bash_history" ];
+  #   "${persistPath}".files = [ ".bash_history" ];
   # };
 
   programs.bash = {

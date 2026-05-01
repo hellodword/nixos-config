@@ -2,7 +2,6 @@
   lib,
   inputs,
   pkgs,
-  config,
   persistPath,
   ...
 }:
@@ -33,7 +32,7 @@ in
   home = {
     sessionVariables.BROWSER = "firefox";
     persistence = {
-      "${persistPath}${config.home.homeDirectory}".directories = [
+      "${persistPath}".directories = [
         ".mozilla/firefox"
         ".cache/mozilla/firefox"
       ];

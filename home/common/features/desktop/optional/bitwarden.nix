@@ -1,5 +1,4 @@
 {
-  config,
   pkgs,
   persistPath,
   nixosConfig,
@@ -44,7 +43,7 @@ in
   ];
 
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [
+    "${persistPath}".directories = [
       ".config/Bitwarden"
       ".config/Bitwarden\ CLI"
     ];

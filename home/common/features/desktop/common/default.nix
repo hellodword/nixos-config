@@ -1,6 +1,6 @@
 {
-  config,
-  persistPath,
+  # config,
+  # persistPath,
   nixosConfig,
   lib,
   ...
@@ -20,10 +20,4 @@ in
 
   # xdg.mimeApps.enable = true;
   me.mimeApps.enable = true;
-
-  home.persistence = {
-    "${persistPath}${config.home.homeDirectory}" = {
-      allowOther = true;
-    };
-  };
 }

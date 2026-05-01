@@ -1,4 +1,4 @@
-{ persistPath, config, ... }:
+{ persistPath, ... }:
 
 {
   # # not working https://github.com/nix-community/home-manager/issues/1454
@@ -12,6 +12,6 @@
   # services.gnome-keyring.components = [ "secrets" ];
 
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".local/share/keyrings" ];
+    "${persistPath}".directories = [ ".local/share/keyrings" ];
   };
 }

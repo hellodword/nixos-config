@@ -1,6 +1,5 @@
 {
   inputs,
-  config,
   persistPath,
   ...
 }:
@@ -14,6 +13,6 @@
   programs.nix-index-database.comma.enable = true;
 
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".cache/nix-index" ];
+    "${persistPath}".directories = [ ".cache/nix-index" ];
   };
 }

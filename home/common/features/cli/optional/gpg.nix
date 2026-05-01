@@ -129,6 +129,6 @@
   # # gpg: WARNING: unsafe permissions on homedir
   ## use environment.persistence
   # home.persistence = {
-  #   "${persistPath}${config.home.homeDirectory}".directories = [ ".gnupg" ];
+  #   "${persistPath}".directories = [ ".gnupg" ];
   # };
 }

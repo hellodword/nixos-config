@@ -40,6 +40,6 @@
   ];
 
   home-manager.users."${userName}".home.persistence = {
-    "${persistPath}/home/${userName}".directories = [ ".local/state/wireplumber" ];
+    "${persistPath}".directories = [ ".local/state/wireplumber" ];
   };
 }

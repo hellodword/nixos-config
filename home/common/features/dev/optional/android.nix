@@ -63,7 +63,7 @@
 
   home = {
     persistence = {
-      "${persistPath}${config.home.homeDirectory}".directories = [
+      "${persistPath}".directories = [
         "Android"
         ".cache/Google"
         ".config/Google"

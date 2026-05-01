@@ -1,5 +1,5 @@
 {
-  config,
+  # config,
   persistPath,
   ...
 }:
@@ -7,7 +7,7 @@
 {
   home = {
     persistence = {
-      "${persistPath}${config.home.homeDirectory}".directories = [
+      "${persistPath}".directories = [
         ".codex"
       ];
     };

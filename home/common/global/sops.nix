@@ -13,7 +13,7 @@
   # };
 
   # home.persistence = {
-  #   "${persistPath}${config.home.homeDirectory}".directories = [ ".config/sops/age" ];
+  #   "${persistPath}".directories = [ ".config/sops/age" ];
   # };
 
   home.activation.createSopsDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''

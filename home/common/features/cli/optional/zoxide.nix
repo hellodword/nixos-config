@@ -1,4 +1,4 @@
-{ config, persistPath, ... }:
+{ persistPath, ... }:
 
 {
   programs.zoxide = {
@@ -10,7 +10,7 @@
   home.sessionVariables._ZO_DOCTOR = "0";
 
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [
+    "${persistPath}".directories = [
       ".local/share/zoxide"
     ];
   };

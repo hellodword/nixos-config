@@ -1,5 +1,5 @@
 # { config, pkgs, persistPath, ... }:
-{ config, persistPath, ... }:
+{ persistPath, ... }:
 
 # let
 
@@ -42,7 +42,7 @@
   # };
 
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".config/kdeconnect" ];
+    "${persistPath}".directories = [ ".config/kdeconnect" ];
   };
 
   # gui valent https://github.com/andyholmes/valent/

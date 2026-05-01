@@ -12,7 +12,7 @@ let
 in
 {
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".directories = [ ".config/chromium" ];
+    "${persistPath}".directories = [ ".config/chromium" ];
   };
 
   me.exitProcess = [

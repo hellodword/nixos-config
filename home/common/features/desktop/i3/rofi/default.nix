@@ -69,7 +69,7 @@ in
 
   # 使用频率影响排序
   home.persistence = {
-    "${persistPath}${config.home.homeDirectory}".files = [ ".cache/rofi3.druncache" ];
+    "${persistPath}".files = [ ".cache/rofi3.druncache" ];
   };
 
   xsession.windowManager.i3.config.keybindings = lib.mkOptionDefault keybindings;
