@@ -34,6 +34,9 @@
         # 例如和 virtualbox guest 共享
         "share"
 
+        # https://github.com/nix-community/home-manager/issues/7801#issuecomment-3276615032
+        ".local/state"
+
         # gpg: WARNING: unsafe permissions on homedir
         {
           directory = ".gnupg";
