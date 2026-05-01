@@ -3,6 +3,7 @@
   inputs,
   pkgs,
   persistPath,
+  config,
   ...
 }:
 
@@ -26,6 +27,7 @@ let
         sed -i -e '/\/\*\*\* \[SECTION 2800\]/,/\/\*\*\* \[SECTION /s/user_pref.*//' $out/user.js
         ! grep -iP '^user_pref\("[^\n"]+\.clearonshutdown' $out/user.js
       '';
+  configPath = "${config.xdg.configHome}/mozilla/firefox";
 in
 {
   # TODO backup
@@ -33,7 +35,7 @@ in
     sessionVariables.BROWSER = "firefox";
     persistence = {
       "${persistPath}".directories = [
-        ".mozilla/firefox"
+        (builtins.replaceStrings [ "${config.home.homeDirectory}/" ] [ "" ] configPath)
         ".cache/mozilla/firefox"
       ];
     };
@@ -54,6 +56,7 @@ in
   programs.firefox = {
     enable = true;
     package = pkgs.firefox;
+    inherit configPath;
     profiles = {
       # for debug `firefox --profile ~/.mozilla/firefox/origin`
       origin = {
