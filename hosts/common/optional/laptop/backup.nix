@@ -68,19 +68,24 @@ let
       dynamicFilesFrom = ''
         echo
 
-        find "${persistPath}/home/${userName}/.gnupg" -type f || true
-        find "${persistPath}/home/${userName}/.ssh" -type f || true
+        if [ -d "${persistPath}/home/${userName}/.gnupg" ]; then
+          echo "${persistPath}/home/${userName}/.gnupg"
+        fi
+
+        if [ -d "${persistPath}/home/${userName}/.ssh" ]; then
+          echo "${persistPath}/home/${userName}/.ssh"
+        fi
 
         find "${persistPath}/home/${userName}/.config/kdeconnect" -type f || true
 
         find "${persistPath}/usr/local/etc/sing-box" -type f || true
 
-        if [ -d "${persistPath}/home/${userName}/.config/joplin-desktop" ]; then
-          echo "${persistPath}/home/${userName}/.config/joplin-desktop"
-        fi
-
         if [ -d "${persistPath}/home/${userName}/.config/Bitwarden" ]; then
           echo "${persistPath}/home/${userName}/.config/Bitwarden"
+        fi
+
+        if [ -d "${persistPath}/home/${userName}/.config/Bitwarden CLI" ]; then
+          echo "${persistPath}/home/${userName}/.config/Bitwarden CLI"
         fi
 
         if [ -d "${persistPath}/etc/secureboot" ]; then
@@ -97,9 +102,99 @@ let
 
         if [ -d "${persistPath}/home/${userName}/.config/anytype/data" ]; then
           echo "${persistPath}/home/${userName}/.config/anytype/data"
+          echo "${persistPath}/home/${userName}/.config/anytype/config.yaml"
+          find "${persistPath}/home/${userName}/.config/anytype" *.json -maxdepth 0
+        fi
+
+        if [ -d "${persistPath}/home/${userName}/.config/mozilla/firefox" ]; then
+          echo "${persistPath}/home/${userName}/.config/mozilla/firefox"
         fi
       '';
-      exclude = [ ];
+      exclude =
+        [ ]
+        ++
+          ######################################################################
+          # GnuPG: keep private keys, revocation certs, pubring, tofu, trustdb
+          # 排除 Nix/Home Manager 管理的配置 symlink，以及 agent/socket/runtime
+          ######################################################################
+          [
+            "${persistPath}/home/${userName}/.gnupg/gpg-agent.conf"
+            "${persistPath}/home/${userName}/.gnupg/gpg.conf"
+            "${persistPath}/home/${userName}/.gnupg/scdaemon.conf"
+            "${persistPath}/home/${userName}/.gnupg/sshcontrol"
+
+            "${persistPath}/home/${userName}/.gnupg/S.gpg-agent"
+            "${persistPath}/home/${userName}/.gnupg/S.gpg-agent.browser"
+            "${persistPath}/home/${userName}/.gnupg/S.gpg-agent.extra"
+            "${persistPath}/home/${userName}/.gnupg/S.gpg-agent.ssh"
+            "${persistPath}/home/${userName}/.gnupg/S.scdaemon"
+
+            "${persistPath}/home/${userName}/.gnupg/*.lock"
+            "${persistPath}/home/${userName}/.gnupg/random_seed"
+          ]
+        ++
+          ######################################################################
+          # 排除 Nix/Home Manager 管理的配置 symlink，以及 agent/socket/runtime
+          ######################################################################
+          [
+            "${persistPath}/home/${userName}/.ssh/config"
+          ]
+        ++
+          ######################################################################
+          # Bitwarden Desktop: keep data.json, Local Storage, Cookies, Preferences
+          # 只排 Electron/Chromium 可再生缓存、日志、崩溃数据
+          ######################################################################
+          [
+            "${persistPath}/home/${userName}/.config/Bitwarden/app.log"
+            "${persistPath}/home/${userName}/.config/Bitwarden/app.old.log"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Crashpad/**"
+
+            "${persistPath}/home/${userName}/.config/Bitwarden/Cache/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Code Cache/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Dictionaries/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/electron-log-preload.js"
+
+            "${persistPath}/home/${userName}/.config/Bitwarden/Shared Dictionary/**"
+
+            "${persistPath}/home/${userName}/.config/Bitwarden/Partitions/*/Code Cache/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Partitions/*/DawnCache/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Partitions/*/DawnGraphiteCache/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Partitions/*/DawnWebGPUCache/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Partitions/*/GPUCache/**"
+            "${persistPath}/home/${userName}/.config/Bitwarden/Partitions/*/Shared Dictionary/**"
+          ]
+        ++
+          # firefox
+          [
+            # runtime / lock
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/lock"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/parent.lock"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/*.tmp"
+
+            # crash reports / minidumps / telemetry
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/Crash Reports/**"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/Pending Pings/**"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/crashes/**"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/minidumps/**"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/datareporting/**"
+
+            # caches / generated browser data
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/cache2/**"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/startupCache/**"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/thumbnails/**"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/safebrowsing/**"
+
+            # remote/generated security filter cache; not SiteSecurityServiceState.bin
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/security_state/**"
+
+            # Nix / Home Manager 管理的东西
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/profiles.ini"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/user.js"
+            "${persistPath}/home/${userName}/.config/mozilla/firefox/**/bookmarkbackups/**"
+
+            # # Cache
+            # "${persistPath}/home/${userName}/.config/mozilla/firefox/**/storage/default/*/cache/**"
+          ];
       paths = [
         "${persistPath}/etc/machine-id"
         "${persistPath}/etc/ssh/ssh_host_*"
