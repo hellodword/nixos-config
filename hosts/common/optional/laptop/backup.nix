@@ -200,6 +200,9 @@ let
         "${persistPath}/etc/ssh/ssh_host_*"
 
         "${persistPath}/home/${userName}/backups/git"
+
+        # docker run -d --name webdav --restart always --user "$(id -u):$(id -g)" -p 127.0.0.1:9999:9999 -v ~/backups/webdav:/data rclone/rclone:latest serve webdav /data --addr :9999 --user backup --pass '<...>'
+        "${persistPath}/home/${userName}/backups/webdav"
       ];
       timerConfig = {
         OnCalendar = [
