@@ -104,7 +104,7 @@ in
               }
               {
                 name = "Anna’s Archive";
-                url = "https://annas-archive.org";
+                url = "https://annas-archive.gl";
               }
               {
                 name = "Google Translate";
