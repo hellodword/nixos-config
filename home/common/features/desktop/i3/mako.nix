@@ -14,7 +14,7 @@
     enable = true;
     settings = {
       anchor = "top-right";
-      default-timeout = 3000;
+      default-timeout = 15000;
       font = "JetBrains Mono 10";
       on-button-left = "invoke-default-action";
       on-button-middle = "exec makoctl menu -n \"$id\" ${lib.getExe config.programs.rofi.package} -dmenu -p 'Select action: '";
