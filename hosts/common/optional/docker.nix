@@ -20,8 +20,8 @@
       flags = [ ];
     };
     daemon.settings = {
-      fixed-cidr-v6 = "fd00::/80";
-      ipv6 = true;
+      # fixed-cidr-v6 = "fd00::/80";
+      # ipv6 = true;
       runtimes.runsc = {
         path = "${pkgs.gvisor}/bin/runsc";
         "runtimeArgs" = [
