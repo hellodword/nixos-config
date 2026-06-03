@@ -98,6 +98,7 @@ in
     # '';
   };
 
+  networking.resolvconf.enable = false;
   environment.etc."resolv.conf".text = ''
     nameserver 127.0.0.53
   '';
