@@ -26,6 +26,13 @@
     {
       inherit package;
       enable = true;
+      profiles.default.keybindings = [
+        {
+          # 让 ctrl+q 只关闭当前实例，而不是无确认地关闭所有实例
+          key = "ctrl+q";
+          command = "workbench.action.closeWindow";
+        }
+      ];
       profiles.default.userSettings = {
         "git.enabled" = true;
         "git.enableSmartCommit" = false;
