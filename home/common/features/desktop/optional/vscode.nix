@@ -32,6 +32,20 @@
           key = "ctrl+q";
           command = "workbench.action.closeWindow";
         }
+
+        # fix the conflict of terminal paste
+        {
+          key = "ctrl+shift+v";
+          command = "-markdown-preview-enhanced.openPreview";
+        }
+        {
+          key = "ctrl+shift+v";
+          command = "-markdown.togglePreview";
+        }
+        {
+          key = "ctrl+shift+v";
+          command = "-notebook.cell.pasteAbove";
+        }
       ];
       profiles.default.userSettings = {
         "git.enabled" = true;
