@@ -129,6 +129,7 @@
       ".config/Code"
       ".cache/vscode-cpptools"
       ".vscode"
+      ".vscode-shared"
     ];
   };
 
