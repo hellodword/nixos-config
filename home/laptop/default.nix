@@ -96,10 +96,10 @@ in
 
   home.username = lib.mkDefault "${userName}";
 
-  programs.ssh.matchBlocks =
+  programs.ssh.settings =
     lib.mergeAttrs
-      (lib.mergeAttrs inputs.nixos-privates.ssh."common".matchBlocks
-        inputs.nixos-privates.ssh."laptop".matchBlocks
+      (lib.mergeAttrs inputs.nixos-privates.ssh."common".settings
+        inputs.nixos-privates.ssh."laptop".settings
       )
       (
         lib.attrsets.concatMapAttrs (

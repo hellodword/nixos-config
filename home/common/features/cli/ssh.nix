@@ -16,20 +16,20 @@
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
-    matchBlocks."*" = {
-      hashKnownHosts = true;
-      serverAliveCountMax = 60;
-      serverAliveInterval = 30;
-      identitiesOnly = true;
-      extraOptions = {
-        ForwardAgent = "no";
-        AddKeysToAgent = "no";
-        Compression = "no";
-        UserKnownHostsFile = "~/.ssh/known_hosts";
-        ControlMaster = "no";
-        ControlPath = "~/.ssh/master-%r@%n:%p";
-        ControlPersist = "no";
-      };
+    settings."*" = {
+      HashKnownHosts = true;
+      ServerAliveCountMax = 60;
+      ServerAliveInterval = 30;
+      IdentitiesOnly = true;
+
+      ForwardAgent = "no";
+      AddKeysToAgent = "no";
+      Compression = "no";
+      UserKnownHostsFile = "~/.ssh/known_hosts";
+      ControlMaster = "no";
+      ControlPath = "~/.ssh/master-%r@%n:%p";
+      ControlPersist = "no";
+
     };
   };
 

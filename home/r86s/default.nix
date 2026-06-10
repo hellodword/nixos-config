@@ -18,7 +18,7 @@
 
   home.username = lib.mkDefault "${userName}";
 
-  programs.ssh.matchBlocks = inputs.nixos-privates.ssh."common".matchBlocks;
+  programs.ssh.settings = inputs.nixos-privates.ssh."common".settings;
   programs.gpg.publicKeys = lib.mkAfter inputs.nixos-privates.gpg."r86s".publicKeys;
   services.gpg-agent.sshKeys = lib.mkForce inputs.nixos-privates.gpg."r86s".sshKeys;
   programs.git.settings.alias."signing" =
