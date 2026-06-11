@@ -24,6 +24,8 @@ in
       # tab_fade = "1 1 1";
       # tab_title_template =
       #   "{fmt.fg.red}{bell_symbol}{activity_symbol}{fmt.fg.tab}{index}:{title}";
+      # https://github.com/kovidgoyal/kitty/issues/10102#issuecomment-4598528198
+      auto_reload_config = -1;
     };
     extraConfig = ''
       # # https://github.com/kovidgoyal/kitty/issues/7396#issuecomment-2081322217
