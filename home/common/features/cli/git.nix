@@ -16,6 +16,7 @@ in
       "config-dependabot" =
         "!git config user.name dependabot[bot] && git config user.email 49699333+dependabot[bot]@users.noreply.github.com";
       "config-codex" = "!git config user.name Codex && git config user.email noreply@openai.com";
+      "config-ai-codex" = "!git config --local ai.commitcoauthor Codex <noreply@openai.com>";
       "remote-add-github" =
         "!f() { git remote add origin git@hellodword.github.com:hellodword/$1.git; }; f";
 
