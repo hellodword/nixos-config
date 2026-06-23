@@ -30,6 +30,10 @@
       # warn-dirty = false;
       # system-features = [ "kvm" "big-parallel" "nixos-test" ];
       download-buffer-size = 512 * 1024 * 1024;
+      extra-substituters = [ "https://hellodword-codex.cachix.org" ];
+      extra-trusted-public-keys = [
+        "hellodword-codex.cachix.org-1:0URmcnC9aynWh9+FJ2tf+HQloylGgZzPtrz3sttTTiQ="
+      ];
     };
   };
 }
