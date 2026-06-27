@@ -62,7 +62,7 @@
         "telemetry.enableTelemetry" = false;
         "update.mode" = "none";
         "extensions.autoCheckUpdates" = false;
-        "extensions.autoUpdate" = false;
+        "extensions.autoUpdate" = "off";
         # "[json]" = {
         #   "editor.defaultFormatter" = "vscode.json-language-features";
         # };
