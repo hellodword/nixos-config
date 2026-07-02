@@ -71,7 +71,6 @@
 
     reproducible-violentmonkey = {
       url = "github:hellodword/reproducible-violentmonkey";
-      flake = false;
     };
 
     # firejail = {

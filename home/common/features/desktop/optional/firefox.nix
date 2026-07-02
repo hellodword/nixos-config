@@ -8,9 +8,6 @@
 }:
 
 let
-  violentmonkey = builtins.fromJSON (
-    builtins.readFile "${inputs.reproducible-violentmonkey}/info.json"
-  );
   userjs =
     pkgs.runCommand "arkenfox-userjs"
       {
@@ -148,16 +145,12 @@ in
           }
         ];
         extensions.packages = [
-          (inputs.firefox-addons.lib.${pkgs.stdenv.hostPlatform.system}.buildFirefoxXpiAddon {
-            # https://addons.mozilla.org/en-US/firefox/addon/violentmonkey/
-            pname = "violentmonkey";
-            addonId = "{aecec67f-0d10-4fa7-b7c7-609a2db280cf}";
-            version = violentmonkey.version;
-            url = violentmonkey.link;
-            # nix hash to-sri --type sha256 "$(nix-prefetch-url $url)"
-            sha256 = violentmonkey.fileHash;
-            meta = { };
-          })
+          (inputs.firefox-addons.lib.${pkgs.stdenv.hostPlatform.system}.buildFirefoxXpiAddon (
+            inputs.reproducible-violentmonkey.lib.violentmonkeyBuildFirefoxXpiAddonArgs
+            // {
+              meta = { };
+            }
+          ))
         ];
         /*
           ff 的 alias 使用起来没有 chrome 灵活。
