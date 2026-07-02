@@ -8,6 +8,8 @@
   };
 
   services.dbus.enable = true;
+
+  programs.fuse.enable = true;
   xdg.portal = {
     enable = true;
     wlr.enable = true;
