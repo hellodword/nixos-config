@@ -37,6 +37,9 @@
     ];
   };
 
+  # fix invalid `/nix/store/7idh3pdmqsxigml0has1wxv6w6d0n1yn-env-manifest.nix`
+  home-manager.useUserPackages = true;
+
   home-manager.extraSpecialArgs = {
     inherit inputs outputs;
   }
