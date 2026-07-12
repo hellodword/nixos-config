@@ -10,6 +10,7 @@ let
 in
 {
   home.pointerCursor = {
+    enable = true;
     package = pkgs.phinger-cursors;
     name = if X then "phinger-cursors-light" else "Adwaita";
     # Make cursor not tiny on HiDPI screens
