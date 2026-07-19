@@ -9,6 +9,7 @@
     persistence = {
       "${persistPath}".directories = [
         ".codex"
+        ".agents-viewer"
       ];
     };
   };

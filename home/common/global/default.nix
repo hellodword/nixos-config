@@ -48,6 +48,7 @@
         directories = [
           ".local/bin"
           ".local/share/nix" # ~/.local/share/nix/repl-history for nix repl
+          ".config/nife"
         ];
         # allowOther = true;
       };
