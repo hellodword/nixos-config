@@ -45,9 +45,9 @@ in
       rofi-emoji
       rofi-power-menu
     ];
-    terminal = "${pkgs.kitty}/bin/kitty";
     # theme = ./theme.rafi;
-    extraConfig = {
+    settings = {
+      terminal = "${pkgs.kitty}/bin/kitty";
       disable-history = false;
       show-icons = true;
       sidebar-mode = false;
