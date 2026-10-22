@@ -7,6 +7,7 @@
 {
   imports = [
     ./hardware-configuration.nix
+    ./emudhra-mitigation.nix
     ../common/optional/fix-sleep.nix
     ../common/optional/intel-tearing.nix
   ]
