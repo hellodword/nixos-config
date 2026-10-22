@@ -20,6 +20,7 @@
     ./systemd-initrd.nix
     ./inetutils.nix
     ./openssh-client.nix
+    ./pki.nix
   ]
   ++ (builtins.attrValues outputs.nixosModules);
 
