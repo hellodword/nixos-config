@@ -17,7 +17,6 @@
     ./bash.nix
     ./optin-persistence.nix
     ./sops.nix
-    ./systemd-initrd.nix
     ./inetutils.nix
     ./openssh-client.nix
   ]
