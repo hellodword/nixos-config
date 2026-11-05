@@ -142,7 +142,8 @@
     from datetime import timedelta
     from pathlib import Path
 
-    keyboard_lock = threading.Lock()
+    # Keyboard input and screenshots share the QEMU monitor connection.
+    gui_lock = threading.Lock()
     key_delay = timedelta(milliseconds=150)
     gui = runpy.run_path("${./gui.py}")
     visible, login = gui["visible"], gui["login"]
@@ -157,7 +158,7 @@
         return "runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus sh -c " + shlex.quote(command)
 
     def input_actions(machine, actions):
-        with keyboard_lock:
+        with gui_lock:
             for action in actions:
                 if "pinyin" in action:
                     user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
@@ -203,7 +204,7 @@
 
     def exercise_launchers(machine, session):
         if session != "KDE":
-            with keyboard_lock:
+            with gui_lock:
                 machine.send_key("meta_l-d", delay=key_delay)
                 visible(machine, r"\bdrun\b")
                 machine.send_chars("kitty", delay=key_delay)
@@ -221,14 +222,25 @@
             {"text": "\\n' > ~/application-workspace/terminal.txt\n"},
         ])
         machine.wait_until_succeeds("grep -Fx '你好' /home/desktop/application-workspace/terminal.txt", timeout=30)
-        machine.send_chars("exit\n", delay=key_delay)
+        with gui_lock:
+            machine.send_chars("exit\n", delay=key_delay)
         if session != "KDE":
-            with keyboard_lock:
+            with gui_lock:
                 machine.send_key("meta_l-shift-d", delay=key_delay)
                 visible(machine, r"\brun\b")
-                machine.send_chars("kitty --title Rofi-command sh -c 'printf launched > ~/application-workspace/rofi-command.txt; sleep 2'", delay=key_delay)
-                machine.send_key("ctrl-ret", delay=key_delay)
-            machine.wait_until_succeeds("grep -Fx launched /home/desktop/application-workspace/rofi-command.txt", timeout=30)
+                command = "kitty --title Rofi-command sh -c 'printf launched > ~/application-workspace/rofi-command.txt; sleep 2'"
+                # Keep the clipboard owner alive until Rofi consumes the command.
+                try:
+                    user(machine, "systemd-run --user --collect --unit=rofi-command-clipboard --property=Type=forking desktop-copy " + shlex.quote(command))
+                    clipboard = "wl-paste --no-newline" if session == "sway" else "xclip -selection clipboard -o"
+                    machine.wait_until_succeeds(
+                        user_command('test "$(' + clipboard + ')" = ' + shlex.quote(command)), timeout=10)
+                    machine.send_key("ctrl-v", delay=key_delay)
+                    visible(machine, r"sleep\s+2")
+                    machine.send_key("ctrl-ret", delay=key_delay)
+                    machine.wait_until_succeeds("grep -Fx launched /home/desktop/application-workspace/rofi-command.txt", timeout=30)
+                finally:
+                    user(machine, "systemctl --user stop rofi-command-clipboard.service")
 
     failures = []
     for machine, session in ((i3, "i3"), (plasma, "KDE"), (sway, "sway")):
@@ -255,8 +267,8 @@
             # desktop lifecycle suite separately exercises the one-minute lock.
             def activity():
                 while not finished.wait(15):
-                    with keyboard_lock:
-                        machine.send_key("ctrl")
+                    with gui_lock:
+                        machine.send_key("ctrl", delay=key_delay)
             ticker = threading.Thread(target=activity, daemon=True)
             ticker.start()
             user(machine, "docker load -i /etc/application-fixtures/container.tar.gz")
@@ -269,7 +281,8 @@
                 try:
                     with subtest(session + ": " + name):
                         action()
-                        machine.screenshot(machine.name + "-" + name)
+                        with gui_lock:
+                            machine.screenshot(machine.name + "-" + name)
                 except Exception as error:
                     failures.append((session, name, str(error)))
                     traceback.print_exc()
@@ -282,7 +295,8 @@
                     if status != 0:
                         with tempfile.TemporaryDirectory() as directory:
                             path = Path(directory) / "failure.png"
-                            machine.screenshot(str(path))
+                            with gui_lock:
+                                machine.screenshot(str(path))
                             frame = base64.b64encode(path.read_bytes()).decode()
                     print("APPLICATION_FRAME_" + machine.name + "_" + name + "=" + frame.strip())
                     break
