@@ -59,7 +59,7 @@ def wait_tunnel():
     raise RuntimeError("the local Mullvad tunnel did not become ready")
 
 
-def guard(enable):
+def guard(enable, *, allow_loopback=False):
     commands = []
     for family in ("inet", "bridge"):
         if run("nft", "list", "table", family, TABLE, check=False).returncode == 0:
@@ -69,7 +69,14 @@ def guard(enable):
             match = "meta nfproto ipv6" if family == "inet" else "ether type ip6"
             commands.append(f"table {family} {TABLE} {{")
             for chain in chains:
-                commands.append(f"chain {chain} {{ type filter hook {chain} priority -310; policy accept; {match} counter drop; }}")
+                loopback = ""
+                if allow_loopback and family == "inet" and chain in {"input", "output"}:
+                    interface = "iifname" if chain == "input" else "oifname"
+                    loopback = f'{interface} "lo" ip6 saddr ::1 ip6 daddr ::1 accept; '
+                commands.append(
+                    f"chain {chain} {{ type filter hook {chain} priority -310; policy accept; "
+                    f"{loopback}{match} counter drop; }}"
+                )
             commands.append("}")
     if commands:
         run("nft", "-f", "-", data="\n".join(commands) + "\n")
@@ -115,14 +122,14 @@ def reconcile(root=ROOT):
 
 
 def transition(root, only4, apply_policy, lockdown=False, tailscale=False):
-    """Keep IPv6 blocked until all participants have completed the transition."""
+    """Keep external IPv6 blocked while coordinating the transition."""
     import underlay
     current = state(root)
     if current is None:
         current = {"sysctl": {p.parent.name: p.read_text().strip() for p in SYSCTL.glob("*/disable_ipv6")}}
     current.update(ipv4_only=only4, phase="applying")
     current.pop("failed_step", None)
-    guard(True)
+    guard(True, allow_loopback=not only4)
     save(root, current)
     watching = lockdown and active("site-network-underlay.service")
     tail_active = tailscale and active("tailscaled.service")
@@ -162,11 +169,15 @@ def transition(root, only4, apply_policy, lockdown=False, tailscale=False):
                 wait_tunnel()
             (root / "ipv6-state.json").unlink()
         return previous
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         guard(True)
         current.update(ipv4_only=True, phase="incomplete", failed_step=step)
         save(root, current)
-        raise RuntimeError(f"IPv6 remains blocked after {step}; inspect network-ipv6 status, then retry off or restore") from None
+        detail = f": {error}" if isinstance(error, (ValueError, RuntimeError)) else ""
+        raise RuntimeError(
+            f"IPv6 remains blocked after {step}{detail}; "
+            "inspect network-ipv6 status, then retry off or restore"
+        ) from None
     finally:
         if watching:
             run("systemctl", "start", "site-network-underlay.service", check=False)

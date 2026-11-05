@@ -45,7 +45,7 @@ sudo network-ipv6 restore
 
 模式只记录在 `/run/site-network-policy/`。NetworkManager 重连、新接口出现、服务重启及 `network-policy apply` 继续遵守当前模式；`restore` 或重启系统恢复正常模式。NetworkManager 修改的是当前连接，保存的 Wi-Fi profile 与凭据保持原样。Mullvad 通过原生 CLI 配置，启动连接时按当前 `/run` 模式重新应用。
 
-切换期间会短暂重启 DNS、sing-box、本地隧道及已运行的 Tailscale，现有连接可能中断。先验证候选配置，再建立 IPv6 阻断并启用对应配置；恢复时最后放开阻断。配置验证不通过时保留当前模式；切换开始后失败则保留 IPv6 阻断，命令返回非零，`status` 显示 `incomplete`。检查相应 journal 后再次执行 `off` 或 `restore`。`status` 同时检查接口、包过滤表、配置代次、消费者服务及 Mullvad 隧道状态。
+切换期间会短暂重启 DNS、sing-box、本地隧道及已运行的 Tailscale，现有连接可能中断。先验证候选配置，再建立 IPv6 阻断并启用对应配置；恢复时先放行 `lo` 上源、目的地址均为 `::1` 的通信，让 DNS 和代理完成本地就绪检查，随后启动本地隧道及 Tailscale，再解除其余 IPv6 阻断。配置验证不通过时保留当前模式；切换开始后失败则恢复完整 IPv6 阻断（含回环），命令返回非零，`status` 显示 `incomplete`。检查相应 journal 后再次执行 `off` 或 `restore`。`status` 同时检查接口、包过滤表、配置代次、消费者服务及 Mullvad 隧道状态。
 
 只有 DNS、DNS＋sing-box、完整 Lockdown 三种组合均使用相同入口。上游需要至少一个 IPv4 地址；仅有 IPv6 上游的分组无法生成 IPv4 配置。临时模式的 AAAA 回答在 DNS 日志中标记为 `listener/ipv4-only`。
 

@@ -106,24 +106,28 @@ def ready(generation, units, run):
     listeners = json.loads((generation / "listeners.json").read_text())
     deadline = time.monotonic() + 30
     stable_since, previous = None, None
+    pending = []
     while time.monotonic() < deadline:
         processes = []
-        available = True
+        pending.clear()
         for unit in units:
             output = run("systemctl", "show", "--property=ActiveState,MainPID,NRestarts", unit).stdout.decode()
             state = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
             if state.get("ActiveState") == "failed" or int(state.get("NRestarts", 0)) > 0:
                 raise ValueError(f"{unit} failed during policy activation")
-            available &= state.get("ActiveState") == "active" and state.get("MainPID", "0") != "0"
+            if state.get("ActiveState") != "active" or state.get("MainPID", "0") == "0":
+                pending.append(
+                    f"{unit}: state={state.get('ActiveState', 'unknown')}, MainPID={state.get('MainPID', '0')}"
+                )
             processes.append(state.get("MainPID"))
             for address, port in listeners[unit]:
                 try:
                     with socket.create_connection((address, port), timeout=0.2):
                         pass
-                except OSError:
-                    available = False
+                except OSError as error:
+                    pending.append(f"{unit} [{address}]:{port}: {error}")
         now = time.monotonic()
-        if available:
+        if not pending:
             if stable_since is None or processes != previous:
                 stable_since = now
             elif now - stable_since >= 2:
@@ -132,7 +136,8 @@ def ready(generation, units, run):
             stable_since = None
         previous = processes
         time.sleep(0.2)
-    raise ValueError("Policy services did not become locally ready within 30 seconds")
+    detail = "; ".join(pending) or "service processes did not remain stable for 2 seconds"
+    raise ValueError(f"Policy services did not become locally ready within 30 seconds: {detail}")
 
 
 def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, restart_all=False):
