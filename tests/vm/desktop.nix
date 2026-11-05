@@ -362,9 +362,14 @@ in
             def save_display_combination(expected):
                 user(machine, "systemctl --user start wdisplays.service")
                 visible(machine, r"(?i)Resolution|Scale", timeout=30)
-                # Invoke the application's own Apply action, which both applies
-                # the visible form and saves the matching kanshi profile.
-                user(machine, "${pkgs.glib.bin}/bin/gapplication action network.cycles.wdisplays apply-changes")
+                display_pid = user(machine, "systemctl --user show wdisplays.service --property=MainPID --value").strip()
+                user(machine, "swaymsg '[pid=" + display_pid + "] focus'")
+                # Alt+P focuses Position; Page Up moves it ten pixels right.
+                # Ctrl+Enter activates the window's Apply button.
+                for key in ("alt-p", "pgup", "tab"):
+                    machine.send_key(key, delay=timedelta(milliseconds=150))
+                visible(machine, r"Apply Changes", timeout=30)
+                machine.send_key("ctrl-ret", delay=timedelta(milliseconds=150))
                 machine.wait_until_succeeds(user_command("grep -F -- " + shlex.quote(expected) + " ~/.config/kanshi/config"), timeout=30)
                 user(machine, "systemctl --user stop wdisplays.service")
             user(machine, "swaymsg output " + primary + " scale 1.25")
@@ -373,8 +378,9 @@ in
             machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e '.[] | select(.name == \"HEADLESS-1\" and .active)'"))
             user(machine, "swaymsg output " + primary + " scale 1")
             width = next(o["rect"]["width"] for o in json.loads(user(machine, "swaymsg -t get_outputs")) if o["name"] == primary)
-            user(machine, "swaymsg output HEADLESS-1 scale 1.5 pos " + str(width) + " 0")
-            save_display_combination("HEADLESS-1")
+            # The gap accommodates the position edit in either display's tab.
+            user(machine, "swaymsg output HEADLESS-1 scale 1.5 pos " + str(width + 32) + " 0")
+            save_display_combination("scale 1.5")
             machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e '.[] | select(.name == \"HEADLESS-1\" and .scale == 1.5)'"))
             outputs = json.loads(user(machine, "swaymsg -t get_outputs"))
             active = sorted((o for o in outputs if o["active"]), key=lambda o: o["rect"]["x"])

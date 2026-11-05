@@ -54,6 +54,11 @@ in
       path = [ pkgs.kanshi ];
       serviceConfig = sandbox ".config/kanshi" // {
         ExecStart = "${pkgs.wdisplays}/bin/wdisplays --kanshi --no-auto-apply";
+        # Mesa probes mapped memory when creating the Wayland EGL surface.
+        SystemCallFilter = [
+          "@system-service"
+          "mincore"
+        ];
         PrivateDevices = false;
         DevicePolicy = "closed";
         DeviceAllow = [ "char-drm rw" ];
