@@ -1,7 +1,7 @@
-{ inputs, ... }:
+{ inputs, config, ... }:
 
 let
-  device0 = inputs.nixos-privates.laptops.laptop2.hardware.disk.primary.device;
+  device0 = "/dev/disk/by-id/nvme-KIOXIA-EXCERIA_G2_SSD_43AA20S8KMK5";
   swapSize = "64GiB";
 in
 {
@@ -21,7 +21,7 @@ in
   };
 
   fileSystems."/boot".neededForBoot = true;
-  fileSystems."/persist".neededForBoot = true;
+  fileSystems.${config.site.storage.persistRoot}.neededForBoot = true;
   fileSystems."/nix".neededForBoot = true;
 
   boot.supportedFilesystems = [ "btrfs" ];
@@ -82,7 +82,7 @@ in
                     ];
                   };
                   "/persist" = {
-                    mountpoint = "/persist";
+                    mountpoint = config.site.storage.persistRoot;
                     mountOptions = [
                       "compress=zstd"
                       "noatime"

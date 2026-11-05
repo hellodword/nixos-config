@@ -4,6 +4,7 @@
 keys.txt
 nixos-privates
 result
+__pycache__/
 *.qcow2
 *.img
 

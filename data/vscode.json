@@ -1,0 +1,61 @@
+{
+  "keybindings": [
+    {
+      "command": "workbench.action.closeWindow",
+      "key": "ctrl+q"
+    },
+    {
+      "command": "-markdown-preview-enhanced.openPreview",
+      "key": "ctrl+shift+v"
+    },
+    {
+      "command": "-markdown.togglePreview",
+      "key": "ctrl+shift+v"
+    },
+    {
+      "command": "-notebook.cell.pasteAbove",
+      "key": "ctrl+shift+v"
+    }
+  ],
+  "userSettings": {
+    "chat.agent.enabled": false,
+    "chat.commandCenter.enabled": false,
+    "chat.detectParticipant.enabled": false,
+    "chat.disableAIFeatures": true,
+    "chat.edits2.enabled": false,
+    "chat.extensionTools.enabled": false,
+    "chat.implicitContext.enabled": {
+      "editing-session": "never",
+      "panel": "never"
+    },
+    "chat.mcp.access": "none",
+    "chat.mcp.discovery.enabled": {
+      "claude-desktop": false,
+      "cursor-global": false,
+      "cursor-workspace": false,
+      "windsurf": false
+    },
+    "diffEditor.wordWrap": "on",
+    "editor.formatOnSave": false,
+    "editor.formatOnType": false,
+    "editor.wordWrap": "on",
+    "extensions.autoCheckUpdates": false,
+    "extensions.autoUpdate": "off",
+    "extensions.ignoreRecommendations": true,
+    "files.eol": "\n",
+    "git.enableCommitSigning": false,
+    "git.enableSmartCommit": false,
+    "git.enableStatusBarSync": false,
+    "git.enabled": true,
+    "git.openRepositoryInParentFolders": "always",
+    "github.branchProtection": false,
+    "github.gitAuthentication": false,
+    "github.showAvatar": false,
+    "remote.autoForwardPortsSource": "hybrid",
+    "telemetry.enableTelemetry": false,
+    "telemetry.telemetryLevel": "off",
+    "update.mode": "none",
+    "window.titleBarStyle": "custom",
+    "workbench.localHistory.enabled": false
+  }
+}

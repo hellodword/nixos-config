@@ -1,0 +1,18 @@
+Send text-input leave before disabling the input method.
+
+Upstream: https://github.com/swaywm/sway/commit/20f70a94b320edde1c292e3a5b763a29570224e5
+Merged upstream; expected in the next feature release, Sway 1.13.
+Remove this backport when the packaged release contains that commit.
+
+--- a/sway/input/text_input.c
++++ b/sway/input/text_input.c
+@@ -666,8 +666,8 @@
+ 		} else if (text_input->input->focused_surface) {
+ 			assert(text_input->pending_focused_surface == NULL);
+ 			if (surface != text_input->input->focused_surface) {
+-				relay_disable_text_input(relay, text_input);
+ 				wlr_text_input_v3_send_leave(text_input->input);
++				relay_disable_text_input(relay, text_input);
+ 			} else {
+ 				sway_log(SWAY_DEBUG, "IM relay set_focus already focused");
+ 				continue;

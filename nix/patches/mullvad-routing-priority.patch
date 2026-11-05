@@ -1,0 +1,25 @@
+diff --git a/talpid-routing/src/unix/linux.rs b/talpid-routing/src/unix/linux.rs
+--- a/talpid-routing/src/unix/linux.rs
++++ b/talpid-routing/src/unix/linux.rs
+@@ -199,7 +199,20 @@ impl RouteManager {
+             .iter()
+             .filter(|rule| rule.header.family == AddressFamily::Inet || enable_ipv6)
+         {
+-            let mut req = NetlinkMessage::from(RouteNetlinkMessage::NewRule((*rule).clone()));
++            // Keep these behind the host's explicitly owned capture rules.
++            // Kernel-assigned priorities otherwise precede existing rules.
++            // Keep cleanup matching independent of priority for stale rules.
++            let mut rule = (*rule).clone();
++            let priority = if rule
++                .attributes
++                .contains(&RuleAttribute::SuppressPrefixLen(0))
++            {
++                32764
++            } else {
++                32765
++            };
++            rule.attributes.push(RuleAttribute::Priority(priority));
++            let mut req = NetlinkMessage::from(RouteNetlinkMessage::NewRule(rule));
+             req.header.flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE | NLM_F_REPLACE;
+ 
+             let mut response = self.handle.request(req).map_err(Error::Netlink)?;

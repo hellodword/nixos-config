@@ -1,0 +1,19 @@
+{
+  imports = [
+    ./core/storage.nix
+    ./core/home.nix
+    ./core/base.nix
+    ./core/cli.nix
+    ./desktop/workstation.nix
+    ./desktop/apps.nix
+    ./network
+    ./services/notifications.nix
+    ./services/backup.nix
+    ./services/containers.nix
+    ./services/virtualbox.nix
+    ./services/android.nix
+    ./desktop/productivity.nix
+    ./services/cache.nix
+    ./network/connections.nix
+  ];
+}

@@ -1,235 +1,45 @@
-# nixos-config
+# laptop2 / NixOS
 
-## sops
+已有 laptop2 安装的系统配置：Sway、i3 和 Plasma 桌面，可独立组合的 DNS、代理与 Lockdown，以及三个独立的 Restic 备份仓库。
 
-```sh
-# # user password
-# mkpasswd -m sha-512 -R 1000000
+## 从哪里开始
 
-# sops --encrypt --age `age-keygen -y ~/.config/sops/age/keys.txt` /path/to/secrets.yaml > secrets/secrets.yaml
+| 任务 | 文档 |
+| --- | --- |
+| 修改 SSH、Wi-Fi、显示器、输入法和本机偏好 | [本机配置](docs/local-state.md) |
+| 调整域名分流、代理节点或 Lockdown | [网络](docs/network.md) |
+| 查看备份状态、控制范围和成本、恢复资料 | [备份](docs/backup.md) |
+| 填写和管理本机加密凭据 | [主机凭据](docs/secrets.md) |
+| 发送通知、配置通道和查看投递结果 | [本地通知](docs/notifications.md) |
+| 使用桌面会话、浏览器和排查登录问题 | [桌面](docs/desktop.md) |
+| 修改模块、脚本或测试 | [架构](docs/architecture.md)、[验证](docs/validation.md) |
+| 理解组件选择与应用权限 | [选择与隔离边界](docs/choices.md) |
+| 准备和使用 OCI 构建缓存 | [缓存](docs/cache.md) |
 
-# with .sops.yaml and ~/.config/sops/age/keys.txt
-sops secrets/secrets.yaml
-```
+## 构建与检查
 
----
-
-## debug
-
-```sh
-nix repl
-
-nix-repl> :lf /path/to/flake
-Added 20 variables.
-
-nix-repl> nixosConfigurations.vbox.config.me.allowedUnfreePkg
-[ "Oracle_VM_VirtualBox_Extension_Pack" ]
-```
-
----
-
-## hosts
-
-### vbox
-
-> vbox 7.0.8  
-> System 勾选 `Enable EFI`
-
-0. 克隆
+在源码 checkout 中运行：
 
 ```sh
-export TARGET_HOSTNAME="vbox"
-
-# 设置代理
-export HTTP_PROXY=http://192.168.1.2:1081/
-export HTTPS_PROXY=$HTTP_PROXY
-export http_proxy=$HTTP_PROXY
-export https_proxy=$HTTP_PROXY
-export CURL_NIX_FLAGS="-x $HTTP_PROXY"
-
-# 或者指向旁路由
-route add default gw <gateway ip>
-
-# 修改DNS
-echo "nameserver <dns>" > /etc/resolv.conf
-
-mkdir -p ~/.config/nix
-echo 'experimental-features = nix-command flakes' >> ~/.config/nix/nix.conf
-
-# or it will use /run/user/0, which is by default 10% of the machine RAM
-mkdir -p /tmp/tmp
-export TMPDIR=/tmp/tmp
-
-nix-shell -p git sbctl gnupg knot-dns
-
-mkdir -p ~/.ssh
-vim ~/.ssh/<private key for nix-privates>
-sudo chmod 600 ~/.ssh/<private key for nix-privates>
-vim ~/.ssh/config
-# Host hellodword.github.com
-#   IdentitiesOnly yes
-#   User hellodword
-#   HostName github.com
-#   ProxyCommand nc -v -x 192.168.1.2:1080 %h %p
-#   IdentityFile ~/.ssh/<private key for nix-privates>
-#   PreferredAuthentications publickey
-
-eval `ssh-agent`
-ssh-add ~/.ssh/<private key for nix-privates>
-ssh -T git@hellodword.github.com
-
-git clone <nixos config> nixos-config
-cd nixos-config
+nix build --no-link .#checks.x86_64-linux.unit .#checks.x86_64-linux.network .#checks.x86_64-linux.configuration
+nix build --no-link .#nixosConfigurations.laptop2.config.system.build.toplevel
 ```
 
-1. 分区
+依赖由 `flake.lock` 固定；开发工具通过 `nix develop` 提供。构建使用公开配置和 SOPS 密文，个人数据在目标机激活时解密。
 
-> 只建议用 uuid 区分磁盘
+部署使用 `nixos-rebuild`。
 
-<details><summary>手动分区</summary>
+## 日常升级与回退
+
+在候选 checkout 更新依赖或配置，由独立的 `checks.x86_64-linux.e2e` 完成验收，再合并候选修改。检查入口与执行条件见[验证](docs/validation.md)。
 
 ```sh
-# Defining a helper variable to make the following commands shorter.
-DISK=/dev/disk/by-id/<thd disk>
-
-# wipe out the old partition information
-# # wipefs --all $DISK
-
-# Create partition table
-parted $DISK -- mklabel gpt
-
-# Create a /boot as $DISK-part1
-parted $DISK -- mkpart ESP fat32 1MiB 512MiB
-parted $DISK -- set 1 boot on
-
-# Create a /nix as $DISK-part2
-parted $DISK -- mkpart Nix 512MiB 100%
-
-# /boot partition for EFI
-sleep 2s; mkfs.fat -F 32 -n boot $DISK-part1
-
-# luks
-cryptsetup luksFormat --type=luks2 --label=crypt $DISK-part2
-cryptsetup open $DISK-part2 crypt
-sleep 2s; mkfs.ext4 -L nix /dev/mapper/crypt
-
-# # /nix partition
-# mkfs.ext4 $DISK-part2
-
-# Mount your root file system
-mount -t tmpfs none /mnt
-
-# Create directories
-mkdir -p /mnt/{boot,nix}
-
-# Mount /boot and /nix
-mount $DISK-part1 /mnt/boot
-# mount $DISK-part2 /mnt/nix
-mount /dev/mapper/crypt /mnt/nix
+nix flake update nixpkgs home-manager plasma-manager
+nix build --no-link --no-update-lock-file .#checks.x86_64-linux.e2e
+nix build --out-link result .#nixosConfigurations.laptop2.config.system.build.toplevel
+sudo nixos-rebuild switch --flake .#laptop2
 ```
 
-</details>
+涉及持久挂载、物理网络或 Lockdown 能力组合时，用 `nixos-rebuild boot` 后重启。升级成功后检查 `systemctl --failed`、`systemctl --user --failed`、`backup-status` 和日常应用。
 
-<details open><summary>自动分区</summary>
-
-```sh
-# 不能有换行
-vim /tmp/crypt.key
-# :set binary
-# :set noeol
-# :wq
-
-# https://github.com/maxbrunet/dotfiles/blob/2dc3532cfbd4aa20be5b9eba989e24a82f593533/scripts/bootstrap.sh#L32C1-L37
-$(nix build --no-link --print-out-paths ".#nixosConfigurations.${TARGET_HOSTNAME}.config.system.build.diskoScript")
-```
-
-</details>
-
-2. 生成硬件信息
-
-```sh
-nixos-generate-config --root /mnt
-```
-
-然后对比 `/mnt/etc/nixos/hardware-configuration.nix` 并修改 nixos config 中新 host 的对应文件
-
-3. 准备文件
-
-```sh
-# 从 restic 恢复
-restic snapshots --no-cache
-restic restore --no-cache --target=./restorepath <snapshot ID>
-# manually move and chown/chmod
-```
-
-```sh
-mkdir -p /mnt/persist/home/ubuntu
-chown -R $(id -nu 1000):$(id -ng 1000) /mnt/persist/home/ubuntu
-
-# age key for sops-nix
-mkdir -p /mnt/persist/var/lib/sops-nix
-vim /mnt/persist/var/lib/sops-nix/keys.txt
-chmod 0700 /mnt/persist/var/lib/sops-nix
-chmod 600 /mnt/persist/var/lib/sops-nix/keys.txt
-
-mkdir -p /mnt/persist/usr/local/etc/openvpn/client
-
-vim /mnt/persist/usr/local/etc/openvpn/client/goose.ovpn
-chmod 600 /mnt/persist/usr/local/etc/openvpn/client/goose.ovpn
-
-vim /mnt/persist/usr/local/etc/openvpn/client/fastestvpn.ovpn
-chmod 600 /mnt/persist/usr/local/etc/openvpn/client/fastestvpn.ovpn
-
-chmod 0700 /mnt/persist/usr/local/etc/openvpn/client
-
-mkdir -p /mnt/persist/usr/local/etc/sing-box
-# 注意是 json 不是 jsonc，见 ./hosts/common/optional/sing-box.nix
-vim /mnt/persist/usr/local/etc/sing-box/outbounds.json
-vim /mnt/persist/usr/local/etc/sing-box/rules.json
-
-# router
-mkdir -p /mnt/persist/usr/local/etc/wireguard
-vim /mnt/persist/usr/local/etc/wireguard/wg0.conf
-
-mkdir -p /mnt/persist/etc
-
-# secure boot
-# # generate for the first time
-# sbctl create-keys
-# sbctl enroll-keys --microsoft
-cp -r /etc/secureboot /mnt/persist/etc/
-mkdir -p /mnt/etc/secureboot
-cp -r /mnt/persist/etc/secureboot/* /mnt/etc/secureboot/
-```
-
-4. 安装
-
-```sh
-nixos-install --no-root-passwd  --flake ".#${TARGET_HOSTNAME}" --root /mnt
-```
-
-5. switch & update
-
-```sh
-nixos-rebuild --use-remote-sudo switch --flake .#laptop3
-
-# 确定修改后不需要进行网络请求的 switch
-# https://discourse.nixos.org/t/rebuild-nixos-offline/3679/9
-nixos-rebuild --use-remote-sudo switch --option substitute false --flake .#laptop3
-
-nix flake lock --update-input nixos-privates
-```
-
-## laptop3
-
-### Secure Boot
-
-> boot.lanzaboote enable 之后
-
-- BIOS - Security - Secure Boot
-  - Secure Boot: Enabled
-  - Secure Boot Mode: Custom
-  - Key Management - Factory Key Provision: Disabled
-  - Reset To Setup Mode
-
----
+回退前保存正在使用的应用数据，停止会话中会写配置的应用。可从启动菜单选择旧代次，也可以运行 `sudo nixos-rebuild switch --rollback`。系统回退选择旧程序与声明；应用数据库、钱包和本机偏好仍是当前持久数据，必要时从独立备份恢复到单独目录后审阅。Home Manager 冲突由 `journalctl -u home-manager-ubuntu.service -b` 给出，逐项保存对应文件，再重启该服务。

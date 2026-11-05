@@ -1,29 +1,20 @@
-{
-  pkgs,
-  userName,
-  ...
-}:
-
+{ pkgs, ... }:
 {
   imports = [
     ./hardware-configuration.nix
-    ./emudhra-mitigation.nix
-    ../common/optional/fix-sleep.nix
-    ../common/optional/intel-tearing.nix
-  ]
-  ++ [
-    ../common/optional/laptop
-    # ../common/optional/chromium-based-security-issue.nix
+    ./secureboot.nix
+    ./secrets.nix
+    ../../profiles/laptop
   ];
+
+  site.storage.persistRoot = "/persist";
 
   networking.hostName = "laptop2";
+  virtualisation.docker.storageDriver = "btrfs";
+  # Preserve the tested sleep mode; S3/hibernate changes require hardware validation.
+  systemd.sleep.settings.Sleep.SuspendState = "freeze";
 
-  boot.kernelPackages = pkgs.linuxPackages_6_18; # _hardened;
-  boot.kernelModules = [
-    # "lkrg"
-  ];
-
-  home-manager.users."${userName}" = import ../../home/laptop;
+  boot.kernelPackages = pkgs.linuxPackages_6_18;
 
   system.stateVersion = "22.11";
 }

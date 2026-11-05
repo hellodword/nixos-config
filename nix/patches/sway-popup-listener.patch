@@ -1,0 +1,19 @@
+Keep the detached input-popup focus listener as an empty list.
+
+Firefox + Fcitx5 window teardown on Sway 1.12 can re-enter
+input_popup_set_focus before a new surface is attached. Removing the
+already detached listener then crashes in wl_list_remove.
+Related upstream report: https://github.com/swaywm/sway/issues/8541
+Retire this change when the packaged implementation keeps the listener
+valid through teardown and the desktop application workflow passes.
+
+--- a/sway/input/text_input.c
++++ b/sway/input/text_input.c
+@@ -373,6 +373,7 @@
+ static void input_popup_set_focus(struct sway_input_popup *popup,
+ 		struct wlr_surface *surface) {
+ 	wl_list_remove(&popup->focused_surface_unmap.link);
++	wl_list_init(&popup->focused_surface_unmap.link);
+ 
+ 	if (!popup->scene_tree) {
+ 		wl_list_init(&popup->focused_surface_unmap.link);

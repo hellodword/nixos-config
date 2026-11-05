@@ -1,14 +1,3 @@
-keys:
-  # Hosts
-  - &laptop2 age1k85kvyu5k4navf4vppvjk2mge9hwp5flctg07ep796h38jpsk5ws6jtgte
-  - &r86s age1kxan3hdacn0m8j67j5l953unwcf44526yn57lzvzrnxfdl739aaqas62mg
-
 creation_rules:
   - path_regex: hosts/laptop2/secrets/.*$
-    key_groups:
-      - age:
-          - *laptop2
-  - path_regex: hosts/r86s/secrets/.*$
-    key_groups:
-      - age:
-          - *r86s
+    age: age1k85kvyu5k4navf4vppvjk2mge9hwp5flctg07ep796h38jpsk5ws6jtgte

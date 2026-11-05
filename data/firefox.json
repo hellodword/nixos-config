@@ -1,0 +1,274 @@
+{
+  "bookmarks": [
+    {
+      "bookmarks": [
+        {
+          "name": "Element",
+          "url": "https://app.element.io/"
+        },
+        {
+          "name": "Discord",
+          "url": "https://discord.com/channels/@me"
+        }
+      ],
+      "name": "Chat",
+      "toolbar": true
+    },
+    {
+      "bookmarks": [
+        {
+          "name": "V2EX",
+          "url": "https://www.v2ex.com/"
+        }
+      ],
+      "name": "Forum",
+      "toolbar": true
+    },
+    {
+      "bookmarks": [
+        {
+          "name": "CyberChef",
+          "url": "https://gchq.github.io/CyberChef/"
+        },
+        {
+          "name": "Anna’s Archive",
+          "url": "https://annas-archive.gl"
+        },
+        {
+          "name": "Google Translate",
+          "url": "https://translate.google.com/?sl=auto&tl=zh-CN&op=translate"
+        },
+        {
+          "name": "Buddy's Github Events",
+          "url": "https://lawvs.github.io/buddy-github-events/"
+        },
+        {
+          "name": "番組表",
+          "url": "https://bgmlist.com"
+        }
+      ],
+      "name": "Tools",
+      "toolbar": true
+    },
+    {
+      "bookmarks": [
+        {
+          "name": "NixOS Manual options",
+          "url": "https://nixos.org/manual/nixos/unstable/options.html"
+        },
+        {
+          "name": "home-manager options",
+          "url": "https://nix-community.github.io/home-manager/options.xhtml"
+        },
+        {
+          "name": "Nixpkgs Pull Request Tracker",
+          "url": "https://nixpkgs-tracker.ocfox.me"
+        },
+        {
+          "name": "Nixpkgs",
+          "url": "https://github.com/NixOS/nixpkgs"
+        },
+        {
+          "name": "home-manager",
+          "url": "https://github.com/nix-community/home-manager"
+        }
+      ],
+      "name": "Nix / NixOS",
+      "toolbar": true
+    }
+  ],
+  "search": {
+    "default": "google",
+    "engines": {
+      "Github": {
+        "definedAliases": [
+          "@git"
+        ],
+        "icon": "https://github.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://github.com/search?q={searchTerms}"
+          }
+        ]
+      },
+      "Github Actions": {
+        "definedAliases": [
+          "@actions",
+          "@ci"
+        ],
+        "icon": "https://github.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://github.com/search?q={searchTerms}+%28path%3A.github%2Fworkflows%2F*.yml+OR+path%3A.github%2Fworkflows%2F*.yaml%29&type=code"
+          }
+        ]
+      },
+      "Github Nix": {
+        "definedAliases": [
+          "@gitnix",
+          "gitnix"
+        ],
+        "icon": "https://github.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://github.com/search?q={searchTerms}+language%3Anix&type=code"
+          }
+        ]
+      },
+      "Google Translate": {
+        "definedAliases": [
+          "@translate"
+        ],
+        "icon": "https://translate.google.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://translate.google.com/?sl=auto&tl=zh-CN&op=translate&text={searchTerms}"
+          }
+        ]
+      },
+      "Hacker News": {
+        "definedAliases": [
+          "@hn",
+          "hn"
+        ],
+        "icon": "https://www.ycombinator.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://google.com/search?q=site%3Anews.ycombinator.com+{searchTerms}"
+          }
+        ]
+      },
+      "LET": {
+        "definedAliases": [
+          "@let"
+        ],
+        "icon": "https://lowendtalk.com/uploads/LowEndTalk.ico",
+        "urls": [
+          {
+            "template": "https://google.com/search?q={searchTerms}+site:lowendtalk.com"
+          }
+        ]
+      },
+      "Nix MyNixOS": {
+        "definedAliases": [
+          "@mynixos",
+          "mynixos",
+          "@nix3"
+        ],
+        "icon": "https://mynixos.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://mynixos.com/search?q={searchTerms}"
+          }
+        ]
+      },
+      "Nix Nixhub": {
+        "definedAliases": [
+          "@nixhub",
+          "nixhub",
+          "@nix2"
+        ],
+        "icon": "https://www.nixhub.io/favicon.ico",
+        "urls": [
+          {
+            "template": "https://www.nixhub.io/search?q={searchTerms}"
+          }
+        ]
+      },
+      "Nix Noogle": {
+        "definedAliases": [
+          "@noogle",
+          "noogle",
+          "@nix1"
+        ],
+        "icon": "https://noogle.dev/favicon.png",
+        "urls": [
+          {
+            "template": "https://noogle.dev/q?term={searchTerms}"
+          }
+        ]
+      },
+      "Nix package versions": {
+        "definedAliases": [
+          "@nix4"
+        ],
+        "icon": "https://nixos.org/favicon.png",
+        "urls": [
+          {
+            "template": "https://lazamar.co.uk/nix-versions/?channel=nixpkgs-unstable&package={searchTerms}"
+          }
+        ]
+      },
+      "Nixpkgs": {
+        "definedAliases": [
+          "@nixpkgs"
+        ],
+        "icon": "https://github.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://github.com/search?q=repo%3ANixOS%2Fnixpkgs+{searchTerms}+language%3Anix&type=code"
+          }
+        ]
+      },
+      "V2ex": {
+        "definedAliases": [
+          "@v2ex"
+        ],
+        "icon": "https://www.v2ex.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://google.com/search?q={searchTerms}+site:v2ex.com"
+          }
+        ]
+      },
+      "amazondotcom-us": {
+        "metaData": {
+          "hidden": true
+        }
+      },
+      "bing": {
+        "metaData": {
+          "hidden": true
+        }
+      },
+      "ddg": {
+        "metaData": {
+          "hidden": true
+        }
+      },
+      "ebay": {
+        "metaData": {
+          "hidden": true
+        }
+      },
+      "google": {
+        "metaData": {
+          "alias": "@g"
+        }
+      },
+      "home-manager": {
+        "definedAliases": [
+          "@hm",
+          "hm"
+        ],
+        "icon": "https://github.com/favicon.ico",
+        "urls": [
+          {
+            "template": "https://github.com/search?q=repo%3Anix-community%2Fhome-manager+{searchTerms}+language%3Anix&type=code"
+          }
+        ]
+      }
+    },
+    "force": true,
+    "order": [
+      "google",
+      "Hacker News",
+      "Github",
+      "Github Actions",
+      "Github Nix",
+      "Nixpkgs",
+      "home-manager",
+      "Google Translate"
+    ]
+  }
+}
