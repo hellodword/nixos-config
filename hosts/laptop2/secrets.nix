@@ -2,7 +2,7 @@
   config,
   lib,
   userName,
-  hostSecretsDirectory ? ./secrets,
+  hostSecretsDirectory,
   ...
 }:
 let
@@ -18,6 +18,8 @@ let
   };
 in
 {
+  _module.args.hostSecretsDirectory = lib.mkDefault ./secrets;
+
   users.users.${userName}.hashedPasswordFile = secret "${userName}-password";
   services.tailscale.authKeyFile = lib.mkIf config.services.tailscale.enable (
     secret "tailscale-auth-key"
