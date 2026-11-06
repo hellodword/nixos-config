@@ -11,8 +11,8 @@
 | `configuration` | 合成 SOPS 密文经过真实主机字段与 Wi-Fi/身份绑定；完整主机、网络、Tailscale 及桌面/应用能力组合，验证有效服务、会话、禁用能力后的持久清单与所有权，求值系统闭包；临时 Git 仓库验证持续备份推送 | `tests/configuration.nix` |
 | `desktop` | 生产 Fontconfig 字形匹配、混排宽度与图标/emoji；原生 Sway/i3 配置验证 | `tests/desktop.nix`、`tests/integration/desktop.py` |
 | `vm-backup` | 真实 Restic 三仓库、上海时间窗口、故障重试、路径边界、后端无响应时的关机与恢复；gVisor 内 Apprise/Bark 中文通知、官方 TLS 模拟上游、凭据隔离和跨重启的最新结果补发 | `tests/vm/backup.nix` |
-| `vm-network` | 本机与 Tailscale 出口客户端的持续双栈流量、DNS、NAT 穿透与 DERP；独立 WireGuard/OpenVPN 接口传输、策略更新及就绪失败恢复、服务故障、日志轮转、断网及重启恢复；三种网络能力组合下的通知和 Docker 重启 | `tests/vm/network.nix` |
-| `vm-desktop` | SDDM 三会话登录/正常注销/重新登录；标签布局、Waybar 空闲抑制与锁屏、截图剪贴板、输入法、KWallet；显示布局、NetworkManager 连接及 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
+| `vm-network` | 本机与 Tailscale 出口客户端的持续双栈流量、DNS、NAT 穿透与 DERP；独立 WireGuard/OpenVPN 接口传输、策略更新及就绪失败恢复、服务故障、日志轮转、断网及重启恢复；三种网络能力组合下的通知、普通 Docker/Compose 的 DNS 与出口、服务名互通及端口发布、网络重建、prune 与 Docker 重启 | `tests/vm/network.nix` |
+| `vm-desktop` | SDDM 三会话登录/正常注销/重新登录；标签布局、Waybar 悬浮详情和月历、空闲抑制与锁屏、截图剪贴板、输入法、KWallet；显示布局、NetworkManager 连接及 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
 | `vm-applications` | 默认 1920×1080 下，三会话中的 Firefox、VS Code Dev Containers、Bitwarden Desktop、Kitty、Rofi 基础可用性 | `tests/vm/applications.nix`、`applications.py` |
 | `e2e` | 完整 laptop2 系统与 ubuntu Home Manager 激活产物，以及配置、进程集成、字体与桌面配置、备份/网络/桌面/应用 VM 的必需结果 | `nix/checks.nix` |
 

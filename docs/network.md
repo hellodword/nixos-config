@@ -104,6 +104,26 @@ journalctl -u tailscaled -u site-tailscale-routes -b
 sudo tailscale set --exit-node=laptop2 --accept-dns=true
 ```
 
+## Docker 与 Compose
+
+同时启用 Docker 和项目 DNS 时，宿主在 loopback 上持有 `169.254.53.53/32`，systemd-resolved 在该地址的 TCP/UDP 53 接收容器查询，再使用宿主当前的 DNS 路径。Docker 的默认 DNS 指向这个地址。默认 bridge 直接使用它；Compose 和自建 bridge 保留 Docker 的 `127.0.0.11` 内嵌解析器，用于服务名解析并将外部查询转给宿主入口。已有容器需要重新创建，才能取得新的 DNS 默认值。
+
+`site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。临时 IPv4 模式结束后，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
+
+容器 DNS 入口仅接受本机和这些 bridge 的查询。路由表 `64500`、规则优先级 `94` 与 `inet site_containers` 防火墙表由同步服务管理，均为运行时状态；Docker 重启后重新读取网络清单。带 `org.nixos-config.service` 标签的通知专用网络使用通知模块自己的限制和路由。
+
+IPv6 bridge 的邻居发现使用独立的规则：同步服务在 Mullvad 的 input/output/forward 链中管理带 `site-container-neighbors` 注释的规则，只允许 Docker bridge 上 hop limit 为 255 的邻居请求与通告，支持容器与网关、同桥容器之间的地址解析。它监听防火墙重建并重新同步，停止时删除这些规则；普通 TCP/UDP 出口继续遵循分流与 Lockdown。
+
+```sh
+systemctl status site-container-network systemd-resolved docker
+journalctl -b -u site-container-network -u site-notification-network -u docker-prune -u docker
+sudo docker network ls
+sudo docker exec <容器名> cat /etc/resolv.conf
+ip -4 route show table 64500
+ip -6 route show table 64500
+sudo nft list table inet site_containers
+```
+
 ## 日常操作
 
 ```sh

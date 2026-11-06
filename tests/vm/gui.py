@@ -44,6 +44,12 @@ class Desktop:
         return self.monitor("send_chars", *args, **kwargs)
 
     def click(self, x, y, width, height):
+        self._pointer(x, y, width, height, click=True)
+
+    def move_pointer(self, x, y, width, height):
+        self._pointer(x, y, width, height, click=False)
+
+    def _pointer(self, x, y, width, height, click):
         with self.input_lock:
             mice = self.send_monitor_command("info mice")
             tablet = re.search(r"Mouse #(\d+):[^\n]*\(absolute\)", mice)
@@ -66,9 +72,10 @@ class Desktop:
                 return client.results.get_nowait()
             send([{"type": "abs", "data": {"axis": axis, "value": round(value * 32767 / (extent - 1))}}
                   for axis, value, extent in (("x", x, width), ("y", y, height))])
-            send([{"type": "btn", "data": {"button": "left", "down": True}}])
-            time.sleep(0.15)
-            send([{"type": "btn", "data": {"button": "left", "down": False}}])
+            if click:
+                send([{"type": "btn", "data": {"button": "left", "down": True}}])
+                time.sleep(0.15)
+                send([{"type": "btn", "data": {"button": "left", "down": False}}])
 
     def screenshot(self, filename, timeout=15):
         deadline = time.monotonic() + timeout
@@ -146,7 +153,7 @@ def remaining(deadline):
     return min(15, value)
 
 
-def visible(machine, pattern, timeout=60):
+def visible(machine, pattern, timeout=60, keep_active=True):
     # Bound image processing so a visibility check cannot consume the
     # desktop's entire idle interval. Idle locking is exercised separately.
     with machine.nested("waiting for visible text: " + pattern), tempfile.TemporaryDirectory() as directory:
@@ -156,7 +163,8 @@ def visible(machine, pattern, timeout=60):
         prepared = Path(directory) / "text.ppm"
         try:
             while True:
-                machine.send_key("ctrl")
+                if keep_active:
+                    machine.send_key("ctrl")
                 machine.screenshot(str(frame), timeout=remaining(deadline))
                 # The driver's ImageMagick build handles PNM; netpbm
                 # provides the PNG decoder used for retained screenshots.
@@ -166,7 +174,8 @@ def visible(machine, pattern, timeout=60):
                 for contrast in ([], ["-threshold", "50%"]):
                     if time.monotonic() >= deadline:
                         break
-                    machine.send_key("ctrl")
+                    if keep_active:
+                        machine.send_key("ctrl")
                     subprocess.run(
                         ["magick", str(raw), "-resize", "300%", "-colorspace", "Gray", *contrast, str(prepared)],
                         check=True, capture_output=True, timeout=remaining(deadline),

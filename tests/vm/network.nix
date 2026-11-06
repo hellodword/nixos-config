@@ -2,6 +2,60 @@
 { pkgs, lib, ... }:
 let
   notification = import ../fixtures/notifications.nix { inherit pkgs; };
+  containerImage = pkgs.dockerTools.buildLayeredImage {
+    name = "network-workflow";
+    tag = "test";
+    contents = [
+      pkgs.busybox
+      pkgs.curl
+    ];
+    extraCommands = ''
+      mkdir -p www tmp
+      printf 'container service\n' > www/index.html
+    '';
+    config.Cmd = [
+      "sleep"
+      "infinity"
+    ];
+  };
+  compose = pkgs.writeText "network-compose.json" (
+    builtins.toJSON {
+      services = {
+        app = {
+          image = "network-workflow:test";
+          init = true;
+          restart = "unless-stopped";
+        };
+        web = {
+          image = "network-workflow:test";
+          init = true;
+          command = [
+            "httpd"
+            "-f"
+            "-p"
+            "8080"
+            "-h"
+            "/www"
+          ];
+          restart = "unless-stopped";
+          ports = [ "18084:8080" ];
+        };
+      };
+      networks.default = {
+        enable_ipv6 = true;
+        ipam.config = [
+          { subnet = "172.29.80.0/24"; }
+          { subnet = "fd12:3456:789a::/64"; }
+        ];
+      };
+    }
+  );
+  containerNode = {
+    virtualisation.docker.daemon.settings = {
+      ipv6 = true;
+      fixed-cidr-v6 = "fd12:3456:789b::/64";
+    };
+  };
   python = pkgs.python3.withPackages (p: [
     p.dnspython
     p.h2
@@ -73,6 +127,7 @@ let
       ../../modules/services/containers.nix
       ../../modules/services/notifications.nix
       notification.credentials
+      containerNode
     ];
     _module.args.userName = "developer";
     users.users.developer.isNormalUser = true;
@@ -163,6 +218,7 @@ in
         ../../modules/services/containers.nix
         ../../modules/services/notifications.nix
         notification.credentials
+        containerNode
       ];
       _module.args.userName = "desktop";
       site.connections.enable = true;
@@ -471,6 +527,44 @@ in
     import shlex
 
     exit_active = False
+    containers_active = False
+    compose_command = "docker compose -p network-workflow -f ${compose}"
+    compose_exec = compose_command + " exec -T --interactive=false app"
+
+    def container_start(node):
+        node.wait_for_unit("site-container-network.service")
+        node.succeed("docker load -i ${containerImage}", timeout=120)
+        node.succeed("docker run -d --init --restart unless-stopped --name ordinary network-workflow:test")
+        node.succeed(compose_command + " up -d", timeout=60)
+
+    def container_request(node, command):
+        try:
+            node.wait_until_succeeds("timeout -k 2 15 sh -c " + shlex.quote(command), timeout=60)
+        except Exception:
+            for diagnostic in ("journalctl -u site-container-network -u systemd-resolved -n 80 --no-pager",
+                               "ip -4 rule show", "ip -6 rule show", "ip -4 route show table all",
+                               "ip -6 route show table all", "ip -j address", "nft list ruleset",
+                               "docker exec ordinary cat /etc/resolv.conf", "docker network ls",
+                               compose_exec + " ip -6 route", compose_exec + " ip -6 neigh"):
+                print(node.name, diagnostic, node.execute("timeout -k 2 10 sh -c " + shlex.quote(diagnostic))[1])
+            raise
+
+    def container_web(node, proxy_source, ipv6=False):
+        names = ("web.direct.test", "web.proxy.test") if node == client else ("www.example.cn", "www.example.org")
+        for command in ("docker exec ordinary", compose_exec):
+            for name, source in zip(names, ("192.168.1.10" if node == client else proxy_source, proxy_source)):
+                container_request(node, command + " sh -c " + shlex.quote(
+                    "test $(curl -4 --noproxy '*' --max-time 6 -sSf http://" + name + ":18080/container) = " + source
+                ))
+        if ipv6:
+            container_request(node, compose_exec + " sh -c " + shlex.quote(
+                "test $(curl -6 --noproxy '*' --max-time 6 -sSf 'http://[2001:db8:2::30]:18080/container') = 2001:db8:10::20"
+            ))
+
+    def container_local(node, address="192.168.1.10"):
+        container_request(node, compose_exec + " curl --max-time 6 -fsS http://web:8080 | grep -Fx 'container service'")
+        for host in ("127.0.0.1", address):
+            container_request(node, "curl --max-time 6 -fsS http://" + host + ":18084 | grep -Fx 'container service'")
 
     def ready_underlay():
         client.wait_until_succeeds("python3 -c 'import json; assert json.load(open(\"/run/site-network-underlay/underlay.json\"))[\"interface\"] == \"eth1\"'", timeout=90)
@@ -526,16 +620,33 @@ in
         client.succeed("ip -6 route get 2001:db8:2::30 | grep 'dev wg0-mullvad'")
         if exit_active:
             peer.wait_until_succeeds("set -eu; " + "; ".join(probes), timeout=90)
+        if containers_active:
+            container_web(client, "192.168.1.20", ipv6=True)
 
     def blocked():
         for host in ("198.18.0.30", "198.19.0.30", "[2001:db8:1::30]", "[2001:db8:2::30]"):
             http(host, True)
             if exit_active:
                 peer.fail("curl --noproxy '*' --max-time 6 -sSf http://" + host + ":18080/exit-blocked")
+        if containers_active:
+            for command in ("docker exec ordinary", compose_exec):
+                client.fail(command + " curl --max-time 4 -sSf http://198.19.0.30:18080/container-blocked")
 
     healthy()
+    container_start(client)
+    containers_active = True
+    container_web(client, "192.168.1.20", ipv6=True)
+    container_local(client)
     client.wait_for_unit("docker-site-apprise.service")
     client.wait_for_unit("docker-site-bark.service")
+    client.wait_until_succeeds("su -s /bin/sh sender -c 'bark 首次启动通知'", timeout=180)
+    # Pruning an unused network must coexist with the notification service's
+    # stopped network; bringing the service back delivers a real notification.
+    client.succeed("systemctl stop site-notification-network.service")
+    notification_network = client.succeed("docker network inspect -f '{{.Id}}' site-notifications")
+    client.succeed("docker network create disposable-workflow; systemctl start docker-prune.service", timeout=120)
+    assert client.succeed("docker network inspect -f '{{.Id}}' site-notifications") == notification_network
+    client.succeed("systemctl start site-notification-network.service", timeout=120)
     client.wait_until_succeeds("su -s /bin/sh sender -c 'bark 分流出口通知'", timeout=180)
     notification_events = [json.loads(line) for line in target.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
     assert notification_events[-1]["peer"] == "192.168.1.20", notification_events
@@ -618,6 +729,7 @@ in
         direct_ready()
         assert user("curl --noproxy '*' --max-time 8 -sSf http://" + peer4 + ":18083/tailnet.txt").strip() == "tailnet peer"
         exit_dns()
+        container_web(client, "192.168.1.20")
 
     client.succeed("network-ipv6 off")
     ipv4_healthy()
@@ -632,6 +744,10 @@ in
     user("dig +short web.proxy.test AAAA | grep -Fx 2001:db8:2::30")
     client.succeed("systemctl restart docker")
     healthy()
+    container_local(client)
+    client.succeed(compose_command + " down; " + compose_command + " up -d", timeout=60)
+    container_local(client)
+    container_web(client, "192.168.1.20", ipv6=True)
     client.wait_until_succeeds("su -s /bin/sh sender -c 'bark 容器服务恢复'", timeout=90)
     # Force relay fallback by dropping only peer UDP, keeping control/STUN alive.
     client.succeed("nft add table inet relay_fixture; nft 'add chain inet relay_fixture output { type filter hook output priority -190; policy accept; }'; nft add rule inet relay_fixture output udp dport 41641 drop")
@@ -834,6 +950,7 @@ in
         client.succeed("install -m600 /dev/null /run/provider.json; echo " + provider_text + " > /run/provider.json; network-policy apply")
         healthy()
         client.succeed("network-ipv6 status")
+        container_local(client)
         user("dig +short persisted.policy.example A | grep -Fx 198.18.0.30")
         assert http("persisted.policy.example") in {"192.168.1.10", "2001:db8:10::10"}
         peer.succeed("dig +short persisted.policy.example A | grep -Fx 198.18.0.30")
@@ -864,11 +981,15 @@ in
         node.start()
         node.wait_for_unit("multi-user.target")
         node.wait_for_unit("site-dns.service")
+        container_start(node)
+        container_web(node, address)
+        container_local(node, address)
         node.wait_until_succeeds("su -s /bin/sh sender -c 'bark 独立网络能力通知'", timeout=180)
         deliveries = [json.loads(line) for line in target.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
         assert deliveries[-1]["peer"] == address, deliveries[-1]
         node.succeed("network-ipv6 off; network-policy apply; systemctl restart site-dns")
         node.succeed("network-ipv6 status")
+        container_web(node, address)
         assert node.succeed("dig +short www.example.org AAAA").strip() == ""
         node.succeed("su -s /bin/sh sender -c 'bark IPv4网络通知'")
         if node == dnsProxy:

@@ -34,7 +34,8 @@ in
           "disk"
           "disk#root"
           "custom/failed"
-          "network"
+          "network#ethernet"
+          "network#wifi"
           "custom/tailscale"
           "pulseaudio"
           "backlight"
@@ -44,31 +45,55 @@ in
           "clock#cn"
           "tray"
         ];
-        cpu.format = " {usage}%";
+        cpu = {
+          format = " {usage}%";
+          tooltip = true;
+        };
         "sway/window" = {
           format = "{title}";
           max-length = 35;
           separate-outputs = true;
         };
         "custom/failed" = {
-          exec = "${pkgs.python3}/bin/python3 ${../scripts/desktop/health.py} --status";
+          exec = "${pkgs.python3}/bin/python3 ${../scripts/desktop/health.py} --waybar";
+          return-type = "json";
           interval = 10;
         };
-        memory.format = " {percentage}%";
+        memory = {
+          format = " {percentage}%";
+          tooltip-format = "Memory\nUsed: {used:.1f} GiB / {total:.1f} GiB\nAvailable: {avail:.1f} GiB";
+        };
         disk = {
           path = nixosConfig.site.storage.persistRoot;
           format = " {used}/{total}";
-          tooltip-format = "Persistent storage: {percentage_used}% used";
+          tooltip-format = "Persistent storage: ${nixosConfig.site.storage.persistRoot}\nUsed: {used} / {total} ({percentage_used}%)\nFree: {free}";
         };
         "disk#root" = {
           path = "/";
           format = "/ {used}/{total}";
-          tooltip-format = "Root tmpfs: {percentage_used}% used";
+          tooltip-format = "Root tmpfs: /\nUsed: {used} / {total} ({percentage_used}%)\nFree: {free}";
         };
-        network = {
-          format-wifi = " {signalStrength}%";
+        "network#ethernet" = {
+          interface = "e*";
+          family = "ipv4_6";
+          interval = 5;
           format-ethernet = "";
-          format-disconnected = "Disconnected";
+          format-linked = " !";
+          format-disconnected = "";
+          tooltip-format = "Ethernet\nInterface: {ifname}\nIP: {ipaddr}\nGateway: {gwaddr}\n↑ {bandwidthUpBytes}  ↓ {bandwidthDownBytes}";
+          tooltip-format-disconnected = "Ethernet disconnected";
+        };
+        "network#wifi" = {
+          interface = "wl*";
+          family = "ipv4_6";
+          interval = 5;
+          format-wifi = " {signalStrength}%";
+          format-linked = " !";
+          format-disconnected = " ×";
+          format-disabled = " off";
+          tooltip-format = "Wi-Fi\nInterface: {ifname}\nSSID: {essid}\nIP: {ipaddr}\nGateway: {gwaddr}\nSignal: {signalStrength}% ({signaldBm} dBm)\n↑ {bandwidthUpBytes}  ↓ {bandwidthDownBytes}";
+          tooltip-format-disconnected = "Wi-Fi disconnected\nInterface: {ifname}";
+          tooltip-format-disabled = "Wi-Fi disabled\nInterface: {ifname}";
         };
         "custom/tailscale" = {
           exec = "${tools.tailscale}/bin/desktop-tailscale --waybar";
@@ -78,10 +103,19 @@ in
         pulseaudio = {
           format = " {volume}%";
           format-muted = "";
+          tooltip-format = "Audio: {desc}\nOutput: {volume}%\nMicrophone: {format_source}";
+          format-source = "{volume}%";
+          format-source-muted = "muted";
           on-click = "${pkgs.pavucontrol}/bin/pavucontrol";
         };
-        backlight.format = " {percent}%";
-        temperature.format = "{temperatureC}°C";
+        backlight = {
+          format = " {percent}%";
+          tooltip-format = "Brightness: {percent}%";
+        };
+        temperature = {
+          format = "{temperatureC}°C";
+          tooltip-format = "Temperature: {temperatureC}°C";
+        };
         battery = {
           format = "{icon} {capacity}%";
           format-icons = [
@@ -94,6 +128,11 @@ in
           format-charging = " {capacity}%";
           format-full = " {capacity}%";
           format-plugged = " {capacity}%";
+          tooltip-format = "Battery: {capacity}%\n{timeTo}\nPower: {power:.1f} W";
+          tooltip-format-charging = "Charging: {capacity}%\n{timeTo}\nPower: {power:.1f} W";
+          tooltip-format-discharging = "Discharging: {capacity}%\n{timeTo}\nPower: {power:.1f} W";
+          tooltip-format-full = "Fully charged: {capacity}%";
+          tooltip-format-not-charging = "Connected, not charging: {capacity}%\nPower: {power:.1f} W";
           states = {
             warning = 60;
             critical = 50;
@@ -101,10 +140,17 @@ in
         };
         "clock#local" = localTimeZone // {
           format = "{:%m-%d %H:%M %Z}";
+          tooltip-format = "{:%A, %Y-%m-%d %H:%M %Z}\n\n<tt>{calendar}</tt>";
+          calendar = {
+            mode = "month";
+            iso8601 = true;
+            format.today = "<b><u>{}</u></b>";
+          };
         };
         "clock#cn" = {
           timezone = "Asia/Shanghai";
           format = "{:%H:%M CN}";
+          tooltip-format = "Asia/Shanghai\n{:%A, %Y-%m-%d %H:%M %Z}";
         };
         idle_inhibitor = {
           format = "{icon}";
@@ -119,6 +165,8 @@ in
       style = ''
         * { font-family: "${sans}", "Noto Sans CJK SC", "Symbols Nerd Font", sans-serif; font-size: 13px; border: none; min-height: 0; }
         window#waybar { background: #2b303b; color: #ffffff; }
+        tooltip { background: #202630; color: #ffffff; border: 1px solid #64727d; border-radius: 4px; }
+        tooltip label { padding: 6px 8px; }
         button { border-radius: 0; padding: 0; }
         #workspaces button { color: #ffffff; padding: 0 5px; }
         #workspaces button.focused { background: #64727d; box-shadow: inset 0 -2px #ffffff; }

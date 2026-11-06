@@ -7,7 +7,7 @@
 | `hosts/laptop2/` | 现有磁盘、启动、硬件、功能组合与主机凭据绑定 |
 | `profiles/laptop/` | 功能组合、持久状态清单、备份范围和默认分流规则 |
 | `modules/core/` | 用户、存储根、Home Manager 接入与 CLI 系统服务 |
-| `modules/network/` | DNS、sing-box、Lockdown、Tailscale 排除与 Wi-Fi |
+| `modules/network/` | DNS、sing-box、Lockdown、Tailscale、Docker 桥接网络与 Wi-Fi |
 | `modules/desktop/` | 会话、显示管理、门户、字体、应用和生产力工具 |
 | `modules/services/` | Restic、本地通知、容器、虚拟机、Android 和 OCI cache |
 | `home/` | Home Manager 用户配置：CLI、应用、桌面与状态栏 |
@@ -44,7 +44,7 @@ SSH/Git 覆盖、Wi-Fi、显示方案和输入法学习记录由应用管理。s
 
 | 目录 | 职责 |
 | --- | --- |
-| `scripts/network/` | 共享 route 编译、代理节点合并、DNS 日志、策略发布、出口观察与 Lockdown 控制 |
+| `scripts/network/` | 共享 route 编译、代理节点合并、DNS 日志、策略发布、出口观察、Docker 本地路由同步与 Lockdown 控制 |
 | `scripts/backup/` | 文件选择、Restic 调度、仓库通路检查、结果通知和健康状态 |
 | `scripts/notifications/` | 容器内 API 初始化和本地发送客户端 |
 | `scripts/secrets/identity.py` | 在隔离公钥环中推导并发布 SSH/Git 文件 |

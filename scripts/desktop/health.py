@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Session-local, transition-only notifications without private journal content."""
 import argparse
+import html
 import json
 import os
 from pathlib import Path
@@ -15,10 +16,20 @@ except (OSError, ValueError):
     previous = {}
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--status", action="store_true", help="show the latest system/user failed-unit counts")
+parser.add_argument("--waybar", action="store_true", help="show failed-unit counts and names as Waybar JSON")
 args = parser.parse_args()
-if args.status:
+if args.status or args.waybar:
     counts = [str(len(previous[scope])) if scope in previous else "?" for scope in ("system", "user")]
-    print(f"Failed {counts[0]}/{counts[1]}")
+    text = f"Failed {counts[0]}/{counts[1]}"
+    if args.waybar:
+        details = []
+        for scope in ("system", "user"):
+            names = previous.get(scope)
+            details.append(scope.capitalize() + ": " + (
+                "not sampled yet" if names is None else "\n" + "\n".join(names) if names else "no failed units"))
+        print(json.dumps({"text": text, "tooltip": html.escape("\n\n".join(details))}))
+    else:
+        print(text)
     sys.exit(0)
 current = {}
 levels = []

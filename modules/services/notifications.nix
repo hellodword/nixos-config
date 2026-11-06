@@ -46,6 +46,7 @@ let
     ];
   };
   containerService = {
+    wantedBy = [ "site-notification-network.service" ];
     requires = [
       "site-notification-network.service"
       "site-notification-secrets.service"
@@ -99,6 +100,8 @@ in
     };
   };
   config = lib.mkIf cfg.enable {
+    virtualisation.docker.autoPrune.flags = [ "--filter=label!=org.nixos-config.service" ];
+    networking.networkmanager.unmanaged = [ "interface-name:site-notify" ];
     assertions = [
       {
         assertion = config.virtualisation.docker.enable;
@@ -178,6 +181,7 @@ in
       };
       site-notification-network = {
         description = "Private notification bridge and local service routes";
+        wantedBy = [ "docker.service" ];
         requires = [
           "docker.service"
           "nftables.service"
@@ -199,18 +203,21 @@ in
           RuntimeDirectory = "site-notification-network";
         };
         script = ''
-          if docker network inspect site-notifications >/dev/null 2>&1; then
-            owner=$(docker network inspect --format '{{index .Labels "org.nixos-config.service"}}' site-notifications)
+          if network=$(docker network inspect site-notifications 2>/dev/null); then
+            owner=$(printf '%s' "$network" | jq -r '.[0].Labels["org.nixos-config.service"]')
             if [ "$owner" != site-notifications ]; then
               echo 'Docker network site-notifications belongs to another owner; choose an unused network.' >&2
               exit 1
             fi
-            actual=$(docker network inspect --format '{{(index .IPAM.Config 0).Subnet}}' site-notifications)
+            actual=$(printf '%s' "$network" | jq -r '.[0].IPAM.Config[0].Subnet')
             if [ "$actual" != ${lib.escapeShellArg subnet} ]; then
               docker network rm site-notifications
+              network=
             fi
+          else
+            network=
           fi
-          if ! docker network inspect site-notifications >/dev/null 2>&1; then
+          if [ -z "$network" ]; then
             docker network create --internal --subnet ${subnet} --gateway ${gateway} \
               --label org.nixos-config.service=site-notifications \
               --opt com.docker.network.bridge.name=site-notify site-notifications
@@ -239,6 +246,7 @@ in
       };
       docker-site-bark = containerService;
       haproxy = {
+        wantedBy = [ "site-notification-network.service" ];
         partOf = [ "site-notification-network.service" ];
         requires = [ "site-notification-network.service" ];
         after = [ "site-notification-network.service" ];

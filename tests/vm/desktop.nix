@@ -207,6 +207,12 @@ in
         # Finish the synthetic terminal workload before asking the desktop to
         # log out, so Kitty's running-command confirmation needs no response.
         machine.execute(user_command("systemctl --user stop desktop-fixture.service"), timeout=30)
+        if compositor == "plasmashell":
+            # Session autostarts include services outside the plasma-* names.
+            # Finish their startup transaction before requesting its shutdown.
+            machine.wait_until_succeeds(user_command(
+                "test -z \"$(systemctl --user list-jobs --no-legend --plain)\""
+            ), timeout=90)
         command = {"sway": "swaymsg exit", "i3": "i3-msg exit",
                    "plasmashell": "busctl --user call org.kde.Shutdown /Shutdown org.kde.Shutdown logout"}[compositor]
         # Return to the greeter through the session's own logout entrypoint.
@@ -238,15 +244,6 @@ in
         # environment. Wait for that explicit readiness boundary.
         machine.wait_until_succeeds(user_command("systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"), timeout=60)
         machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
-        if session == "KDE":
-            # Plasma's target and compositor can be available while splash and
-            # restoration jobs are still starting. Logout needs that startup
-            # transaction to finish before it can stop the session target.
-            machine.wait_until_succeeds(user_command(
-                "systemctl --user is-active plasma-workspace-wayland.target && "
-                "test -z \"$(systemctl --user list-jobs --no-legend --plain 'plasma-*.service' 'plasma-*.target')\""
-            ), timeout=90)
-
     layout_query = '[.[] | select(.active) | {key: .name, value: {active, scale, rect, current_mode, transform}}] | from_entries'
 
     def display_layout(machine):
@@ -256,15 +253,19 @@ in
         query = '(' + layout_query + ') == ' + json.dumps(expected)
         machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e " + shlex.quote(query)), timeout=30)
 
+    def bar_pixels(machine, frame, raw):
+        machine.screenshot(str(frame))
+        width, height = struct.unpack(">II", frame.read_bytes()[16:24])
+        with raw.open("wb") as stream:
+            subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=10)
+        pixels = subprocess.check_output(["magick", str(raw), "-crop", f"{width}x1+0+2", "-depth", "8", "RGB:-"], timeout=10)
+        return width, height, pixels
+
     def click_eye(machine, color, expected):
         # Locate the visible button's background and click through the VM tablet.
         with tempfile.TemporaryDirectory() as temporary:
             frame, raw = Path(temporary) / "eye.png", Path(temporary) / "eye.ppm"
-            machine.screenshot(str(frame))
-            width, height = struct.unpack(">II", frame.read_bytes()[16:24])
-            with raw.open("wb") as stream:
-                subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=10)
-            pixels = subprocess.check_output(["magick", str(raw), "-crop", f"{width}x1+0+2", "-depth", "8", "RGB:-"], timeout=10)
+            width, height, pixels = bar_pixels(machine, frame, raw)
             positions = [x for x in range(width) if pixels[3*x:3*x+3] == bytes.fromhex(color)]
             assert positions, "Idle inhibitor button is not visible"
             x = positions[len(positions)//2]
@@ -279,6 +280,27 @@ in
                     break
                 assert time.monotonic() < deadline, "Idle inhibitor button did not change state"
                 time.sleep(0.1)
+
+    def hover_status(machine):
+        output = json.loads(user(machine, "swaymsg -t get_outputs"))[0]
+        original = output["current_mode"]
+        user(machine, "swaymsg output " + output["name"] + " mode 1920x1080")
+        visible(machine, "Native desktop", timeout=30)
+        with tempfile.TemporaryDirectory() as temporary:
+            frame, raw = Path(temporary) / "bar.png", Path(temporary) / "bar.ppm"
+            width, height, pixels = bar_pixels(machine, frame, raw)
+            assert (width, height) == (1920, 1080), (width, height)
+            networks = [x for x in range(width) if pixels[3*x:3*x+3] == bytes.fromhex("21618c")]
+            clocks = [x for x in range(width) if pixels[3*x:3*x+3] == bytes.fromhex("45525e")]
+            assert networks and clocks, "Network and clock modules must be visible"
+            for name, x, text in (("network", networks[0] + 10, r"(?i)Interface.*eth"),
+                                  ("calendar", clocks[0] + 20, r"(?i)Mo.*Tu.*We"),
+                                  ("shanghai", clocks[-1] - 20, r"Asia/Shanghai")):
+                machine.move_pointer(x, 12, width, height)
+                visible(machine, text, timeout=20, keep_active=False)
+                machine.screenshot("desktop-tooltip-" + name)
+            machine.move_pointer(width // 2, height // 2, width, height)
+        user(machine, "swaymsg output " + output["name"] + " mode " + str(original["width"]) + "x" + str(original["height"]))
 
     def exercise_session(machine, session, compositor):
         machine.wait_for_unit("persist.mount")
@@ -394,6 +416,7 @@ in
             user(machine, "desktop-shot screen save; test -s ~/Pictures/$(ls -t ~/Pictures | head -n1)")
         # Each session's one-minute timeout must invoke a working PAM lock.
         if session == "sway":
+            hover_status(machine)
             click_eye(machine, "2d3436", "ecf0f1")
             machine.sleep(65)
             machine.fail(process("swaylock"))

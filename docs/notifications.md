@@ -67,7 +67,7 @@ HAProxy 只转发允许的官方域名和端口，不解密 TLS。它把受限�
 
 内部 Docker bridge 默认使用 `172.31.255.0/29`。如与现有网络重叠，在主机设置 `site.notifications.networkPrefix`。仅允许 API 到 Bark 的固定端口，以及各自到宿主 TLS 转发入口；官方地址使用静态 hosts，容器 DNS 不向外解析。宿主普通进程只能通过发送 socket 访问 API。官方连接由 HAProxy 新建，适用宿主的 DNS、sing-box 与 Lockdown；本地桥接通信使用明确的路由和连接标记。
 
-Docker 每周执行原生自动 prune，使用默认 flags：清理停止的容器、未使用网络、悬空镜像和构建缓存，卷不在默认清理范围。`live-restore` 在兼容的 daemon 重启期间尽量保持容器运行，系统关机和应用服务明确停止仍会结束容器。默认 `local` 日志驱动提供按大小轮转的容器 stdout/stderr 日志，使用 `docker logs` 查看；新默认值用于新建容器。
+Docker 每周执行原生自动 prune：清理停止的容器、未使用网络、悬空镜像和构建缓存，卷不在默认清理范围。带有 `org.nixos-config.service` 标签的服务资源由配置管理，自动 prune 保留它们；通知网络即使暂时没有容器连接，也继续存在。通知容器与 HAProxy 随网络服务停止，并随 Docker 重启重新建立服务关系。`live-restore` 在兼容的 daemon 重启期间尽量保持普通容器运行，系统关机和应用服务明确停止仍会结束容器。默认 `local` 日志驱动提供按大小轮转的容器 stdout/stderr 日志，使用 `docker logs` 查看；新默认值用于新建容器。
 
 镜像由 Nix 构建，内置最终 `security.pki.caBundle`；证书包变化更新镜像和对应服务。Apprise 与 Apprise API 由配套的 `flake=false` 输入锁定，分别按两个 Python 叶子包构建，其余依赖使用 nixpkgs binary cache。升级时先在 `flake.nix` 选择兼容的发布 tag，再更新并验证：
 

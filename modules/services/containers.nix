@@ -9,6 +9,7 @@ let
   cfg = config.site.containers;
 in
 {
+  imports = [ ../network/containers.nix ];
   options.site.containers = {
     enable = lib.mkEnableOption "container-focused host development";
   };
