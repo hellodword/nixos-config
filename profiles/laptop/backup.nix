@@ -22,6 +22,11 @@ in
   site.backup = {
     enable = true;
     source = config.site.storage.persistRoot;
+    schedule.offsets = {
+      scaleway = 0;
+      r2 = 5;
+      b2 = 10;
+    };
     roots = [
       {
         path = "etc/machine-id";

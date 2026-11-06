@@ -6,6 +6,11 @@ let
     inherit pkgs inputs;
     caBundle = notification.ca;
   };
+  targets = [
+    "first"
+    "second"
+    "third"
+  ];
 in
 {
   name = "restic-recovery";
@@ -18,6 +23,10 @@ in
   nodes.upstream = {
     imports = [ notification.server ];
     networking.firewall.enable = false;
+    services.restic.server = {
+      enable = true;
+      extraFlags = [ "--no-auth" ];
+    };
     services.dnsmasq = {
       enable = true;
       settings = {
@@ -35,17 +44,22 @@ in
   nodes.machine = {
     users.users.developer.isNormalUser = true;
     users.users.outsider.isNormalUser = true;
-    site.containers = {
-      enable = true;
-    };
+    site.containers.enable = true;
     security.pki.certificateFiles = [ notification.ca ];
     networking.nameservers = [ "192.168.1.2" ];
     networking.useDHCP = false;
-    virtualisation.fileSystems."/persist" = {
-      device = "/dev/vdb";
-      fsType = "ext4";
-      autoFormat = true;
-      neededForBoot = true;
+    time.timeZone = "America/New_York";
+    services.timesyncd.enable = false;
+    virtualisation = {
+      memorySize = 3072;
+      cores = 2;
+      emptyDiskImages = [ 2048 ];
+      fileSystems."/persist" = {
+        device = "/dev/vdb";
+        fsType = "ext4";
+        autoFormat = true;
+        neededForBoot = true;
+      };
     };
     imports = [
       inputs.impermanence.nixosModules.impermanence
@@ -55,14 +69,22 @@ in
       notification.credentials
       ../../modules/services/backup.nix
     ];
-    virtualisation.memorySize = 3072;
-    virtualisation.cores = 2;
-    virtualisation.emptyDiskImages = [ 2048 ];
     environment.systemPackages = [
       pkgs.curl
       pkgs.restic
       pkgs.python3
+      pkgs.jq
     ];
+    environment.etc = {
+      "backup-test/password" = {
+        text = "synthetic-password";
+        mode = "0600";
+      };
+      "backup-test/environment".text = "";
+    }
+    // lib.genAttrs (map (name: "backup-test/${name}") targets) (name: {
+      text = "rest:http://192.168.1.2:8000/${builtins.baseNameOf name}/";
+    });
     site.backup = {
       enable = true;
       source = "/persist";
@@ -73,99 +95,103 @@ in
           excludeNames = [ "Cache" ];
         }
       ];
-      targets = lib.genAttrs [ "first" "second" "third" ] (name: {
-        repositoryFile = "/run/backup-test/${name}";
-        passwordFile = "/run/backup-test/password";
-        environmentFile = "/run/backup-test/environment";
-        minute = 0;
+      targets = lib.genAttrs targets (name: {
+        repositoryFile = "/etc/backup-test/${name}";
+        passwordFile = "/etc/backup-test/password";
+        environmentFile = "/etc/backup-test/environment";
       });
     };
-    # Production targets are remote. Only these synthetic local repositories
-    # need an extra writable mount in the otherwise identical service sandbox.
-    systemd.services = lib.listToAttrs (
-      lib.concatMap
-        (
-          target:
-          map
-            (
-              operation:
-              lib.nameValuePair "site-backup-${target}-${operation}" {
-                serviceConfig.ReadWritePaths = [ "-/var/lib/repo-${target}" ];
-                serviceConfig.TimeoutStartSec = lib.mkForce "90s";
-              }
-            )
-            [
-              "backup"
-              "check"
-              "restore-test"
-              "maintenance"
-            ]
-        )
-        [
-          "first"
-          "second"
-          "third"
-        ]
-    );
   };
   testScript = builtins.readFile ./notifications.py + ''
+    from datetime import timedelta
+
     start_all()
     machine.wait_for_unit("multi-user.target")
+    upstream.wait_for_unit("restic-rest-server.service")
+    machine.succeed("systemctl stop 'site-backup-*-automatic.timer'")
     notification_smoke(machine, upstream, "${notificationPackages.python}/bin/python3")
-    machine.succeed("mkdir -p /persist/data/Cache /run/backup-test; echo important > /persist/data/document; echo disposable > /persist/data/Cache/blob")
-    machine.succeed("printf 'synthetic-password' > /run/backup-test/password; touch /run/backup-test/environment; chmod 600 /run/backup-test/*")
-    machine.succeed("systemd-tmpfiles --create")
+    machine.succeed("mkdir -p /persist/data/Cache; echo important > /persist/data/document; echo disposable > /persist/data/Cache/blob; systemd-tmpfiles --create")
     for target in ("first", "second", "third"):
-        machine.succeed(f"echo /var/lib/repo-{target} > /run/backup-test/{target}")
-        machine.succeed(f"RESTIC_PASSWORD_FILE=/run/backup-test/password restic -r /var/lib/repo-{target} init")
-    # A destination failure neither marks success nor prevents another destination.
-    machine.succeed("mv /var/lib/repo-second /var/lib/repo-second-offline")
-    machine.fail("systemctl start site-backup-second-backup")
-    machine.fail("test -e /var/lib/site-backup-second/backup-success.json")
-    machine.succeed("mv /var/lib/repo-second-offline /var/lib/repo-second; systemctl reset-failed site-backup-second-backup")
-    for target in ("first", "second", "third"):
-        if target == "first":
-            upstream.succeed("echo 3 > /run/notification-fixture/failures")
-        machine.succeed(f"systemctl start site-backup-{target}-backup")
-        if target == "first":
-            delivery = json.loads(machine.succeed("cat /var/lib/site-backup-first/backup-notification.json"))
-            assert not delivery["channels"][0]["delivered"], delivery
-        state = json.loads(machine.succeed(f"cat /var/lib/site-backup-{target}/backup-success.json"))
-        assert state["files"] == 2, state
-        machine.succeed(f"systemctl start site-backup-{target}-check site-backup-{target}-restore-test")
-        machine.succeed(f"test -s /var/lib/site-backup-{target}/restore-success.json")
-        machine.succeed(f"systemctl start site-backup-{target}-maintenance")
-        machine.succeed(f"test -s /var/lib/site-backup-{target}/maintenance-success.json")
-        machine.succeed(f"RESTIC_PASSWORD_FILE=/run/backup-test/password restic -r /var/lib/repo-{target} restore latest --target /restore-{target} --verify")
-        machine.succeed(f"cmp /persist/data/document /restore-{target}/data/document; test ! -e /restore-{target}/data/Cache")
-    # A successful recent run skips without a new snapshot or write operation.
-    before = machine.succeed("cat /var/lib/site-backup-first/backup-success.json")
-    notified_before = machine.succeed("cat /var/lib/site-backup-first/backup-notification.json")
-    machine.succeed("systemctl start site-backup-first-backup")
-    assert machine.succeed("cat /var/lib/site-backup-first/backup-success.json") == before
-    assert machine.succeed("cat /var/lib/site-backup-first/backup-notification.json") == notified_before
-    # A mounted directory belongs to a separately selected filesystem.
-    machine.succeed("mkdir -p /persist/data/mounted; mount -t tmpfs tmpfs /persist/data/mounted; echo external > /persist/data/mounted/document")
-    machine.succeed("rm /var/lib/site-backup-third/backup-success.json")
-    machine.fail("systemctl start site-backup-third-backup")
-    machine.succeed("umount /persist/data/mounted; systemctl reset-failed site-backup-third-backup; systemctl start site-backup-third-backup")
-    machine.succeed("RESTIC_PASSWORD_FILE=/run/backup-test/password restic -r /var/lib/repo-third restore latest --target /restore-retry --verify; cmp /persist/data/document /restore-retry/data/document")
-    machine.succeed("systemctl stop site-backup-first-backup.timer; echo newer > /persist/data/document; rm /var/lib/site-backup-first/backup-success.json")
-    machine.succeed("mkdir -p /var/lib/systemd/timers; touch -d '2 days ago' /var/lib/systemd/timers/stamp-site-backup-first-backup.timer")
-    machine.succeed("mkdir -p /run/systemd/system/site-backup-first-backup.timer.d; printf '[Timer]\\nRandomizedDelaySec=0\\n' > /run/systemd/system/site-backup-first-backup.timer.d/test.conf; systemctl daemon-reload; systemctl start site-backup-first-backup.timer")
+        machine.succeed(f"RESTIC_PASSWORD_FILE=/etc/backup-test/password restic -r rest:http://192.168.1.2:8000/{target}/ init")
+
+    def record(target, name):
+        return json.loads(machine.succeed(f"cat /var/lib/site-backup-{target}/{name}.json"))
+
+    def restore(target, destination):
+        machine.succeed(f"RESTIC_PASSWORD_FILE=/etc/backup-test/password restic -r rest:http://192.168.1.2:8000/{target}/ restore latest --target {destination} --verify")
+        machine.succeed(f"cmp /persist/data/document {destination}/data/document; test ! -e {destination}/data/Cache")
+
+    # At 13:00 Shanghai, activation leaves the next backup for the evening.
+    machine.succeed("date -s '2027-03-15 05:00:00 UTC'; systemctl start site-backup-first-automatic")
+    machine.succeed("RESTIC_PASSWORD_FILE=/etc/backup-test/password restic -r rest:http://192.168.1.2:8000/first/ snapshots --json | jq -e 'length == 0'")
+    # A missed timer catches up inside the morning window, using Shanghai time
+    # while the system clock is displayed in Virginia's timezone.
+    machine.succeed("date -s '2027-03-16 03:00:00 UTC'; mkdir -p /var/lib/systemd/timers; touch -d '2027-03-15 00:00:00 UTC' /var/lib/systemd/timers/stamp-site-backup-first-automatic.timer; systemctl start site-backup-first-automatic.timer")
     machine.wait_until_succeeds("test -s /var/lib/site-backup-first/backup-success.json", timeout=90)
-    machine.wait_until_succeeds("test $(systemctl show site-backup-first-backup.service -p SubState --value) = dead", timeout=120)
-    machine.succeed("RESTIC_PASSWORD_FILE=/run/backup-test/password restic -r /var/lib/repo-first restore latest --target /restore-catchup --verify; cmp /persist/data/document /restore-catchup/data/document")
+    machine.wait_until_succeeds("test $(systemctl show site-backup-first-automatic -p SubState --value) = dead", timeout=90)
+    morning = record("first", "backup-success")
+    machine.succeed("systemctl stop site-backup-first-automatic.timer; systemctl start site-backup-first-automatic")
+    assert record("first", "backup-success") == morning
+    restore("first", "/restore-morning")
+
+    # Results remain local while the external notification channel is unavailable.
+    upstream.succeed("echo 10000 > /run/notification-fixture/failures")
+    upstream.succeed("mv /var/lib/restic/second /var/lib/restic/second-offline")
+    machine.fail("systemctl start site-backup-second-backup")
+    assert record("second", "backup-result")["result"] == "failure"
+    upstream.succeed("mv /var/lib/restic/second-offline /var/lib/restic/second")
+    machine.succeed("systemctl reset-failed site-backup-second-backup")
     for target in ("first", "second", "third"):
+        machine.succeed(f"systemctl start site-backup-{target}-backup")
+        assert record(target, "backup-success")["files"] == 2
+        for operation in ("check", "restore-test", "maintenance"):
+            machine.succeed(f"systemctl start site-backup-{target}-{operation}")
+            assert record(target, operation + "-result")["result"] == "success"
+        restore(target, "/restore-" + target)
+
+    # A second daily window gets its own recovery point, even less than 12h later.
+    machine.succeed("date -s '2027-03-16 13:30:00 UTC'; echo evening > /persist/data/document; systemctl start site-backup-first-automatic")
+    evening = record("first", "backup-success")
+    assert evening["window"] != morning["window"]
+    restore("first", "/restore-evening")
+
+    # A selected nested mount reports a failure while preserving the last success.
+    before = record("third", "backup-success")
+    machine.succeed("mkdir -p /persist/data/mounted; mount -t tmpfs tmpfs /persist/data/mounted; echo external > /persist/data/mounted/document")
+    machine.fail("systemctl start site-backup-third-backup")
+    assert record("third", "backup-success") == before
+    machine.succeed("umount /persist/data/mounted; systemctl reset-failed site-backup-third-backup; systemctl start site-backup-third-backup")
+    restore("third", "/restore-retry")
+
+    # A real Restic request is waiting on its remote backend during shutdown.
+    # Another operation for the same repository skips immediately instead of queuing.
+    upstream.succeed("systemctl kill -s STOP restic-rest-server.service")
+    machine.succeed("systemctl start --no-block site-backup-first-backup")
+    machine.wait_until_succeeds("ss -Htn state established '( dst 192.168.1.2 and dport = :8000 )' | grep -q .", timeout=30)
+    machine.succeed("systemctl start site-backup-first-check", timeout=10)
+    assert record("first", "check-result")["result"] == "skipped"
+    machine.succeed("systemctl poweroff --no-block", timeout=10)
+    machine.wait_for_shutdown(timeout=timedelta(seconds=60))
+    upstream.succeed("systemctl kill -s CONT restic-rest-server.service; echo 0 > /run/notification-fixture/failures")
+    machine.start()
+    machine.wait_for_unit("multi-user.target")
+    machine.succeed("systemctl stop 'site-backup-*-automatic.timer'")
+    assert record("first", "backup-result")["result"] == "interrupted"
+    assert record("first", "backup-success") == evening
+    machine.succeed("systemctl start site-backup-first-backup")
+    restore("first", "/restore-after-reboot")
+    latest = record("first", "backup-result")["id"]
+    # Boot-time delivery and job completion both use the same latest-result queue.
+    machine.wait_until_succeeds("test $(jq -r .id /var/lib/site-backup-first/backup-notification.json) = " + latest + " && jq -e '.deliveredChannels | index(\"bark\") != null' /var/lib/site-backup-first/backup-notification.json", timeout=180)
+    for target in ("first", "second", "third"):
+        machine.wait_until_succeeds(f"test -z \"$(find /var/lib/site-backup-{target} -name '*-pending.json' -print -quit)\"", timeout=180)
         machine.succeed(f"test $(stat -c %a /var/lib/site-backup-{target}) = 700")
-        for operation in ("backup", "check", "restore-test"):
-            delivery = json.loads(machine.succeed(f"cat /var/lib/site-backup-{target}/{operation}-notification.json"))
-            assert delivery["channels"][0]["delivered"], delivery
     notifications = [json.loads(line) for line in upstream.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
     bodies = [str(event["body"]) for event in notifications]
-    assert any("operation=backup; result=failure" in body for body in bodies), bodies
-    assert all(any(f"operation={operation}; result=success" in body for body in bodies) for operation in ("backup", "check", "restore-test"))
+    assert all(any(f"operation={operation}; result=success" in body for body in bodies) for operation in ("backup", "check", "restore-test", "maintenance"))
     machine.succeed("systemctl start site-backup-status; backup-status > /tmp/backup-status.json")
     machine.copy_from_machine("/tmp/backup-status.json")
+    machine.shutdown()
+    upstream.shutdown()
   '';
 }

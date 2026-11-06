@@ -45,7 +45,9 @@ sudo network-ipv6 restore
 
 模式只记录在 `/run/site-network-policy/`。NetworkManager 重连、新接口出现、服务重启及 `network-policy apply` 继续遵守当前模式；`restore` 或重启系统恢复正常模式。NetworkManager 修改的是当前连接，保存的 Wi-Fi profile 与凭据保持原样。Mullvad 通过原生 CLI 配置，启动连接时按当前 `/run` 模式重新应用。
 
-切换期间会短暂重启 DNS、sing-box、本地隧道及已运行的 Tailscale，现有连接可能中断。先验证候选配置，再建立 IPv6 阻断并启用对应配置；恢复时先放行 `lo` 上源、目的地址均为 `::1` 的通信，让 DNS 和代理完成本地就绪检查，随后启动本地隧道及 Tailscale，再解除其余 IPv6 阻断。配置验证不通过时保留当前模式；切换开始后失败则恢复完整 IPv6 阻断（含回环），命令返回非零，`status` 显示 `incomplete`。检查相应 journal 后再次执行 `off` 或 `restore`。`status` 同时检查接口、包过滤表、配置代次、消费者服务及 Mullvad 隧道状态。
+切换期间会短暂重启 DNS、sing-box、本地隧道及已运行的 Tailscale，现有连接可能中断。先验证候选配置，再建立 IPv6 阻断并启用对应配置；恢复时先放行 `lo` 上源、目的地址均为 `::1` 的通信，让 DNS 和代理完成本地就绪检查，随后启动本地隧道及 Tailscale，再解除其余 IPv6 阻断。命令等待物理出口绑定、服务监听和隧道共同就绪后才报告成功。配置验证不通过时保留当前模式；切换开始后失败则恢复完整 IPv6 阻断（含回环），命令返回非零，`status` 显示 `incomplete`。检查相应 journal 后再次执行 `off` 或 `restore`。`status` 同时检查接口、包过滤表、配置代次、消费者服务及 Mullvad 隧道状态。
+
+失败信息保留具体阶段、命令及服务退出原因；`network-ipv6 status` 显示最近失败摘要和受限日志路径。原始输出在 `/run/site-network-policy/last-error.log`，结构化摘要在 `last-error.json`。恢复阻断或重启观察器时的附加错误与最初失败一起保存。
 
 只有 DNS、DNS＋sing-box、完整 Lockdown 三种组合均使用相同入口。上游需要至少一个 IPv4 地址；仅有 IPv6 上游的分组无法生成 IPv4 配置。临时模式的 AAAA 回答在 DNS 日志中标记为 `listener/ipv4-only`。
 
@@ -115,9 +117,9 @@ systemctl status site-dns site-dns-race-cn site-dns-race-global sing-box
 
 策略生成及原生校验在独立 systemd 文件系统和网络命名空间中执行，只读挂载工具与声明输入，只有候选输出目录可写。完成后由控制进程发布配置并操作预先声明的消费者服务。
 
-`check` 校验已启用组件需要的输入；DNS-only 校验 DNS，代理模式同时校验实际节点。`apply` 生成新一代配置，按内容变化重启受影响的服务：修改节点只更新 sing-box，修改域名规则更新相应消费者，未变化的 DNS race 进程继续运行。新代次保存 0600 节点副本，服务通过 systemd credential 读取；在 30 秒内检查本地服务及监听入口稳定就绪，失败时恢复上一代配置及节点。退出限流的失败服务也可以通过有效配置的显式应用恢复。
+`check` 校验已启用组件需要的输入；DNS-only 校验 DNS，代理模式同时校验实际节点。`apply` 生成新一代配置，按内容变化重启受影响的服务：修改节点只更新 sing-box，修改域名规则更新相应消费者，未变化的 DNS race 进程继续运行。新代次保存 0600 节点副本，服务通过 systemd credential 读取；在 30 秒总预算内检查本地服务及监听入口稳定就绪，预算包括探测命令和 socket 等待。失败时恢复上一代配置及节点，报告对应服务及退出状态；回退中的错误附在原始失败之后。退出限流的失败服务也可以通过有效配置的显式应用恢复。
 
-启用 Lockdown 时，代理更新会暂停出口观察器，Mullvad blocker 和接管路由保持运行。校验失败保留正在使用的配置，详细输出保存在 root-only 的 `/run/site-network-policy/last-prepare.log`；磁盘输入修正后再执行 `apply`。服务重启读取已应用的代次，系统启动从持久输入重新生成。命令成功返回 0，输入/运行错误返回 1，用法错误返回 2。
+启用 Lockdown 时，代理更新会暂停出口观察器，Mullvad blocker 和接管路由保持运行。校验失败保留正在使用的配置，校验输出保存在 root-only 的 `/run/site-network-policy/last-prepare.log`，最近失败及恢复过程记录在 `last-error.log`；磁盘输入修正后再执行 `apply`。服务重启读取已应用的代次，系统启动从持久输入重新生成。命令成功返回 0，输入/运行错误返回 1，用法错误返回 2。
 
 `disconnect` 保持 Lockdown，停止代理并断开本地 WG。正常运行时 `direct` 是策略允许的出口；代理失效时 GLOBAL 保持阻断，分流服务整体停止时普通应用也被阻断。控制命令通过 sudo 操作。
 

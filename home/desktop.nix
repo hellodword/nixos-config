@@ -71,15 +71,15 @@ let
   '';
   common = ''
     set $mod Mod4
-    font pango:${sans} 10
+    font pango:JetBrainsMono Nerd Font, Noto Sans CJK SC 10
     floating_modifier $mod
     default_border pixel 2
     workspace_layout tabbed
     default_orientation vertical
     title_align center
     for_window [class="(?i)^(mpv|feh|Emulator|Waydroid)$"] floating enable
-    gaps inner 8
-    gaps outer 4
+    gaps inner 0
+    gaps outer 0
     client.focused ${c.accent} ${c.surface} ${c.text} ${c.accent} ${c.accent}
     client.unfocused ${c.surface} ${c.background} ${c.muted} ${c.surface} ${c.surface}
     client.urgent ${c.urgent} ${c.urgent} ${c.background} ${c.urgent} ${c.urgent}
@@ -186,7 +186,7 @@ let
           config.xdg.configFile."i3status-rust/config-default.toml".source
         }
         position top
-        height 32
+        height 24
         workspace_min_width 40
         colors {
           background ${c.background}

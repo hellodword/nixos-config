@@ -20,6 +20,7 @@ import dns_policy as compiler
 import assemble as assembler
 import render as renderer
 import ipv6
+import underlay
 SERVICE_FILES = {
     "sing-box.service": ["network.json", "provider.json"],
     "site-dns.service": ["dnsdist.conf"],
@@ -29,8 +30,8 @@ SERVICE_FILES = {
 WATCHER = "site-network-underlay.service"
 
 
-def command(*args, check=True):
-    return subprocess.run(args, check=check, capture_output=True, timeout=120)
+def command(*args, check=True, timeout=120):
+    return subprocess.run(args, check=check, capture_output=True, timeout=timeout)
 
 
 def prepare(args, stage):
@@ -101,7 +102,7 @@ def publish(root, generation):
     os.replace(pending, root / "current")
 
 
-def ready(generation, units, run):
+def ready(generation, units, run, *, wait_binding=False):
     """Require live, stable processes and their local TCP listeners within 30s."""
     listeners = json.loads((generation / "listeners.json").read_text())
     deadline = time.monotonic() + 30
@@ -111,10 +112,16 @@ def ready(generation, units, run):
         processes = []
         pending.clear()
         for unit in units:
-            output = run("systemctl", "show", "--property=ActiveState,MainPID,NRestarts", unit).stdout.decode()
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                pending.append(f"{unit}: readiness deadline reached")
+                break
+            output = run("systemctl", "show", "--property=ActiveState,MainPID,NRestarts,Result,ExecMainStatus", unit,
+                         timeout=remaining).stdout.decode()
             state = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
             if state.get("ActiveState") == "failed" or int(state.get("NRestarts", 0)) > 0:
-                raise ValueError(f"{unit} failed during policy activation")
+                raise ValueError(f"{unit} failed during policy activation: "
+                                 f"result={state.get('Result')}, exit={state.get('ExecMainStatus')}")
             if state.get("ActiveState") != "active" or state.get("MainPID", "0") == "0":
                 pending.append(
                     f"{unit}: state={state.get('ActiveState', 'unknown')}, MainPID={state.get('MainPID', '0')}"
@@ -122,10 +129,15 @@ def ready(generation, units, run):
             processes.append(state.get("MainPID"))
             for address, port in listeners[unit]:
                 try:
-                    with socket.create_connection((address, port), timeout=0.2):
+                    with socket.create_connection((address, port), timeout=min(0.2, max(0.001, deadline - time.monotonic()))):
                         pass
                 except OSError as error:
                     pending.append(f"{unit} [{address}]:{port}: {error}")
+        if wait_binding:
+            observed = underlay.observe(timeout=max(0.001, deadline - time.monotonic()))
+            binding = Path("/run/site-network-underlay/underlay.json")
+            if observed is None or json.loads(binding.read_text()) != observed:
+                pending.append("physical route/address binding is still changing")
         now = time.monotonic()
         if not pending:
             if stable_since is None or processes != previous:
@@ -135,7 +147,7 @@ def ready(generation, units, run):
         else:
             stable_since = None
         previous = processes
-        time.sleep(0.2)
+        time.sleep(min(0.2, max(0, deadline - time.monotonic())))
     detail = "; ".join(pending) or "service processes did not remain stable for 2 seconds"
     raise ValueError(f"Policy services did not become locally ready within 30 seconds: {detail}")
 
@@ -162,28 +174,39 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
                 active.append(unit)
     watching = (watch and "sing-box.service" in changed and
                 run("systemctl", "is-active", "--quiet", WATCHER, check=False).returncode == 0)
-    if watching:
-        run("systemctl", "stop", WATCHER)
     try:
+        if watching:
+            run("systemctl", "stop", WATCHER)
         if changed:
             run("systemctl", "stop", *changed)
             run("systemctl", "reset-failed", *changed)
         publish(root, stage)
-        try:
-            if active:
-                run("systemctl", "start", *active)
-                wait_ready(stage, active, run)
-        except (OSError, ValueError, subprocess.SubprocessError):
-            run("systemctl", "stop", *changed)
-            run("systemctl", "reset-failed", *changed)
-            publish(root, previous)
-            if active:
-                run("systemctl", "start", *active)
-                wait_ready(previous, active, run)
-            raise
+        if active:
+            run("systemctl", "start", *active)
+            wait_ready(stage, active, run)
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        recovery = [lambda: publish(root, previous)]
+        if changed:
+            recovery = [lambda: run("systemctl", "stop", *changed),
+                        lambda: run("systemctl", "reset-failed", *changed)] + recovery
+        if active:
+            recovery += [lambda: run("systemctl", "start", *active),
+                         lambda: wait_ready(previous, active, run)]
+        for step in recovery:
+            try:
+                step()
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as rollback:
+                error.add_note("Restoring previous policy: " + ipv6.error_summary(rollback))
+        raise
     finally:
         if watching:
-            run("systemctl", "start", WATCHER)
+            primary = sys.exception()
+            try:
+                run("systemctl", "start", WATCHER)
+            except (OSError, subprocess.SubprocessError) as cleanup:
+                if primary is None:
+                    raise
+                primary.add_note("Restarting underlay watcher: " + ipv6.error_summary(cleanup))
     return previous
 
 
@@ -221,6 +244,7 @@ def main():
         prepare(args, args.stage)
         return 0
     stage = None
+    phase = args.action
     consumers = (["site-dns.service", "site-dns-race-cn.service", "site-dns-race-global.service"] if args.dnsdist else []) + (["sing-box.service"] if args.sing_box else [])
     try:
         if args.action == "ipv6" and args.mode == "status":
@@ -234,6 +258,7 @@ def main():
             stage = Path(tempfile.mkdtemp(prefix="generation-", dir=args.root))
             if not args.prepare_command:
                 raise ValueError("a sandboxed preparation command is required")
+            phase = "candidate validation"
             try:
                 command(args.prepare_command, str(stage), args.action, "ipv4" if args.ipv4_only else "dual")
             except subprocess.CalledProcessError as error:
@@ -242,11 +267,13 @@ def main():
                     log.write((error.stdout or b"") + (error.stderr or b""))
                 raise ValueError("Candidate validation failed; inspect the protected last-prepare.log") from error
             finish_stage(stage, args.group)
+            phase = "policy activation"
             if args.action == "bootstrap":
                 publish(args.root, stage)
             elif args.action == "ipv6":
                 previous = ipv6.transition(args.root, args.ipv4_only,
                     lambda: activate(args.root, stage, False, consumers=consumers, restart_all=True),
+                    lambda: ready(stage, consumers, command, wait_binding=args.watch_underlay),
                     lockdown=args.watch_underlay, tailscale=args.tailscale)
                 shutil.rmtree(previous)
                 return ipv6.status(args.root, consumers, args.watch_underlay, args.tailscale)
@@ -262,15 +289,16 @@ def main():
             for item in summary["rules"]:
                 print(f"  {item['rule']} -> {item['outbound']}")
             print(f"  {summary['final_source']} -> {summary['final']}")
-    except (ValueError, RuntimeError) as error:
-        print(str(error), file=sys.stderr)
-        return 1
-    except (OSError, KeyError, TypeError, subprocess.SubprocessError):
-        print("Policy operation failed; inspect local inputs, service status and network-ipv6 status.", file=sys.stderr)
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        ipv6.record_failure(args.root, phase, error)
+        print(f"{phase}: {ipv6.error_summary(error)}; details: {args.root / 'last-error.log'}", file=sys.stderr)
         return 1
     finally:
         if stage is not None and (args.root / "current").resolve() != stage:
-            shutil.rmtree(stage)
+            try:
+                shutil.rmtree(stage)
+            except OSError as error:
+                print(f"Could not remove inactive policy generation: {error}", file=sys.stderr)
     return 0
 
 

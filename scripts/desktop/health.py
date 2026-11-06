@@ -40,14 +40,14 @@ if os.environ.get("SITE_BACKUP_ENABLED") == "1":
         health = json.loads(Path("/run/site-backup/status.json").read_text())
         current["backup"] = sorted(
             name for name, value in health["repositories"].items()
-            if any(value[operation]["state"] != "fresh" for operation in ("backup", "check", "canaryRestore")))
+            if any(value[operation]["state"] != "fresh" for operation in ("backup", "check", "canaryRestore", "maintenance")))
         if not health["repositories"] or time.time() - health["generated"] > 2 * 3600:
             current["backup"] = ["status-unavailable"]
     except (OSError, ValueError, KeyError, TypeError):
         current["backup"] = ["status-unavailable"]
     if current["backup"] and current["backup"] != previous.get("backup"):
         subprocess.run(["notify-send", "-u", "critical", "备份需要检查",
-                        "请运行 backup-status 查看各仓库的备份、分区校验和 canary 恢复状态。"], check=False)
+                        "请运行 backup-status 查看各仓库的备份、校验、恢复抽检和空间回收状态。"], check=False)
 for scope in ("system", "user"):
     command = ["systemctl", *(["--user"] if scope == "user" else []), "list-units", "--failed", "--plain", "--no-legend", "--no-pager"]
     result = subprocess.run(command, capture_output=True, text=True)

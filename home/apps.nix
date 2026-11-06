@@ -92,7 +92,10 @@ in
     };
     programs.vscode = {
       enable = true;
-      argvSettings.password-store = "gnome-libsecret";
+      argvSettings = {
+        password-store = "gnome-libsecret";
+        enable-crash-reporter = false;
+      };
       mutableExtensionsDir = true;
       profiles.default = {
         extensions = with pkgs.vscode-extensions; [

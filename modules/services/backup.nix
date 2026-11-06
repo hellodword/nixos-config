@@ -23,11 +23,11 @@ let
       sha256 = builtins.hashString "sha256" canary;
     };
     checkPartitions = cfg.checkPartitions;
+    schedule = { inherit (cfg.schedule) timeZone windows; };
     minimumIntervalSeconds = {
-      backup = 12 * 3600;
       check = 7 * 86400;
       restore-test = 7 * 86400;
-      maintenance = 7 * 86400;
+      maintenance = 30 * 86400;
     };
     retention = [
       "--keep-daily"
@@ -44,37 +44,86 @@ let
     lib.mapAttrs (_: target: target.repositoryFile) cfg.targets
   );
   operations = [
+    "automatic"
     "backup"
     "check"
     "restore-test"
     "maintenance"
   ];
   nameFor = target: operation: "site-backup-${target}-${operation}";
+  notifyCommand =
+    target:
+    "${pkgs.python3}/bin/python3 ${../../scripts/backup}/notify.py deliver"
+    + " --host ${lib.escapeShellArg config.networking.hostName} --target ${target}"
+    + " --state /var/lib/site-backup-${target} --client /run/current-system/sw/bin/site-notify"
+    + lib.concatMapStrings (
+      channel: " --channel ${lib.escapeShellArg channel}"
+    ) config.site.notifications.backupChannels;
+  minutes =
+    value:
+    let
+      parts = map (v: builtins.fromJSON (lib.removePrefix "0" v)) (lib.splitString ":" value);
+    in
+    builtins.elemAt parts 0 * 60 + builtins.elemAt parts 1;
+  pad = value: lib.fixedWidthString 2 "0" (toString value);
+  calendar =
+    target:
+    lib.concatMap (
+      window:
+      map
+        (
+          minute:
+          "*-*-* ${pad (builtins.div minute 60)}:${pad (lib.mod minute 60)}:00 ${cfg.schedule.timeZone}"
+        )
+        (
+          lib.filter
+            (
+              minute:
+              lib.mod (
+                minute - minutes window.start - (cfg.schedule.offsets.${target} or 0)
+              ) cfg.schedule.retryMinutes == 0
+            )
+            (lib.range (minutes window.start + (cfg.schedule.offsets.${target} or 0)) (minutes window.end - 1))
+        )
+    ) cfg.schedule.windows;
   command =
     target: operation:
     let
       state = "/var/lib/site-backup-${target}";
     in
     "${pkgs.python3}/bin/python3 ${../../scripts/backup/runner.py} ${operation} --policy ${policy} --source ${lib.escapeShellArg cfg.source} --state ${state} --restic ${lib.getExe pkgs.restic}"
-    + lib.optionalString notifications " --run-state /run/${nameFor target operation}/result.json";
+    + " --run-state /run/${nameFor target operation}/result.json"
+    + " --offset-minutes ${toString (cfg.schedule.offsets.${target} or 0)}";
   mkService =
     target: settings: operation:
     lib.nameValuePair (nameFor target operation) {
       description = "Restic ${operation} for independent ${target} repository";
       wants = [ "network-online.target" ];
       after = [ "network-online.target" ];
-      onSuccess = [ "site-backup-status.service" ];
-      onFailure = [ "site-backup-status.service" ];
+      onSuccess = [
+        "site-backup-status.service"
+      ]
+      ++ lib.optional notifications "site-backup-${target}-notify.service";
+      onFailure = [
+        "site-backup-status.service"
+      ]
+      ++ lib.optional notifications "site-backup-${target}-notify.service";
       unitConfig = {
         ConditionPathIsMountPoint = cfg.source;
-        # An hourly timer retries skipped AC-only work. Persistent catches power-off gaps.
-        ConditionACPower = lib.mkIf (operation != "backup") true;
+        ConditionACPower = lib.mkIf (
+          !builtins.elem operation [
+            "backup"
+            "automatic"
+          ]
+        ) true;
       };
       environment = {
         RESTIC_CACHE_DIR = "/var/cache/restic-backups-${config.networking.hostName}-${target}";
         RESTIC_REPOSITORY_FILE = settings.repositoryFile;
         RESTIC_PASSWORD_FILE = settings.passwordFile;
+        PYTHONTZPATH = "${pkgs.tzdata}/share/zoneinfo";
       };
+      path = [ pkgs.systemd ];
       serviceConfig = {
         Type = "oneshot";
         User = "root";
@@ -83,27 +132,21 @@ let
         StateDirectoryMode = "0700";
         CacheDirectory = "restic-backups-${config.networking.hostName}-${target}";
         CacheDirectoryMode = "0700";
-        RuntimeDirectory = lib.mkIf notifications (nameFor target operation);
+        RuntimeDirectory = nameFor target operation;
         RuntimeDirectoryMode = "0700";
-        ExecStopPost = lib.mkIf notifications (
-          "${pkgs.python3}/bin/python3 ${../../scripts/backup}/notify.py"
-          + " --host ${lib.escapeShellArg config.networking.hostName} --target ${target} --operation ${operation}"
+        ExecStopPost = (
+          "${pkgs.python3}/bin/python3 ${../../scripts/backup}/notify.py finalize"
           + " --state /var/lib/site-backup-${target} --run-state /run/${nameFor target operation}/result.json"
-          + " --client /run/current-system/sw/bin/site-notify"
-          + lib.concatMapStrings (
-            channel: " --channel ${lib.escapeShellArg channel}"
-          ) config.site.notifications.backupChannels
         );
-        TimeoutStopSec = lib.mkIf notifications (
-          toString (100 * builtins.length config.site.notifications.backupChannels + 15)
-        );
+        TimeoutStopSec = "30s";
+        KillMode = "control-group";
         UMask = "0077";
         Nice = 15;
         IOSchedulingClass = "idle";
         CPUWeight = 10;
         IOWeight = 10;
         TimeoutStartSec = "12h";
-        ExecStart = "${pkgs.systemd}/bin/systemd-inhibit --what=sleep --mode=block --who=Restic --why=Backup ${command target operation}";
+        ExecStart = command target operation;
         NoNewPrivileges = true;
         ProtectSystem = "strict";
         ProtectHome = true;
@@ -172,6 +215,48 @@ in
       default = 12;
       description = "Rotate pack verification across this many weekly partitions; advance only after success.";
     };
+    schedule = {
+      timeZone = lib.mkOption {
+        type = lib.types.str;
+        default = "Asia/Shanghai";
+        description = "Timezone for automatic backup windows, independent of the system timezone.";
+      };
+      retryMinutes = lib.mkOption {
+        type = lib.types.ints.between 1 60;
+        default = 15;
+      };
+      offsets = lib.mkOption {
+        type = lib.types.attrsOf (lib.types.ints.between 0 59);
+        default = { };
+        description = "Minutes after each window starts, keyed by repository alias.";
+      };
+      windows = lib.mkOption {
+        type = lib.types.listOf (
+          lib.types.submodule {
+            options = {
+              start = lib.mkOption { type = lib.types.strMatching "([01][0-9]|2[0-3]):[0-5][0-9]"; };
+              end = lib.mkOption { type = lib.types.strMatching "([01][0-9]|2[0-3]):[0-5][0-9]"; };
+              maintenance = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+              };
+            };
+          }
+        );
+        default = [
+          {
+            start = "10:10";
+            end = "12:00";
+          }
+          {
+            start = "21:10";
+            end = "23:00";
+            maintenance = true;
+          }
+        ];
+        description = "Daily local-time windows; end is exclusive. Maintenance also requires AC and this window's successful backup.";
+      };
+    };
     targets = lib.mkOption {
       default = { };
       type = lib.types.attrsOf (
@@ -188,10 +273,6 @@ in
             environmentFile = lib.mkOption {
               type = lib.types.str;
               description = "Runtime provider access credentials.";
-            };
-            minute = lib.mkOption {
-              type = lib.types.ints.between 0 59;
-              description = "Minute within each hour, staggered across repositories.";
             };
           };
         }
@@ -239,6 +320,35 @@ in
           lib.mapAttrsToList (target: settings: map (mkService target settings) operations) cfg.targets
         )
       ))
+      // lib.optionalAttrs notifications (
+        lib.mapAttrs' (
+          target: _:
+          lib.nameValuePair "site-backup-${target}-notify" {
+            description = "Deliver latest backup results for ${target}";
+            onSuccess = [ "site-backup-status.service" ];
+            serviceConfig = {
+              Type = "oneshot";
+              ExecStart = notifyCommand target;
+              StateDirectory = "site-backup-${target}";
+              StateDirectoryMode = "0700";
+              UMask = "0077";
+              TimeoutStopSec = "5s";
+              TimeoutStartSec = "15m";
+              KillMode = "control-group";
+              NoNewPrivileges = true;
+              ProtectSystem = "strict";
+              ProtectHome = true;
+              PrivateTmp = true;
+              PrivateDevices = true;
+              ProtectKernelTunables = true;
+              ProtectKernelModules = true;
+              ProtectControlGroups = true;
+              RestrictSUIDSGID = true;
+              RestrictAddressFamilies = [ "AF_UNIX" ];
+            };
+          }
+        ) cfg.targets
+      )
       // {
         site-backup-status = {
           # Refresh when several independent jobs complete close together.
@@ -256,25 +366,29 @@ in
         };
       };
     systemd.timers =
-      (lib.listToAttrs (
-        lib.concatLists (
-          lib.mapAttrsToList (
-            target: settings:
-            map (
-              operation:
-              lib.nameValuePair (nameFor target operation) {
-                wantedBy = [ "timers.target" ];
-                timerConfig = {
-                  OnCalendar = "*-*-* *:${lib.fixedWidthString 2 "0" (toString settings.minute)}:00 UTC";
-                  OnBootSec = "15m";
-                  Persistent = true;
-                  RandomizedDelaySec = "5m";
-                };
-              }
-            ) operations
-          ) cfg.targets
-        )
-      ))
+      (lib.mapAttrs' (
+        target: _:
+        lib.nameValuePair (nameFor target "automatic") {
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = calendar target;
+            Persistent = true;
+            AccuracySec = "1s";
+          };
+        }
+      ) cfg.targets)
+      // lib.optionalAttrs notifications (
+        lib.mapAttrs' (
+          target: _:
+          lib.nameValuePair "site-backup-${target}-notify" {
+            wantedBy = [ "timers.target" ];
+            timerConfig = {
+              OnBootSec = "2m";
+              OnUnitActiveSec = "5m";
+            };
+          }
+        ) cfg.targets
+      )
       // {
         site-backup-status = {
           wantedBy = [ "timers.target" ];

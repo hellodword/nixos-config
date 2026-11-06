@@ -41,11 +41,12 @@ def select(routes, links, addresses, physical):
     return selected if "ipv4" in selected or "ipv6" in selected else None
 
 
-def observe(ipv4_only=None):
+def observe(ipv4_only=None, timeout=10):
     ipv4_only = ipv6.ipv4_only() if ipv4_only is None else ipv4_only
+    deadline = time.monotonic() + timeout
     def ip(*args):
         return json.loads(subprocess.run(["ip", "-j", *args], check=True, capture_output=True,
-                                         text=True, timeout=10).stdout)
+                                         text=True, timeout=max(0.001, deadline - time.monotonic())).stdout)
     links = ip("link", "show")
     physical = {link["ifname"] for link in links if (Path("/sys/class/net") / link["ifname"] / "device").exists()}
     # Mullvad policy tables are deliberately not candidates. Prefer an IPv4

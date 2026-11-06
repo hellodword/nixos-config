@@ -1,11 +1,14 @@
 """Exercise independent Restic repositories through backup, failure and restore."""
 import json
+from datetime import datetime
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from tests.support import ROOT, load_script
 
@@ -13,6 +16,104 @@ backup = load_script("backup/runner.py")
 
 
 class RepositoryTest(unittest.TestCase):
+    def test_window_retries_and_due_maintenance_use_independent_clocks(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "canary").write_text("recoverable")
+            repository = root / "repo"
+            env = os.environ | {"RESTIC_REPOSITORY": str(repository), "RESTIC_PASSWORD": "synthetic", "RESTIC_CACHE_DIR": str(root / "cache"), "TZ": "America/New_York"}
+            env.pop("RESTIC_REPOSITORY_FILE", None)
+            env.pop("RESTIC_PASSWORD_FILE", None)
+            subprocess.run(["restic", "init"], env=env, check=True, capture_output=True)
+            policy = {"host": "schedule-fixture", "roots": [{"path": "canary", "required": True}],
+                      "canary": {"path": "canary", "sha256": backup.hashlib.sha256(b"recoverable").hexdigest()},
+                      "retention": ["--keep-last", "2"], "checkPartitions": 2,
+                      "minimumIntervalSeconds": {"check": 7 * 86400, "restore-test": 7 * 86400, "maintenance": 30 * 86400},
+                      "schedule": {"timeZone": "Asia/Shanghai", "windows": [
+                          {"start": "10:10", "end": "12:00", "maintenance": False},
+                          {"start": "21:10", "end": "23:00", "maintenance": True}]}}
+            path = root / "policy.json"
+            path.write_text(json.dumps(policy))
+            args = SimpleNamespace(operation="automatic", policy=path, source=source,
+                                   state=root / "state", restic=shutil.which("restic"),
+                                   run_state=None, force=False, offset_minutes=5)
+            clock = [0]
+            power = [False]
+            def at(instant):
+                clock[0] = datetime.fromisoformat(instant).timestamp()
+                try:
+                    return backup.execute(args)
+                except Exception:
+                    log = args.state / "last-command.log"
+                    if log.exists():
+                        print(log.read_text())
+                    raise
+            with patch.dict(os.environ, env, clear=True), patch.object(backup.time, "time", side_effect=lambda: clock[0]), patch.object(backup, "on_ac_power", side_effect=lambda: power[0]):
+                # The US local date/offset is irrelevant to Shanghai window identity.
+                for day in ("2026-07-01", "2026-11-09"):
+                    self.assertEqual(at(day + "T02:12:00+00:00"), "outside backup window")
+                    at(day + "T03:00:00+00:00")
+                    morning = backup.read_record(args.state / "backup-success.json")
+                    at(day + "T03:15:00+00:00")
+                    self.assertEqual(backup.read_record(args.state / "backup-success.json"), morning)
+                    self.assertEqual(at(day + "T05:00:00+00:00"), "outside backup window")
+                # A failed evening attempt retries in the same allowed window.
+                repository.rename(root / "offline")
+                with self.assertRaises(RuntimeError):
+                    at("2026-11-09T13:15:00+00:00")
+                self.assertEqual(backup.read_record(args.state / "backup-success.json"), morning)
+                (root / "offline").rename(repository)
+                at("2026-11-09T13:30:00+00:00")
+                evening = backup.read_record(args.state / "backup-success.json")
+                self.assertNotEqual(evening["window"], morning["window"])
+                # AC becoming available permits maintenance without another backup.
+                power[0] = True
+                at("2026-11-09T13:45:00+00:00")
+                self.assertEqual(backup.read_record(args.state / "backup-success.json"), evening)
+                for operation in ("check", "restore-test", "maintenance"):
+                    self.assertEqual(backup.read_record(args.state / f"{operation}-result.json")["result"], "success")
+                # Changing retry policy does not change the data scope.
+                identity = backup.scope(path, source, str(repository).encode())
+                policy["minimumIntervalSeconds"]["check"] = 0
+                path.write_text(json.dumps(policy))
+                self.assertEqual(backup.scope(path, source, str(repository).encode()), identity)
+                # Once a running check crosses the end, later due phases wait.
+                (args.state / "restore-success.json").unlink()
+                original = backup.run_operation
+                def cross_boundary(*values, **kwargs):
+                    result = original(*values, **kwargs)
+                    clock[0] = datetime.fromisoformat("2026-11-09T15:01:00+00:00").timestamp()
+                    return result
+                restored = backup.read_record(args.state / "restore-test-result.json")
+                with patch.object(backup, "run_operation", side_effect=cross_boundary):
+                    at("2026-11-09T14:59:00+00:00")
+                self.assertEqual(backup.read_record(args.state / "restore-test-result.json"), restored)
+                # If the monthly preflight check finishes after the window,
+                # leave pruning for the next evening without repeating backup.
+                policy["minimumIntervalSeconds"]["check"] = 7 * 86400
+                path.write_text(json.dumps(policy))
+                clock[0] = datetime.fromisoformat("2026-12-10T03:00:00+00:00").timestamp()
+                metadata = backup.scope(path, source, str(repository).encode()) | {"host": policy["host"]}
+                backup.run_operation(args, policy, metadata, "check")
+                maintained = backup.read_record(args.state / "maintenance-success.json")
+                original_restic = backup.restic
+                def finish_preflight(binary, arguments, *values, **kwargs):
+                    result = original_restic(binary, arguments, *values, **kwargs)
+                    if arguments == ["check", "--no-cache"]:
+                        clock[0] = datetime.fromisoformat("2026-12-10T15:01:00+00:00").timestamp()
+                    return result
+                with patch.object(backup, "restic", side_effect=finish_preflight):
+                    at("2026-12-10T14:59:00+00:00")
+                self.assertEqual(backup.read_record(args.state / "maintenance-success.json"), maintained)
+                self.assertEqual(backup.read_record(args.state / "maintenance-result.json")["result"], "skipped")
+                at("2026-12-11T13:30:00+00:00")
+                self.assertGreater(backup.read_record(args.state / "maintenance-success.json")["time"], maintained["time"])
+            destination = root / "restored"
+            subprocess.run(["restic", "restore", "latest", "--target", str(destination), "--verify"], env=env, check=True, capture_output=True)
+            self.assertEqual((destination / "canary").read_text(), "recoverable")
+
     def test_independent_repositories_restore_and_failed_check_progress(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

@@ -11,7 +11,7 @@ in
 {
   name = "native-desktop-sessions";
   enableOCR = true;
-  globalTimeout = 900;
+  globalTimeout = 1800;
   qemu.forceAccel = true;
   node.pkgsReadOnly = false;
   node.specialArgs = { inherit inputs; };
@@ -32,6 +32,7 @@ in
     _module.args = {
       userName = "desktop";
     };
+    time.timeZone = "America/New_York";
     virtualisation = {
       memorySize = 2048;
       cores = 2;
@@ -138,6 +139,9 @@ in
     import base64
     import runpy
     import tempfile
+    import struct
+    import subprocess
+    import time
     from datetime import timedelta
     import traceback
     from pathlib import Path
@@ -200,7 +204,16 @@ in
             machine.wait_until_fails(process(locker), timeout=30)
 
     def stop_session(machine, compositor):
-        machine.succeed("systemctl stop display-manager.service")
+        # Finish the synthetic terminal workload before asking the desktop to
+        # log out, so Kitty's running-command confirmation needs no response.
+        machine.execute(user_command("systemctl --user stop desktop-fixture.service"), timeout=30)
+        command = {"sway": "swaymsg exit", "i3": "i3-msg exit",
+                   "plasmashell": "busctl --user call org.kde.Shutdown /Shutdown org.kde.Shutdown logout"}[compositor]
+        # Return to the greeter through the session's own logout entrypoint.
+        # Its transient command can be terminated with the graphical session.
+        status, output = machine.execute(user_command(command), timeout=30)
+        if status:
+            print("Session logout command:", status, output)
         try:
             for unit in ("graphical-session.target", "desktop-health.timer", "site-sway.target", "site-i3.target"):
                 machine.wait_until_fails(user_command("systemctl --user is-active " + unit), timeout=60)
@@ -208,6 +221,8 @@ in
             user(machine, "notify-send 'Session has ended'", True)
             for name in (compositor, "waybar", "mako", "dunst", "fcitx5"):
                 machine.wait_until_fails(process(name), timeout=60)
+            machine.wait_for_unit("display-manager.service")
+            visible(machine, r"(?i)\bdesktop\b", timeout=60)
         except Exception:
             for command in ("loginctl list-sessions", "ps -u 1000 -o pid,ppid,comm",
                             user_command("systemctl --user status 'site-session-watch@*.service' graphical-session.target"),
@@ -223,6 +238,47 @@ in
         # environment. Wait for that explicit readiness boundary.
         machine.wait_until_succeeds(user_command("systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"), timeout=60)
         machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
+        if session == "KDE":
+            # Plasma's target and compositor can be available while splash and
+            # restoration jobs are still starting. Logout needs that startup
+            # transaction to finish before it can stop the session target.
+            machine.wait_until_succeeds(user_command(
+                "systemctl --user is-active plasma-workspace-wayland.target && "
+                "test -z \"$(systemctl --user list-jobs --no-legend --plain 'plasma-*.service' 'plasma-*.target')\""
+            ), timeout=90)
+
+    layout_query = '[.[] | select(.active) | {key: .name, value: {active, scale, rect, current_mode, transform}}] | from_entries'
+
+    def display_layout(machine):
+        return json.loads(user(machine, "swaymsg -t get_outputs | jq " + shlex.quote(layout_query)))
+
+    def assert_display_layout(machine, expected):
+        query = '(' + layout_query + ') == ' + json.dumps(expected)
+        machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e " + shlex.quote(query)), timeout=30)
+
+    def click_eye(machine, color, expected):
+        # Locate the visible button's background and click through the VM tablet.
+        with tempfile.TemporaryDirectory() as temporary:
+            frame, raw = Path(temporary) / "eye.png", Path(temporary) / "eye.ppm"
+            machine.screenshot(str(frame))
+            width, height = struct.unpack(">II", frame.read_bytes()[16:24])
+            with raw.open("wb") as stream:
+                subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=10)
+            pixels = subprocess.check_output(["magick", str(raw), "-crop", f"{width}x1+0+2", "-depth", "8", "RGB:-"], timeout=10)
+            positions = [x for x in range(width) if pixels[3*x:3*x+3] == bytes.fromhex(color)]
+            assert positions, "Idle inhibitor button is not visible"
+            x = positions[len(positions)//2]
+            machine.click(x, 12, width, height)
+            deadline = time.monotonic() + 10
+            while True:
+                machine.screenshot(str(frame), timeout=gui["remaining"](deadline))
+                with raw.open("wb") as stream:
+                    subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=gui["remaining"](deadline))
+                pixel = subprocess.check_output(["magick", str(raw), "-crop", f"1x1+{x}+2", "-depth", "8", "RGB:-"], timeout=gui["remaining"](deadline))
+                if pixel == bytes.fromhex(expected):
+                    break
+                assert time.monotonic() < deadline, "Idle inhibitor button did not change state"
+                time.sleep(0.1)
 
     def exercise_session(machine, session, compositor):
         machine.wait_for_unit("persist.mount")
@@ -311,6 +367,13 @@ in
         # splash can still cover it. Capture the usable desktop, not startup.
         unlock(machine, session)
         visible(machine, "Native desktop", timeout=90)
+        if session in ("sway", "i3"):
+            wm = "swaymsg" if session == "sway" else "i3-msg"
+            user(machine, "systemd-run --user --collect --unit=tabbed-fixture kitty --title Tabbed-fixture sleep 120")
+            query = '[.. | objects | select(.layout? == "tabbed") | [.. | objects | select(.name? == "Desktop-fixture" or .name? == "Tabbed-fixture")] | length] | any(. >= 2)'
+            machine.wait_until_succeeds(user_command(wm + " -t get_tree | jq -e " + shlex.quote(query)), timeout=30)
+            user(machine, "systemctl --user stop tabbed-fixture.service")
+            visible(machine, "Native desktop", timeout=30)
         # Exercise the reminder's real GTK window and command interface in
         # the production service sandbox, then return to the active desktop.
         machine.wait_until_succeeds(user_command("systemctl --user is-active safeeyes.service"), timeout=60)
@@ -330,6 +393,15 @@ in
             machine.succeed("test $(od -An -tx1 -N8 /run/user/1000/screenshot.png | tr -d ' \\n') = 89504e470d0a1a0a")
             user(machine, "desktop-shot screen save; test -s ~/Pictures/$(ls -t ~/Pictures | head -n1)")
         # Each session's one-minute timeout must invoke a working PAM lock.
+        if session == "sway":
+            click_eye(machine, "2d3436", "ecf0f1")
+            machine.sleep(65)
+            machine.fail(process("swaylock"))
+            machine.screenshot("desktop-sway-keep-active")
+            machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
+            machine.wait_until_succeeds(process("swaylock"), timeout=30)
+            unlock(machine, session)
+            click_eye(machine, "ecf0f1", "2d3436")
         machine.send_key("ctrl")
         locker = {"sway": "swaylock", "i3": "i3lock", "KDE": "kscreenlocker_greet"}[session]
         machine.wait_until_succeeds(process(locker), timeout=85)
@@ -372,21 +444,22 @@ in
                 machine.send_key("ctrl-ret", delay=timedelta(milliseconds=150))
                 machine.wait_until_succeeds(user_command("grep -F -- " + shlex.quote(expected) + " ~/.config/kanshi/config"), timeout=30)
                 user(machine, "systemctl --user stop wdisplays.service")
+                return display_layout(machine)
             user(machine, "swaymsg output " + primary + " scale 1.25")
-            save_display_combination("scale 1.25")
+            saved_single = save_display_combination("scale 1.25")
             user(machine, "swaymsg create_output")
             machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e '.[] | select(.name == \"HEADLESS-1\" and .active)'"))
             user(machine, "swaymsg output " + primary + " scale 1")
             width = next(o["rect"]["width"] for o in json.loads(user(machine, "swaymsg -t get_outputs")) if o["name"] == primary)
             # The gap accommodates the position edit in either display's tab.
             user(machine, "swaymsg output HEADLESS-1 scale 1.5 pos " + str(width + 32) + " 0")
-            save_display_combination("scale 1.5")
+            saved_dual = save_display_combination("scale 1.5")
             machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e '.[] | select(.name == \"HEADLESS-1\" and .scale == 1.5)'"))
             outputs = json.loads(user(machine, "swaymsg -t get_outputs"))
             active = sorted((o for o in outputs if o["active"]), key=lambda o: o["rect"]["x"])
             assert len(active) == 2 and active[1]["rect"]["x"] >= active[0]["rect"]["x"] + active[0]["rect"]["width"]
             user(machine, "swaymsg output HEADLESS-1 unplug")
-            machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e '.[] | select(.name == \"" + primary + "\" and .scale == 1.25)'"))
+            assert_display_layout(machine, saved_single)
         elif session == "i3":
             user(machine, "systemctl --user is-active autorandr.service")
             i3_output = user(machine, "xrandr --query | awk '/ connected/ {print $1; exit}'").strip()
@@ -409,7 +482,12 @@ in
             user(machine, "xrandr --output " + shlex.quote(i3_output) + " --rotate normal")
             reconnect_i3_display(machine, i3_output)
             machine.wait_until_succeeds(user_command("autorandr --current | grep -Fx vm-reconnected"), timeout=30)
-        # Stopping the display manager tears down the real user session.
+        stop_session(machine, compositor)
+        login_session(machine, session, compositor)
+        if session == "sway":
+            assert_display_layout(machine, saved_single)
+        elif session == "i3":
+            machine.wait_until_succeeds(user_command("autorandr --current | grep vm-reconnected"), timeout=60)
         stop_session(machine, compositor)
         if session in ("sway", "i3"):
             machine.reboot()
@@ -417,9 +495,9 @@ in
             assert user(machine, "timeout 15 secret-tool lookup purpose desktop-test").strip() == "wallet-fixture"
             if session == "sway":
                 machine.wait_until_succeeds(user_command("systemctl --user is-active kanshi.service"))
-                machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e '.[] | select(.name == \"" + primary + "\" and .scale == 1.25)'"))
+                assert_display_layout(machine, saved_single)
                 user(machine, "swaymsg create_output")
-                machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e '.[] | select(.name == \"HEADLESS-1\" and .scale == 1.5)'"))
+                assert_display_layout(machine, saved_dual)
             else:
                 try:
                     machine.wait_until_succeeds(user_command("autorandr --current | grep vm-preference"), timeout=60)
@@ -459,6 +537,7 @@ in
     # when another session fails, and fail the complete test on any error.
     failures = []
     for machine, session, compositor in ((plasma, "KDE", "plasmashell"), (sway, "sway", "sway"), (i3, "i3", "i3")):
+        machine = gui["Desktop"](machine)
         try:
             with subtest(session):
                 machine.start(allow_reboot=True)
@@ -484,7 +563,10 @@ in
             except Exception as diagnostic_error:
                 print("Could not collect desktop diagnostics:", diagnostic_error)
         finally:
-            machine.shutdown()
+            try:
+                machine.shutdown()
+            except Exception as error:
+                failures.append((session, "shutdown: " + str(error)))
     assert not failures, failures
   '';
 }

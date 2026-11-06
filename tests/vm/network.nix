@@ -610,7 +610,9 @@ in
         for machine in (client, peer):
             for host, source in (("198.18.0.30", "192.168.1.10"), ("198.19.0.30", "192.168.1.20")):
                 machine.wait_until_succeeds("test $(curl --noproxy '*' --max-time 6 -sSf http://" + host + ":18080/ipv4-mode) = " + source, timeout=60)
-            machine.succeed("dig +time=3 +tries=1 web.proxy.test AAAA | grep 'status: NOERROR.*'; dig +short web.proxy.test A | grep -Fx 198.19.0.30")
+            # Exit-node routes can recover before the peer receives its updated
+            # PeerAPI DNS endpoint from the control plane.
+            machine.wait_until_succeeds("dig +time=3 +tries=1 web.proxy.test AAAA | grep 'status: NOERROR' && dig +time=3 +tries=1 +short web.proxy.test A | grep -Fx 198.19.0.30", timeout=60)
             assert machine.succeed("dig +short web.proxy.test AAAA").strip() == ""
             machine.fail("curl --noproxy '*' --max-time 4 -sSf 'http://[2001:db8:2::30]:18080/ipv4-mode'")
         direct_ready()
@@ -785,7 +787,10 @@ in
     provider["endpoints"][0]["name"] = "lo"
     client.succeed("echo " + shlex.quote(json.dumps(provider)) + " > /run/provider.json")
     client.succeed("network-policy check")
-    client.fail("network-policy apply")
+    activation_failure = client.fail("network-policy apply 2>&1")
+    assert "sing-box.service" in activation_failure, activation_failure
+    diagnostic = json.loads(client.succeed("cat /run/site-network-policy/last-error.json"))
+    assert diagnostic["phase"] == "policy activation" and "sing-box.service" in diagnostic["summary"], diagnostic
     assert generation == client.succeed("readlink /run/site-network-policy/current")
     assert credential == client.succeed("sha256sum /run/site-network-policy/current/provider.json")
     assert dns_pids == client.succeed("systemctl show site-dns site-dns-race-cn site-dns-race-global -p MainPID")
@@ -793,7 +798,10 @@ in
     # The same endpoint fails after IPv6 shutdown has begun. Keep the packet
     # guard in place until a valid configuration completes a new transition.
     client.fail("network-ipv6 off")
-    client.fail("network-ipv6 status")
+    failed_status = client.fail("network-ipv6 status")
+    assert "Failed step: activating DNS and proxy configuration" in failed_status, failed_status
+    assert "sing-box.service" in failed_status, failed_status
+    client.copy_from_machine("/run/site-network-policy/last-error.log", "ipv6-failure.log")
     peer.fail("curl --noproxy '*' --max-time 4 -sSf 'http://[2001:db8:2::30]:18080/family-failure'")
     provider["endpoints"][0]["name"] = "foo"
     client.succeed("echo " + provider_text + " > /run/provider.json; network-ipv6 off")

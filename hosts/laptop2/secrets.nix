@@ -12,9 +12,9 @@ let
   };
   secret = name: config.sops.secrets.${name}.path;
   providers = {
-    scaleway = 10;
-    r2 = 30;
-    b2 = 50;
+    scaleway = { };
+    r2 = { };
+    b2 = { };
   };
 in
 {
@@ -25,8 +25,7 @@ in
     secret "tailscale-auth-key"
   );
   site.cli.identityFile = secret "personal-identity";
-  site.backup.targets = lib.mapAttrs (name: minute: {
-    inherit minute;
+  site.backup.targets = lib.mapAttrs (name: _: {
     repositoryFile = secret "restic-repo-${name}";
     passwordFile = secret "restic-password";
     environmentFile = secret "restic-s3-${name}";

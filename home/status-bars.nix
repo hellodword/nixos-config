@@ -6,9 +6,11 @@
 }:
 let
   cfg = nixosConfig.site.desktop;
-  c = import ../lib/palette.nix;
   sans = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.sansSerif;
   tools = import ../nix/desktop-tools.nix { inherit pkgs; };
+  localTimeZone = lib.optionalAttrs (nixosConfig.time.timeZone != null) {
+    timezone = nixosConfig.time.timeZone;
+  };
 in
 {
   config = lib.mkIf cfg.enable {
@@ -17,18 +19,14 @@ in
       systemd.enable = false;
       settings.main = {
         layer = "top";
-        height = 32;
-        spacing = 12;
+        height = 24;
+        spacing = 4;
         modules-left = [
           "sway/workspaces"
           "sway/mode"
           "sway/scratchpad"
-          "sway/window"
         ];
-        modules-center = [
-          "clock#utc"
-          "clock#cn"
-        ];
+        modules-center = [ "sway/window" ];
         modules-right = [
           "idle_inhibitor"
           "cpu"
@@ -42,9 +40,11 @@ in
           "backlight"
           "temperature"
           "battery"
+          "clock#local"
+          "clock#cn"
           "tray"
         ];
-        cpu.format = "CPU {usage}%";
+        cpu.format = " {usage}%";
         "sway/window" = {
           format = "{title}";
           max-length = 35;
@@ -54,19 +54,21 @@ in
           exec = "${pkgs.python3}/bin/python3 ${../scripts/desktop/health.py} --status";
           interval = 10;
         };
-        memory.format = "RAM {percentage}%";
+        memory.format = " {percentage}%";
         disk = {
           path = nixosConfig.site.storage.persistRoot;
-          format = "Disk {percentage_used}%";
+          format = " {used}/{total}";
+          tooltip-format = "Persistent storage: {percentage_used}% used";
         };
         "disk#root" = {
           path = "/";
-          format = "Root {percentage_used}%";
+          format = "/ {used}/{total}";
+          tooltip-format = "Root tmpfs: {percentage_used}% used";
         };
         network = {
-          format-wifi = "Wi-Fi {signalStrength}%";
-          format-ethernet = "LAN";
-          format-disconnected = "Offline";
+          format-wifi = " {signalStrength}%";
+          format-ethernet = "";
+          format-disconnected = "Disconnected";
         };
         "custom/tailscale" = {
           exec = "${tools.tailscale}/bin/desktop-tailscale --waybar";
@@ -74,38 +76,71 @@ in
           interval = 10;
         };
         pulseaudio = {
-          format = "Audio {volume}%";
+          format = " {volume}%";
+          format-muted = "";
           on-click = "${pkgs.pavucontrol}/bin/pavucontrol";
         };
-        backlight.format = "Light {percent}%";
+        backlight.format = " {percent}%";
         temperature.format = "{temperatureC}°C";
         battery = {
-          format = "Battery {capacity}% ↓";
-          format-charging = "Battery {capacity}% ↑";
-          format-full = "Battery {capacity}% Full";
-          format-plugged = "Battery {capacity}% AC";
+          format = "{icon} {capacity}%";
+          format-icons = [
+            ""
+            ""
+            ""
+            ""
+            ""
+          ];
+          format-charging = " {capacity}%";
+          format-full = " {capacity}%";
+          format-plugged = " {capacity}%";
           states = {
             warning = 60;
             critical = 50;
           };
         };
-        "clock#utc" = {
-          timezone = "UTC";
-          format = "{:%m-%d %H:%M UTC}";
+        "clock#local" = localTimeZone // {
+          format = "{:%m-%d %H:%M %Z}";
         };
         "clock#cn" = {
           timezone = "Asia/Shanghai";
           format = "{:%H:%M CN}";
         };
-        idle_inhibitor.format = "{status}";
+        idle_inhibitor = {
+          format = "{icon}";
+          format-icons = {
+            activated = "";
+            deactivated = "";
+          };
+          tooltip-format-activated = "保持活动：点击恢复一分钟自动锁屏";
+          tooltip-format-deactivated = "自动锁屏：点击保持活动";
+        };
       };
       style = ''
-        * { font-family: "${sans}", sans-serif; font-size: 13px; border: none; }
-        window#waybar { background: ${c.background}; color: ${c.text}; }
-        #workspaces button { color: ${c.muted}; padding: 0 12px; }
-        #workspaces button.focused { background: ${c.accent}; color: ${c.background}; border-radius: 5px; }
-        #workspaces button.urgent, #battery.critical { background: ${c.urgent}; color: ${c.background}; }
-        #tray { margin-right: 14px; } #battery.warning { color: ${c.urgent}; }
+        * { font-family: "${sans}", "Noto Sans CJK SC", "Symbols Nerd Font", sans-serif; font-size: 13px; border: none; min-height: 0; }
+        window#waybar { background: #2b303b; color: #ffffff; }
+        button { border-radius: 0; padding: 0; }
+        #workspaces button { color: #ffffff; padding: 0 5px; }
+        #workspaces button.focused { background: #64727d; box-shadow: inset 0 -2px #ffffff; }
+        #workspaces button.urgent { background: #b91c1c; }
+        #window { margin: 0 4px; }
+        #cpu, #memory, #disk, #network, #custom-tailscale, #custom-failed,
+        #pulseaudio, #backlight, #temperature, #battery, #clock, #tray,
+        #idle_inhibitor, #mode { padding: 0 8px; }
+        #cpu { background: #2ecc71; color: #101820; }
+        #memory { background: #7d3c98; }
+        #disk { background: #874000; }
+        #network, #custom-tailscale, #tray { background: #21618c; }
+        #pulseaudio { background: #f1c40f; color: #101820; }
+        #backlight { background: #90b1b1; color: #101820; }
+        #temperature { background: #f0932b; color: #101820; }
+        #battery { background: #ffffff; color: #101820; }
+        #battery.warning { background: #f1c40f; color: #101820; }
+        #battery.critical, #network.disconnected, #temperature.critical { background: #b91c1c; color: #ffffff; }
+        #battery.charging, #battery.plugged { background: #187a45; color: #ffffff; }
+        #clock, #mode { background: #45525e; }
+        #idle_inhibitor { background: #2d3436; }
+        #idle_inhibitor.activated { background: #ecf0f1; color: #202629; }
       '';
     };
     programs.i3status-rust = lib.mkIf cfg.i3.enable {
@@ -182,11 +217,13 @@ in
             critical = 50;
             missing_format = "";
           }
-          {
-            block = "time";
-            timezone = "UTC";
-            format = " $timestamp.datetime(f:'%m-%d %H:%M UTC') ";
-          }
+          (
+            localTimeZone
+            // {
+              block = "time";
+              format = " $timestamp.datetime(f:'%m-%d %H:%M %Z') ";
+            }
+          )
           {
             block = "time";
             timezone = "Asia/Shanghai";

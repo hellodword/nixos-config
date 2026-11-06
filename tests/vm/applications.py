@@ -12,6 +12,7 @@ import select
 import shutil
 import signal
 import subprocess
+import sys
 import time
 import urllib.request
 from contextlib import contextmanager
@@ -24,6 +25,18 @@ ARTIFACTS = ROOT / "artifacts"
 VAULT_URL = "https://vault.test.nix"
 EMAIL = "desktop@example.test"
 PASSWORD = "Synthetic-vault-passphrase-2026!"
+
+
+@contextmanager
+def cleanup(description):
+    primary = sys.exception()
+    try:
+        yield
+    except Exception as error:
+        if primary is None:
+            raise
+        primary.add_note(description + ": " + str(error))
+        print(description + ": " + str(error), flush=True)
 
 
 def wait_for(function, description, timeout=90):
@@ -103,15 +116,16 @@ def electron(playwright, name, arguments, port):
             yield page
             page.screenshot(path=str(ARTIFACTS / (name + ".png")))
         except Exception:
-            (ARTIFACTS / (name + "-failure.txt")).write_text(page.locator("body").inner_text())
-            accessibility = page.locator("body").aria_snapshot()
-            (ARTIFACTS / (name + "-accessibility.txt")).write_text(accessibility)
-            print(name + " window at failure:\n" + accessibility, flush=True)
-            page.screenshot(path=str(ARTIFACTS / (name + "-failure.png")))
-            if name == "vscode":
-                for log in sorted((Path.home() / ".config/Code/logs").rglob("*.log")):
-                    if "remote-containers" in str(log).lower() or "dev containers" in str(log).lower():
-                        print(str(log), "\n".join(log.read_text(errors="replace").splitlines()[-100:]), flush=True)
+            with cleanup(name + " diagnostics"):
+                (ARTIFACTS / (name + "-failure.txt")).write_text(page.locator("body").inner_text(timeout=5000))
+                accessibility = page.locator("body").aria_snapshot(timeout=5000)
+                (ARTIFACTS / (name + "-accessibility.txt")).write_text(accessibility)
+                print(name + " window at failure:\n" + accessibility, flush=True)
+                page.screenshot(path=str(ARTIFACTS / (name + "-failure.png")), timeout=5000)
+                if name == "vscode":
+                    for log in sorted((Path.home() / ".config/Code/logs").rglob("*.log")):
+                        if "remote-containers" in str(log).lower() or "dev containers" in str(log).lower():
+                            print(str(log), "\n".join(log.read_text(errors="replace").splitlines()[-100:]), flush=True)
             raise
         finally:
             # Close the window before the process-group fallback. Terminating
@@ -135,7 +149,8 @@ def electron(playwright, name, arguments, port):
             except subprocess.TimeoutExpired:
                 pass
             if name == "bitwarden" and network_log.exists():
-                shutil.copyfile(network_log, ARTIFACTS / "bitwarden-network.json")
+                with cleanup("retaining Bitwarden network log"):
+                    shutil.copyfile(network_log, ARTIFACTS / "bitwarden-network.json")
 
 
 def ui_input(*actions):
@@ -221,7 +236,8 @@ def vscode():
     finally:
         if container_id:
             # Complete network teardown before the next application starts.
-            subprocess.run(["docker", "stop", container_id], check=True, capture_output=True, timeout=45)
+            with cleanup("stopping development container"):
+                subprocess.run(["docker", "stop", container_id], check=True, capture_output=True, timeout=45)
     return {"workspace": "/workspaces/project", "editor": "你好", "terminal": "你好"}
 
 
@@ -248,10 +264,12 @@ def firefox():
             assert field.get_attribute("value") == "你好", repr(field.get_attribute("value"))
             browser.save_screenshot(str(ARTIFACTS / "firefox.png"))
         except Exception:
-            browser.save_screenshot(str(ARTIFACTS / "firefox-failure.png"))
+            with cleanup("Firefox diagnostics"):
+                browser.save_screenshot(str(ARTIFACTS / "firefox-failure.png"))
             raise
         finally:
-            browser.quit()
+            with cleanup("closing Firefox"):
+                browser.quit()
     return {"profile": str(profile), "page": "loaded and rendered", "input": "你好"}
 
 

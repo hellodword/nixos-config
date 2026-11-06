@@ -90,7 +90,7 @@ in
     backupChannels = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ "bark" ];
-      description = "Apprise tags receiving each completed backup, check and restore-test result.";
+      description = "Apprise tags receiving backup, check, restore-test and maintenance results.";
     };
     networkPrefix = lib.mkOption {
       type = lib.types.strMatching "([0-9]{1,3}\\.){2}[0-9]{1,3}";

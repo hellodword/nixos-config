@@ -74,13 +74,14 @@
           };
         };
       synthetic = mkLaptop [ ./tests/fixtures/host-credentials.nix ];
+      laptop = mkLaptop [ ];
       vmTools = import (inputs.vm-test-tools + /nix/vm-test-mcp.nix) {
         inherit pkgs nixpkgs;
         lib = pkgs.lib;
       };
     in
     {
-      nixosConfigurations.laptop2 = mkLaptop [ ];
+      nixosConfigurations.laptop2 = laptop;
       nixosModules.default = import ./modules;
       packages.${system} = import ./nix/packages.nix { inherit pkgs; };
       devShells.${system} = {
@@ -127,6 +128,7 @@
       checks.${system} = import ./nix/checks.nix {
         inherit pkgs inputs;
         laptop = synthetic;
+        production = laptop;
       };
     };
 }

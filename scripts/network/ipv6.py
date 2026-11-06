@@ -3,12 +3,47 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 
 ROOT = Path("/run/site-network-policy")
 SYSCTL = Path("/proc/sys/net/ipv6/conf")
 TABLE = "site_ipv6_mode"
+
+
+def error_summary(error):
+    if isinstance(error, subprocess.SubprocessError):
+        command = error.cmd if isinstance(error.cmd, (list, tuple)) else [error.cmd]
+        label = Path(str(command[0])).name
+        units = [str(arg) for arg in command[1:] if str(arg).endswith(".service")]
+        if units:
+            label += " " + ", ".join(units)
+        if isinstance(error, subprocess.TimeoutExpired):
+            return f"{label}: timed out after {error.timeout:g}s"
+        return f"{label}: exit {error.returncode}"
+    return str(error)
+
+
+def record_failure(root, phase, error):
+    """Keep command diagnostics root-only, with a concise status summary."""
+    details = []
+    cause = error
+    while cause is not None:
+        details.extend([str(cause), *getattr(cause, "__notes__", [])])
+        for name in ("stdout", "stderr"):
+            value = getattr(cause, name, None)
+            if value:
+                details.append(value.decode(errors="replace") if isinstance(value, bytes) else value)
+        cause = cause.__cause__
+    for name, data in (
+        ("last-error.log", "\n".join(details)[-1024 * 1024:]),
+        ("last-error.json", json.dumps({"time": int(time.time()), "phase": phase,
+                                       "summary": error_summary(error)})),
+    ):
+        fd = os.open(root / name, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            handle.write(data + "\n")
 
 
 def run(*args, check=True, data=None, timeout=90):
@@ -41,8 +76,8 @@ def active(unit):
     return run("systemctl", "is-active", "--quiet", unit, check=False).returncode == 0
 
 
-def tunnel_state():
-    result = run("mullvad", "status", "--json", check=False, timeout=5)
+def tunnel_state(timeout=5):
+    result = run("mullvad", "status", "--json", check=False, timeout=timeout)
     # The CLI may precede JSON with an account warning for a custom peer.
     for line in reversed(result.stdout.splitlines()):
         if line.startswith("{"):
@@ -53,9 +88,9 @@ def tunnel_state():
 def wait_tunnel():
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        if tunnel_state() == "connected":
+        if tunnel_state(timeout=min(5, max(0.01, deadline - time.monotonic()))) == "connected":
             return
-        time.sleep(0.25)
+        time.sleep(min(0.25, max(0, deadline - time.monotonic())))
     raise RuntimeError("the local Mullvad tunnel did not become ready")
 
 
@@ -121,7 +156,7 @@ def reconcile(root=ROOT):
         interfaces(True, current["sysctl"])
 
 
-def transition(root, only4, apply_policy, lockdown=False, tailscale=False):
+def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale=False):
     """Keep external IPv6 blocked while coordinating the transition."""
     import underlay
     current = state(root)
@@ -159,30 +194,41 @@ def transition(root, only4, apply_policy, lockdown=False, tailscale=False):
             run("resolvectl", "flush-caches")
         if only4:
             interfaces(True, current["sysctl"])
-            if lockdown:
-                wait_tunnel()
+        else:
+            guard(False)
+        step = "waiting for physical bindings and network services"
+        if watching:
+            run("systemctl", "start", "site-network-underlay.service")
+        wait_policy()
+        if lockdown:
+            wait_tunnel()
+        if only4:
             current["phase"] = "ready"
             save(root, current)
         else:
-            guard(False)
-            if lockdown:
-                wait_tunnel()
             (root / "ipv6-state.json").unlink()
         return previous
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        guard(True)
+        try:
+            guard(True)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as recovery:
+            error.add_note("Restoring IPv6 guard: " + error_summary(recovery))
         current.update(ipv4_only=True, phase="incomplete", failed_step=step)
         save(root, current)
-        detail = f": {error}" if isinstance(error, (ValueError, RuntimeError)) else ""
         raise RuntimeError(
-            f"IPv6 remains blocked after {step}{detail}; "
+            f"IPv6 transition incomplete after {step}: {error_summary(error)}; "
             "inspect network-ipv6 status, then retry off or restore"
-        ) from None
+        ) from error
     finally:
-        if watching:
-            run("systemctl", "start", "site-network-underlay.service", check=False)
-        if tail_active:
-            run("systemctl", "start", "tailscaled.service", check=False)
+        primary = sys.exception()
+        for unit, enabled in (("site-network-underlay.service", watching), ("tailscaled.service", tail_active)):
+            if enabled:
+                try:
+                    run("systemctl", "start", unit)
+                except (OSError, subprocess.SubprocessError) as cleanup:
+                    if primary is None:
+                        raise
+                    primary.add_note("Restarting observer: " + error_summary(cleanup))
 
 
 def status(root, consumers, lockdown=False, tailscale=False):
@@ -192,6 +238,11 @@ def status(root, consumers, lockdown=False, tailscale=False):
     print("Transition: " + (current["phase"] if current else "ready"))
     if current and "failed_step" in current:
         print("Failed step: " + current["failed_step"])
+    failure = root / "last-error.json"
+    if failure.exists():
+        last = json.loads(failure.read_text())
+        print(f"Last failure ({last['time']}): {last['phase']}: {last['summary']}")
+        print("Protected details: " + str(root / "last-error.log"))
     values = {p.parent.name: p.read_text().strip() for p in SYSCTL.glob("*/disable_ipv6")}
     enabled = sorted(name for name, value in values.items() if name not in {"all", "default"} and value != "1")
     print("IPv6-enabled interfaces: " + (", ".join(enabled) or "none"))

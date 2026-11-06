@@ -284,23 +284,27 @@ Tailscale 保留出口节点和三个 RFC1918 私网段公告，核对管理端�
 
 ## 停止应用并保存数据
 
-切换到 TTY，用 ubuntu 登录。先正常退出浏览器、编辑器、Anytype、Bitwarden 等应用，让数据库完成写入，再停止图形会话：
+使用当前桌面的独立终端（如 Kitty）继续操作。按下面的数据分组，先保存工作并正常退出对应应用，让数据库完成写入，再复制文件。退出编辑器前，把操作终端留在编辑器之外；桌面和登录管理器保持运行。
 
 ```sh
 recovery=/persist/home/ubuntu/migration-1278
 umask 077
-sudo systemctl stop display-manager.service
-fcitx5-remote --check -e
-gpgconf --kill all
-pgrep -a -u ubuntu 'firefox|chrome|code|bitwarden|anytype|fcitx5|gpg-agent'
+pgrep -ai -u ubuntu 'firefox|chrome|code|bitwarden|anytype'
 install -d -m 0700 "$recovery/apps" "$recovery/fcitx5-config" "$recovery/fcitx5-data"
 ```
 
-`fcitx5-remote` 在输入法已经退出时返回未运行状态，`pgrep` 无结果时返回 1；确认相关写入进程均已退出，再复制。Docker 数据沿用现有 Btrfs 目录；本次不制作 Docker 副本，也不执行清理。
+进程列表用于查看仍在运行的应用；`pgrep` 无结果时返回 1。浏览器和托盘应用使用各自的“退出”操作结束后台进程。每组复制前确认对应应用已经退出，完成后保持该应用关闭直到重启；若期间再次使用，在重启前退出并重新保存该组数据。Docker 数据沿用现有 Btrfs 目录；本次不制作 Docker 副本，也不执行清理。
 
 ### 输入法
 
-实机的 Fcitx 配置和词库目前在 tmpfs，第一次重启前完成保存：
+实机的 Fcitx 配置和词库目前在 tmpfs，第一次重启前完成保存。在当前桌面的终端中让输入法正常退出：
+
+```sh
+fcitx5-remote --check -e
+pgrep -a -u ubuntu -x fcitx5
+```
+
+输入法已经退出时，`fcitx5-remote` 返回未运行状态。确认 Fcitx 进程已结束后再复制；终端可以继续输入英文和执行命令：
 
 ```sh
 cp -aL -- "$HOME/.config/fcitx5/." "$recovery/fcitx5-config/"
@@ -346,12 +350,18 @@ Bitwarden 仅保留加密 vault 所在的 `data.json`；恢复时重新登录，
 
 ### 其他应用与个人配置
 
-Chrome、Code、Anytype 以及 GPG、SSH、KWallet 等用户资料保留部署前副本。先确认这些路径没有仍在写入的进程；只复制存在的项目，链接保持为链接：
+Chrome、Code、Anytype 以及 GPG、SSH、Git 用户资料保留部署前副本。退出对应应用，并结束正在使用密钥环的 GPG 操作；复制密钥环前停止其后台进程：
+
+```sh
+gpgconf --kill all
+```
+
+复制期间保持 GPG、SSH 鉴权和 Git 签名操作停止。下面只复制存在的项目，链接保持为链接；KDEConnect 和 KWallet 随后在桌面状态一节处理：
 
 ```sh
 for relative in \
   '.config/google-chrome' '.config/Code' '.config/anytype' \
-  '.config/kdeconnect' '.local/share/kwalletd' '.gnupg' '.ssh' '.config/git'; do
+  '.gnupg' '.ssh' '.config/git'; do
   [ -d "$HOME/$relative" ] || continue
   rsync -aHAXR \
     --exclude='Cache' --exclude='Code Cache' --exclude='GPUCache' \
@@ -386,6 +396,26 @@ fi
 | GTK、KDE、显示器设置 | 个人可写内容仍在 tmpfs 时，逐项保存到对应持久路径 |
 | GPG 与 SSH | 保留用户身份资料；新公钥由声明派生，真实密钥环注册由本人执行 |
 
+### 桌面状态
+
+本节处理实际存在且需要保留的个人桌面设置。复制前关闭对应设置工具或应用；KDEConnect、KWallet 等后台服务也需结束写入。已经退出的组件可以在当前终端处理。
+
+需要一起保存正在使用的 Plasma 桌面、钱包和显示器状态时，先在桌面正常注销，让组件保存设置，再切换到 TTY，以 ubuntu 登录后继续本节。登录界面保持运行。仅切换 TTY 会让原图形会话继续运行；注销后也应确认对应后台服务已经退出，再复制它们的数据。在新的终端重新设置恢复目录：
+
+```sh
+recovery=/persist/home/ubuntu/migration-1278
+umask 077
+```
+
+保存已退出的 KDEConnect、KWallet 的现有数据：
+
+```sh
+for relative in '.config/kdeconnect' '.local/share/kwalletd'; do
+  [ -d "$HOME/$relative" ] || continue
+  rsync -aHAXR "$HOME/./$relative" "$recovery/apps/"
+done
+```
+
 例如交接现有 Plasma 触控板设置：
 
 ```sh
@@ -415,7 +445,9 @@ install -d -m 0700 "/persist/home/ubuntu/$relative"
 cp -ai -- "$recovery/desktop/$relative/." "/persist/home/ubuntu/$relative/"
 ```
 
-与新 Home Manager 同名的旧声明式配置由新声明接续，不把旧 store 内容批量转换为个人覆盖。发生普通文件冲突时，先保存该具体文件，再移动到恢复目录；例如：
+### Home Manager 文件与目录权限
+
+与新 Home Manager 同名的旧声明式配置由新声明接续，不把旧 store 内容批量转换为个人覆盖。发生普通文件冲突时，先退出使用该文件的应用，保存该具体文件，再移动到恢复目录；例如：
 
 ```sh
 relative=.config/example/settings
@@ -460,7 +492,7 @@ RSA 使用相同方法处理实际存在的文件。当前未启用 sshd 且没�
 
 ## 安装启动代次
 
-此时旧 Tailscale、代理与 DNS 继续运行，构建产物已经准备好。先安装启动代次，再交接最后的网络状态：
+此时旧 Tailscale、代理与 DNS 继续运行，构建产物已经准备好。在当前终端安装启动代次，再交接最后的网络状态。`boot` 设置下次启动的系统，当前运行的系统和 Home Manager 配置继续使用旧代次：
 
 ```sh
 cd /home/ubuntu/dev/workspace/nixos-config
@@ -520,7 +552,7 @@ sudo reboot
 
 ## 首次启动
 
-先登录 TTY，确认基础服务与实际挂载，再进入图形会话：
+登录后先在终端确认基础服务与实际挂载，再打开需要验收的应用。可以使用图形终端；图形登录不可用时，从 TTY 执行同样的检查：
 
 ```sh
 nixos-version --json
@@ -562,7 +594,9 @@ Docker 使用原 Btrfs 数据目录；`local` 日志驱动对新建容器生效�
 
 ### 选择旧 generation
 
-启动菜单选择 **generation 1278**。若能进入新系统的 TTY，也可以先将默认启动项恢复到固定的旧产物：
+当前系统还能操作时，重启前先正常退出需要保存数据的应用，按前文的方法将新产生的 Fcitx 数据及需要保留的应用数据另存到 `$recovery/after-attempt/`。原生 Tailscale 状态在停止 `tailscaled.service` 后另存；保存桌面状态时按前文正常注销。只有启动菜单可用时，先启动旧系统，在打开相关应用前保留尝试期间的持久数据。
+
+启动菜单选择 **generation 1278**。若当前系统可以登录，也可以在图形终端或 TTY 中先将默认启动项恢复到固定的旧产物：
 
 ```sh
 sudo nix-env --profile /nix/var/nix/profiles/system --set \
@@ -573,15 +607,13 @@ sudo reboot
 
 从启动菜单进入旧系统后，也执行上面的前两条命令，将旧产物设为默认启动项；已经运行旧系统时无需再次重启。
 
-能正常进入 TTY 时，重启前先停止图形会话和相关应用，并将新产生的 Fcitx 数据、原生 Tailscale 状态及需要保留的应用数据另存到 `$recovery/after-attempt/`。使用上面相同的复制方法，但换成这个新目录。只有启动菜单可用时，先启动旧系统，再于 TTY 停止图形会话处理持久数据。
-
 ### 恢复旧网络与 Home Manager
 
 旧系统启动后停止代理，保存尝试期间的文件，然后恢复原配置。目录已经有名为 `sing-box-after-attempt` 的副本时，先换一个新名字：
 
 ```sh
 recovery=/persist/home/ubuntu/migration-1278
-sudo systemctl stop display-manager.service sing-box.service
+sudo systemctl stop sing-box.service
 sudo cp -a -- /persist/usr/local/etc/sing-box "$recovery/sing-box-after-attempt"
 sudo cp -ai -- "$recovery/sing-box-original/." /persist/usr/local/etc/sing-box/
 sudo systemctl start sing-box.service tailscaled.service
@@ -597,14 +629,19 @@ journalctl -b -u sing-box.service -u tailscaled.service -u home-manager-ubuntu.s
 
 ```sh
 fcitx5-remote --check -e
+pgrep -a -u ubuntu -x fcitx5
+```
+
+确认输入法进程已结束后复制：
+
+```sh
 install -d -m 0700 "$HOME/.config/fcitx5" "$HOME/.local/share/fcitx5"
 cp -ai -- /persist/home/ubuntu/.config/fcitx5/. "$HOME/.config/fcitx5/"
 rsync -aHAX --exclude='/themes/' /persist/home/ubuntu/.local/share/fcitx5/ "$HOME/.local/share/fcitx5/"
 sudo systemctl restart home-manager-ubuntu.service
-sudo systemctl start display-manager.service
 ```
 
-若复制目标是旧声明式 store 链接，先保存该具体链接，再移走并复制对应普通文件。重新启动前再次保存旧系统 tmpfs 中的新学习记录。
+若复制目标是旧声明式 store 链接，先保存该具体链接，再移走并复制对应普通文件。Home Manager 激活成功后，正常注销并重新登录图形会话，让输入法加载恢复后的设置；从 TTY 操作时返回登录界面登录。以后重新启动前，再次保存旧系统 tmpfs 中的新学习记录。
 
 ### 应用数据恢复
 

@@ -89,7 +89,7 @@ in
       "en_US.UTF-8/UTF-8"
       "zh_CN.UTF-8/UTF-8"
     ];
-    time.timeZone = "UTC";
+    time.timeZone = lib.mkDefault "UTC";
     services.timesyncd = {
       enable = true;
       servers = [

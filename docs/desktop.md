@@ -56,9 +56,13 @@ Sway/i3 的快捷键：
 
 Rofi 模式包含 `drun,run,calc,emoji`。`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
 
-两个 WM 默认使用标签布局、纵向切分方向和居中标题。mpv、feh、Emulator、Waydroid 窗口默认浮动。
+两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。标题使用 10 pt JetBrainsMono Nerd Font，中文回退到 Noto Sans CJK SC。mpv、feh、Emulator、Waydroid 窗口默认浮动。
 
-Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态、UTC/中国时间。`Failed 0/0` 表示上次采样时系统和用户均无失败单元，采样间隔一分钟；`?` 表示尚无结果。电量降至 60% 和 50% 时分别提醒，恢复充电后重新计次。温度和亮度由设备支持情况决定。Tailscale 信息表示本机连接状态。
+Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态、本地/中国时间。laptop2 使用弗吉尼亚的 `America/New_York` 时区，自动切换 EST/EDT；中国时钟固定 `Asia/Shanghai`。
+
+Waybar 高度 24 px、字号 13 px、模块间距 4 px，工作区位于左侧、窗口标题居中、状态模块在右侧，以不同底色区分资源、网络、音频、电池和时钟；i3bar 高度同为 24 px。Waybar 标题右侧的眼睛按钮控制原生空闲抑制，初始关闭，点击后可在演示时保持活动。手动锁屏和休眠锁屏继续生效；再次点击恢复一分钟空闲锁屏。
+
+`Failed 0/0` 表示上次采样时系统和用户均无失败单元，采样间隔一分钟；`?` 表示尚无结果。电量降至 60% 和 50% 时分别提醒，恢复充电后重新计次。温度和亮度由设备支持情况决定。Tailscale 信息表示本机连接状态。
 
 显示器调整、Wi-Fi 和输入法偏好保存在[本机入口](local-state.md)。Plasma Wayland 使用 KWin 的“虚拟键盘”接口启动 Fcitx 5；Sway/i3 使用对应会话的自动启动项。已有 KWin 配置若选择了其他输入法，可在“虚拟键盘”设置中重新选择 Fcitx 5。Kitty 的 X11 后端通过 `GLFW_IM_MODULE=ibus` 使用 Fcitx 的兼容接口；Wayland 后端使用会话的原生输入协议。
 
@@ -77,11 +81,13 @@ Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触
 | 界面、无衬线正文 | Noto Sans → Noto Sans CJK SC |
 | 衬线正文 | Noto Serif → Noto Serif CJK SC |
 | 终端、编辑器、等宽正文 | Sarasa Term SC |
+| Sway/i3 窗口标题 | JetBrainsMono Nerd Font → Noto Sans CJK SC，10 pt |
+| Waybar | Noto Sans → Noto Sans CJK SC → Symbols Nerd Font，13 px |
 | Emoji | Noto Color Emoji |
 | Nerd 图标 | Symbols Nerd Font；等宽场景使用 Mono 版本 |
 | 生僻字 | Jigmo / Jigmo2 / Jigmo3 → Unifont |
 
-简体中文字形在英文界面下同样优先。正文优先使用文字字体，emoji、图标和生僻字按覆盖范围回退。GTK、Plasma、窗口管理器、通知和状态栏读取同一字体默认值；Kitty 与 VS Code 共用等宽字体，浏览器通过 Fontconfig 使用通用字体。已有个人设置继续优先。
+简体中文字形在英文界面下同样优先。正文优先使用文字字体，emoji、图标和生僻字按覆盖范围回退。GTK、Plasma 和通知读取系统字体默认值；窗口标题与状态栏使用上表的尺寸。Kitty 与 VS Code 共用等宽字体，浏览器通过 Fontconfig 使用通用字体。已有个人设置继续优先。
 
 i3status-rust 使用面向 Nerd Fonts 的 [`material-nf` 图标集](https://github.com/greshake/i3status-rust/blob/master/doc/themes.md)，由 Symbols Nerd Font 提供字形。
 

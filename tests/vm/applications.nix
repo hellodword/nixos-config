@@ -32,6 +32,7 @@
         ../../modules/services/containers.nix
       ];
       _module.args.userName = "desktop";
+      time.timeZone = "America/New_York";
       boot.kernelPackages = pkgs.linuxPackages_6_18;
       virtualisation = {
         memorySize = 6144;
@@ -136,29 +137,27 @@
     import shlex
     import tempfile
     import struct
-    import threading
     import time
     import traceback
     from datetime import timedelta
     from pathlib import Path
 
-    # Keyboard input and screenshots share the QEMU monitor connection.
-    gui_lock = threading.Lock()
     key_delay = timedelta(milliseconds=150)
     gui = runpy.run_path("${./gui.py}")
     visible, login = gui["visible"], gui["login"]
 
-    def user_command(command):
-        return "runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemd-run --user --quiet --wait --pipe --collect sh -c " + shlex.quote(command)
+    def user_command(command, timeout=60):
+        return ("runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemd-run --user --quiet --wait --pipe --collect "
+                + f"--property=RuntimeMaxSec={timeout}s --property=TimeoutStopSec=5s sh -c " + shlex.quote(command))
 
-    def user(machine, command):
-        return machine.succeed(user_command(command))
+    def user(machine, command, timeout=60):
+        return machine.succeed(user_command(command, timeout), timeout=timedelta(seconds=timeout + 10))
 
     def user_status(command):
         return "runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus sh -c " + shlex.quote(command)
 
     def input_actions(machine, actions):
-        with gui_lock:
+        with machine.input_lock:
             for action in actions:
                 if "pinyin" in action:
                     user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
@@ -180,19 +179,19 @@
         deadline = time.monotonic() + 600
         handled = None
         while time.monotonic() < deadline:
-            status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file)
+            status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file, timeout=min(30, max(1, deadline - time.monotonic())))
             if status == 0:
                 assert result.strip() == "0", application + " failed: " + result
                 return
-            active, state = machine.execute(user_status("systemctl --user is-active application-" + application + ".service"))
+            active, state = machine.execute(user_status("systemctl --user is-active application-" + application + ".service"), timeout=min(30, max(1, deadline - time.monotonic())))
             if active != 0:
-                status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file)
+                status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file, timeout=min(30, max(1, deadline - time.monotonic())))
                 if status == 0:
                     assert result.strip() == "0", application + " failed: " + result
                     return
                 print(machine.execute(user_status("journalctl --user -u application-" + application + ".service -n 60 --no-pager"))[1])
                 raise AssertionError(application + " stopped before producing its result: " + state.strip())
-            status, request = machine.execute("test -f " + root + "/input-request.json && cat " + root + "/input-request.json")
+            status, request = machine.execute("test -f " + root + "/input-request.json && cat " + root + "/input-request.json", timeout=min(30, max(1, deadline - time.monotonic())))
             if status == 0:
                 request = json.loads(request)
                 if request["id"] != handled:
@@ -204,7 +203,7 @@
 
     def exercise_launchers(machine, session):
         if session != "KDE":
-            with gui_lock:
+            with machine.input_lock:
                 machine.send_key("meta_l-d", delay=key_delay)
                 visible(machine, r"\bdrun\b")
                 machine.send_chars("kitty", delay=key_delay)
@@ -222,10 +221,10 @@
             {"text": "\\n' > ~/application-workspace/terminal.txt\n"},
         ])
         machine.wait_until_succeeds("grep -Fx '你好' /home/desktop/application-workspace/terminal.txt", timeout=30)
-        with gui_lock:
+        with machine.input_lock:
             machine.send_chars("exit\n", delay=key_delay)
         if session != "KDE":
-            with gui_lock:
+            with machine.input_lock:
                 machine.send_key("meta_l-shift-d", delay=key_delay)
                 visible(machine, r"\brun\b")
                 command = "kitty --title Rofi-command sh -c 'printf launched > ~/application-workspace/rofi-command.txt; sleep 2'"
@@ -244,8 +243,7 @@
 
     failures = []
     for machine, session in ((i3, "i3"), (plasma, "KDE"), (sway, "sway")):
-        finished = threading.Event()
-        ticker = None
+        machine = gui["Desktop"](machine)
         try:
             machine.start()
             login(machine)
@@ -265,13 +263,8 @@
                 assert struct.unpack(">II", frame.read_bytes()[16:24]) == (1920, 1080), "Application tests require a 1920x1080 desktop"
             # GUI automation is active use. Keep the session awake while the
             # desktop lifecycle suite separately exercises the one-minute lock.
-            def activity():
-                while not finished.wait(15):
-                    with gui_lock:
-                        machine.send_key("ctrl", delay=key_delay)
-            ticker = threading.Thread(target=activity, daemon=True)
-            ticker.start()
-            user(machine, "docker load -i /etc/application-fixtures/container.tar.gz")
+            machine.keep_awake()
+            user(machine, "docker load -i /etc/application-fixtures/container.tar.gz", timeout=300)
             for name, action in (
                 ("rofi-kitty", lambda: exercise_launchers(machine, session)),
                 ("firefox", lambda: exercise_application(machine, "firefox")),
@@ -281,8 +274,7 @@
                 try:
                     with subtest(session + ": " + name):
                         action()
-                        with gui_lock:
-                            machine.screenshot(machine.name + "-" + name)
+                        machine.screenshot(machine.name + "-" + name)
                 except Exception as error:
                     failures.append((session, name, str(error)))
                     traceback.print_exc()
@@ -295,8 +287,7 @@
                     if status != 0:
                         with tempfile.TemporaryDirectory() as directory:
                             path = Path(directory) / "failure.png"
-                            with gui_lock:
-                                machine.screenshot(str(path))
+                            machine.screenshot(str(path))
                             frame = base64.b64encode(path.read_bytes()).decode()
                     print("APPLICATION_FRAME_" + machine.name + "_" + name + "=" + frame.strip())
                     break
@@ -306,15 +297,19 @@
             failures.append((session, "session", str(error)))
             traceback.print_exc()
         finally:
-            finished.set()
-            if ticker is not None:
-                ticker.join(timeout=5)
+            try:
+                machine.stop_activity()
+            except Exception as error:
+                failures.append((session, "activity", str(error)))
             try:
                 machine.copy_from_machine("/home/desktop/application-workspace/artifacts", "applications-" + machine.name)
             except Exception as error:
                 failures.append((session, "evidence", str(error)))
             finally:
-                machine.shutdown()
+                try:
+                    machine.shutdown()
+                except Exception as error:
+                    failures.append((session, "shutdown", str(error)))
         if failures:
             break
     assert not failures, failures

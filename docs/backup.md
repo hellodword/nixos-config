@@ -2,7 +2,7 @@
 
 scaleway、r2、b2 三个现有 Restic 仓库各自读取源数据、加密上传并保存状态。一个目标故障时，其他目标独立执行。日常维护依据每个仓库的成功时间和恢复结果。
 
-路径由 `profiles/laptop/backup.nix` 选择，服务调度在 `modules/services/backup.nix`，运行逻辑在 `scripts/backup/`。备份、检查、恢复通路验证与每周维护按仓库独立调度；仓库初始化与锁异常处理使用 Restic 原生命令。
+路径和仓库错峰由 `profiles/laptop/backup.nix` 选择，服务调度在 `modules/services/backup.nix`，运行逻辑在 `scripts/backup/`。每个仓库独立完成备份、检查、恢复通路验证与空间回收；仓库初始化与锁异常处理使用 Restic 原生命令。
 
 ## 路径范围与成本
 
@@ -42,14 +42,18 @@ Bitwarden 的 `data.json` 同时承载加密 vault 和解密它所需的账户�
 
 | 操作 | 默认安排 |
 | --- | --- |
-| backup | 每小时错峰检查，成功后至少间隔 12 小时；支持电池供电并阻止自动睡眠 |
-| check | 接电时执行，每 7 天读取 1/12 数据分片；成功后推进分片 |
-| restore-test | 接电时执行，每周恢复最新匹配快照的 canary 并核对哈希 |
-| maintenance | 接电时每 7 天执行：新备份 → 仓库结构检查 → `forget --prune` |
+| backup | 上海时间每天 10:10～12:00、21:10～23:00，每仓库每窗口成功一次；支持电池供电 |
+| check | 晚间窗口接电且本窗口备份成功后，每 7 天读取 1/12 数据分片；成功后推进分片 |
+| restore-test | 同样在晚间接电时，每 7 天恢复最新匹配快照的 canary 并核对哈希 |
+| maintenance | 同样在晚间接电时，每 30 天执行结构检查、`forget --prune` 和回收后的结构检查 |
 
-各操作的 timer 每小时按仓库错峰触发，通过成功记录判断是否到期；未接电的维护在之后的触发重试。Persistent timer 补跑关机错过的触发；失败保留上次成功时间。每目标用本地锁串行，并遵守 Restic 仓库锁。保留原 cache 目录，通过主机和标签选择父快照。
+系统时区为 `America/New_York`，备份日历与窗口判断均使用 `Asia/Shanghai`，不随美国夏令时变化。scaleway 在窗口开始时尝试，r2、b2 分别延后 5、10 分钟，之后每 15 分钟重试。11:00 开机可补做上午备份；13:00 开机只检查本地状态，等到晚间窗口才访问仓库。窗口结束时间不包含在允许启动的范围内。
 
-维护按当前主机和 `site:<hostname>` 标签选择快照，以 `host,tags` 分组，保留 7 daily / 5 weekly / 12 monthly / 75 yearly。各条件保留结果取并集；一年中的最后一份匹配快照可能长期保留。新备份或结构检查失败时，本轮不进入清理。
+每个仓库只有一个自动调度 timer。它先补足本窗口备份，再按成功记录执行到期的检查、canary 恢复和回收。每个维护阶段开始前重新检查时间窗口和供电；窗口已结束或转为电池供电时，后续阶段等下一次允许的触发。已开始的阶段可继续完成。自动回收复用本窗口备份和本轮已完成的检查；手动维护先做新备份，再检查、回收和复查。
+
+每目标用不等待的本地锁串行，并遵守 Restic 仓库锁；已有任务运行时，本次触发记为跳过。失败与中断保留上次成功时间。缓存持久保存，通过主机和标签选择父快照。注销不影响后台作业，作业允许系统正常休眠；关机或重启时停止整个进程组，最多等待 30 秒。休眠后的网络错误或中断在下个允许窗口重试。
+
+维护按当前主机和 `site:<hostname>` 标签选择快照，以 `host,tags` 分组，保留 7 daily / 5 weekly / 12 monthly / 75 yearly。各条件保留结果取并集；一年中的最后一份匹配快照可能长期保留。所需备份或检查失败时，本轮不进入清理。
 
 `forget` 决定删除哪些快照，`prune` 回收整个仓库中没有快照引用的数据。无标签的已有快照仍引用的数据会保留，因此保留参数不等于仓库大小上限。重新打包、读取和对象 API 调用可能计费。调整策略前可用 runner 的 `retention-plan` 预览当前范围，输出保存在对应状态目录的 `last-command.log`。
 
@@ -58,15 +62,18 @@ Bitwarden 的 `data.json` 同时承载加密 vault 和解密它所需的账户�
 ```sh
 backup-status
 systemctl list-timers 'site-backup-*'
+sudo systemctl start site-backup-r2-automatic
 sudo systemctl start site-backup-r2-backup
 sudo systemctl start site-backup-r2-check
 sudo systemctl start site-backup-r2-restore-test
 sudo systemctl start site-backup-r2-maintenance
 ```
 
-`backup-status` 按当前仓库、源路径和策略核对成功记录，分别公开 `backup`、`check` 和 `canaryRestore` 的年龄与 `fresh` / `stale` / `unknown` 状态。`check` 还显示本次校验的分区及总分区数；一次分区校验或 canary 恢复不代表全部资料已验证。更换仓库、源路径或策略后，历史记录不再充当当前结果；缺失、损坏或不匹配的记录显示 `unknown`。各操作最近的通知投递结果单独列出。实际系统作业结束后发送成功或失败通知，消息只含主机、目标别名和操作结果；配置与查看方式见[本地通知](notifications.md)。启用备份时，备份超过 36 小时、检查或 canary 恢复超过 14 天，以及状态未知或不可读，都会在桌面提示。成功触发可能因最小间隔而跳过，因此用成功记录衡量恢复点，而非 systemd 启动时间。
+`backup-status` 按当前仓库、源路径和数据策略核对成功记录，分别公开 `backup`、`check`、`canaryRestore` 和 `maintenance` 的年龄与 `fresh` / `stale` / `unknown` 状态，并显示当前阶段及最近的成功、失败、中断或跳过结果。`check` 还显示本次校验的分区及总分区数；一次分区校验或 canary 恢复不代表全部资料已验证。更换仓库、源路径或数据策略后，历史记录不再充当当前结果；仅调整调度时间不会改变数据范围标识。
 
-详细记录与最近 Restic 输出位于 root-only 的 `/var/lib/site-backup-<target>/`。失败时先检查 `last-command.log`；Restic exit 3 表示有文件未读到，也按失败处理。需强制补跑时，在相同运行时凭据环境下使用 runner 的 `--force`，它只忽略时间间隔。
+各操作的通知投递结果与待发送状态单独列出。每仓库、每类操作仅持久保留最新待发送结果，由独立服务投递和重试；备份停止流程只写本地结果。配置与查看方式见[本地通知](notifications.md)。备份超过 36 小时、检查或 canary 恢复超过 14 天、回收超过 45 天，以及状态未知或不可读，都会在桌面提示。用成功记录衡量恢复点，而非 systemd 启动时间。
+
+详细记录与最近 Restic 输出位于 root-only 的 `/var/lib/site-backup-<target>/`。`last-command.log` 按 4 MiB 轮转并保留一份旧日志；失败时先查看它和相应服务的 journal。Restic exit 3 表示有文件未读到，也按失败处理。`automatic` 入口遵守时间窗口；上面的手动操作入口可按需执行，维护仍要求接电。需跳过成功间隔时，在相同运行时凭据环境下使用 runner 的 `--force`；本地锁和自动窗口规则继续生效。
 
 每次成功更新目标自己的状态记录；失败详情保存在受限日志中，下一次执行继续使用同一仓库与缓存。密码和访问凭据使用运行时文件。三个仓库仍共享本机源盘、网络和凭据所在设备，离线或 Lockdown 阻断期间应关注成功时间是否过期。
 

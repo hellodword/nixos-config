@@ -7,6 +7,7 @@ Symlinks are saved as links, never traversed. Selection fails on unreadable
 paths, required missing roots and mount boundaries.
 """
 import argparse
+from datetime import datetime
 import fcntl
 import fnmatch
 import hashlib
@@ -14,10 +15,20 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import stat
+import signal
 import subprocess
 import sys
 import tempfile
 import time
+import uuid
+from zoneinfo import ZoneInfo
+
+
+OPERATIONS = ("backup", "check", "restore-test", "maintenance")
+
+
+class Interrupted(Exception):
+    pass
 
 
 def relative(value):
@@ -54,7 +65,9 @@ def scope(policy, source, repository):
     if not repository:
         raise ValueError("repository must be explicitly configured")
     identity = hashlib.sha256(repository).hexdigest()
-    definition = json.dumps({"policy": json.loads(policy.read_text()),
+    data = {k: v for k, v in json.loads(policy.read_text()).items()
+            if k not in ("schedule", "minimumIntervalSeconds")}
+    definition = json.dumps({"policy": data,
                              "source": os.path.abspath(source), "repository": identity}, sort_keys=True)
     return {"repository": identity, "scope": hashlib.sha256(definition.encode()).hexdigest()}
 
@@ -114,15 +127,45 @@ def select(source, policy):
 
 
 def restic(binary, arguments, state, *, cwd=None):
-    result = subprocess.run([binary, *arguments], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    # Keep diagnostic details local, mode 0600. Never send paths or credentials to notifications.
+    """Stream bounded diagnostics to disk; retain only the backup summary in memory."""
     log = state / "last-command.log"
-    fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "wb") as stream:
-        stream.write(result.stdout + result.stderr)
-    if result.returncode:
-        raise RuntimeError(f"Restic failed (exit {result.returncode}); inspect protected last-command.log")
-    return result.stdout
+    summary = None
+    process = subprocess.Popen([binary, *arguments], cwd=cwd,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    try:
+        with process.stdout:
+            stream = log.open("wb")
+            try:
+                log.chmod(0o600)
+                for line in process.stdout:
+                    if stream.tell() + len(line) > 4 * 1024 * 1024:
+                        stream.close()
+                        log.replace(state / "last-command.log.1")
+                        stream = log.open("wb")
+                        log.chmod(0o600)
+                    stream.write(line)
+                    stream.flush()
+                    if arguments[0] == "backup":
+                        try:
+                            item = json.loads(line)
+                            if item.get("message_type") == "summary":
+                                summary = item
+                        except (ValueError, AttributeError):
+                            pass
+                code = process.wait()
+            finally:
+                stream.close()
+        if code:
+            raise RuntimeError(f"Restic failed (exit {code}); inspect protected last-command.log")
+        return summary
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
 
 
 def backup(args, policy, metadata, common):
@@ -133,11 +176,122 @@ def backup(args, policy, metadata, common):
         files.flush()
         # Stable host/tag grouping lets Restic select an existing parent
         # when the exact file list changes.
-        raw = restic(args.restic, ["backup", "--json", "--host", policy["host"], *common, "--group-by", "host,tags", "--files-from-raw", files.name], args.state, cwd=args.source)
-    summaries = [json.loads(line) for line in raw.splitlines() if line]
-    summary = next(item for item in summaries if item.get("message_type") == "summary")
+        summary = restic(args.restic, ["backup", "--json", "--host", policy["host"], *common, "--group-by", "host,tags", "--files-from-raw", files.name], args.state, cwd=args.source)
+    if summary is None:
+        raise RuntimeError("Restic completed without a backup summary")
     atomic_json(args.state / "backup-success.json", metadata | {"time": int(time.time()), "snapshot": summary["snapshot_id"], "files": len(plan["paths"]), "bytes": plan["bytes"], "missingOptional": plan["missingOptional"]})
     print(json.dumps({"operation": "backup", "files": len(plan["paths"]), "bytes": plan["bytes"], "missingOptionalCount": len(plan["missingOptional"])}))
+
+
+def window_at(schedule, now, offset=0):
+    local = datetime.fromtimestamp(now, ZoneInfo(schedule["timeZone"]))
+    minute = local.hour * 60 + local.minute
+    for window in schedule["windows"]:
+        start, end = (sum(int(v) * factor for v, factor in zip(window[key].split(":"), (60, 1)))
+                      for key in ("start", "end"))
+        if start + offset <= minute < end:
+            return window | {"id": f"{local.date()}:{window['start']}:{window['end']}"}
+    return None
+
+
+def on_ac_power():
+    # systemd-ac-power also handles desktops with no battery or power supplies.
+    return subprocess.run(["systemd-ac-power"], timeout=5, check=False).returncode == 0
+
+
+def success_path(state, operation):
+    return state / (("restore" if operation == "restore-test" else operation) + "-success.json")
+
+
+def recent(state, operation, metadata, policy, now):
+    previous = read_record(success_path(state, operation))
+    interval = policy.get("minimumIntervalSeconds", {}).get(operation, 0)
+    return (previous.get("scope") == metadata["scope"]
+            and isinstance(previous.get("time"), (int, float))
+            and 0 <= now - previous["time"] < interval)
+
+
+def record_result(state, record):
+    operation = record["operation"]
+    atomic_json(state / f"{operation}-result.json", record)
+    if record["result"] == "skipped":
+        return
+    # Delivery acknowledges only the same event it read. The lock is held for
+    # local updates, never across a network request or a Restic operation.
+    with (state / "notifications.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        atomic_json(state / f"{operation}-pending.json", record | {"deliveredChannels": []})
+
+
+def run_operation(args, policy, metadata, operation, *, checked=False, reuse_backup=False):
+    record = {"id": uuid.uuid4().hex, "operation": operation,
+              "result": "running", "started": int(time.time()), "phase": operation}
+
+    def phase(name):
+        record["phase"] = name
+        atomic_json(args.state / "current.json", record)
+        if args.run_state:
+            atomic_json(args.run_state, record)
+
+    phase(operation)
+    common = ["--tag", "site:" + policy["host"]]
+    try:
+        if operation == "backup":
+            phase("selection-and-backup")
+            backup(args, policy, metadata, common)
+        elif operation == "check":
+            parts = policy.get("checkPartitions", 12)
+            old = read_record(success_path(args.state, operation))
+            part = old.get("nextPartition", 1) if old.get("partitions") == parts and old.get("scope") == metadata["scope"] else 1
+            restic(args.restic, ["check", "--no-cache", f"--read-data-subset={part}/{parts}"], args.state)
+            atomic_json(success_path(args.state, operation), metadata | {
+                "time": int(time.time()), "partitions": parts, "checkedPartition": part,
+                "nextPartition": part % parts + 1})
+        elif operation == "restore-test":
+            canary = policy["canary"]
+            name = relative(canary["path"])
+            with tempfile.TemporaryDirectory(dir=args.state, prefix="restore-") as target:
+                restic(args.restic, ["restore", "latest", *common, "--host", policy["host"],
+                                    "--target", target, "--include", "/" + str(name), "--verify"], args.state)
+                restored = Path(target).joinpath(*name.parts)
+                if restored.is_symlink() or hashlib.sha256(restored.read_bytes()).hexdigest() != canary["sha256"]:
+                    raise RuntimeError("restored canary does not match expected contents")
+            atomic_json(success_path(args.state, operation), metadata | {"time": int(time.time())})
+        elif operation in ("retention-plan", "maintenance"):
+            if operation == "maintenance":
+                if not reuse_backup:
+                    phase("selection-and-backup")
+                    backup(args, policy, metadata, common)
+                if not checked:
+                    phase("check-before-prune")
+                    restic(args.restic, ["check", "--no-cache"], args.state)
+                if reuse_backup:
+                    window = window_at(policy["schedule"], time.time(), args.offset_minutes)
+                    if not window or window["id"] != metadata["window"] or not window["maintenance"] or not on_ac_power():
+                        record.update(result="skipped", reason="awaiting maintenance window and AC power")
+                        return
+                phase("forget-and-prune")
+            restic(args.restic, ["forget", *( ["--prune"] if operation == "maintenance" else ["--dry-run"] ),
+                                *common, "--host", policy["host"], "--group-by", "host,tags", *policy["retention"]], args.state)
+            if operation == "maintenance":
+                phase("check-after-prune")
+                restic(args.restic, ["check", "--no-cache"], args.state)
+                atomic_json(success_path(args.state, operation), metadata | {"time": int(time.time())})
+        record["result"] = "success"
+    except (Interrupted, KeyboardInterrupt):
+        record["result"] = "interrupted"
+        raise
+    except Exception:
+        record["result"] = "failure"
+        raise
+    finally:
+        record["finished"] = int(time.time())
+        if operation in OPERATIONS:
+            record_result(args.state, record)
+        atomic_json(args.state / "current.json", record)
+        if args.run_state:
+            atomic_json(args.run_state, record)
+        print(json.dumps(record), flush=True)
 
 
 def execute(args):
@@ -148,71 +302,72 @@ def execute(args):
     args.state.mkdir(parents=True, exist_ok=True, mode=0o700)
     lock = os.open(args.state / "lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     with os.fdopen(lock, "w") as stream:
-        fcntl.flock(stream, fcntl.LOCK_EX)
-        tag = "site:" + policy["host"]
-        common = ["--tag", tag]
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return "repository busy"
         repository = Path(os.environ["RESTIC_REPOSITORY_FILE"]).read_bytes() if os.environ.get("RESTIC_REPOSITORY_FILE") else os.environ.get("RESTIC_REPOSITORY", "").encode()
         metadata = scope(args.policy, args.source, repository) | {"host": policy["host"]}
-        success = args.state / (("restore" if args.operation == "restore-test" else args.operation) + "-success.json")
-        interval = policy.get("minimumIntervalSeconds", {}).get(args.operation, 0)
-        previous = read_record(success)
-        if not args.force and previous.get("scope") == metadata["scope"] and isinstance(previous.get("time"), (int, float)) and 0 <= time.time() - previous["time"] < interval:
-            print(json.dumps({"operation": args.operation, "skipped": "recent successful run"}))
-            return "skipped"
-        if args.operation == "backup":
-            backup(args, policy, metadata, common)
-        elif args.operation == "check":
-            progress = args.state / "check-success.json"
-            parts = policy.get("checkPartitions", 12)
-            if not isinstance(parts, int) or not 1 <= parts <= 100:
-                raise ValueError("checkPartitions must be between 1 and 100")
-            old = read_record(progress)
-            part = old.get("nextPartition", 1) if old.get("partitions") == parts and old.get("scope") == metadata["scope"] else 1
-            restic(args.restic, ["check", "--no-cache", f"--read-data-subset={part}/{parts}"], args.state)
-            atomic_json(progress, metadata | {"time": int(time.time()), "partitions": parts, "checkedPartition": part, "nextPartition": part % parts + 1})
-            print(json.dumps({"operation": "check", "partition": part, "partitions": parts}))
-        elif args.operation == "restore-test":
-            canary = policy["canary"]
-            name = relative(canary["path"])
-            with tempfile.TemporaryDirectory(dir=args.state, prefix="restore-") as target:
-                restic(args.restic, ["restore", "latest", *common, "--host", policy["host"], "--target", target, "--include", "/" + str(name), "--verify"], args.state)
-                restored = Path(target).joinpath(*name.parts)
-                if restored.is_symlink() or hashlib.sha256(restored.read_bytes()).hexdigest() != canary["sha256"]:
-                    raise RuntimeError("restored canary does not match expected contents")
-            atomic_json(args.state / "restore-success.json", metadata | {"time": int(time.time())})
-            print(json.dumps({"operation": "restore-test", "canaryRestored": True}))
-        elif args.operation in ("retention-plan", "maintenance"):
-            if args.operation == "maintenance":
-                # Complete a fresh backup and repository structure check while
-                # holding the same per-repository lock as every other operation.
-                backup(args, policy, metadata, common)
-                restic(args.restic, ["check", "--no-cache"], args.state)
-            restic(args.restic, ["forget", *( ["--prune"] if args.operation == "maintenance" else ["--dry-run"] ),
-                                *common, "--host", policy["host"], "--group-by", "host,tags", *policy["retention"]], args.state)
-            if args.operation == "maintenance":
-                atomic_json(success, metadata | {"time": int(time.time())})
-                print(json.dumps({"operation": "maintenance", "completed": True}))
-            else:
-                print("Retention dry-run saved to protected last-command.log; no snapshots or packs removed.")
+        schedule = policy.get("schedule")
+        window = window_at(schedule, time.time(), args.offset_minutes) if schedule else None
+        if window:
+            metadata["window"] = window["id"]
+        if args.operation != "automatic":
+            if not args.force and recent(args.state, args.operation, metadata, policy, time.time()):
+                return "recent successful run"
+            run_operation(args, policy, metadata, args.operation)
+            return
+        if window is None:
+            return "outside backup window"
+        previous = read_record(success_path(args.state, "backup"))
+        completed = False
+        if previous.get("scope") != metadata["scope"] or previous.get("window") != window["id"]:
+            run_operation(args, policy, metadata, "backup")
+            completed = True
+        checked = False
+        for operation in ("check", "restore-test", "maintenance"):
+            current = window_at(schedule, time.time(), args.offset_minutes)
+            if not current or current["id"] != window["id"] or not current["maintenance"] or not on_ac_power():
+                break
+            if not args.force and recent(args.state, operation, metadata, policy, time.time()):
+                continue
+            run_operation(args, policy, metadata, operation, checked=checked, reuse_backup=True)
+            completed = True
+            checked = checked or operation == "check"
+        if not completed:
+            return "window work already completed or awaiting maintenance conditions"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["plan", "backup", "check", "restore-test", "retention-plan", "maintenance"])
+    parser.add_argument("operation", choices=["plan", "automatic", *OPERATIONS, "retention-plan"])
     parser.add_argument("--policy", required=True, type=Path)
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--restic", default="restic")
     parser.add_argument("--force", action="store_true", help="ignore only the minimum interval, never repository locks")
+    parser.add_argument("--offset-minutes", type=int, default=0)
     parser.add_argument("--run-state", type=Path, help="systemd runtime marker for completed or skipped work")
     args = parser.parse_args()
     os.umask(0o077)
+    def interrupted(_signum, _frame):
+        raise Interrupted()
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     try:
         if args.run_state:
-            atomic_json(args.run_state, {"result": "started"})
+            atomic_json(args.run_state, {"result": "starting", "operation": args.operation})
         outcome = execute(args)
-        if args.run_state:
-            atomic_json(args.run_state, {"result": outcome or "success"})
+        if outcome:
+            record = {"operation": args.operation, "result": "skipped", "reason": outcome,
+                      "finished": int(time.time())}
+            if args.run_state:
+                atomic_json(args.run_state, record)
+            record_result(args.state, record)
+            print(json.dumps(record))
+    except (Interrupted, KeyboardInterrupt):
+        print("Backup operation interrupted", file=sys.stderr)
+        return 130
     except (OSError, ValueError, KeyError, StopIteration, RuntimeError, subprocess.SubprocessError) as error:
         print("Backup operation failed: " + str(error), file=sys.stderr)
         return 1

@@ -2,6 +2,7 @@
   pkgs,
   inputs,
   laptop,
+  production,
 }:
 let
   testSource =
@@ -104,7 +105,17 @@ rec {
   vm-backup = pkgs.testers.runNixOSTest (import ../tests/vm/backup.nix { inherit inputs; });
   vm-network = pkgs.testers.runNixOSTest (import ../tests/vm/network.nix { inherit inputs; });
   e2e = pkgs.linkFarm "configuration-e2e" (
-    map
+    [
+      {
+        name = "laptop2-system";
+        path = production.config.system.build.toplevel;
+      }
+      {
+        name = "laptop2-home";
+        path = production.config.home-manager.users.ubuntu.home.activationPackage;
+      }
+    ]
+    ++ (map
       (name: {
         inherit name;
         path = builtins.getAttr name {
@@ -130,5 +141,6 @@ rec {
         "vm-backup"
         "vm-network"
       ]
+    )
   );
 }

@@ -21,6 +21,7 @@ in
       noto-fonts-color-emoji
       sarasa-gothic
       nerd-fonts.symbols-only
+      nerd-fonts.jetbrains-mono
       jigmo
       unifont
     ];

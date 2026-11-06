@@ -10,6 +10,7 @@
   site.storage.persistRoot = "/persist";
 
   networking.hostName = "laptop2";
+  time.timeZone = "America/New_York";
   virtualisation.docker.storageDriver = "btrfs";
   # Preserve the tested sleep mode; S3/hibernate changes require hardware validation.
   systemd.sleep.settings.Sleep.SuspendState = "freeze";

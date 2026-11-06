@@ -3,11 +3,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 
 from tests.support import load_script
 
 backup = load_script("backup/runner.py")
 health = load_script("backup/health.py")
+notify = load_script("backup/notify.py")
 
 
 class SelectionTest(unittest.TestCase):
@@ -65,7 +68,8 @@ class HealthTest(unittest.TestCase):
             self.assertEqual(initial["repositories"]["primary"], {
                 "backup": {"ageSeconds": 100, "state": "fresh"},
                 "check": {"ageSeconds": 15 * 86400, "state": "stale", "partition": 3, "partitions": 12},
-                "canaryRestore": {"ageSeconds": 200, "state": "fresh"}})
+                "canaryRestore": {"ageSeconds": 200, "state": "fresh"},
+                "maintenance": {"ageSeconds": None, "state": "unknown"}, "results": {}})
             self.assertEqual(report(root / "another-source")["fresh"], 0)
             repository.write_text("s3:replacement\n")
             self.assertEqual(report()["repositories"]["primary"]["backup"]["state"], "unknown")
@@ -74,6 +78,38 @@ class HealthTest(unittest.TestCase):
             self.assertEqual(report()["fresh"], 0)
             (directory / "backup-success.json").write_text("interrupted write")
             self.assertEqual(report()["repositories"]["primary"]["backup"]["state"], "unknown")
+
+
+class DeliveryTest(unittest.TestCase):
+    def test_latest_result_survives_offline_delivery_and_concurrent_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            first = {"id": "first", "operation": "backup", "result": "failure", "finished": 1}
+            latest = first | {"id": "latest", "result": "success", "finished": 2}
+            backup.record_result(state, first)
+            offline = SimpleNamespace(stdout=json.dumps({"channels": [{"channel": "bark", "delivered": False}]}))
+            with patch.object(notify.subprocess, "run", return_value=offline):
+                notify.deliver(state, "host", "repo", ["bark"], "client")
+            self.assertEqual(backup.read_record(state / "backup-pending.json")["id"], "first")
+            def completed_while_sending(*_args, **_kwargs):
+                backup.record_result(state, latest)
+                return SimpleNamespace(stdout=json.dumps({"channels": [{"channel": "bark", "delivered": True}]}))
+            with patch.object(notify.subprocess, "run", side_effect=completed_while_sending):
+                notify.deliver(state, "host", "repo", ["bark"], "client")
+            self.assertEqual(backup.read_record(state / "backup-pending.json")["id"], "latest")
+            sent = []
+            def delivered(command, **_kwargs):
+                channel = command[command.index("--channel") + 1]
+                sent.append((channel, command[-1]))
+                return SimpleNamespace(stdout=json.dumps({"channels": [{"channel": channel, "delivered": True}]}))
+            with patch.object(notify.subprocess, "run", side_effect=delivered):
+                notify.deliver(state, "host", "repo", ["bark", "secondary"], "client")
+                notify.deliver(state, "host", "repo", ["bark", "secondary"], "client")
+            self.assertEqual([channel for channel, _ in sent], ["bark", "secondary"])
+            self.assertTrue(all("result=success" in body for _, body in sent))
+            final = backup.read_record(state / "backup-notification.json")
+            self.assertEqual(final["id"], "latest")
+            self.assertEqual(final["deliveredChannels"], ["bark", "secondary"])
 
 
 if __name__ == "__main__":
