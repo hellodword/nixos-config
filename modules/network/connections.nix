@@ -22,12 +22,6 @@ in
       ];
     };
     users.users.${userName}.extraGroups = [ "networkmanager" ];
-    programs.nm-applet.enable =
-      config.services.xserver.enable
-      && (config.programs.sway.enable || config.services.xserver.windowManager.i3.enable);
-    systemd.user.services.nm-applet = lib.mkIf config.programs.nm-applet.enable {
-      unitConfig.ConditionEnvironment = "!XDG_CURRENT_DESKTOP=KDE";
-    };
     systemd.services.NetworkManager.unitConfig.RequiresMountsFor = [
       "/etc/NetworkManager/system-connections"
       "/var/lib/NetworkManager"

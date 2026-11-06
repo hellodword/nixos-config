@@ -7,6 +7,7 @@ from pathlib import Path
 import signal
 import socket
 import socketserver
+import ssl
 import threading
 import time
 import uuid
@@ -52,7 +53,7 @@ def continuous(host, policy, protocol, instance):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["dns", "target", "continuous"])
+    parser.add_argument("mode", choices=["dns", "target", "host", "continuous"])
     parser.add_argument("--cert")
     parser.add_argument("--key")
     parser.add_argument("--origin", default="local")
@@ -103,10 +104,21 @@ def main():
                         pass
             class UDP6(UDPServer):
                 address_family = socket.AF_INET6
-            for host in ("198.18.0.30", "198.19.0.30", "2001:db8:1::30", "2001:db8:2::30"):
+
+                def server_bind(self):
+                    self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+                    super().server_bind()
+            hosts = ("0.0.0.0", "::") if args.mode == "host" else ("198.18.0.30", "198.19.0.30", "2001:db8:1::30", "2001:db8:2::30")
+            for host in hosts:
                 stack.enter_context(serve((TCPServer6 if ":" in host else TCPServer)((host, 18080), HTTP)))
                 stack.enter_context(serve((UDP6 if ":" in host else UDPServer)((host, 18081), UDP)))
                 stack.enter_context(serve((TCPServer6 if ":" in host else TCPServer)((host, 18082), PersistentTCP)))
+                if args.cert:
+                    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    context.load_cert_chain(args.cert, args.key)
+                    server = (TCPServer6 if ":" in host else TCPServer)((host, 18087), HTTP)
+                    server.socket = context.wrap_socket(server.socket, server_side=True)
+                    stack.enter_context(serve(server))
         signal.pause()
 
 

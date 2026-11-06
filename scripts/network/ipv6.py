@@ -1,4 +1,4 @@
-"""Coordinate the host's temporary IPv4 mode with its network policy generation."""
+"""Coordinate the declared address family and boot-local overrides."""
 import json
 import os
 from pathlib import Path
@@ -10,6 +10,11 @@ import time
 ROOT = Path("/run/site-network-policy")
 SYSCTL = Path("/proc/sys/net/ipv6/conf")
 TABLE = "site_ipv6_mode"
+CONFIG = Path("/etc/site-network/ipv6.json")
+
+
+def configuration():
+    return json.loads(CONFIG.read_text()) if CONFIG.exists() else {"enable": True}
 
 
 def error_summary(error):
@@ -57,7 +62,7 @@ def state(root=ROOT):
 
 def ipv4_only(root=ROOT):
     current = state(root)
-    return bool(current and current["ipv4_only"])
+    return current["ipv4_only"] if current else not configuration()["enable"]
 
 
 def save(root, value):
@@ -124,7 +129,7 @@ def devices():
     return [line.split(":", 1)[0] for line in output.splitlines() if line.split(":", 1)[-1] == "connected"]
 
 
-def interfaces(only4, saved):
+def interfaces(only4):
     if only4:
         for name in devices():
             # Device.modify changes the applied connection, leaving its profile
@@ -134,13 +139,16 @@ def interfaces(only4, saved):
             if connection and connection != "--":
                 run("nmcli", "device", "modify", name, "ipv6.method", "disabled",
                     "ipv6.addresses", "", "ipv6.gateway", "", "ipv6.routes", "", "ipv6.dns", "")
+        (SYSCTL / "default/disable_ipv6").write_text("1\n")
         (SYSCTL / "all/disable_ipv6").write_text("1\n")
     else:
-        (SYSCTL / "all/disable_ipv6").write_text(saved.get("all", "0") + "\n")
+        (SYSCTL / "all/disable_ipv6").write_text("0\n")
         for path in SYSCTL.glob("*/disable_ipv6"):
             if path.parent.name == "all":
                 continue
-            path.write_text(saved.get(path.parent.name, saved.get("default", "0")) + "\n")
+            path.write_text("0\n")
+        if address := configuration().get("dnsIngress"):
+            run("ip", "-6", "address", "replace", address + "/128", "dev", "lo", "nodad")
         for name in devices():
             run("nmcli", "device", "reapply", name)
         if active("systemd-networkd.service"):
@@ -149,21 +157,27 @@ def interfaces(only4, saved):
             run("systemctl", "try-restart", "network-addresses-*.service")
 
 
+def initialize(root=ROOT):
+    current = state(root) or {"override": None, "ipv4_only": not configuration()["enable"], "phase": "ready"}
+    save(root, current)
+    guard(current["ipv4_only"])
+    if current["ipv4_only"]:
+        interfaces(True)
+    elif address := configuration().get("dnsIngress"):
+        run("ip", "-6", "address", "replace", address + "/128", "dev", "lo", "nodad")
+
+
 def reconcile(root=ROOT):
     current = state(root)
     if current and current["ipv4_only"]:
         guard(True)
-        interfaces(True, current["sysctl"])
+        interfaces(True)
 
 
 def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale=False):
     """Keep external IPv6 blocked while coordinating the transition."""
     import underlay
-    current = state(root)
-    if current is None:
-        current = {"sysctl": {p.parent.name: p.read_text().strip() for p in SYSCTL.glob("*/disable_ipv6")}}
-    current.update(ipv4_only=only4, phase="applying")
-    current.pop("failed_step", None)
+    current = {"override": not only4, "ipv4_only": only4, "phase": "applying"}
     guard(True, allow_loopback=not only4)
     save(root, current)
     watching = lockdown and active("site-network-underlay.service")
@@ -179,7 +193,7 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
         if tail_active:
             run("systemctl", "stop", "tailscaled.service")
         step = "applying interface settings"
-        interfaces(only4, current["sysctl"])
+        interfaces(only4)
         if lockdown:
             underlay.save(Path("/run/site-network-underlay/underlay.json"), underlay.observe(only4))
             run("systemctl", "restart", "site-network-routing.service")
@@ -193,7 +207,7 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
         if active("systemd-resolved.service"):
             run("resolvectl", "flush-caches")
         if only4:
-            interfaces(True, current["sysctl"])
+            interfaces(True)
         else:
             guard(False)
         step = "waiting for physical bindings and network services"
@@ -202,11 +216,8 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
         wait_policy()
         if lockdown:
             wait_tunnel()
-        if only4:
-            current["phase"] = "ready"
-            save(root, current)
-        else:
-            (root / "ipv6-state.json").unlink()
+        current["phase"] = "ready"
+        save(root, current)
         return previous
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         try:
@@ -217,7 +228,7 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
         save(root, current)
         raise RuntimeError(
             f"IPv6 transition incomplete after {step}: {error_summary(error)}; "
-            "inspect network-ipv6 status, then retry off or restore"
+            "inspect network-ipv6 status, then retry on or off"
         ) from error
     finally:
         primary = sys.exception()
@@ -233,8 +244,11 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
 
 def status(root, consumers, lockdown=False, tailscale=False):
     current = state(root)
-    only4 = bool(current and current["ipv4_only"])
-    print("Requested: " + ("IPv4 only" if only4 else "normal (IPv4 preferred)"))
+    only4 = ipv4_only(root)
+    print("Boot default: " + ("dual stack" if configuration()["enable"] else "IPv4 only"))
+    override = current.get("override") if current else None
+    print("Temporary override: " + ("none" if override is None else "on" if override else "off"))
+    print("Requested: " + ("IPv4 only" if only4 else "dual stack (IPv4 preferred)"))
     print("Transition: " + (current["phase"] if current else "ready"))
     if current and "failed_step" in current:
         print("Failed step: " + current["failed_step"])
@@ -262,7 +276,8 @@ def status(root, consumers, lockdown=False, tailscale=False):
     if tailscale:
         print("Tailscale service: " + ("active" if active("tailscaled.service") else "inactive"))
     if only4:
-        complete &= blocked and not enabled and values.get("default") == "1" and current["phase"] == "ready"
+        complete &= blocked and not enabled and values.get("default") == "1"
     else:
         complete &= not any(tables)
+    complete &= current is not None and current["phase"] == "ready"
     return 0 if complete else 1

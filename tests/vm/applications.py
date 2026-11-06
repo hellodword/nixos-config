@@ -260,7 +260,7 @@ def firefox():
             WebDriverWait(browser, 30).until(lambda driver: driver.find_element(By.ID, "ready").text == "Page loaded")
             field = browser.find_element(By.ID, "message")
             field.click()
-            ui_input({"pinyin": "nihao "})
+            ui_input({"pinyin": "nihao ", "candidateScreenshot": "firefox-candidates"})
             assert field.get_attribute("value") == "你好", repr(field.get_attribute("value"))
             browser.save_screenshot(str(ARTIFACTS / "firefox.png"))
         except Exception:

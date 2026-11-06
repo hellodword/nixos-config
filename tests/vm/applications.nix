@@ -161,7 +161,13 @@
             for action in actions:
                 if "pinyin" in action:
                     user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
-                    machine.send_chars(action["pinyin"], delay=key_delay)
+                    if "candidateScreenshot" in action:
+                        machine.send_chars(action["pinyin"].rstrip(), delay=key_delay)
+                        machine.sleep(0.5)
+                        machine.screenshot(machine.name + "-" + action["candidateScreenshot"])
+                        machine.send_chars(" ", delay=key_delay)
+                    else:
+                        machine.send_chars(action["pinyin"], delay=key_delay)
                 else:
                     user(machine, "fcitx5-remote -c")
                     if "key" in action:
@@ -216,8 +222,9 @@
             wm = "swaymsg" if session == "sway" else "i3-msg"
             focused = wm + " -t get_tree | jq -e " + shlex.quote('first(.. | objects | select(.focused? == true) | (.app_id // .window_properties.class // "") | ascii_downcase | select(. == "kitty"))')
         machine.wait_until_succeeds(user_command(focused), timeout=60)
+        machine.screenshot(machine.name + "-kitty-prompt")
         input_actions(machine, [
-            {"text": "printf '"}, {"pinyin": "nihao "},
+            {"text": "printf '"}, {"pinyin": "nihao ", "candidateScreenshot": "kitty-candidates"},
             {"text": "\\n' > ~/application-workspace/terminal.txt\n"},
         ])
         machine.wait_until_succeeds("grep -Fx '你好' /home/desktop/application-workspace/terminal.txt", timeout=30)
@@ -256,6 +263,8 @@
             if session == "KDE":
                 machine.wait_until_fails("pgrep -u 1000 -f '^([^ ]*/)?ksplashqml( |$)'", timeout=90)
             user(machine, "fcitx5-remote -c; mkdir -p ~/application-workspace/artifacts")
+            user(machine, "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/classicui 'a{sv}' 2 Theme s catppuccin-mocha-pink DarkTheme s catppuccin-mocha-pink")
+            user(machine, "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Save")
             user(machine, "busctl --user status org.freedesktop.secrets")
             with tempfile.TemporaryDirectory() as directory:
                 frame = Path(directory) / "resolution.png"

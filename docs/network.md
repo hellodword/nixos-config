@@ -29,28 +29,37 @@ flowchart TD
   Filter -->|固定目的地隧道| SB
 ```
 
-## 地址族与临时 IPv4 模式
+## 地址族与运行时切换
 
-正常模式保留 IPv6，glibc 的完整地址排序表优先 IPv4；sing-box 的本地目标解析和节点解析默认使用 `prefer_ipv4`，IPv6 仍可回退。代理协议将域名交给远端解析时，远端有自己的地址选择；应用自带的解析器也可以自行选择地址族。
+laptop2 通过 `site.network.ipv6.enable = false` 默认使用 IPv4。需要 IPv6 时，可在本次启动期间启用；其他主机可通过同一选项声明自己的默认值。
 
 ```sh
-sudo network-ipv6 off
 sudo network-ipv6 status
-sudo network-ipv6 restore
+sudo network-ipv6 on
+sudo network-ipv6 off
 ```
+
+`on` 临时启用双栈，`off` 临时关闭 IPv6；重启回到声明式默认值。`status` 显示启动默认值、临时覆盖、当前模式和各层实际状态。
+
+双栈模式下，glibc 的地址排序表以及 sing-box 的本地目标与节点解析优先 IPv4。`prefer_ipv4` 保留 AAAA 回答，不决定应用的连接顺序：例如 curl 的 [Happy Eyeballs](https://curl.se/libcurl/c/CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS.html) 会优先尝试可用的 IPv6 地址。应用已选择的字面量 IPv6 地址会按该地址转发，远端节点需要具备 IPv6 出口。代理协议将域名交给远端解析时，远端独立选择地址族。
 
 `off` 将本机及经本机转发的出口切为 IPv4：接口与 loopback 关闭 IPv6，inet/bridge 转发入口丢弃 IPv6；dnsdist 对 AAAA 返回 NOERROR 空回答，DNS listeners、bootstrap 和加密上游使用 IPv4，重启解析进程以清空缓存。sing-box 将域名目标先解析为 IPv4，再交给 direct 或代理，并拒绝字面量 IPv6 目标；节点拨号也只解析 IPv4。仅有 IPv6 地址的节点在此模式下不可达。Mullvad 使用仅含 IPv4 的本地 WireGuard peer；Tailscale 的控制、DERP、打洞和 P2P 使用 IPv4，其他节点仍可通过本机使用 IPv4 出口。
 
 命令控制宿主和转发出口。容器或虚拟机内部的 IPv6 配置、已经缓存在其中的 AAAA 记录，以及远端代理服务器自身的网络配置，由各自环境管理。关闭期间经过本机出口的原生 IPv6 流量被阻断。
 
-模式只记录在 `/run/site-network-policy/`。NetworkManager 重连、新接口出现、服务重启及 `network-policy apply` 继续遵守当前模式；`restore` 或重启系统恢复正常模式。NetworkManager 修改的是当前连接，保存的 Wi-Fi profile 与凭据保持原样。Mullvad 通过原生 CLI 配置，启动连接时按当前 `/run` 模式重新应用。
+临时覆盖只记录在 `/run/site-network-policy/`，重启回到声明式默认值。物理连接由 NetworkManager 管理；重连、新接口出现、服务重启及 `network-policy apply` 继续遵守当前模式。NetworkManager 修改的是当前连接；启用 IPv6 时重新应用保存的连接配置，Wi-Fi profile 与凭据保持原样。Mullvad 通过原生 CLI 配置，启动连接时按当前模式重新应用。
 
-切换期间会短暂重启 DNS、sing-box、本地隧道及已运行的 Tailscale，现有连接可能中断。先验证候选配置，再建立 IPv6 阻断并启用对应配置；恢复时先放行 `lo` 上源、目的地址均为 `::1` 的通信，让 DNS 和代理完成本地就绪检查，随后启动本地隧道及 Tailscale，再解除其余 IPv6 阻断。命令等待物理出口绑定、服务监听和隧道共同就绪后才报告成功。配置验证不通过时保留当前模式；切换开始后失败则恢复完整 IPv6 阻断（含回环），命令返回非零，`status` 显示 `incomplete`。检查相应 journal 后再次执行 `off` 或 `restore`。`status` 同时检查接口、包过滤表、配置代次、消费者服务及 Mullvad 隧道状态。
+切换期间会短暂重启 DNS、sing-box、本地隧道及已运行的 Tailscale，现有连接可能中断。先验证候选配置，再建立 IPv6 阻断并启用对应配置；启用双栈时先放行 `lo` 上源、目的地址均为 `::1` 的通信，让 DNS 和代理完成本地就绪检查，随后启动本地隧道及 Tailscale，再解除其余 IPv6 阻断。命令等待物理出口绑定、服务监听和隧道共同就绪后才报告成功。配置验证不通过时保留当前模式；切换开始后失败则恢复完整 IPv6 阻断（含回环），命令返回非零，`status` 显示 `incomplete`。检查相应 journal 后重新执行目标模式。`status` 同时检查接口、包过滤表、配置代次、消费者服务及 Mullvad 隧道状态。
 
 失败信息保留具体阶段、命令及服务退出原因；`network-ipv6 status` 显示最近失败摘要和受限日志路径。原始输出在 `/run/site-network-policy/last-error.log`，结构化摘要在 `last-error.json`。恢复阻断或重启观察器时的附加错误与最初失败一起保存。
 
-只有 DNS、DNS＋sing-box、完整 Lockdown 三种组合均使用相同入口。上游需要至少一个 IPv4 地址；仅有 IPv6 上游的分组无法生成 IPv4 配置。临时模式的 AAAA 回答在 DNS 日志中标记为 `listener/ipv4-only`。
+只有 DNS、DNS＋sing-box、完整 Lockdown 三种组合均使用相同入口。上游需要至少一个 IPv4 地址；仅有 IPv6 上游的分组无法生成 IPv4 配置。IPv4 模式的 AAAA 回答在 DNS 日志中标记为 `listener/ipv4-only`。
 
+## 明文 DNS 接管
+
+启用 DNS 后，本机、普通 Docker bridge 和 Tailscale 出口客户端发往任意地址 TCP/UDP 53 的查询进入本机解析体系，包括 `dig example.com @1.1.1.1` 和 `dig +tcp example.com @1.1.1.1`。DNS 模块提供本机持有的 `169.254.53.53` 和 `fd53:53:53::53` 入口；双栈时两个地址都可用，IPv4 模式只使用前者。接管在 Mullvad 的 DNS 过滤之前执行，DNS-only 模式也具有相同行为。
+
+本地回环解析器、MagicDNS 和本地隧道的 DNS 地址保持各自路径。Compose 的服务名由 Docker 内嵌 DNS 处理，其公共查询进入本机体系。入口只接受本机、已发现的普通 Docker bridge 和 Tailscale 接口；通知专用网络使用自己的访问规则。DoH/DoT 按普通连接分流。
 
 ## Tailscale
 
@@ -61,7 +70,7 @@ sudo network-ipv6 restore
 | Tailscale 单独启用，或搭配 DNS / 显式 sing-box | Tailscale 原生连接走物理网络 | Tailscale 原生路由 | 原生转发；DNS 启用时使用共享解析策略，显式代理仍由应用选择 |
 | DNS + sing-box + Lockdown + Tailscale | `mullvad-exclude` 启动守护进程，走物理网络 | Tailnet 路由表优先于透明接管，数据进入 `tailscale0` | 与本机普通应用共用透明分流和 Lockdown |
 
-laptop2 声明为 IPv4/IPv6 出口节点，启用原生转发及 SNAT。管理端批准该节点作为出口后，其他节点选择它并启用 Tailscale DNS，即可使用出口策略；另外公告 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`，供获授权的 Tailnet 节点访问 laptop2 可达的私网。路由仍需管理端批准及访问规则允许；本机保持 `accept-routes=false`。
+laptop2 声明为出口节点，启用原生转发及 SNAT，实际可用的地址族遵循上述主机模式。管理端批准该节点作为出口后，其他节点选择它并启用 Tailscale DNS，即可使用出口策略；另外公告 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`，供获授权的 Tailnet 节点访问 laptop2 可达的私网。路由仍需管理端批准及访问规则允许；本机保持 `accept-routes=false`。
 
 ```mermaid
 flowchart TD
@@ -106,11 +115,13 @@ sudo tailscale set --exit-node=laptop2 --accept-dns=true
 
 ## Docker 与 Compose
 
-同时启用 Docker 和项目 DNS 时，宿主在 loopback 上持有 `169.254.53.53/32`，systemd-resolved 在该地址的 TCP/UDP 53 接收容器查询，再使用宿主当前的 DNS 路径。Docker 的默认 DNS 指向这个地址。默认 bridge 直接使用它；Compose 和自建 bridge 保留 Docker 的 `127.0.0.11` 内嵌解析器，用于服务名解析并将外部查询转给宿主入口。已有容器需要重新创建，才能取得新的 DNS 默认值。
+同时启用 Docker 和项目 DNS 时，Docker 的默认 DNS 指向宿主的 `169.254.53.53`。默认 bridge 直接使用它；Compose 和自建 bridge 保留 Docker 的 `127.0.0.11` 内嵌解析器，用于服务名解析并将外部查询转给宿主入口。已有容器需要重新创建，才能取得新的 DNS 默认值。
 
-`site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。临时 IPv4 模式结束后，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
+默认 `bridge` 网络的容器可通过该网络的宿主网关访问显式声明的宿主端口。`site.network.containers.hostTCPPorts` 和 `hostUDPPorts` 分别列出允许的 TCP、UDP 端口，默认均为空；laptop2 开放 TCP 8765，例如 `http://172.17.0.1:8765/`。服务需监听网关地址或通配地址；仅监听 `127.0.0.1` 的服务不能从容器访问。规则从 Docker IPAM 读取实际网关，不固定子网，也不向局域网开放端口。这个访问范围适用于默认 bridge；自建 bridge 与通知专用网络继续使用各自的访问边界。
 
-容器 DNS 入口仅接受本机和这些 bridge 的查询。路由表 `64500`、规则优先级 `94` 与 `inet site_containers` 防火墙表由同步服务管理，均为运行时状态；Docker 重启后重新读取网络清单。带 `org.nixos-config.service` 标签的通知专用网络使用通知模块自己的限制和路由。
+`site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。启用 IPv6 时，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
+
+路由表 `64500`、规则优先级 `94` 与 `inet site_containers` 防火墙表由同步服务管理，均为运行时状态；Docker 重启后重新读取网络清单。DNS 模块管理 `inet site_dns`，同步服务更新其中的普通 bridge 集合。带 `org.nixos-config.service` 标签的通知专用网络使用通知模块自己的限制和路由。
 
 IPv6 bridge 的邻居发现使用独立的规则：同步服务在 Mullvad 的 input/output/forward 链中管理带 `site-container-neighbors` 注释的规则，只允许 Docker bridge 上 hop limit 为 255 的邻居请求与通告，支持容器与网关、同桥容器之间的地址解析。它监听防火墙重建并重新同步，停止时删除这些规则；普通 TCP/UDP 出口继续遵循分流与 Lockdown。
 

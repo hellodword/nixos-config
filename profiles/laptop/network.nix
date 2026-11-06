@@ -9,6 +9,8 @@ let
 in
 {
   site.network = {
+    ipv6.enable = false;
+    containers.hostTCPPorts = [ 8765 ];
     dns.enable = true;
     singBox.enable = true;
     lockdown.enable = true;

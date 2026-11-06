@@ -351,6 +351,11 @@ in
       )
       // {
         site-backup-status = {
+          wantedBy = [ "multi-user.target" ];
+          after = [
+            "local-fs.target"
+            "sops-install-secrets.service"
+          ];
           # Refresh when several independent jobs complete close together.
           unitConfig.StartLimitIntervalSec = 0;
           serviceConfig = {
@@ -358,6 +363,8 @@ in
             RuntimeDirectory = "site-backup";
             RuntimeDirectoryMode = "0755";
             RuntimeDirectoryPreserve = true;
+            StateDirectory = map (target: "site-backup-${target}") (builtins.attrNames cfg.targets);
+            StateDirectoryMode = "0700";
             ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/backup}/health.py --targets ${healthTargets} --policy ${policy} --source ${lib.escapeShellArg cfg.source} --output /run/site-backup/status.json";
             ProtectSystem = "strict";
             ProtectHome = true;
@@ -393,7 +400,6 @@ in
         site-backup-status = {
           wantedBy = [ "timers.target" ];
           timerConfig = {
-            OnBootSec = "20m";
             OnUnitActiveSec = "1h";
           };
         };

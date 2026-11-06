@@ -5,54 +5,49 @@
   ...
 }:
 let
-  enabled = config.virtualisation.docker.enable && (config.site.network.dns.enable or false);
+  enabled = config.virtualisation.docker.enable;
+  dns = config.site.network.dns.enable or false;
   lockdown = config.site.network.lockdown.enable or false;
-  resolver = "169.254.53.53";
-  command = "${pkgs.python3}/bin/python3 ${../../scripts/network/docker_network.py}";
+  cfg = config.site.network.containers;
+  command = "${pkgs.python3}/bin/python3 ${../../scripts/network}/docker_network.py";
 in
 {
+  options.site.network.containers = {
+    hostTCPPorts = lib.mkOption {
+      type = lib.types.listOf lib.types.port;
+      default = [ ];
+      description = "Host TCP ports available through the default Docker bridge gateway.";
+    };
+    hostUDPPorts = lib.mkOption {
+      type = lib.types.listOf lib.types.port;
+      default = [ ];
+      description = "Host UDP ports available through the default Docker bridge gateway.";
+    };
+  };
   config = lib.mkIf enabled {
-    # A host-owned address stays constant when Docker allocates a new subnet.
-    networking.interfaces.lo.ipv4.addresses = [
-      {
-        address = resolver;
-        prefixLength = 32;
-      }
-    ];
-    services.resolved.settings.Resolve.DNSStubListenerExtra = [ resolver ];
-    virtualisation.docker.daemon.settings.dns = [ resolver ];
+    virtualisation.docker.daemon.settings.dns = lib.mkIf dns [ config.site.network.dns.ingressIPv4 ];
     networking.nftables = {
       enable = true;
       flushRuleset = false;
-      tables.site-container-dns = {
-        family = "inet";
-        content = ''
-          chain input {
-            type filter hook input priority -20; policy accept;
-            iifname "lo" accept
-            ip daddr ${resolver} meta l4proto { tcp, udp } th dport 53 ct mark 0xf41 accept
-            ip daddr ${resolver} drop
-          }
-        '';
-      };
     };
     networking.firewall.extraInputRules = ''
-      ip daddr ${resolver} meta l4proto { tcp, udp } th dport 53 ct mark 0xf41 accept
+      # Set only in INPUT for the discovered default bridge -> gateway tuple.
+      meta mark 0x646f636b ct mark 0xf41 accept
     '';
-    systemd.services.docker.after = [ "network-addresses-lo.service" ];
+    systemd.services.docker.after = lib.optional dns "network-addresses-lo.service";
     systemd.services.site-container-network = {
       description = "Docker bridge DNS and local routing";
       wantedBy = [ "docker.service" ];
       requires = [
         "docker.service"
         "nftables.service"
-        "systemd-resolved.service"
-      ];
+      ]
+      ++ lib.optional dns "systemd-resolved.service";
       after = [
         "docker.service"
         "nftables.service"
-        "systemd-resolved.service"
-      ];
+      ]
+      ++ lib.optional dns "systemd-resolved.service";
       partOf = [
         "docker.service"
         "nftables.service"
@@ -61,11 +56,17 @@ in
         config.virtualisation.docker.package
         pkgs.iproute2
         pkgs.nftables
+        pkgs.systemd
       ];
       serviceConfig = (import ../../lib/service-hardening.nix) // {
         DynamicUser = false;
         Type = "notify";
-        ExecStart = "${command} run --resolver ${resolver}" + lib.optionalString lockdown " --lockdown";
+        ExecStart =
+          "${command} run"
+          + lib.optionalString dns " --dns"
+          + lib.optionalString lockdown " --lockdown"
+          + lib.concatMapStrings (port: " --host-tcp-port ${toString port}") cfg.hostTCPPorts
+          + lib.concatMapStrings (port: " --host-udp-port ${toString port}") cfg.hostUDPPorts;
         ExecStopPost = "${command} stop";
         Restart = "on-failure";
         RestartSec = "2s";

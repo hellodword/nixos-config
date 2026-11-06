@@ -53,6 +53,7 @@ in
       initialPassword = "synthetic-fixture-only";
     };
     site.desktop.enable = true;
+    site.connections.enable = true;
     services.safeeyes.enable = true;
     hardware.graphics.enable = true;
     services.displayManager.sddm.settings.Users.MaximumUid = 1000;
@@ -322,11 +323,11 @@ in
             # rendered startup splash still covers application windows.
             visible(machine, "Native desktop", timeout=180)
         if session == "sway":
-            user(machine, "systemctl --user is-active site-sway.target waybar.service mako.service")
+            user(machine, "systemctl --user is-active site-sway.target waybar.service mako.service nm-applet.service")
             user(machine, "systemctl --user is-active site-i3.target", True)
             machine.wait_until_succeeds(user_command("swaymsg -t get_tree | grep Desktop-fixture"))
         elif session == "i3":
-            user(machine, "systemctl --user is-active site-i3.target dunst.service autorandr.service")
+            user(machine, "systemctl --user is-active site-i3.target dunst.service autorandr.service nm-applet.service")
             user(machine, "systemctl --user is-active site-sway.target", True)
             # Unknown monitors use the EDID preference: QEMU offers 5120x2160
             # but marks 1280x800 as preferred.

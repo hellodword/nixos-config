@@ -9,6 +9,7 @@ let
   cfg = config.site.desktop;
   userHome = config.home-manager.users.${userName};
   gtkSettings = {
+    gtk-im-module = "fcitx";
     gtk-font-name = "${builtins.head config.fonts.fontconfig.defaultFonts.sansSerif} 10";
     gtk-cursor-theme-name = userHome.home.pointerCursor.name;
     gtk-cursor-theme-size = userHome.home.pointerCursor.size;
@@ -93,7 +94,8 @@ in
       case "''${XDG_CURRENT_DESKTOP:-}" in
         sway)
           unset I3SOCK
-          export XDG_CURRENT_DESKTOP=sway:X-Sway:X-NIXOS-SYSTEMD-AWARE GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx
+          unset GTK_IM_MODULE
+          export XDG_CURRENT_DESKTOP=sway:X-Sway:X-NIXOS-SYSTEMD-AWARE QT_IM_MODULE=fcitx
           ;;
         i3|none+i3)
           unset WAYLAND_DISPLAY SWAYSOCK
@@ -123,8 +125,20 @@ in
         (toString userHome.xdg.configFile."sway/config".source)
       ];
       extraSessionCommands = ''
-        export XDG_CURRENT_DESKTOP=sway:X-Sway GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx
+        unset GTK_IM_MODULE
+        export XDG_CURRENT_DESKTOP=sway:X-Sway QT_IM_MODULE=fcitx
       '';
+    };
+    programs.nm-applet.enable =
+      config.networking.networkmanager.enable && (cfg.sway.enable || cfg.i3.enable);
+    systemd.user.services.nm-applet = lib.mkIf config.programs.nm-applet.enable {
+      wantedBy = lib.mkForce (
+        lib.optional cfg.sway.enable "site-sway.target" ++ lib.optional cfg.i3.enable "site-i3.target"
+      );
+      partOf = [
+        "site-sway.target"
+        "site-i3.target"
+      ];
     };
     services.desktopManager.plasma6.enable = cfg.plasma.enable;
     services.dbus.enable = true;

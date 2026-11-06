@@ -105,9 +105,10 @@ in
   testScript = builtins.readFile ./notifications.py + ''
     from datetime import timedelta
 
-    start_all()
-    machine.wait_for_unit("multi-user.target")
+    upstream.start()
     upstream.wait_for_unit("restic-rest-server.service")
+    machine.start()
+    machine.wait_for_unit("multi-user.target")
     machine.succeed("systemctl stop 'site-backup-*-automatic.timer'")
     notification_smoke(machine, upstream, "${notificationPackages.python}/bin/python3")
     machine.succeed("mkdir -p /persist/data/Cache; echo important > /persist/data/document; echo disposable > /persist/data/Cache/blob; systemd-tmpfiles --create")
@@ -120,6 +121,18 @@ in
     def restore(target, destination):
         machine.succeed(f"RESTIC_PASSWORD_FILE=/etc/backup-test/password restic -r rest:http://192.168.1.2:8000/{target}/ restore latest --target {destination} --verify")
         machine.succeed(f"cmp /persist/data/document {destination}/data/document; test ! -e {destination}/data/Cache")
+
+    def health():
+        machine.succeed("systemctl start site-backup-status")
+        return json.loads(machine.succeed("backup-status"))["repositories"]
+
+    initial = health()
+    assert all(value["backup"]["state"] == "pending" for value in initial.values()), initial
+    deadline = initial["first"]["backup"]["dueAt"]
+    machine.succeed(f"date -s @{deadline + 1}")
+    overdue = health()
+    assert overdue["first"]["backup"]["state"] == "stale", overdue
+    assert overdue["first"]["check"]["state"] == "pending", overdue
 
     # At 13:00 Shanghai, activation leaves the next backup for the evening.
     machine.succeed("date -s '2027-03-15 05:00:00 UTC'; systemctl start site-backup-first-automatic")
@@ -139,6 +152,7 @@ in
     upstream.succeed("mv /var/lib/restic/second /var/lib/restic/second-offline")
     machine.fail("systemctl start site-backup-second-backup")
     assert record("second", "backup-result")["result"] == "failure"
+    assert health()["second"]["backup"]["state"] == "failed"
     upstream.succeed("mv /var/lib/restic/second-offline /var/lib/restic/second")
     machine.succeed("systemctl reset-failed site-backup-second-backup")
     for target in ("first", "second", "third"):
@@ -148,6 +162,7 @@ in
             machine.succeed(f"systemctl start site-backup-{target}-{operation}")
             assert record(target, operation + "-result")["result"] == "success"
         restore(target, "/restore-" + target)
+    assert all(value["backup"]["state"] == "fresh" for value in health().values())
 
     # A second daily window gets its own recovery point, even less than 12h later.
     machine.succeed("date -s '2027-03-16 13:30:00 UTC'; echo evening > /persist/data/document; systemctl start site-backup-first-automatic")
@@ -170,14 +185,15 @@ in
     machine.wait_until_succeeds("ss -Htn state established '( dst 192.168.1.2 and dport = :8000 )' | grep -q .", timeout=30)
     machine.succeed("systemctl start site-backup-first-check", timeout=10)
     assert record("first", "check-result")["result"] == "skipped"
-    machine.succeed("systemctl poweroff --no-block", timeout=10)
+    machine.execute("systemctl poweroff --no-block", check_return=False, check_output=False)
     machine.wait_for_shutdown(timeout=timedelta(seconds=60))
     upstream.succeed("systemctl kill -s CONT restic-rest-server.service; echo 0 > /run/notification-fixture/failures")
     machine.start()
     machine.wait_for_unit("multi-user.target")
-    machine.succeed("systemctl stop 'site-backup-*-automatic.timer'")
+    machine.succeed("systemctl stop 'site-backup-*-automatic.timer'; date -s '2027-03-16 13:40:00 UTC'")
     assert record("first", "backup-result")["result"] == "interrupted"
     assert record("first", "backup-success") == evening
+    assert health()["first"]["backup"]["state"] == "fresh"
     machine.succeed("systemctl start site-backup-first-backup")
     restore("first", "/restore-after-reboot")
     latest = record("first", "backup-result")["id"]

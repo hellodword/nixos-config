@@ -61,18 +61,27 @@ class HealthTest(unittest.TestCase):
             for operation, ago in (("backup", 100), ("check", 15 * 86400), ("restore", 200)):
                 (directory / (operation + "-success.json")).write_text(json.dumps(
                     metadata | {"time": now - ago, "checkedPartition": 3, "partitions": 12}))
-            def report(source=root):
-                return health.status(root, {"primary": repository}, policy, source, now)
+            def report(source=root, at=None):
+                return health.status(root, {"primary": repository}, policy, source, now if at is None else at)
             initial = report()
             self.assertEqual(initial["fresh"], 1)
             self.assertEqual(initial["repositories"]["primary"], {
                 "backup": {"ageSeconds": 100, "state": "fresh"},
                 "check": {"ageSeconds": 15 * 86400, "state": "stale", "partition": 3, "partitions": 12},
                 "canaryRestore": {"ageSeconds": 200, "state": "fresh"},
-                "maintenance": {"ageSeconds": None, "state": "unknown"}, "results": {}})
+                "maintenance": {"ageSeconds": None, "state": "pending", "dueAt": now + 45 * 86400}, "results": {}})
             self.assertEqual(report(root / "another-source")["fresh"], 0)
             repository.write_text("s3:replacement\n")
-            self.assertEqual(report()["repositories"]["primary"]["backup"]["state"], "unknown")
+            waiting = report()["repositories"]["primary"]
+            self.assertEqual(waiting["backup"], {"ageSeconds": None, "state": "pending", "dueAt": now + 36 * 3600})
+            # Repeated observations keep the original deadline across process restarts.
+            self.assertEqual(report(at=now + 35 * 3600)["repositories"]["primary"]["backup"], waiting["backup"])
+            self.assertEqual(report(at=now + 37 * 3600)["repositories"]["primary"]["backup"]["state"], "stale")
+            failed = backup.scope(policy, root, repository.read_bytes()) | {"operation": "backup", "result": "failure", "finished": now}
+            backup.record_result(directory, failed)
+            self.assertEqual(report()["repositories"]["primary"]["backup"]["state"], "failed")
+            backup.atomic_json(directory / "backup-success.json", failed | {"time": now + 10})
+            self.assertEqual(report(at=now + 10)["repositories"]["primary"]["backup"]["state"], "fresh")
             repository.write_text("s3:synthetic\n")
             policy.write_text(json.dumps({"roots": [{"path": "different-data"}], "checkPartitions": 12}))
             self.assertEqual(report()["fresh"], 0)

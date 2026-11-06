@@ -224,7 +224,8 @@ def record_result(state, record):
 
 
 def run_operation(args, policy, metadata, operation, *, checked=False, reuse_backup=False):
-    record = {"id": uuid.uuid4().hex, "operation": operation,
+    record = metadata | {"id": uuid.uuid4().hex, "operation": operation,
+              "bootId": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
               "result": "running", "started": int(time.time()), "phase": operation}
 
     def phase(name):

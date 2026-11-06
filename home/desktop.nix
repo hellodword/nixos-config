@@ -11,7 +11,7 @@ let
   c = import ../lib/palette.nix;
   sans = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.sansSerif;
   mono = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.monospace;
-  fcitxTheme = inputs.catppuccin-fcitx5 + /src/catppuccin-mocha-mauve;
+  fcitxThemes = inputs.catppuccin-fcitx5 + /src;
   tools = import ../nix/desktop-tools.nix { inherit pkgs; };
   notificationActivation = pkgs.writeShellScript "activate-session-notifications" ''
     set -eu
@@ -36,11 +36,17 @@ let
         other=i3
         export XDG_CURRENT_DESKTOP=sway:X-Sway XDG_SESSION_TYPE=wayland
         unset I3SOCK
+        unset GTK_IM_MODULE
+        ${pkgs.systemd}/bin/systemctl --user unset-environment GTK_IM_MODULE
+        ${lib.optionalString (nixosConfig.services.dbus.implementation == "dbus") ''
+          ${pkgs.dbus}/bin/dbus-update-activation-environment GTK_IM_MODULE=
+        ''}
         ${pkgs.systemd}/bin/systemctl --user unset-environment I3SOCK
         ${lib.optionalString (nixosConfig.services.dbus.implementation == "dbus") ''
           ${pkgs.dbus}/bin/dbus-update-activation-environment I3SOCK=
         ''}
         displayVars=(DISPLAY WAYLAND_DISPLAY SWAYSOCK)
+        imVars=(QT_IM_MODULE)
         ;;
       i3)
         other=sway
@@ -51,6 +57,7 @@ let
           ${pkgs.dbus}/bin/dbus-update-activation-environment WAYLAND_DISPLAY= SWAYSOCK=
         ''}
         displayVars=(DISPLAY I3SOCK)
+        imVars=(GTK_IM_MODULE QT_IM_MODULE)
         ;;
       *) exit 2 ;;
     esac
@@ -62,7 +69,7 @@ let
     fi
     ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd \
       "''${displayVars[@]}" XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_ID XDG_VTNR \
-      GTK_IM_MODULE QT_IM_MODULE
+      "''${imVars[@]}"
     if [ -n "''${PAM_KWALLET5_LOGIN:-}" ]; then
       ${pkgs.systemd}/bin/systemctl --user start --wait plasma-kwallet-pam.service
       ${pkgs.glib}/bin/gdbus wait --session --timeout 30 org.freedesktop.secrets
@@ -282,7 +289,7 @@ in
         size = 11;
       };
       settings = {
-        window_padding_width = 10;
+        window_padding_width = 0;
         background = c.background;
         foreground = c.text;
         selection_background = c.accent;
@@ -380,8 +387,8 @@ in
       '';
     };
     xdg.dataFile = {
-      "fcitx5/themes/catppuccin-mocha-mauve" = {
-        source = fcitxTheme;
+      "fcitx5/themes" = {
+        source = fcitxThemes;
         recursive = true;
       };
       "dbus-1/services/org.freedesktop.Notifications.service".text = ''

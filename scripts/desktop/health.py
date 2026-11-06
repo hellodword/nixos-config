@@ -49,16 +49,19 @@ if levels:
 if os.environ.get("SITE_BACKUP_ENABLED") == "1":
     try:
         health = json.loads(Path("/run/site-backup/status.json").read_text())
+        labels = {"backup": "备份", "check": "校验", "canaryRestore": "恢复抽检", "maintenance": "空间回收"}
+        states = {"failed": "失败", "stale": "超期", "unknown": "状态不可用"}
         current["backup"] = sorted(
-            name for name, value in health["repositories"].items()
-            if any(value[operation]["state"] != "fresh" for operation in ("backup", "check", "canaryRestore", "maintenance")))
+            f"{name}：{labels[operation]}{states[value[operation]['state']]}"
+            for name, value in health["repositories"].items() for operation in labels
+            if value[operation]["state"] in states)
         if not health["repositories"] or time.time() - health["generated"] > 2 * 3600:
-            current["backup"] = ["status-unavailable"]
+            current["backup"] = ["备份状态暂不可用"]
     except (OSError, ValueError, KeyError, TypeError):
-        current["backup"] = ["status-unavailable"]
+        current["backup"] = ["备份状态暂不可用"]
     if current["backup"] and current["backup"] != previous.get("backup"):
         subprocess.run(["notify-send", "-u", "critical", "备份需要检查",
-                        "请运行 backup-status 查看各仓库的备份、校验、恢复抽检和空间回收状态。"], check=False)
+                        "\n".join(current["backup"]) + "\n运行 backup-status 查看详情。"], check=False)
 for scope in ("system", "user"):
     command = ["systemctl", *(["--user"] if scope == "user" else []), "list-units", "--failed", "--plain", "--no-legend", "--no-pager"]
     result = subprocess.run(command, capture_output=True, text=True)

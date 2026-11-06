@@ -68,7 +68,9 @@ nix develop .#vm --command vm-test-submit --help
 
 项目检查不依赖执行器协议；本地与 CI 消费相同的 Nix 测试定义，传输和资源管理由所选执行工具负责。
 
-网络 VM 在目标端记录本机及 exit-node 客户端的实际出口，持续覆盖 direct/代理 × TCP/UDP × IPv4/IPv6。通知使用真实 Apprise API、Bark 和 runsc，由独立节点模拟官方 TLS 服务，记录合成推送。桌面 VM 通过 SDDM 登录、正常注销再登录，检查 KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。网络 VM 覆盖临时 IPv4 模式、重连、策略更新、恢复与重启，并保留故障服务和恢复过程的诊断证据。
+网络 VM 在目标端记录本机及 exit-node 客户端的实际出口，持续覆盖 direct/代理 × TCP/UDP × IPv4/IPv6；从默认 IPv4 启动，验证 HTTPS、运行时启用/关闭 IPv6，以及重启后回到声明式默认值。主机、普通 Docker/Compose 和出口客户端显式指定外部 DNS 地址的 TCP/UDP 查询均走共享解析；默认 bridge 容器通过实际网关访问声明允许的宿主 TCP/UDP 服务。通知使用真实 Apprise API、Bark 和 runsc，由独立节点模拟官方 TLS 服务，记录合成推送。
+
+备份 VM 使用受控时间验证首次等待、超期、真实失败及成功后的健康状态，继续覆盖窗口调度与关机恢复。桌面 VM 通过 SDDM 登录、正常注销再登录，检查网络托盘、KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。应用 VM 保存 Kitty 初始提示符以及 Kitty/Firefox 的拼音候选截图，并验证中文提交结果。
 
 设备验收覆盖真实 SOPS 解密、AP 认证、外接屏幕/合盖、休眠、Secure Boot、正常注销/锁屏，以及云端权限和资料恢复。
 

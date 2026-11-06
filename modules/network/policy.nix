@@ -157,6 +157,11 @@ let
 in
 {
   options.site.network = {
+    ipv6.enable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Boot-time IPv6 mode; network-ipv6 can override it until reboot.";
+    };
     dnsPolicy = lib.mkOption {
       type = json.type;
       description = "DNS listeners, encrypted upstream groups and ECS settings.";
@@ -307,14 +312,24 @@ in
     };
     site.network.generatedPolicy = bundle;
     site.network.activePolicy = "${runtimeRoot}/current";
+    environment.etc."site-network/ipv6.json".source = json.generate "network-ipv6.json" {
+      inherit (cfg.ipv6) enable;
+      dnsIngress = if cfg.dns.enable then cfg.dns.ingressIPv6 else null;
+    };
     users.groups.site-network-policy = { };
     networking.nftables.enable = true;
     networking.nftables.flushRuleset = false;
     systemd.services.site-network-policy = {
       description = "Prepare enabled network policy consumers";
       before = consumers;
-      requires = lib.optional cfg.lockdown.enable "site-network-prepare.service";
-      after = lib.optional cfg.lockdown.enable "site-network-prepare.service";
+      requires = [
+        "site-network-address-family.service"
+      ]
+      ++ lib.optional cfg.lockdown.enable "site-network-prepare.service";
+      after = [
+        "site-network-address-family.service"
+      ]
+      ++ lib.optional cfg.lockdown.enable "site-network-prepare.service";
       path = [ pkgs.systemd ];
       serviceConfig = {
         Type = "oneshot";
@@ -337,17 +352,36 @@ in
         name = "network-ipv6";
         text = ''
           if [ "$#" -gt 1 ]; then
-            echo 'Usage: sudo network-ipv6 [off|restore|status]' >&2
+            echo 'Usage: sudo network-ipv6 [on|off|status]' >&2
             exit 2
           fi
           case "''${1:-status}" in
-            off|restore|status) exec ${runtimeCommand} ipv6 "''${1:-status}" ;;
-            -h|--help) echo 'Usage: sudo network-ipv6 [off|restore|status]' ;;
-            *) echo 'Usage: sudo network-ipv6 [off|restore|status]' >&2; exit 2 ;;
+            on|off|status) exec ${runtimeCommand} ipv6 "''${1:-status}" ;;
+            -h|--help) echo 'Usage: sudo network-ipv6 [on|off|status]' ;;
+            *) echo 'Usage: sudo network-ipv6 [on|off|status]' >&2; exit 2 ;;
           esac
         '';
       })
     ];
+    systemd.services.site-network-address-family = {
+      description = "Initialize the host network address family";
+      wantedBy = [ "network-pre.target" ];
+      wants = [ "network-pre.target" ];
+      requires = [ "nftables.service" ];
+      after = [ "nftables.service" ];
+      before = [
+        "network-pre.target"
+        "site-network-routing.service"
+        "shutdown.target"
+      ];
+      conflicts = [ "shutdown.target" ];
+      unitConfig.DefaultDependencies = false;
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        ExecStart = "${runtimeCommand} initialize";
+      };
+    };
     systemd.services.site-network-ipv6-reconcile = {
       description = "Apply the current address family to connected interfaces";
       serviceConfig = {

@@ -8,6 +8,8 @@ let
     contents = [
       pkgs.busybox
       pkgs.curl
+      pkgs.dig
+      pkgs.netcat-openbsd
     ];
     extraCommands = ''
       mkdir -p www tmp
@@ -51,6 +53,15 @@ let
     }
   );
   containerNode = {
+    site.network.containers = {
+      hostTCPPorts = [ 18080 ];
+      hostUDPPorts = [ 18081 ];
+    };
+    systemd.services.host-observer = {
+      wantedBy = [ "multi-user.target" ];
+      after = [ "network.target" ];
+      serviceConfig.ExecStart = "${fixture} host";
+    };
     virtualisation.docker.daemon.settings = {
       ipv6 = true;
       fixed-cidr-v6 = "fd12:3456:789b::/64";
@@ -124,6 +135,7 @@ let
       inputs.impermanence.nixosModules.impermanence
       ../../profiles/laptop/persistence.nix
       ../../modules/network
+      ../../modules/network/connections.nix
       ../../modules/services/containers.nix
       ../../modules/services/notifications.nix
       notification.credentials
@@ -142,13 +154,31 @@ let
     site.containers = {
       enable = true;
     };
-    networking.interfaces.eth1.ipv4.addresses = lib.mkForce [
-      {
-        inherit address;
-        prefixLength = 24;
-      }
-    ];
-    networking.defaultGateway = "192.168.1.20";
+    site.connections.enable = true;
+    networking.interfaces.eth1 = {
+      ipv4.addresses = lib.mkForce [ ];
+      ipv6.addresses = lib.mkForce [ ];
+    };
+    networking.networkmanager = {
+      unmanaged = [ "interface-name:eth0" ];
+      settings.main.no-auto-default = "eth1";
+      ensureProfiles.profiles.underlay = {
+        connection = {
+          id = "underlay";
+          uuid = "4279ef70-b90f-41e2-ae23-472c61e58a68";
+          type = "ethernet";
+          interface-name = "eth1";
+        };
+        ipv4 = {
+          method = "manual";
+          address1 = "${address}/24,192.168.1.20";
+        };
+        ipv6 = {
+          method = "manual";
+          address1 = "2001:db8:10::${lib.last (lib.splitString "." address)}/64,2001:db8:10::20";
+        };
+      };
+    };
     environment.etc."test/provider.json".text = builtins.toJSON {
       outbounds = [
         {
@@ -166,6 +196,7 @@ let
       ];
     };
     site.network = {
+      ipv6.enable = false;
       dns.enable = true;
       singBox.enable = proxy;
       providerFile = "/etc/test/provider.json";
@@ -182,7 +213,7 @@ let
 in
 {
   name = "mullvad-lockdown-and-shared-dns";
-  globalTimeout = 1500;
+  globalTimeout = 1800;
   qemu.forceAccel = true;
   node.specialArgs = { inherit inputs; };
   defaults = {
@@ -253,6 +284,8 @@ in
       };
       networking.networkmanager = {
         unmanaged = [ "interface-name:eth0" ];
+        # This link uses the declared static profile; the fixture has no DHCP server.
+        settings.main.no-auto-default = "eth1";
         ensureProfiles.profiles.underlay = {
           connection = {
             id = "underlay";
@@ -274,6 +307,7 @@ in
         };
       };
       site.network = {
+        ipv6.enable = false;
         dns.enable = true;
         singBox.enable = true;
         lockdown.enable = true;
@@ -517,7 +551,7 @@ in
       systemd.services.observer = {
         wantedBy = [ "multi-user.target" ];
         after = [ "network.target" ];
-        serviceConfig.ExecStart = "${fixture} target";
+        serviceConfig.ExecStart = "${fixture} target --cert ${cert} --key ${key}";
       };
     };
   };
@@ -565,6 +599,19 @@ in
         container_request(node, compose_exec + " curl --max-time 6 -fsS http://web:8080 | grep -Fx 'container service'")
         for host in ("127.0.0.1", address):
             container_request(node, "curl --max-time 6 -fsS http://" + host + ":18084 | grep -Fx 'container service'")
+        gateway = node.succeed("docker inspect ordinary --format '{{.NetworkSettings.Networks.bridge.Gateway}}'").strip()
+        source = node.succeed("docker inspect ordinary --format '{{.NetworkSettings.Networks.bridge.IPAddress}}'").strip()
+        container_request(node, f"docker exec ordinary curl --max-time 6 -fsS http://{gateway}:18080/host | grep -Fx {source}")
+        container_request(node, f"printf host-access | docker exec -i ordinary nc -u -w 2 {gateway} 18081 | grep -Fx {source}")
+        name = "web.proxy.test" if node == client else "www.example.org"
+        intercepted_dns(node, name, ["", "docker exec ordinary ", compose_exec + " "])
+
+    def intercepted_dns(node, name, prefixes, dual=False):
+        servers = ["203.0.113.53"] + (["2001:db8:ffff::53"] if dual else [])
+        for prefix in prefixes:
+            for server in servers:
+                for transport in ("", "+tcp"):
+                    container_request(node, f"{prefix}dig @{server} {transport} +time=3 +tries=1 +short {name} A | grep -Fx 198.19.0.30")
 
     def ready_underlay():
         client.wait_until_succeeds("python3 -c 'import json; assert json.load(open(\"/run/site-network-underlay/underlay.json\"))[\"interface\"] == \"eth1\"'", timeout=90)
@@ -578,6 +625,28 @@ in
     upstream.wait_for_open_port(24001)
     target.wait_for_unit("headscale.service")
     target.wait_for_open_port(443, addr="192.168.1.30")
+    # Exercise independent combinations first, with one client VM at a time.
+    for node, address in ((dnsOnly, "192.168.1.11"), (dnsProxy, "192.168.1.12")):
+        node.start()
+        node.wait_for_unit("multi-user.target")
+        node.wait_for_unit("site-dns.service")
+        container_start(node)
+        container_web(node, address)
+        container_local(node, address)
+        node.wait_until_succeeds("su -s /bin/sh sender -c 'bark 独立网络能力通知'", timeout=180)
+        deliveries = [json.loads(line) for line in target.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
+        assert deliveries[-1]["peer"] == address, deliveries[-1]
+        node.succeed("network-ipv6 off; network-policy apply; systemctl restart site-dns")
+        node.succeed("network-ipv6 status")
+        container_web(node, address)
+        assert node.succeed("dig +short www.example.org AAAA").strip() == ""
+        node.succeed("su -s /bin/sh sender -c 'bark IPv4网络通知'")
+        if node == dnsProxy:
+            node.succeed("curl --proxy socks5h://127.0.0.1:10800 --max-time 8 -sSf http://www.example.org:18080/family")
+        node.succeed("network-ipv6 on")
+        node.succeed("dig +short www.example.org AAAA | grep ':'")
+        intercepted_dns(node, "www.example.org", ["", "docker exec ordinary "], dual=True)
+        node.shutdown()
     peer.start()
     peer.wait_for_unit("tailscaled.service")
     client.start()
@@ -593,6 +662,11 @@ in
     client.wait_until_succeeds("test $(systemctl show site-network-connect -p Result --value) = success")
     client.succeed("test $(stat -c %a /run/sing-box/config.json) = 600")
     client.fail("su -s /bin/sh desktop -c 'network-lockdown disconnect'")
+    client.wait_until_succeeds("network-ipv6 status", timeout=60)
+    assert client.succeed("dig +short web.proxy.test AAAA").strip() == ""
+    client.succeed("curl --noproxy '*' --cacert ${certificates.ca.cert} --max-time 10 -fsS https://proxy.test.nix:18087/boot | grep -Fx 192.168.1.20")
+    intercepted_dns(client, "web.proxy.test", [""])
+    client.succeed("network-ipv6 on")
 
     def user(command, fail=False):
         return (client.fail if fail else client.succeed)("su -s /bin/sh desktop -c " + shlex.quote(command))
@@ -637,6 +711,8 @@ in
     containers_active = True
     container_web(client, "192.168.1.20", ipv6=True)
     container_local(client)
+    intercepted_dns(client, "web.proxy.test", ["", compose_exec + " "], dual=True)
+    client.succeed("curl -6 --noproxy '*' --cacert ${certificates.ca.cert} --max-time 10 -fsS https://proxy.test.nix:18087/dual | grep -Fx 2001:db8:10::20")
     client.wait_for_unit("docker-site-apprise.service")
     client.wait_for_unit("docker-site-bark.service")
     client.wait_until_succeeds("su -s /bin/sh sender -c 'bark 首次启动通知'", timeout=180)
@@ -716,8 +792,9 @@ in
             assert peer.succeed(f"curl -4 --noproxy '*' --max-time 8 -sSf http://{name}:18080/exit-domain").strip() == source
 
     exit_dns()
+    intercepted_dns(peer, "exit.proxy.test", [""], dual=True)
     def ipv4_healthy():
-        client.succeed("network-ipv6 status")
+        client.wait_until_succeeds("network-ipv6 status", timeout=60)
         for machine in (client, peer):
             for host, source in (("198.18.0.30", "192.168.1.10"), ("198.19.0.30", "192.168.1.20")):
                 machine.wait_until_succeeds("test $(curl --noproxy '*' --max-time 6 -sSf http://" + host + ":18080/ipv4-mode) = " + source, timeout=60)
@@ -730,6 +807,7 @@ in
         assert user("curl --noproxy '*' --max-time 8 -sSf http://" + peer4 + ":18083/tailnet.txt").strip() == "tailnet peer"
         exit_dns()
         container_web(client, "192.168.1.20")
+        intercepted_dns(peer, "exit.proxy.test", [""])
 
     client.succeed("network-ipv6 off")
     ipv4_healthy()
@@ -739,7 +817,7 @@ in
     client.succeed("nmcli connection down underlay; nmcli connection up underlay")
     client.wait_until_succeeds("network-ipv6 status", timeout=90)
     ipv4_healthy()
-    client.succeed("network-ipv6 restore")
+    client.succeed("network-ipv6 on")
     healthy()
     user("dig +short web.proxy.test AAAA | grep -Fx 2001:db8:2::30")
     client.succeed("systemctl restart docker")
@@ -922,7 +1000,7 @@ in
     provider["endpoints"][0]["name"] = "foo"
     client.succeed("echo " + provider_text + " > /run/provider.json; network-ipv6 off")
     ipv4_healthy()
-    client.succeed("network-ipv6 restore")
+    client.succeed("network-ipv6 on")
     healthy()
     client.succeed("nmcli connection down underlay")
     blocked()
@@ -935,8 +1013,8 @@ in
     client.succeed("journalctl --sync")
     # The observer remains running through both orderly and abrupt power loss.
     for shutdown in (client.shutdown, client.crash):
-        client.succeed("network-ipv6 off")
-        ipv4_healthy()
+        client.succeed("network-ipv6 on")
+        healthy()
         shutdown()
         client.start()
         client.wait_for_unit("multi-user.target")
@@ -945,9 +1023,11 @@ in
         blocked()  # runtime provider deliberately absent; no permissive startup.
         client.wait_for_unit("tailscaled.service")
         client.wait_until_succeeds(direct_ping, timeout=90)
-        tailnet()
         ready_underlay()
         client.succeed("install -m600 /dev/null /run/provider.json; echo " + provider_text + " > /run/provider.json; network-policy apply")
+        ipv4_healthy()
+        client.succeed("network-ipv6 on")
+        tailnet()
         healthy()
         client.succeed("network-ipv6 status")
         container_local(client)
@@ -973,29 +1053,7 @@ in
     for flow in flows:
         assert any(key[:4] == flow and count >= 2 for key, count in connections.items()), "no reused socket for " + str(flow)
     print(json.dumps({"continuous_remote_observations": len(continuous), "flows": {"/".join(k): v for k, v in flows.items()}, "unexpected_sources": 0}))
-    # The smaller capability combinations use fresh hosts; run them in sequence
-    # after the continuous exit-node observation to keep peak VM memory bounded.
     client.shutdown()
     peer.shutdown()
-    for node, address in ((dnsOnly, "192.168.1.11"), (dnsProxy, "192.168.1.12")):
-        node.start()
-        node.wait_for_unit("multi-user.target")
-        node.wait_for_unit("site-dns.service")
-        container_start(node)
-        container_web(node, address)
-        container_local(node, address)
-        node.wait_until_succeeds("su -s /bin/sh sender -c 'bark 独立网络能力通知'", timeout=180)
-        deliveries = [json.loads(line) for line in target.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
-        assert deliveries[-1]["peer"] == address, deliveries[-1]
-        node.succeed("network-ipv6 off; network-policy apply; systemctl restart site-dns")
-        node.succeed("network-ipv6 status")
-        container_web(node, address)
-        assert node.succeed("dig +short www.example.org AAAA").strip() == ""
-        node.succeed("su -s /bin/sh sender -c 'bark IPv4网络通知'")
-        if node == dnsProxy:
-            node.succeed("curl --proxy socks5h://127.0.0.1:10800 --max-time 8 -sSf http://www.example.org:18080/family")
-        node.succeed("network-ipv6 restore")
-        node.succeed("dig +short www.example.org AAAA | grep ':'")
-        node.shutdown()
   '';
 }

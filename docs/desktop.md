@@ -66,7 +66,9 @@ Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网�
 
 `Failed 0/0` 表示上次采样时系统和用户均无失败单元，采样间隔一分钟；`?` 表示尚无结果，悬浮可查看系统和用户的失败单元名称。电量降至 60% 和 50% 时分别提醒，恢复充电后重新计次。温度、亮度及电池的时间和功率由设备支持情况决定。
 
-显示器调整、Wi-Fi 和输入法偏好保存在[本机入口](local-state.md)。Plasma Wayland 使用 KWin 的“虚拟键盘”接口启动 Fcitx 5；Sway/i3 使用对应会话的自动启动项。已有 KWin 配置若选择了其他输入法，可在“虚拟键盘”设置中重新选择 Fcitx 5。Kitty 的 X11 后端通过 `GLFW_IM_MODULE=ibus` 使用 Fcitx 的兼容接口；Wayland 后端使用会话的原生输入协议。
+显示器调整、Wi-Fi 和输入法偏好保存在[本机入口](local-state.md)。Plasma Wayland 使用 KWin 的“虚拟键盘”接口启动 Fcitx 5；Sway/i3 使用对应会话的自动启动项。KWin 的输入法可在“虚拟键盘”设置中选择。Sway 下 GTK 应用和 Kitty 使用 Wayland 原生输入协议，由 Fcitx 绘制候选列表；X11 GTK 应用使用 GTK 的 Fcitx 模块，Kitty 的 X11 后端通过 `GLFW_IM_MODULE=ibus` 使用兼容接口。Fcitx 提供全部 Catppuccin 配色，可在输入法配置中选择主题。
+
+Sway/i3 先将显示环境导入用户 systemd，再启动对应会话 target 和 nm-applet；注销随会话停止。Plasma 使用自己的网络面板。
 
 `firefox` 和桌面入口读取 `~/.config/mozilla/firefox/default`，`firefox-origin` 读取 `origin`；显式 `--profile` 或 `-P` 使用指定资料。Arkenfox 加项目覆盖项保留会话、cookie 和登录资料。Violentmonkey 的版本、URL、哈希和 ID 来自锁定的 `reproducible-violentmonkey`，`fetchurl` 保存原始签名 XPI，由 Home Manager 按 profile 安装，`origin` 保持独立。Firefox 与 Chrome 的 DNS 走系统分流。Firefox 原生搜索配置保留默认引擎、顺序和每个引擎的全部别名。VS Code 使用可写扩展目录，既支持声明式扩展也支持界面安装，扩展数据与编辑器运行状态持久化，默认设置由 `home/apps.nix` 声明。
 
@@ -114,7 +116,7 @@ Home Manager 激活报告用户文件冲突时，在 `journalctl -u home-manager
 
 `BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池和 Git 本地备份入口的提示。
 
-Kitty 的 Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
+Kitty 的 Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签，窗口内边距为零。
 
 `git backup <名称>` 在 `~/backups/git/<名称>` 建立 bare 仓库，并把它加入 origin 的推送地址，另提供 `laptop-git-backup` 推送 remote。后续 `git push origin` 会更新本地备份；没有 origin 时可用 `git backup -f <名称>`，再推送到 `laptop-git-backup`。注册命令本身不立即复制所有分支。Starship 在这个本地备份目录不存在时提示。
 

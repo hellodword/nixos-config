@@ -212,8 +212,8 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["bootstrap", "check", "apply", "prepare", "ipv6", "reconcile"])
-    parser.add_argument("mode", nargs="?", choices=["off", "restore", "status"])
+    parser.add_argument("action", choices=["bootstrap", "check", "apply", "prepare", "ipv6", "initialize", "reconcile"])
+    parser.add_argument("mode", nargs="?", choices=["on", "off", "status"])
     parser.add_argument("--ipv4-only", action="store_true")
     parser.add_argument("--tailscale", action="store_true")
     for flag in ("policy", "root"):
@@ -251,6 +251,9 @@ def main():
             return ipv6.status(args.root, consumers, args.watch_underlay, args.tailscale)
         with (args.root / ".lock").open("a") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
+            if args.action == "initialize":
+                ipv6.initialize(args.root)
+                return 0
             if args.action == "reconcile":
                 ipv6.reconcile(args.root)
                 return 0
