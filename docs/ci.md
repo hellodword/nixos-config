@@ -35,7 +35,7 @@ Nix 将上游 revision 写入 `flake.lock`。`flake.nix` 继续声明跟踪来�
 
 1. 在 push 之前将仓库设为 public。Actions 的允许策略只需允许 GitHub 创建的 actions；工作流仅使用 `actions/checkout@v7`。
 2. 在 Settings → Actions → General 的 Workflow permissions 中允许工作流创建 PR。工作流声明 `contents: write`、`pull-requests: write`、`packages: write`；checkout 不保存凭据，令牌只传给 PR/合并和发布步骤。
-3. 将仓库外的签名私钥设置为 repository secret `NIX_CACHE_SIGNING_KEY`。先验证它对应 [nix/cache-identity.json](../nix/cache-identity.json) 的公钥：
+3. 将仓库外的签名私钥设置为 repository secret `NIX_CACHE_SIGNING_KEY`。使用与 [nix/cache-identity.json](../nix/cache-identity.json) 公钥配套的已有私钥；首次创建缓存身份的命令见[签名密钥](#签名密钥)。先核对公钥再上传：
 
    ```sh
    signing_key="${XDG_STATE_HOME:-$HOME/.local/state}/nixos-config/cache/nixos-config-1.secret"
@@ -48,6 +48,25 @@ Nix 将上游 revision 写入 `flake.lock`。`flake.nix` 继续声明跟踪来�
 5. 首轮成功后在 `master` 手动运行 `check`，确认相同哈希的 VM 结果和自定义构建产物从缓存恢复；同时查看资源记录和发布耗时。laptop2 切换到本配置后，后续 Nix 命令使用持久配置中的缓存，无需附加参数。
 
 首次 GitHub 执行负责验收真实 GITHUB_TOKEN 权限、包的匿名访问、runner 资源上限和完整 E2E；本地集成使用临时 registry 与合成密钥。
+
+## 签名密钥
+
+`NIX_CACHE_SIGNING_KEY` 保存 Nix 的 Ed25519 缓存签名私钥；CI 用它签名，消费者通过 `nix/cache-identity.json` 中的公钥验证构建产物。私钥由 [`nix key generate-secret`](https://nix.dev/manual/nix/2.34/command-ref/new-cli/nix3-key-generate-secret) 随机生成。`--key-name` 是签名标识，相同名称再次生成也会得到另一对密钥，无法据此恢复原私钥。
+
+已有缓存身份应复用配套私钥。以下命令用于首次创建，私钥文件权限为 0600；`set -C` 保护同名现有文件，括号将 shell 设置限制在本次操作内：
+
+```sh
+(
+  set -euC
+  umask 077
+  signing_key="${XDG_STATE_HOME:-$HOME/.local/state}/nixos-config/cache/nixos-config-1.secret"
+  mkdir -p -- "$(dirname -- "$signing_key")"
+  nix key generate-secret --key-name nixos-config-1 > "$signing_key"
+  nix key convert-secret-to-public < "$signing_key"
+)
+```
+
+最后输出的是公钥，将其填写到 `nix/cache-identity.json` 的 `publicKey`；私钥文件的完整内容按首次启用步骤上传到 GitHub secret。备份仓库外的私钥文件以便迁移和恢复。正式轮换时采用新的名称与文件名（例如 `nixos-config-2`），协调更新 CI 私钥和消费者信任，并安排旧缓存的签名过渡。
 
 ## runner 资源与并发
 
