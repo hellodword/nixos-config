@@ -44,6 +44,7 @@ in
         "ls" = "ls --color=auto";
         "7zaencrypt" = "7za -tzip -mem=AES256 -mx9 -p a";
         "feh" = "feh --scale-down --auto-zoom";
+        "bat" = "bat -p";
         "emcc" = "docker run --rm -v $(pwd):/src -u $(id -u):$(id -g) emscripten/emsdk emcc";
         "gobuild" = "go build -trimpath -ldflags '-s -w -buildid='";
         "nixos-rebuild-boot" =
