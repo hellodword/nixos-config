@@ -153,7 +153,7 @@ def remaining(deadline):
     return min(15, value)
 
 
-def visible(machine, pattern, timeout=60, keep_active=True):
+def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
     # Bound image processing so a visibility check cannot consume the
     # desktop's entire idle interval. Idle locking is exercised separately.
     with machine.nested("waiting for visible text: " + pattern), tempfile.TemporaryDirectory() as directory:
@@ -177,7 +177,8 @@ def visible(machine, pattern, timeout=60, keep_active=True):
                     if keep_active:
                         machine.send_key("ctrl")
                     subprocess.run(
-                        ["magick", str(raw), "-resize", "300%", "-colorspace", "Gray", *contrast, str(prepared)],
+                        ["magick", str(raw), *(["-rotate", str(rotation)] if rotation else []),
+                         "-resize", "300%", "-colorspace", "Gray", *contrast, str(prepared)],
                         check=True, capture_output=True, timeout=remaining(deadline),
                     )
                     try:

@@ -16,6 +16,8 @@
   systemd.sleep.settings.Sleep.SuspendState = "freeze";
 
   boot.kernelPackages = pkgs.linuxPackages_6_18;
+  # Make the laptop display available for the graphical LUKS prompt.
+  boot.initrd.kernelModules = [ "i915" ];
 
   system.stateVersion = "22.11";
 }

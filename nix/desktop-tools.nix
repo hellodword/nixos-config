@@ -1,4 +1,4 @@
-{ pkgs }:
+{ pkgs, rofi }:
 {
   copy = pkgs.writeShellApplication {
     name = "desktop-copy";
@@ -37,26 +37,16 @@
   power = pkgs.writeShellApplication {
     name = "desktop-power";
     runtimeInputs = [
-      pkgs.rofi
-      pkgs.systemd
+      pkgs.python3
     ];
     text = ''
-      action=$(printf '%s\n' Lock Suspend Log-out Reboot Power-off | rofi -dmenu -p Session) || exit 0
-      case "$action" in
-        Lock) loginctl lock-session ;;
-        Suspend) systemctl suspend ;;
-        Log-out|Reboot|Power-off)
-          confirm=$(printf '%s\n' Cancel Confirm | rofi -dmenu -p "$action") || exit 0
-          [[ "$confirm" == Confirm ]] || exit 0
-          case "$action" in
-            Log-out) loginctl terminate-session "$XDG_SESSION_ID" ;;
-            Reboot) systemctl reboot ;;
-            Power-off) systemctl poweroff ;;
-          esac
-          ;;
-      esac
+      exec python3 ${../scripts/desktop/power.py} \
+        --rofi ${rofi}/bin/rofi --systemctl ${pkgs.systemd}/bin/systemctl \
+        --swaymsg ${pkgs.sway}/bin/swaymsg --i3msg ${pkgs.i3}/bin/i3-msg \
+        --busctl ${pkgs.systemd}/bin/busctl "$@"
     '';
   };
+  lock = import ./desktop-lock.nix { inherit pkgs; };
   tailscale = pkgs.writeShellApplication {
     name = "desktop-tailscale";
     runtimeInputs = [

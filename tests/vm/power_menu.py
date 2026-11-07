@@ -1,0 +1,42 @@
+"""Drive the real Rofi session menu through a VM's keyboard."""
+from datetime import timedelta
+import re
+
+
+KEY_DELAY = timedelta(milliseconds=150)
+
+
+def open_action(machine, user, visible, action, *, shortcut=False):
+    user(machine, "fcitx5-remote -c")
+    if shortcut:
+        machine.send_key("meta_l-shift-p", delay=KEY_DELAY)
+    else:
+        user(machine, "systemd-run --user --collect --unit=power-menu-fixture desktop-power")
+    visible(machine, r"Session", timeout=30)
+    machine.send_chars(action, delay=KEY_DELAY)
+    machine.send_key("ret", delay=KEY_DELAY)
+
+
+def blocked(machine, user, visible, action, label, *, shortcut=False):
+    open_action(machine, user, visible, action, shortcut=shortcut)
+    try:
+        visible(machine, re.escape(action) + r" is waiting for:", timeout=30)
+    except Exception:
+        # These guests contain only synthetic workloads. Retain process
+        # identity when a real application's guard fails, including wrappers.
+        print(machine.execute("ps -u 1000 -o pid,ppid,ruid,euid,comm,args")[1])
+        raise
+    visible(machine, re.escape(label), timeout=30)
+    machine.screenshot(machine.name + "-power-block-" + re.sub(r"\W+", "-", label))
+    user(machine, "systemctl --user is-active graphical-session.target")
+    machine.send_key("esc", delay=KEY_DELAY)
+    machine.wait_until_fails(r"pgrep -u 1000 -f '^([^ ]*/)?\.?rofi(-wrapped)?( |$)'", timeout=15)
+
+
+def confirm(machine, user, visible, action, *, shortcut=False):
+    open_action(machine, user, visible, action, shortcut=shortcut)
+    # The action becomes the prompt only in the confirmation dialog. Its
+    # heading stays readable regardless of the selected row's theme colours.
+    visible(machine, re.escape(action) + r":", timeout=30)
+    machine.send_key("down", delay=KEY_DELAY)
+    machine.send_key("ret", delay=KEY_DELAY)

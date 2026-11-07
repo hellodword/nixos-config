@@ -116,6 +116,28 @@ in
   };
   nodes = {
     sway = {
+      imports = [ ../../profiles/laptop/boot.nix ];
+      virtualisation = {
+        emptyDiskImages = lib.mkForce [
+          512
+          1024
+        ];
+        useBootLoader = true;
+        mountHostNixStore = true;
+        useEFIBoot = true;
+      };
+      boot.loader.systemd-boot.enable = true;
+      # Keep the test driver's serial logs while displaying the graphical
+      # passphrase prompt on the VM's framebuffer.
+      boot.kernelParams = [ "plymouth.ignore-serial-consoles" ];
+      boot.initrd.kernelModules = [ "virtio_gpu" ];
+      environment.systemPackages = [ pkgs.cryptsetup ];
+      specialisation.boot-luks.configuration = {
+        boot.initrd.luks.devices = lib.mkVMOverride {
+          cryptroot.device = "/dev/vdc";
+        };
+        virtualisation.rootDevice = "/dev/mapper/cryptroot";
+      };
       services.displayManager.defaultSession = lib.mkForce "sway";
       environment.variables = {
         WLR_BACKENDS = "drm,libinput,headless";
@@ -230,15 +252,31 @@ in
 
     gui = runpy.run_path("${./gui.py}")
     visible, login = gui["visible"], gui["login"]
+    power_menu = runpy.run_path("${./power_menu.py}")
 
-    def unlock(machine, session):
+    def power_visible(machine, pattern, **kwargs):
+        # The i3 power actions follow the saved left-rotation profile. QEMU
+        # captures the physical framebuffer; turn it upright for OCR while
+        # keeping the guest's real rotated layout and original screenshots.
+        return visible(machine, pattern, rotation=90 if machine.name == "i3" else 0, **kwargs)
+
+    def unlock(machine, session, screenshot=None):
         locker = {"sway": "swaylock", "i3": "i3lock", "KDE": "kscreenlocker_greet"}[session]
         if machine.execute(process(locker))[0] == 0:
             if session == "KDE":
                 machine.send_key("ctrl")
                 visible(machine, "Switch User")
+                # Breeze hides the password controls after ten idle seconds.
+                # OCR can outlast that interval; wake them again and let the
+                # authentication prompt regain focus before typing.
+                machine.send_key("ctrl", delay=timedelta(milliseconds=150))
+                machine.sleep(1)
             else:
                 machine.sleep(1)
+            # Capture after the native lock surface has had time to paint,
+            # immediately before entering the password, not on process spawn.
+            if screenshot:
+                machine.screenshot(screenshot)
             # QEMU holds each key for 100 ms. Let the clear chord release
             # before entering the password through the greeter's keyboard.
             machine.send_key("ctrl-u", delay=timedelta(milliseconds=150))
@@ -246,7 +284,7 @@ in
             machine.send_key("ret")
             machine.wait_until_fails(process(locker), timeout=30)
 
-    def stop_session(machine, compositor):
+    def stop_session(machine, compositor, menu=False):
         # Finish the synthetic terminal workload before asking the desktop to
         # log out, so Kitty's running-command confirmation needs no response.
         machine.execute(user_command("systemctl --user stop desktop-fixture.service"), timeout=30)
@@ -260,9 +298,12 @@ in
                    "plasmashell": "busctl --user call org.kde.Shutdown /Shutdown org.kde.Shutdown logout"}[compositor]
         # Return to the greeter through the session's own logout entrypoint.
         # Its transient command can be terminated with the graphical session.
-        status, output = machine.execute(user_command(command), timeout=30)
-        if status:
-            print("Session logout command:", status, output)
+        if menu:
+            power_menu["confirm"](machine, user, power_visible, "Log out", shortcut=compositor != "plasmashell")
+        else:
+            status, output = machine.execute(user_command(command), timeout=30)
+            if status:
+                print("Session logout command:", status, output)
         try:
             for unit in ("graphical-session.target", "desktop-health.timer", "site-sway.target", "site-i3.target", "site-wallpaper.timer", "site-wallpaper-fetch.timer"):
                 machine.wait_until_fails(user_command("systemctl --user is-active " + unit), timeout=60)
@@ -272,12 +313,61 @@ in
                 machine.wait_until_fails(process(name), timeout=60)
             machine.wait_for_unit("display-manager.service")
             visible(machine, r"(?i)\bdesktop\b", timeout=60)
+            # Cover the logout interval even when the next login creates a
+            # new user manager and resets its service restart counters.
+            crashes = machine.succeed("journalctl -b COREDUMP_COMM=pipewire --no-pager -q -o cat")
+            assert not crashes.strip(), crashes
         except Exception:
             for command in ("loginctl list-sessions", "ps -u 1000 -o pid,ppid,comm",
                             user_command("systemctl --user status 'site-session-watch@*.service' graphical-session.target"),
                             "journalctl _UID=1000 -n 80 --no-pager"):
                 print(command, machine.execute(command)[1])
             raise
+
+    def power_workloads(machine):
+        # A real paused VM process belongs to another user. System power actions
+        # must protect it as well as the current user's GUI applications.
+        machine.succeed("systemd-run --unit=vm-workload --property=User=nobody ${pkgs.qemu}/bin/qemu-system-x86_64 -machine none -display none -nodefaults -S")
+        machine.wait_for_unit("vm-workload.service")
+        power_menu["blocked"](machine, user, visible, "Reboot", "QEMU", shortcut=True)
+        machine.succeed("systemctl stop vm-workload.service")
+        # Queue a backup behind an activating prerequisite; no real data or
+        # repository credentials are involved in this systemd workload.
+        machine.succeed("systemd-run --unit=backup-prerequisite --no-block --property=Type=oneshot sleep 600")
+        machine.succeed("systemd-run --unit=site-backup-fixture-backup --no-block --property=After=backup-prerequisite.service --property=Type=oneshot sleep 600")
+        power_menu["blocked"](machine, user, visible, "Power off", "site-backup-fixture-backup", shortcut=True)
+        machine.succeed("systemctl stop backup-prerequisite.service")
+        machine.wait_until_succeeds("systemctl show site-backup-fixture-backup.service -p MainPID --value | grep -v '^0$'", timeout=30)
+        power_menu["blocked"](machine, user, visible, "Reboot", "site-backup-fixture-backup", shortcut=True)
+        machine.succeed("systemctl stop site-backup-fixture-backup.service")
+
+    def encrypted_boot(machine):
+        # This disk is created by the VM test and contains only synthetic state.
+        machine.succeed("printf synthetic-disk-passphrase | cryptsetup luksFormat -q --iter-time=1 /dev/vdc -")
+        machine.succeed("printf synthetic-disk-passphrase | cryptsetup luksOpen --key-file - /dev/vdc cryptroot")
+        machine.succeed("mkfs.ext4 /dev/mapper/cryptroot")
+        # A bootloader VM seeds its Nix database in the original root image;
+        # unlike direct boot, its command line has no regInfo to recreate it.
+        # Migrate the initialized synthetic root with its database and profile
+        # state, keeping separate mounts (persist/store/boot) in place.
+        machine.succeed("mkdir -p /mnt/encrypted-root && mount /dev/mapper/cryptroot /mnt/encrypted-root")
+        machine.succeed("systemctl stop nix-daemon.socket nix-daemon.service")
+        machine.succeed("${pkgs.rsync}/bin/rsync -aHAXx --exclude=/mnt --exclude=/tmp / /mnt/encrypted-root/")
+        machine.succeed("umount /mnt/encrypted-root")
+        machine.succeed("/run/current-system/specialisation/boot-luks/bin/switch-to-configuration boot")
+        machine.succeed("sync")
+        machine.crash()
+        machine.start()
+        # Enter the passphrase through the graphical console's keyboard.
+        visible(machine, r"(?i)passphrase|password|unlock", timeout=180, keep_active=False)
+        machine.screenshot("boot-plymouth-breeze-unlock")
+        machine.send_chars("synthetic-disk-passphrase", delay=timedelta(milliseconds=150))
+        machine.send_key("ret")
+        machine.wait_for_unit("display-manager.service", timeout=180)
+        machine.succeed("findmnt -n -o SOURCE / | grep -Fx /dev/mapper/cryptroot")
+        login_session(machine, "sway", "sway")
+        machine.screenshot("boot-unlocked-sway")
+        stop_session(machine, "sway", menu=True)
 
     def login_session(machine, session, compositor):
         login(machine)
@@ -287,6 +377,11 @@ in
         # environment. Wait for that explicit readiness boundary.
         machine.wait_until_succeeds(user_command("systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"), timeout=60)
         machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
+        if session == "KDE":
+            # Plasma's calendar starts Akonadi after the initial startup jobs
+            # finish. Exercise logout from the ready desktop: KDE's native
+            # StopUnit(..., "fail") otherwise conflicts with that late start.
+            machine.wait_until_succeeds(user_command("systemctl --user is-active akonadi_control.service"), timeout=60)
     layout_query = '[.[] | select(.active) | {key: .name, value: {active, scale, rect, current_mode, transform}}] | from_entries'
 
     def display_layout(machine):
@@ -511,14 +606,12 @@ in
         machine.send_key("ctrl")
         locker = {"sway": "swaylock", "i3": "i3lock", "KDE": "kscreenlocker_greet"}[session]
         machine.wait_until_succeeds(process(locker), timeout=85)
-        unlock(machine, session)
+        unlock(machine, session, screenshot="desktop-" + session.lower() + "-idle-lock")
         visible(machine, "Native desktop", timeout=30)
         if session in ("sway", "i3"):
-            # The power menu and system suspend use the logind session path.
-            user(machine, 'loginctl lock-session "$XDG_SESSION_ID"')
+            machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
             machine.wait_until_succeeds(process(locker), timeout=30)
-            unlock(machine, session)
-            visible(machine, "Native desktop", timeout=30)
+            unlock(machine, session, screenshot="desktop-" + session + "-manual-lock")
         # Exercise D-Bus activation after the WM's notifier has stopped, not
         # merely the explicit startup path. Plasma must own its native name.
         notifier = {"sway": "mako", "i3": "dunst", "KDE": "plasmashell"}[session]
@@ -590,7 +683,9 @@ in
             machine.wait_until_succeeds(user_command("autorandr --current | grep -Fx vm-reconnected"), timeout=30)
         if session in ("sway", "i3"):
             wallpaper_visible(machine, session)
-        stop_session(machine, compositor)
+        if session == "sway":
+            power_workloads(machine)
+        stop_session(machine, compositor, menu=True)
         login_session(machine, session, compositor)
         if session == "sway":
             assert_display_layout(machine, saved_single)
@@ -599,9 +694,12 @@ in
         if session in ("sway", "i3"):
             machine.wait_until_succeeds(user_command("test -s /run/user/1000/site-wallpaper/current"), timeout=30)
             wallpaper_visible(machine, session)
-        stop_session(machine, compositor)
         if session in ("sway", "i3"):
-            machine.reboot()
+            boot_id = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip()
+            power_menu["confirm"](machine, user, power_visible, "Reboot", shortcut=True)
+            machine.machine.connected = False
+            machine.wait_for_unit("display-manager.service", timeout=180)
+            assert machine.succeed("cat /proc/sys/kernel/random/boot_id").strip() != boot_id
             login_session(machine, session, compositor)
             assert user(machine, "timeout 15 secret-tool lookup purpose desktop-test").strip() == "wallet-fixture"
             machine.wait_until_succeeds(user_command("test -s /run/user/1000/site-wallpaper/current"), timeout=30)
@@ -621,8 +719,14 @@ in
                     raise
                 outputs = user(machine, "xrandr --query")
                 assert re.search(r"^" + re.escape(i3_output) + r" connected[^\n]* left ", outputs, re.MULTILINE), outputs
+            # Use the same native lock after restoring a multi-output or
+            # rotated layout, then authenticate through its actual PAM UI.
+            machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
+            machine.wait_until_succeeds(process(locker), timeout=30)
+            unlock(machine, session, screenshot="desktop-" + session + "-layout-lock")
             stop_session(machine, compositor)
         if session == "KDE":
+            stop_session(machine, compositor)
             learned = machine.succeed("sha256sum /persist/home/desktop/.local/share/fcitx5/pinyin/user.dict /persist/home/desktop/.local/share/fcitx5/pinyin/user.history")
             # Recreate the home link as an ephemeral root would, while keeping
             # its existing persistent data. Atomic writes must survive reboot.
@@ -655,6 +759,12 @@ in
             with subtest(session):
                 machine.start(allow_reboot=True)
                 exercise_session(machine, session, compositor)
+                if session == "sway":
+                    encrypted_boot(machine)
+                elif session == "i3":
+                    login_session(machine, session, compositor)
+                    power_menu["confirm"](machine, user, power_visible, "Power off", shortcut=True)
+                    machine.wait_for_shutdown(timeout=timedelta(seconds=120))
         except Exception as error:
             traceback.print_exc()
             failures.append((session, str(error)))
@@ -665,6 +775,7 @@ in
                     frame = Path(directory) / "failure.png"
                     machine.screenshot(str(frame))
                     print("DESKTOP_FRAME_" + session + "_PNG=" + base64.b64encode(frame.read_bytes()).decode())
+                print(machine.execute("journalctl -b -u home-manager-desktop.service -n 80 --no-pager")[1])
                 print(machine.execute("journalctl _UID=1000 -n 60 --no-pager")[1])
                 if session == "KDE":
                     print(machine.execute("journalctl -u site-identity.service -u sshd.service -n 80 --no-pager")[1])

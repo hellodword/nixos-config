@@ -12,8 +12,8 @@
 | `desktop` | 生产 Fontconfig 字形匹配、混排宽度与图标/emoji；原生 Sway/i3 配置验证 | `tests/desktop.nix`、`tests/integration/desktop.py` |
 | `vm-backup` | 真实 Restic 三仓库、上海时间窗口、故障重试、路径边界、后端无响应时的关机与恢复；gVisor 内 Apprise/Bark 中文通知、官方 TLS 模拟上游、凭据隔离和跨重启的最新结果补发 | `tests/vm/backup.nix` |
 | `vm-network` | 本机与 Tailscale 出口客户端的持续双栈流量、DNS、NAT 穿透与 DERP；独立 WireGuard/OpenVPN 接口传输、策略更新及就绪失败恢复、服务故障、日志轮转、断网及重启恢复；三种网络能力组合下的通知、普通 Docker/Compose 的 DNS 与出口、服务名互通及端口发布、网络重建、prune 与 Docker 重启 | `tests/vm/network.nix` |
-| `vm-desktop` | SDDM 三会话登录/正常注销/重新登录；标签布局、Waybar 悬浮详情和月历、空闲抑制与锁屏、截图剪贴板、输入法、KWallet；壁纸获取、实际画面切换与离线图库；显示布局、NetworkManager 连接及 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
-| `vm-applications` | 默认 1920×1080 下，三会话中的 Firefox、VS Code Dev Containers、Bitwarden Desktop、Kitty、Rofi 基础可用性 | `tests/vm/applications.nix`、`applications.py` |
+| `vm-desktop` | SDDM 三会话登录、原生与 Rofi 注销、重新登录；电源菜单对虚拟机和备份任务的阻挡及正常重启/关机；空闲与手动锁屏、显示布局变化后的解锁、Plymouth 加密启动；标签布局、Waybar、截图剪贴板、输入法、KWallet、壁纸，以及显示布局、NetworkManager 连接和 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
+| `vm-applications` | 默认 1920×1080 下，三会话中的 Firefox、VS Code Dev Containers、Bitwarden Desktop、Kitty、Rofi 基础操作，以及真实应用运行时的注销提醒 | `tests/vm/applications.nix`、`applications.py` |
 | `e2e` | 完整 laptop2 系统与 ubuntu Home Manager 激活产物，以及配置、进程集成、字体与桌面配置、备份/网络/桌面/应用 VM 的必需结果 | `nix/checks.nix` |
 
 ```sh
@@ -48,9 +48,9 @@ nix build --no-link --no-update-lock-file .#checks.x86_64-linux.e2e
 | 应用 | 可观察的验收结果 |
 | --- | --- |
 | Kitty、Rofi | 两个 WM 的 Super+D 选择 Kitty，使用拼音输入中文并执行命令写出文件；Super+Shift+D 执行命令；Plasma 中同样验证 Kitty 中文输入 |
-| Firefox | 打开声明式默认 profile，加载本地网页，在页面输入框中使用拼音输入中文 |
-| VS Code Dev Containers | 由已配置的扩展进入容器工作区，在编辑器中使用拼音输入中文并保存；在内置终端中输入中文、执行命令并检查容器内结果 |
-| Bitwarden Desktop | 使用本地 HTTPS Vaultwarden 和合成账户登录，在密码库搜索框中使用拼音输入中文 |
+| Firefox | 打开声明式默认 profile，加载本地网页，在页面输入框中使用拼音输入中文；电源菜单显示 Firefox 注销提醒 |
+| VS Code Dev Containers | 由已配置的扩展进入容器工作区，在编辑器中使用拼音输入中文并保存；在内置终端中执行中文命令并检查结果；电源菜单显示 VS Code 注销提醒 |
+| Bitwarden Desktop | 使用本地 HTTPS Vaultwarden 和合成账户登录，在密码库搜索框中使用拼音输入中文；密码库运行期间，电源菜单提示退出 Bitwarden |
 
 `tests/fixtures/applications/` 提供本地站点和开发容器，VS Code Server 来自 `vscode.vscodeServer`。中文输入通过 VM 键盘和 Fcitx5 完成。桌面与应用场景共用 `tests/vm/gui.py`，同一 VM 的键鼠输入、截图及 monitor 操作串行执行；窗口等待和图像转换受截止时间限制。活动维持线程先结束，再关闭 VM；正常关机最多等待 120 秒，超时则释放该测试 VM 并报告失败，收尾错误与原始错误一并保留。测试输出保留按应用、会话命名的日志、截图和结果。
 
@@ -72,7 +72,11 @@ nix develop .#vm --command vm-test-submit --help
 
 备份 VM 使用受控时间验证首次等待、超期、真实失败及成功后的健康状态，继续覆盖窗口调度与关机恢复。桌面 VM 通过 SDDM 登录、正常注销再登录，检查网络托盘、KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。应用 VM 保存 Kitty 初始提示符以及 Kitty/Firefox 的拼音候选截图，并验证中文提交结果。
 
-设备验收覆盖真实 SOPS 解密、AP 认证、外接屏幕/合盖、休眠、Secure Boot、正常注销/锁屏，以及云端权限和资料恢复。
+设备验收覆盖真实 SOPS 解密、AP 认证、外接屏幕/合盖、Secure Boot、正常注销/锁屏，以及云端权限和资料恢复。
+
+电源菜单场景通过实际 Rofi 键盘操作选择动作，以真实 QEMU 进程和合成 systemd 备份服务覆盖其他用户的虚拟机、排队任务和执行中任务，随后完成原生会话退出及系统电源操作。应用 VM 在真实 Firejail/Nix/Electron 启动链上验证提醒。锁屏覆盖空闲、手动以及旋转屏幕或多输出布局，通过键盘输入合成用户密码解锁并保存画面。竖屏菜单的文字识别按显示方向转正，截图产物保留 QEMU 的原始画面。PipeWire 的检查跨越注销和重新登录，读取 boot 内的 coredump 记录。
+
+加密启动场景将合成测试系统迁入 VM 专属空磁盘，使用合成口令安装带 Breeze 的启动代次，经图形控制台输入 LUKS 口令后登录 SDDM/Sway。图形解锁截图属于测试产物；实际 i915 显示和 Secure Boot 签名链仍在 laptop2 验收。
 
 壁纸场景使用本地 HTTPS 图片源，验证获取和去重、原有图片参与轮换、离线继续显示、配置重载及重新登录后的实际背景像素。KWallet 使用合成 Secret Service 条目的存取和重启后读取来验收解锁。
 

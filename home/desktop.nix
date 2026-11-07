@@ -12,7 +12,10 @@ let
   sans = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.sansSerif;
   mono = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.monospace;
   fcitxThemes = inputs.catppuccin-fcitx5 + /src;
-  tools = import ../nix/desktop-tools.nix { inherit pkgs; };
+  tools = import ../nix/desktop-tools.nix {
+    inherit pkgs;
+    rofi = config.programs.rofi.finalPackage;
+  };
   notificationActivation = pkgs.writeShellScript "activate-session-notifications" ''
     set -eu
     # Late notifications during logout must not resurrect graphical services.
@@ -167,7 +170,7 @@ let
         exec ${start} sway
         exec_always ${pkgs.systemd}/bin/systemctl --user is-active --quiet site-sway.target && ${pkgs.systemd}/bin/systemctl --user --no-block start site-wallpaper-apply.service
         bindsym $mod+Shift+e exec ${pkgs.sway}/bin/swaynag -t warning -m 'End this session?' -B 'Log out' '${pkgs.sway}/bin/swaymsg exit'
-        bindsym $mod+semicolon exec ${pkgs.swaylock}/bin/swaylock -f -c 1e1e2e
+        bindsym $mod+semicolon exec ${tools.lock}/bin/desktop-lock sway
         bindsym Print exec ${tools.shot}/bin/desktop-shot area copy
       bindsym Shift+Print exec ${tools.shot}/bin/desktop-shot screen copy
       bindsym $mod+Print exec ${tools.shot}/bin/desktop-shot area save
@@ -183,7 +186,7 @@ let
       bindsym $mod+p exec ${pkgs.arandr}/bin/arandr
       exec --no-startup-id ${pkgs.xsetroot}/bin/xsetroot -solid '${c.background}'
       bindsym $mod+Shift+e exec ${pkgs.i3}/bin/i3-nagbar -t warning -m 'End this session?' -B 'Log out' '${pkgs.i3}/bin/i3-msg exit'
-      bindsym $mod+semicolon exec ${pkgs.i3lock}/bin/i3lock -c 1e1e2e
+      bindsym $mod+semicolon exec ${tools.lock}/bin/desktop-lock i3
       exec --no-startup-id ${pkgs.xset}/bin/xset s 60 0
       bindsym Print exec ${tools.shot}/bin/desktop-shot area copy
       bindsym Shift+Print exec ${tools.shot}/bin/desktop-shot screen copy
@@ -288,7 +291,7 @@ in
       };
       font = {
         name = mono;
-        size = 11;
+        size = 12.5;
       };
       settings = {
         window_padding_width = 0;

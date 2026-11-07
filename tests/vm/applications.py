@@ -233,6 +233,7 @@ def vscode():
                 assert (workspace / "terminal-context.txt").read_text() == "container"
                 page.screenshot(path=str(ARTIFACTS / "vscode-terminal.png"))
                 ui_input({"text": "exit\n"})
+                ui_input({"powerGuard": "VS Code"})
     finally:
         if container_id:
             # Complete network teardown before the next application starts.
@@ -263,6 +264,7 @@ def firefox():
             ui_input({"pinyin": "nihao ", "candidateScreenshot": "firefox-candidates"})
             assert field.get_attribute("value") == "你好", repr(field.get_attribute("value"))
             browser.save_screenshot(str(ARTIFACTS / "firefox.png"))
+            ui_input({"powerGuard": "Firefox"})
         except Exception:
             with cleanup("Firefox diagnostics"):
                 browser.save_screenshot(str(ARTIFACTS / "firefox-failure.png"))
@@ -325,6 +327,7 @@ def bitwarden():
             search.click()
             ui_input({"pinyin": "nihao "})
             assert search.input_value() == "你好", repr(search.input_value())
+            ui_input({"powerGuard": "Bitwarden"})
     return {"service": "local Vaultwarden", "account": EMAIL, "vault": "opened", "search": "你好"}
 
 

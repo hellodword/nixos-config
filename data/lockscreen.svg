@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2160" viewBox="0 0 1920 1080">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#111827"/>
+      <stop offset=".55" stop-color="#171d35"/>
+      <stop offset="1" stop-color="#25203e"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#5085ac" stop-opacity=".65"/>
+      <stop offset="1" stop-color="#25436a" stop-opacity=".15"/>
+    </linearGradient>
+    <linearGradient id="violet" x1="0" y1="1" x2="1" y2="0">
+      <stop stop-color="#444771" stop-opacity=".2"/>
+      <stop offset="1" stop-color="#8c71b0" stop-opacity=".55"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#89b4fa" stop-opacity=".09"/>
+      <stop offset="1" stop-color="#89b4fa" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <path fill="url(#base)" d="M0 0h1920v1080H0z"/>
+  <ellipse cx="890" cy="510" rx="800" ry="620" fill="url(#glow)"/>
+  <path d="M-200 740L460-100H850L-60 1080H-200z" fill="url(#blue)"/>
+  <path d="M-60 1080L850-100" fill="none" stroke="#89b4fa" stroke-opacity=".18"/>
+  <path d="M1090 1180L2020 100V610L1510 1180z" fill="url(#violet)"/>
+  <path d="M1090 1180L2020 100" fill="none" stroke="#c4b1ed" stroke-opacity=".2"/>
+  <path d="M1450-80L1970 440V-80z" fill="#8c92c9" fill-opacity=".07"/>
+  <path d="M70 1000L470 600" stroke="#a6adc8" stroke-opacity=".1"/>
+</svg>

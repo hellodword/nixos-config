@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   nixosConfig,
@@ -7,7 +8,10 @@
 let
   cfg = nixosConfig.site.desktop;
   sans = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.sansSerif;
-  tools = import ../nix/desktop-tools.nix { inherit pkgs; };
+  tools = import ../nix/desktop-tools.nix {
+    inherit pkgs;
+    rofi = config.programs.rofi.finalPackage;
+  };
   localTimeZone = lib.optionalAttrs (nixosConfig.time.timeZone != null) {
     timezone = nixosConfig.time.timeZone;
   };

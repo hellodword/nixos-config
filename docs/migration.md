@@ -4,6 +4,33 @@
 
 现有分区、LUKS、Btrfs 子卷、swap、Secure Boot 身份及系统和 Home Manager 的 `stateVersion` 沿用原值。这里使用 `nixos-rebuild boot` 安装启动代次。分区布局由现有声明描述，部署不运行磁盘格式化命令。
 
+## 已部署系统的日常升级
+
+完成首次部署的机器使用下面的流程。仓库中的新文件需要先纳入 Git，构建才会读取；依赖保持 `flake.lock` 中的版本。
+
+```sh
+cd /home/ubuntu/dev/workspace/nixos-config
+git status --short
+nix build --no-link --no-update-lock-file .#nixosConfigurations.laptop2.config.system.build.toplevel
+sudo nixos-rebuild boot --flake .#laptop2 --no-update-lock-file
+sudo bootctl list
+```
+
+核对新代次与上一可启动代次均在列表中，保存工作并正常退出应用，再重启。`boot` 安装下次启动所用的系统，不在当前桌面中切换会话服务。启动后确认 Breeze 磁盘解锁、SDDM 登录和 Kitty 12.5 pt；分别用电源菜单注销到 SDDM 并切换 Sway/i3/Plasma，测试手动和空闲锁屏，在新会话播放音频并录音。
+
+```sh
+nixos-version
+readlink -e /run/booted-system
+sudo sbctl status
+systemctl --failed --no-pager
+systemctl --user --failed --no-pager
+systemctl --user show pipewire.service pipewire-pulse.service wireplumber.service \
+  -p Id -p ActiveState -p Result -p NRestarts
+journalctl -b COREDUMP_COMM=pipewire --no-pager
+```
+
+若新代次不能正常使用，在启动菜单选择上一代次。Plymouth 页面按 Esc 可查看启动详情。保留上一代次直到磁盘解锁、三种会话、锁屏和音频验收完成；日常升级不需要重新执行本文后续的首次迁移操作。
+
 ## 恢复基线
 
 2026-11-05 的实机核对结果：

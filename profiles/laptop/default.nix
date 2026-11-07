@@ -4,6 +4,7 @@
 }:
 {
   imports = [
+    ./boot.nix
     ./persistence.nix
     ./backup.nix
     ./network.nix

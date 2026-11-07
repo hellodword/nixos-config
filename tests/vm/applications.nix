@@ -145,6 +145,7 @@
     key_delay = timedelta(milliseconds=150)
     gui = runpy.run_path("${./gui.py}")
     visible, login = gui["visible"], gui["login"]
+    power_menu = runpy.run_path("${./power_menu.py}")
 
     def user_command(command, timeout=60):
         return ("runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus systemd-run --user --quiet --wait --pipe --collect "
@@ -159,7 +160,9 @@
     def input_actions(machine, actions):
         with machine.input_lock:
             for action in actions:
-                if "pinyin" in action:
+                if "powerGuard" in action:
+                    power_menu["blocked"](machine, user, visible, "Log out", action["powerGuard"])
+                elif "pinyin" in action:
                     user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
                     if "candidateScreenshot" in action:
                         machine.send_chars(action["pinyin"].rstrip(), delay=key_delay)

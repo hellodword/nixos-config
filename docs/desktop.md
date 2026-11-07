@@ -18,6 +18,22 @@ Plasma 的 Baloo 文件索引关闭；Dolphin 按目录浏览文件，KRunner �
 
 GTK 3/4 的字体与光标默认值位于 `/etc/xdg/gtk-{3,4}.0/settings.ini`，用户设置保存在持久化的 `~/.config/gtk-{3,4}.0/`。GTK 2 使用 `~/.config/gtk-2.0/gtkrc`，首次初始化写入默认值，之后由桌面和用户维护。Plasma 的外观设置可以正常更新这些文件；三个版本的设置文件均纳入精确备份。
 
+## 注销与电源操作
+
+Sway/i3 的 Super+Shift+P 打开电源菜单，也可运行 `desktop-power`。菜单提供 Log out、Reboot、Power off。执行前列出仍在运行的 Firefox、Chrome/Chromium、VS Code、Bitwarden 和 VirtualBox/QEMU 虚拟机，以应用名、进程数和 PID 展示；重启与关机还检查其他用户的虚拟机，以及正在执行或排队的备份、检查、恢复演练和仓库维护任务。
+
+有上述工作时，关闭提示框，正常退出应用或等待任务结束，再次打开菜单。菜单不会结束这些进程，也不提供强制继续。检查通过后显示确认，默认选择 Cancel；确认执行前再次检查。进程检查用于提醒仍在运行的工作，不能判断文档是否已保存。重启与关机也遵守 logind 的 inhibitor。
+
+Log out 通过当前桌面的原生接口退出：Sway 使用 `swaymsg exit`，i3 使用 `i3-msg exit`，Plasma 使用自身的 Shutdown D-Bus 接口。注销完成后回到 SDDM，在会话选择器中选择 Sway、i3 或 Plasma，再登录。Super+Shift+E 保持 WM 原生退出确认，不经过电源菜单的进程检查。
+
+注销会结束当前图形会话及其窗口，桌面专属服务、通知和 portal 随会话停止。系统服务和系统级备份任务不随图形注销停止。普通用户服务是否继续取决于其所属 target、其他登录会话和用户管理器生命周期；关闭桌面终端前，应将需要继续运行的任务放入适当的服务中。新桌面重新建立图形环境，应用的恢复能力由应用自身决定。
+
+## 锁屏与启动解锁
+
+Sway 和 i3 使用固定的深蓝紫色几何渐变背景，不跟随随机桌面壁纸，不显示时钟或日期。背景随系统配置构建，离线也可使用。Super+semicolon 和一分钟空闲锁屏共用 `desktop-lock`，密码验证分别由原生 swaylock 和 i3lock 的 PAM 接口完成。Sway 按每块屏幕填充背景；i3 按当前显示布局为各输出裁切和拼接，包括旋转屏幕。i3 的图片准备受时间限制，失败时用相同配色的纯色背景继续锁屏。Plasma 使用自己的锁屏设置。
+
+启动时由 Plymouth Breeze 显示 LUKS 解锁提示，laptop2 在 initrd 中加载 i915，供早期图形显示使用。输入现有磁盘密码后继续启动至 SDDM，再输入用户登录密码；磁盘解锁和桌面登录使用各自的凭据。Esc 可切换启动详情，图形提示不可用时使用文本提示排障。Plymouth 配置进入 initrd，需要安装启动代次并重启才能验收。LUKS 设备和 Lanzaboote/Secure Boot 的签名身份沿用现有声明。
+
 ## 桌面密码钱包
 
 Chrome、VS Code 和 Bitwarden Desktop 通过标准 Secret Service 使用 KSecretD。KWallet Manager 可查看和管理条目。默认密码钱包为 `kdewallet`，密码与系统登录密码一致时，SDDM 密码登录通过 PAM 自动解锁；Sway、i3 在显示环境就绪后完成相同初始化。自动登录没有登录密码可供钱包解锁，需要手动解锁。
@@ -68,8 +84,8 @@ Sway/i3 的快捷键：
 | Print / Shift+Print | 区域 / 全屏截图到剪贴板 |
 | Super+Print / Super+Shift+Print | 区域 / 全屏截图保存到 Pictures |
 | Super+Shift+S | 区域截图后编辑：Sway 使用 Satty，i3 使用 Flameshot |
-| Super+Shift+P | 电源菜单；注销、重启、关机需确认，遵守 logind inhibitors |
-| Super+Shift+E | 退出会话确认 |
+| Super+Shift+P | 电源菜单：注销、重启、关机；检查重要进程后确认 |
+| Super+Shift+E | WM 原生退出确认 |
 | Super+Space | 切换输入法 |
 
 Rofi 模式包含 `drun,run,calc,emoji`。`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
@@ -93,6 +109,8 @@ Sway/i3 先将显示环境导入用户 systemd，再启动对应会话 target �
 ## 音频与触控板
 
 PipeWire 负责播放和录音，WirePlumber 管理设备与路由，提供 PulseAudio 与 64 位 ALSA 接口。浏览器会议、媒体、桌面录屏和虚拟机音频共用这套服务。Sway/i3 点状态栏音量打开 pavucontrol，Plasma 使用原生音量面板，可选择扬声器、耳机和麦克风。JACK 与 32 位 ALSA 按当前应用需求关闭。
+
+PipeWire 的 X11 bell 模块关闭，音频服务不连接 X11/Xwayland 的响铃通道。普通播放、录音和桌面通知音继续使用 PipeWire。检查会话切换期间的崩溃时，查看整个 boot 的 journal；重新登录后用户管理器可能重建，当前服务的 `NRestarts=0` 不能代表前一会话没有重启。
 
 Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触控板；滚动方向使用常规方向。按下触控板的机械点击仍可使用。Plasma 在系统设置中调整并保存个人偏好。
 
@@ -128,13 +146,13 @@ systemctl --user status site-sway.target site-i3.target
 
 Home Manager 激活报告用户文件冲突时，在 `journalctl -u home-manager-ubuntu.service -b` 中确认具体路径，停止所属应用，将冲突文件保存到自己选定的持久目录，再按应用入口合并配置并重启该服务。先用 `findmnt -T` 判断路径是否属于持久挂载，挂载点按其持久化声明处理。WM 和会话服务直接读取构建产物，图形登录可以继续。通知按当前会话选择进程；输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
 
-桌面检查与三会话 VM 的范围见[验证指南](validation.md)。首次设备验收包括正常注销、屏幕锁、portal 共享、外接显示器及休眠。当前保留的随机加密 swap 对应 suspend 使用方式。
+桌面检查与三会话 VM 的范围见[验证指南](validation.md)。首次设备验收包括正常注销、屏幕锁、portal 共享和外接显示器。
 
 ## Shell 与日常工具
 
 `BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池和 Git 本地备份入口的提示。
 
-Kitty 的 Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签，窗口内边距为零。
+Kitty 默认字号为 12.5 pt，窗口内边距为零。Ctrl+Shift+加号 / 减号临时放大 / 缩小，Ctrl+Shift+Backspace 恢复配置字号；也可用 `kitty -o font_size=12.5` 打开单独窗口比较。Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
 
 `git backup <名称>` 在 `~/backups/git/<名称>` 建立 bare 仓库，并把它加入 origin 的推送地址，另提供 `laptop-git-backup` 推送 remote。后续 `git push origin` 会更新本地备份；没有 origin 时可用 `git backup -f <名称>`，再推送到 `laptop-git-backup`。注册命令本身不立即复制所有分支。Starship 在这个本地备份目录不存在时提示。
 

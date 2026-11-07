@@ -7,6 +7,7 @@
 }:
 let
   cfg = config.site.desktop;
+  locker = import ../../nix/desktop-lock.nix { inherit pkgs; };
   userHome = config.home-manager.users.${userName};
   gtkSettings = {
     gtk-im-module = "fcitx";
@@ -163,6 +164,7 @@ in
       alsa.support32Bit = false;
       jack.enable = false;
       wireplumber.enable = true;
+      extraConfig.pipewire."20-desktop-bell"."context.properties"."module.x11.bell" = false;
     };
     security.pam.services.login.kwallet.enable = true;
     security.pam.services.kde.kwallet.enable = true;
@@ -306,10 +308,10 @@ in
         }
       );
       swayidle = lib.mkIf cfg.sway.enable (
-        wmService "sway" "${pkgs.swayidle}/bin/swayidle -w timeout 60 '${pkgs.swaylock}/bin/swaylock -f -c 1e1e2e' lock '${pkgs.swaylock}/bin/swaylock -f -c 1e1e2e' before-sleep '${pkgs.swaylock}/bin/swaylock -f -c 1e1e2e'"
+        wmService "sway" "${pkgs.swayidle}/bin/swayidle -w timeout 60 '${locker}/bin/desktop-lock sway' lock '${locker}/bin/desktop-lock sway' before-sleep '${locker}/bin/desktop-lock sway'"
       );
       xss-lock = lib.mkIf cfg.i3.enable (
-        wmService "i3" "${pkgs.xss-lock}/bin/xss-lock --session \${XDG_SESSION_ID} --transfer-sleep-lock -- ${pkgs.i3lock}/bin/i3lock -n -c 1e1e2e"
+        wmService "i3" "${pkgs.xss-lock}/bin/xss-lock --session \${XDG_SESSION_ID} --transfer-sleep-lock -- ${locker}/bin/desktop-lock i3 --foreground"
       );
       sway-polkit = lib.mkIf cfg.sway.enable (
         wmService "sway" "${pkgs.kdePackages.polkit-kde-agent-1}/libexec/polkit-kde-authentication-agent-1"
