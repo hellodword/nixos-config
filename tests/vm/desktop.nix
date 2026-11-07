@@ -251,8 +251,9 @@ in
     def identity_fixture(machine, operation):
         return user(machine, "${identityFixture} " + operation + " --directory ${identityDirectory}")
 
-    def identity_ready(machine):
-        machine.wait_until_succeeds(user_command("${identityFixture} verify --directory ${identityDirectory}"), timeout=30)
+    def identity_ready(machine, retained=()):
+        options = "".join(" --retained " + purpose for purpose in retained)
+        machine.wait_until_succeeds(user_command("${identityFixture} verify --directory ${identityDirectory}" + options), timeout=30)
         for purpose in ("github", "local"):
             assert user(machine, "ssh fixture-" + purpose + " whoami").strip() == "desktop"
 
@@ -614,18 +615,25 @@ in
             user(machine, "mkdir -p ~/.ssh/hosts.d; printf 'Host fixture\\n  HostName override.example\\n' > ~/.ssh/hosts.d/local.conf")
             assert "hostname override.example" in user(machine, "ssh -G fixture")
             identity_fixture(machine, "create")
+            keys = json.loads(user(machine, "cat ${identityDirectory}/metadata.json"))
+            missing_key = "/home/desktop/.gnupg/private-keys-v1.d/" + keys["ios"]["keygrip"] + ".key"
+            user(machine, "mv " + missing_key + " ${identityDirectory}/ios.key")
             machine.succeed("systemctl restart site-identity.service")
             user(machine, "gpg --batch --import /run/site-identity/desktop/current/public.asc")
-            keys = json.loads(user(machine, "cat ${identityDirectory}/metadata.json"))
-            for purpose in ("github", "gitlab", "mainland", "vps", "ios"):
-                user(machine, "gpg-connect-agent " + shlex.quote("KEYATTR " + keys[purpose]["keygrip"] + " Use-for-ssh: true") + " /bye")
+            machine.wait_until_succeeds(user_command("systemctl --user is-failed site-gpg-ssh-identities.service"), timeout=30)
+            user(machine, "${identityFixture} verify --directory ${identityDirectory} --missing ios")
+            assert user(machine, "ssh fixture-github whoami").strip() == "desktop"
+            user(machine, "mv ${identityDirectory}/ios.key " + missing_key)
             identity_ready(machine)
             assert user(machine, "ssh fixture-gitlab whoami").strip() == "desktop"
             user(machine, "git init ${identityDirectory}/repo && cd ${identityDirectory}/repo && git signing && git commit --allow-empty -m 'Declared GPG identity' && git verify-commit HEAD")
+            user(machine, "cp /etc/ssh/gpg.github." + keys["github"]["keyid"] + ".pub ${identityDirectory}/previous.pub")
             identity_fixture(machine, "rotate")
             machine.succeed("systemctl restart site-identity.service")
-            for purpose, enabled in (("github", "false"), ("gitlab", "false"), ("next", "true")):
-                user(machine, "gpg-connect-agent " + shlex.quote("KEYATTR " + keys[purpose]["keygrip"] + " Use-for-ssh: " + enabled) + " /bye")
+            identity_ready(machine, retained=("github", "gitlab"))
+            assert user(machine, "ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i ${identityDirectory}/previous.pub desktop@localhost whoami").strip() == "desktop"
+            for purpose in ("github", "gitlab"):
+                user(machine, "gpg-connect-agent " + shlex.quote("KEYATTR " + keys[purpose]["keygrip"] + " Use-for-ssh: false") + " /bye")
             identity_ready(machine)
             user(machine, "cd ${identityDirectory}/repo && git commit --allow-empty -m 'Updated SSH identity' && git verify-commit HEAD")
             machine.wait_until_succeeds(user_command("nmcli -g 802-11-wireless.ssid connection show synthetic-baseline | grep -Fx synthetic-baseline"), timeout=60)
@@ -770,6 +778,8 @@ in
             assert_display_layout(machine, saved_single)
         elif session == "i3":
             machine.wait_until_succeeds(user_command("autorandr --current | grep vm-reconnected"), timeout=60)
+        elif session == "KDE":
+            identity_ready(machine)
         if session in ("sway", "i3"):
             assert wallpaper_visible(machine, session) == saved_wallpaper
             assert wallpaper_fetch_state(machine) == saved_fetch
@@ -860,7 +870,7 @@ in
                 print(machine.execute("journalctl _UID=1000 -n 60 --no-pager")[1])
                 if session == "KDE":
                     print(machine.execute("journalctl -u site-identity.service -u sshd.service -n 80 --no-pager")[1])
-                    print(machine.execute("systemctl status site-identity.service; journalctl -u site-identity.service -n 80 --no-pager")[1])
+                    print(machine.execute(user_command("systemctl --user status site-gpg-ssh-identities.service site-gpg-ssh-identities.path; journalctl --user -u site-gpg-ssh-identities.service -n 80 --no-pager"))[1])
                 print(machine.execute("tail -n 80 /run/user/1000/safeeyes/safeeyes.log")[1])
                 print(machine.execute(user_command("systemctl --user show-environment | grep -E '^(DISPLAY|WAYLAND_DISPLAY|SWAYSOCK|I3SOCK|XDG_SESSION_ID|XDG_SESSION_TYPE)='"))[1])
                 if session == "i3":

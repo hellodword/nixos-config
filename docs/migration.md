@@ -191,7 +191,7 @@ ssh-keygen -lf /etc/ssh/gpg.ios.实际长KeyID.pub
 
 用 `git config --show-origin --get user.signingkey` 核对旧签名选择，在 GPG 列表中找到具备 `[S]` 能力的完整子密钥指纹，填入 `gpg.signingKey`。`git.identity` 保留姓名、邮箱等原生配置；签名选择统一由前述字段生成。`ssh.hosts` 的 `IdentityFile` 改为 `/etc/ssh/gpg.<用途>.<16位长KeyID>.pub`。
 
-这些命令只列举、导出公钥。真实密钥环的导入与 SSH 注册，在部署后由本人用 `gpg --import` 和 `gpg-connect-agent 'KEYATTR … Use-for-ssh: true' /bye` 明确执行。原有注册可继续使用；换钥时才停用对应旧 keygrip。
+这些命令列举、导出公钥。部署后，用户服务自动启用声明所对应的本机 GPG SSH 身份；需要补充的 GPG 密钥或公钥证书由本人导入，智能卡引用由 `gpg --card-status` 建立。原有身份继续保留，换钥并确认远端连接成功后才手动停用旧 keygrip。
 
 ### 加密和审阅
 
@@ -408,7 +408,7 @@ if [ -e "$HOME/.gnupg/sshcontrol" ]; then
 fi
 ```
 
-旧 Home Manager 撤下自己管理的链接时可能移除 `sshcontrol`。首次登录后可手动恢复其内容，或按已核对的 keygrip 使用 `Use-for-ssh` 注册。旧 GNOME Keyring 数据按已确定的选择留在原盘，不进行迁移。
+旧 Home Manager 撤下自己管理的链接时可能移除 `sshcontrol`。声明中的身份由用户服务通过 `Use-for-ssh` 持久注册；备份的 `sshcontrol` 可用于核对额外身份，并由本人审阅后恢复。旧 GNOME Keyring 数据按已确定的选择留在原盘，不进行迁移。
 
 ## 目录与文件交接
 
@@ -421,7 +421,7 @@ fi
 | Tailscale | 后节从旧私有目录复制到 `/persist/var/lib/tailscale` |
 | SOPS 与 Secure Boot | 沿用既有密钥，仅按下文调整目录权限 |
 | GTK、KDE、显示器设置 | 个人可写内容仍在 tmpfs 时，逐项保存到对应持久路径 |
-| GPG 与 SSH | 保留用户身份资料；新公钥由声明派生，真实密钥环注册由本人执行 |
+| GPG 与 SSH | 保留用户身份资料；公钥由声明派生，对应的本机 GPG SSH 身份自动启用 |
 
 ### 桌面状态
 
@@ -600,18 +600,18 @@ backup-status
 
 正常启动会执行 Home Manager 配置管理、impermanence 挂载和 tmpfiles 初始化；Firefox 书签与搜索由声明决定。Home Manager 若遇到普通文件冲突，使用上一节的单文件保存方式处理后运行 `sudo systemctl restart home-manager-ubuntu.service`。配置冲突不会阻止图形登录，但对应配置需处理成功后验收。
 
-真实 GPG 密钥环保持原位。核对派生公钥后，确实需要导入公钥或注册 SSH 子密钥时，由本人执行：
+GPG 密钥环保留在持久目录中。核对派生公钥，按需导入公钥证书，并检查自动注册结果：
 
 ```sh
 gpg --show-keys --with-subkey-fingerprint --with-keygrip /run/site-identity/ubuntu/current/public.asc
 jq . /run/site-identity/ubuntu/current/manifest.json
 gpg --import /run/site-identity/ubuntu/current/public.asc
 gpg --list-secret-keys --with-subkey-fingerprint --with-keygrip
-gpg-connect-agent 'KEYATTR 已核对的完整KEYGRIP Use-for-ssh: true' /bye
+journalctl --user -b -u site-gpg-ssh-identities.service
 ssh-add -L
 ```
 
-已有身份注册可继续使用；每个新注册使用实际核对的 keygrip。旧 `sshcontrol` 内容也可由本人审阅后恢复到 `~/.gnupg/sshcontrol`。验证常用 SSH 连接和 Git 签名。
+注册服务按用途报告缺少的 GPG 子密钥或智能卡引用；补齐资料后自动重试，也可运行 `systemctl --user restart site-gpg-ssh-identities.service` 立即核对。额外的旧 `sshcontrol` 身份可由本人审阅后恢复。验证常用 SSH 连接和 Git 签名；换钥期间保留旧身份，确认远端切换后再手动停用。
 
 分别登录 Sway、i3、Plasma，验收输入法学习记录、锁屏、Wi-Fi、显示器、DNS、代理及 Tailnet/出口访问。Sway 用 Super+P 打开 wdisplays 保存当前屏幕组合；i3 调整后用 `autorandr --save office` 保存；Plasma 使用原生显示设置。实测媒体播放、麦克风、耳机、外屏、触控板、合盖与休眠。
 

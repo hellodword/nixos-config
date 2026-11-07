@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Derive and publish SSH/Git files from an isolated OpenPGP public keyring."""
+"""Publish declared SSH/Git identities and enable their local GPG SSH signers."""
 import argparse
 from contextlib import contextmanager
 import fcntl
@@ -199,7 +199,53 @@ def publish(source, runtime, ssh_directory, user):
         finally:
             if not published:
                 shutil.rmtree(generation)
+        # A stable file notifies path units after the atomic generation switch.
+        notification = runtime / "published-generation"
+        notification.write_text(generation.name + "\n")
+        notification.chmod(0o644)
     print(f"Published {len(public)} GPG SSH identities and native SSH/Git configuration")
+
+
+def agent_command(home, request):
+    response = command(["gpg-connect-agent", "--homedir", str(home), request, "/bye"])
+    lines = response.splitlines()
+    for line in lines:
+        # Assuan failures can be returned with a successful process exit status.
+        if line.startswith("ERR "):
+            raise RuntimeError(line[4:])
+    if not lines or not lines[-1].startswith("OK"):
+        raise RuntimeError("GPG agent did not acknowledge the request")
+    return lines
+
+
+def register(runtime, home):
+    generation = (runtime / "current").resolve(strict=True)
+    identities = json.loads((generation / "manifest.json").read_text())["ssh"]
+    failures = 0
+    for purpose, identity in identities.items():
+        purpose = purpose_name(purpose)
+        selected = fingerprint(identity["fingerprint"])
+        grip = identity["keygrip"]
+        if not re.fullmatch(r"[0-9A-F]{40}", grip):
+            raise IdentityError(f"SSH purpose {purpose}: invalid keygrip in the published manifest")
+        try:
+            try:
+                info = agent_command(home, f"KEYINFO {grip}")
+                if not any(line.startswith(f"S KEYINFO {grip} ") and line.split()[3] in ("D", "T")
+                           for line in info):
+                    raise RuntimeError("no local signing key")
+            except RuntimeError as error:
+                raise RuntimeError(f"local GPG key or smartcard reference unavailable: {error}") from error
+            attributes = agent_command(home, f"KEYATTR {grip} Use-for-ssh:")
+            value = next((line[2:].strip() for line in attributes if line.startswith("D ")), "")
+            enabled = value in ("yes", "true") or (re.fullmatch(r"[+-]?[0-9]+", value) and int(value) != 0)
+            if not enabled:
+                agent_command(home, f"KEYATTR {grip} Use-for-ssh: true")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            failures += 1
+            print(f"SSH purpose {purpose}, subkey {selected}, keygrip {grip}: {error}", file=sys.stderr)
+    print(f"GPG SSH identities ready: {len(identities) - failures}; unresolved: {failures}")
+    return 1 if failures else 0
 
 
 def main():
@@ -210,10 +256,16 @@ def main():
     prepare.add_argument("--runtime", type=Path, required=True)
     prepare.add_argument("--ssh-directory", type=Path, default=Path("/etc/ssh"))
     prepare.add_argument("--user", required=True)
+    registration = commands.add_parser("register", help="enable declared identities in the user's GPG agent")
+    registration.add_argument("--runtime", type=Path, required=True)
+    registration.add_argument("--home", type=Path, default=Path.home() / ".gnupg")
     args = parser.parse_args()
     os.umask(0o077)
     try:
-        publish(args.source, args.runtime, args.ssh_directory, args.user)
+        if args.operation == "prepare":
+            publish(args.source, args.runtime, args.ssh_directory, args.user)
+        else:
+            return register(args.runtime, args.home)
     except IdentityError as error:
         print(str(error), file=sys.stderr)
         return 2

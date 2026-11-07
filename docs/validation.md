@@ -6,7 +6,7 @@
 
 | flake 检查 | 覆盖的行为 | 实现位置 |
 | --- | --- | --- |
-| `unit` | 路径选择与仓库/策略状态、策略切换/恢复、显示布局；真实 Restic 三仓库备份和完整恢复，独立频率、手动额外执行与持久重试，远端检查请求量、损坏检测、信号中断和锁恢复；公钥推导、手动 agent 注册及签名、Git 验签与子密钥轮换 | `tests/unit/`、`tests/integration/backup.py`、`secrets.py` |
+| `unit` | 路径选择与仓库/策略状态、策略切换/恢复、显示布局；真实 Restic 三仓库备份和完整恢复，独立频率、手动额外执行与持久重试，远端检查请求量、损坏检测、信号中断和锁恢复；公钥推导、声明身份注册及签名、GPG 资料补齐、Git 验签与换钥期间的新旧身份共存 | `tests/unit/`、`tests/integration/backup.py`、`secrets.py` |
 | `network` | 真实 dnsdist/dnsproxy/sing-box、DoT/HTTP2 DoH、独立 DNS/显式代理及组合、文件顺序/规则集/逻辑匹配与路由一致性、TLS/ECS/缓存、完整响应日志和代理故障 | `tests/integration/dns.py`、`network.py` |
 | `configuration` | 合成 SOPS 密文经过真实主机字段与 Wi-Fi/身份绑定；完整主机、网络、Tailscale 及桌面/应用能力组合，验证有效服务、会话、禁用能力后的持久清单与所有权，求值系统闭包；临时 Git 仓库验证持续备份推送 | `tests/configuration.nix` |
 | `desktop` | 生产 Fontconfig 字形匹配、混排宽度与图标/emoji；原生 Sway/i3 配置验证 | `tests/desktop.nix`、`tests/integration/desktop.py` |
@@ -25,6 +25,7 @@ nix build --no-link .#checks.x86_64-linux.unit .#checks.x86_64-linux.network .#c
 ```sh
 nix develop --command python3 -m unittest discover -s tests/unit -t . -v
 nix develop --command python3 -m tests.integration.backup -v
+nix develop --command python3 -m tests.integration.secrets -v
 nix develop --command python3 -m tests.integration.cache
 ```
 
@@ -81,6 +82,8 @@ nix develop .#vm --command vm-test-submit --help
 加密启动场景将合成测试系统迁入 VM 专属空磁盘，使用合成口令安装带 Breeze 的启动代次，经图形控制台输入 LUKS 口令后登录 SDDM/Sway。图形解锁截图属于测试产物；实际 i915 显示和 Secure Boot 签名链仍在 laptop2 验收。
 
 壁纸场景使用本地 HTTPS 图片源，通过受控响应延迟、请求记录和实际背景像素，验证先恢复本地图片、到期下载、成功后的新图切换、无新图或离线时保留画面，以及本地轮换、配置重载、注销和重启后的状态恢复。测试调整合成用户的持久下载时间，经过生产 timer 与服务执行到期任务。KWallet 使用合成 Secret Service 条目的存取和重启后读取来验收解锁。
+
+GPG 身份场景通过生产发布器和用户注册服务连接本机 SSH 服务，覆盖缺少一个子密钥时其余身份可用、补齐后的自动启用、发布新代次后新旧身份共存、确认连接后的手动停用，以及重新登录和重启后的连接与 Git 验签。本机额外身份使用原生注册，验证其持续可用；声明身份由生产注册逻辑启用。真实智能卡的插拔、PIN 与签名在设备上验收。
 
 桌面 VM 保留 SDDM 登录界面和实际 Kitty 字体样张。Kitty 样张覆盖中英网格、编程连字、文字/emoji 表示及肤色、ZWJ、国旗、键帽组合；`desktop` 的 Fontconfig/Pango 检查负责字体选择和通用文本度量，不能替代终端自身的显示验证。
 

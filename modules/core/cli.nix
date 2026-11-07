@@ -58,6 +58,33 @@ in
           RestrictAddressFamilies = [ "AF_UNIX" ];
         };
       };
+      systemd.user.services.site-gpg-ssh-identities = lib.mkIf (cfg.identityFile != null) {
+        description = "Enable declared GPG identities for SSH";
+        wantedBy = [ "default.target" ];
+        wants = [ "gpg-agent.socket" ];
+        after = [ "gpg-agent.socket" ];
+        unitConfig = {
+          ConditionUser = userName;
+          ConditionPathExists = "${identityRuntime}/current/manifest.json";
+        };
+        path = [ config.programs.gnupg.package ];
+        serviceConfig = {
+          Type = "oneshot";
+          ExecStart = "${identityCommand} register --runtime ${identityRuntime} --home %h/.gnupg";
+          TimeoutStartSec = "1min";
+          UMask = "0077";
+          NoNewPrivileges = true;
+        };
+      };
+      systemd.user.paths.site-gpg-ssh-identities = lib.mkIf (cfg.identityFile != null) {
+        description = "Watch declared identities and local GPG keys";
+        wantedBy = [ "default.target" ];
+        unitConfig.ConditionUser = userName;
+        pathConfig.PathChanged = [
+          "${identityRuntime}/published-generation"
+          "%h/.gnupg/private-keys-v1.d"
+        ];
+      };
       programs.nix-index.enable = true;
       programs.nix-index-database.comma.enable = true;
       systemd.user.tmpfiles.rules = [ "d %h/.ssh/hosts.d 0700 - - -" ];

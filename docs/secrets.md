@@ -41,9 +41,11 @@ gpg --list-keys --keyid-format long --with-subkey-fingerprint --with-keygrip
 
 SSH 选择 `[A]` 子密钥，Git 签名选择 `[S]` 子密钥。系统从证书推导 keygrip、SSH 公钥和文件名 `/etc/ssh/gpg.<用途>.<16 位长 Key ID>.pub`。`ssh.hosts` 中的 `IdentityFile` 使用这个完整路径，格式与普通 OpenSSH 配置相同；更换子密钥时，同步修改声明指纹与对应路径。示例见 `data/secrets/identity.example.yaml`。
 
-解密后，`site-identity.service` 在隔离公钥环中生成一整组文件，再切换 `/run/site-identity/<用户名>/current`；生成失败时保留上一组可用文件。它不访问用户的真实密钥环。`current/manifest.json` 给出每个用途的完整指纹、keygrip 和公钥文件名，可用于核对下面的命令。
+解密后，`site-identity.service` 在隔离公钥环中生成一整组文件，再切换 `/run/site-identity/<用户名>/current`；生成失败时保留上一组可用文件。`current/manifest.json` 给出每个用途的完整指纹、keygrip 和公钥文件名。
 
-公钥证书不能代替私钥。签名由本机 `~/.gnupg` 中的私钥或智能卡完成，目录持久化并纳入备份。首次接入或更新证书时，在自己的用户会话中审阅并导入：
+用户级 `site-gpg-ssh-identities.service` 读取清单，把本机 GPG 已有的认证子密钥通过 `Use-for-ssh` 属性启用给 SSH。用户服务启动、身份发布代次切换和 `~/.gnupg/private-keys-v1.d` 变化时自动执行；已有非零优先级继续生效，登记属性随 GPG 目录持久保存。
+
+SSH 使用 GPG 子密钥完成签名：秘密部分保存在本机 GPG 中或智能卡上，`.pub` 文件负责选择对应身份。`~/.gnupg` 持久化并纳入备份。首次接入或更新公钥证书时，在自己的用户会话中审阅并导入：
 
 ```sh
 gpg --show-keys --with-subkey-fingerprint --with-keygrip /run/site-identity/ubuntu/current/public.asc
@@ -52,21 +54,24 @@ gpg --list-secret-keys --with-subkey-fingerprint --with-keygrip
 jq . /run/site-identity/ubuntu/current/manifest.json
 ```
 
-在输出中核对 `[A]` 子密钥及其 keygrip。将下面占位符换成完整 keygrip，显式启用一个 SSH 身份：
+智能卡身份通过 `gpg --card-status` 建立本机引用。声明的子密钥缺少本机 GPG 密钥或智能卡引用时，注册服务逐项记录用途、指纹和原因，继续启用其余可用身份，并由桌面健康通知提示失败状态。补齐资料后自动重试；也可立即重试并核对 SSH 提供的身份：
 
 ```sh
-gpg-connect-agent 'KEYATTR 完整KEYGRIP Use-for-ssh: true' /bye
+systemctl --user restart site-gpg-ssh-identities.service
+journalctl --user -u site-gpg-ssh-identities.service -b
 ssh-add -L
 ssh -T git@github.com
 ```
 
-换钥时先把新证书、子密钥指纹与 `IdentityFile` 路径写入身份文档并部署，再导入证书、启用新 keygrip，在远端登记对应公钥并验证连接。确认后停用旧 keygrip：
+`IdentityFile` 指向公钥文件时，需要 agent 提供对应签名身份。若出现 `Load key "…pub": invalid format`，先比较清单、公钥与 `ssh-add -L`，再查看注册服务日志。[OpenSSH IdentityFile](https://man.openbsd.org/ssh_config#IdentityFile) 说明了公钥选择 agent 身份的用法。
+
+换钥时先在本机 GPG 准备好新子密钥，在远端登记新公钥，再把新证书、子密钥指纹与 `IdentityFile` 路径写入身份文档并部署。注册服务自动启用新身份，旧身份和本机额外身份继续可用。确认远端连接成功，且旧子密钥已从 `gpg.ssh` 的所有用途中撤下后，再手动停用旧 keygrip：
 
 ```sh
 gpg-connect-agent 'KEYATTR 旧KEYGRIP Use-for-ssh: false' /bye
 ```
 
-若 `~/.gnupg/sshcontrol` 仍有同一 keygrip 的旧注册，先保存该文件，再手动删除对应行或在行首加 `!`；该兼容文件也影响 agent 的身份选择。智能卡身份需要先用 `gpg --card-status` 建立本机引用。私钥导入、信任和智能卡 PIN 均由本人管理，登录与 rebuild 保持真实密钥环原状。
+若 `~/.gnupg/sshcontrol` 仍有同一 keygrip 的注册，先保存该文件，再手动删除对应行或在行首加 `!`。用 `ssh-add -L` 核对最终身份列表；智能卡还受 GnuPG 的活动卡选择规则影响。自动注册保留 `sshcontrol` 内容，GPG 密钥导入、信任和智能卡 PIN 由本人管理。身份选择规则见 [GnuPG agent](https://www.gnupg.org/documentation/manuals/gnupg/Agent-Options.html)。
 
 Git 的 `user.signingKey` 使用完整签名子密钥指纹加 `!`。需要签名的仓库运行 `git signing`；本机 `~/.config/git/local.inc` 最后加载。SSH 先加载 `~/.ssh/hosts.d/*.conf`，普通选项遵循首值优先，`IdentityFile` 按原生规则累计。
 

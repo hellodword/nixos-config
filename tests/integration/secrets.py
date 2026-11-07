@@ -1,4 +1,4 @@
-"""Public identity publication and manual GPG agent operations."""
+"""Declared GPG SSH identities through registration, recovery and rotation."""
 import json
 from contextlib import ExitStack
 import os
@@ -35,9 +35,13 @@ class DeclaredIdentity(unittest.TestCase):
                                          "--runtime", str(runtime), "--ssh-directory", str(public_directory),
                                          "--user", pwd.getpwuid(os.getuid()).pw_name], check=True, capture_output=True)
 
-            def register(purpose, enabled):
+            def register():
+                return subprocess.run(worker + ["register", "--runtime", str(runtime), "--home", str(home)],
+                                      capture_output=True, text=True, timeout=60)
+
+            def retire(purpose):
                 subprocess.run(["gpg-connect-agent", "--homedir", str(home),
-                                f"KEYATTR {keys[purpose]['keygrip']} Use-for-ssh: {enabled}", "/bye"],
+                                f"KEYATTR {keys[purpose]['keygrip']} Use-for-ssh: false", "/bye"],
                                check=True, capture_output=True)
 
             publish()
@@ -54,8 +58,22 @@ class DeclaredIdentity(unittest.TestCase):
             public.unlink()
             publish()
             gpg_identity.gpg(home, "--import", str(runtime / "current/public.asc"))
-            for purpose in gpg_identity.PURPOSES:
-                register(purpose, "true")
+            legacy = fixture / "sshcontrol"
+            legacy.write_text(keys["github"]["keygrip"] + "\n")
+            (home / "sshcontrol").symlink_to(legacy)
+            missing_key = home / "private-keys-v1.d" / (keys["ios"]["keygrip"] + ".key")
+            saved_key = fixture / "ios.key"
+            missing_key.rename(saved_key)
+            unavailable = register()
+            self.assertEqual(unavailable.returncode, 1)
+            self.assertIn("ios", unavailable.stderr)
+            self.assertIn(keys["ios"]["fingerprint"], unavailable.stderr)
+            gpg_identity.verify(home, fixture, missing=("ios",))
+            saved_key.rename(missing_key)
+            recovered = register()
+            self.assertEqual(recovered.returncode, 0, recovered.stderr)
+            # Declarative sshcontrol links can disappear during Home Manager activation.
+            (home / "sshcontrol").unlink()
             gpg_identity.verify(home, fixture)
             socket = subprocess.check_output(["gpgconf", "--homedir", str(home), "--list-dirs", "agent-ssh-socket"], text=True).strip()
             isolated = os.environ | {"GNUPGHOME": str(home), "SSH_AUTH_SOCK": socket,
@@ -68,10 +86,9 @@ class DeclaredIdentity(unittest.TestCase):
             subprocess.run(["git", "-C", str(root / "repo"), "verify-commit", "HEAD"], env=isolated, check=True, capture_output=True)
             gpg_identity.rotate(fixture)
             publish()
-            register("next", "true")
-            register("github", "false")
-            register("gitlab", "false")
-            gpg_identity.verify(home, fixture)
+            rotated = register()
+            self.assertEqual(rotated.returncode, 0, rotated.stderr)
+            gpg_identity.verify(home, fixture, retained=("github", "gitlab"))
             payload = root / "payload"
             payload.write_text("SSH agent protocol signing after identity rotation\n")
             public = public_directory / gpg_identity.public_name("github", keys["next"])
@@ -81,6 +98,15 @@ class DeclaredIdentity(unittest.TestCase):
             signers.write_text("synthetic " + public.read_text())
             subprocess.run(["ssh-keygen", "-Y", "verify", "-f", str(signers), "-I", "synthetic", "-n", "identity", "-s", str(payload) + ".sig"],
                            input=payload.read_bytes(), env=isolated, check=True, capture_output=True)
+            previous = fixture / "previous.pub"
+            previous.write_text(keys["github"]["public"])
+            subprocess.run(["ssh-keygen", "-Y", "sign", "-U", "-f", str(previous), "-n", "identity"],
+                           input=b"Previous identity remains available during remote migration\n",
+                           env=isolated, check=True, capture_output=True)
+            for purpose in ("github", "gitlab"):
+                retire(purpose)
+            self.assertEqual(register().returncode, 0)
+            gpg_identity.verify(home, fixture)
             self.assertEqual(public.stat().st_mode & 0o777, 0o400)
 
 

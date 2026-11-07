@@ -88,15 +88,17 @@ def rotate(directory):
     (directory / "identity.yaml").write_text(yaml.safe_dump(document, sort_keys=False))
 
 
-def verify(home, directory):
+def verify(home, directory, *, retained=(), missing=()):
     document = yaml.safe_load((directory / "identity.yaml").read_text())
     keys = json.loads((directory / "metadata.json").read_text())
     desired = set(document["gpg"]["ssh"].values()) | {keys["local"]["fingerprint"]}
+    desired.update(keys[purpose]["fingerprint"] for purpose in retained)
+    desired.difference_update(keys[purpose]["fingerprint"] for purpose in missing)
     expected = {tuple(key["public"].split()[:2]) for key in keys.values() if key["fingerprint"] in desired}
     socket = subprocess.check_output(["gpgconf", "--homedir", str(home), "--list-dirs", "agent-ssh-socket"], text=True).strip()
     offered = subprocess.check_output(["ssh-add", "-L"], env=os.environ | {"SSH_AUTH_SOCK": socket}, text=True)
     actual = {tuple(line.split()[:2]) for line in offered.splitlines()}
-    assert actual == expected, f"Agent identities: {len(expected - actual)} awaiting registration, {len(actual - expected)} awaiting retirement"
+    assert actual == expected, f"Agent identities: {len(expected - actual)} missing, {len(actual - expected)} unexpected"
     trust = lambda value: sorted(line for line in value.splitlines() if line and not line.startswith("#"))
     assert trust(gpg(home, "--export-ownertrust")) == trust((directory / "ownertrust").read_text())
 
@@ -106,6 +108,8 @@ def main():
     parser.add_argument("operation", choices=("create", "rotate", "verify"))
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--home", type=Path, default=Path.home() / ".gnupg")
+    parser.add_argument("--retained", action="append", default=[], help="previous identity still enabled during rotation")
+    parser.add_argument("--missing", action="append", default=[], help="declared identity whose GPG material is not yet available")
     args = parser.parse_args()
     os.umask(0o077)
     if args.operation == "create":
@@ -116,7 +120,7 @@ def main():
     elif args.operation == "rotate":
         rotate(args.directory)
     else:
-        verify(args.home, args.directory)
+        verify(args.home, args.directory, retained=args.retained, missing=args.missing)
 
 
 if __name__ == "__main__":

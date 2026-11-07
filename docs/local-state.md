@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | SSH 主机 | `~/.ssh/hosts.d/*.conf` | 下次连接；本机项先于加密基线，遵循 OpenSSH 首值优先规则 |
 | Git 身份 | `~/.config/git/local.inc` | 下次命令；本机 include 后于加密基线 |
-| GPG 本机身份 | `~/.gnupg/`、GPG agent | 私钥、智能卡 stub、ownertrust 和本机身份保留；SSH 注册由用户通过原生 GPG 命令管理 |
+| GPG 本机身份 | `~/.gnupg/`、GPG agent | 声明的认证子密钥自动启用给 SSH；密钥、智能卡引用与 ownertrust 持久保存，旧身份由本人确认后停用 |
 | Wi-Fi / 有线连接 | Plasma 网络面板、WM 托盘、`nmcli` / `nmtui` | 即时连接，自动保存后重启保留 |
 | Sway 显示器 | wdisplays、`~/.config/kanshi/config` | Apply 保存当前组合；kanshi 在连接变化及登录时恢复 |
 | i3 显示器 | `~/.config/autorandr/` | 输出变化时自动恢复匹配方案 |
@@ -67,7 +67,7 @@ SSH、Git/GPG 等基线保存在 `hosts/laptop2/secrets/`，激活使用既有 `
 nix develop --command sops edit hosts/laptop2/secrets/identity.sops.yaml
 ```
 
-基线或系统配置变化需要重新构建；解密保持在目标机运行时。身份文档以完整子密钥指纹声明 SSH 用途和 Git 签名，系统推导公钥文件和 Git 配置。首次导入、换钥及 SSH 注册使用[身份配置](secrets.md#gpgssh-与-git-身份)中的原生命令，由用户决定操作真实密钥环的时机。
+基线或系统配置变化需要重新构建；解密保持在目标机运行时。身份文档以完整子密钥指纹声明 SSH 用途和 Git 签名，系统推导公钥文件和 Git 配置，用户服务自动启用 GPG 中对应的 SSH 身份。密钥导入、智能卡初始化和旧身份停用由用户操作；自动注册及换钥流程见[身份配置](secrets.md#gpgssh-与-git-身份)。
 
 ## tmpfs 占用与临时持久化
 
