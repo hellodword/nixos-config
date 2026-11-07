@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  options,
   pkgs,
   ...
 }:
@@ -10,7 +11,7 @@ let
   json = pkgs.formats.json { };
   canary = "nixos-config backup recovery canary v1\n";
   canaryPath = "var/lib/site-backup/canary";
-  policy = json.generate "backup-policy.json" {
+  dataPolicy = {
     host = config.networking.hostName;
     roots = cfg.roots ++ [
       {
@@ -23,12 +24,6 @@ let
       sha256 = builtins.hashString "sha256" canary;
     };
     checkPartitions = cfg.checkPartitions;
-    schedule = { inherit (cfg.schedule) timeZone windows; };
-    minimumIntervalSeconds = {
-      check = 7 * 86400;
-      restore-test = 7 * 86400;
-      maintenance = 30 * 86400;
-    };
     retention = [
       "--keep-daily"
       "7"
@@ -40,9 +35,69 @@ let
       "75"
     ];
   };
+  policy = json.generate "backup-policy.json" dataPolicy;
+  targetPolicies = lib.mapAttrs (
+    name: target:
+    json.generate "backup-${name}-policy.json" (
+      dataPolicy
+      // {
+        inherit (target)
+          schedule
+          automatic
+          minimumIntervalSeconds
+          health
+          recoverStaleLocks
+          ;
+      }
+    )
+  ) cfg.targets;
   healthTargets = json.generate "backup-health-targets.json" (
-    lib.mapAttrs (_: target: target.repositoryFile) cfg.targets
+    lib.mapAttrs (name: target: {
+      inherit (target) repositoryFile;
+      policyFile = targetPolicies.${name};
+    }) cfg.targets
   );
+  intervals =
+    defaults:
+    lib.types.submodule {
+      options = lib.mapAttrs (
+        _: value:
+        lib.mkOption {
+          type = lib.types.ints.unsigned;
+          default = value;
+          description = "Interval in seconds, measured independently for this operation.";
+        }
+      ) defaults;
+    };
+  automaticOptions = defaults: {
+    enable = lib.mkOption {
+      type = lib.types.bool;
+      default = defaults.enable or true;
+      description = "Enable the automatic timer and automatic runner for this repository.";
+    };
+    backupAttemptsPerWindow = lib.mkOption {
+      type = lib.types.nullOr lib.types.ints.positive;
+      default = defaults.backupAttemptsPerWindow or null;
+      description = "Maximum started backup attempts per window. Manual operations may exceed it.";
+    };
+    heavySpacingSeconds = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = defaults.heavySpacingSeconds or 0;
+      description = "Minimum time between starts of check, restore-test and maintenance, including manual attempts.";
+    };
+    retryIntervalSeconds = lib.mkOption {
+      type = intervals (
+        defaults.retryIntervalSeconds or {
+          backup = 15 * 60;
+          check = 86400;
+          restore-test = 86400;
+          maintenance = 86400;
+        }
+      );
+      default = { };
+      description = "Automatic retry delay from the last failed or interrupted attempt's finish, per operation.";
+    };
+  };
   operations = [
     "automatic"
     "backup"
@@ -68,38 +123,43 @@ let
   pad = value: lib.fixedWidthString 2 "0" (toString value);
   calendar =
     target:
+    let
+      schedule = cfg.targets.${target}.schedule;
+    in
     lib.concatMap (
       window:
       map
+        (minute: "*-*-* ${pad (builtins.div minute 60)}:${pad (lib.mod minute 60)}:00 ${schedule.timeZone}")
         (
-          minute:
-          "*-*-* ${pad (builtins.div minute 60)}:${pad (lib.mod minute 60)}:00 ${cfg.schedule.timeZone}"
+          lib.filter (
+            minute: lib.mod (minute - minutes window.start - schedule.offsetMinutes) schedule.retryMinutes == 0
+          ) (lib.range (minutes window.start + schedule.offsetMinutes) (minutes window.end - 1))
         )
-        (
-          lib.filter
-            (
-              minute:
-              lib.mod (
-                minute - minutes window.start - (cfg.schedule.offsets.${target} or 0)
-              ) cfg.schedule.retryMinutes == 0
-            )
-            (lib.range (minutes window.start + (cfg.schedule.offsets.${target} or 0)) (minutes window.end - 1))
-        )
-    ) cfg.schedule.windows;
+    ) schedule.windows;
   command =
     target: operation:
     let
       state = "/var/lib/site-backup-${target}";
     in
-    "${pkgs.python3}/bin/python3 ${../../scripts/backup/runner.py} ${operation} --policy ${policy} --source ${lib.escapeShellArg cfg.source} --state ${state} --restic ${lib.getExe pkgs.restic}"
-    + " --run-state /run/${nameFor target operation}/result.json"
-    + " --offset-minutes ${toString (cfg.schedule.offsets.${target} or 0)}";
+    "${pkgs.python3}/bin/python3 ${../../scripts/backup/runner.py} ${operation} --policy ${targetPolicies.${target}} --source ${lib.escapeShellArg cfg.source} --state ${state} --restic ${lib.getExe pkgs.restic}"
+    + " --run-state /run/${nameFor target operation}/result.json";
   mkService =
     target: settings: operation:
     lib.nameValuePair (nameFor target operation) {
       description = "Restic ${operation} for independent ${target} repository";
       wants = [ "network-online.target" ];
-      after = [ "network-online.target" ];
+      # Reverse ordering at shutdown keeps name resolution and egress available
+      # while Restic releases locks. Ordering does not activate optional services.
+      after = [
+        "network-online.target"
+        "NetworkManager.service"
+        "systemd-resolved.service"
+        "site-dns.service"
+        "site-dns-race-cn.service"
+        "site-dns-race-global.service"
+        "sing-box.service"
+        "mullvad-daemon.service"
+      ];
       onSuccess = [
         "site-backup-status.service"
       ]
@@ -213,7 +273,28 @@ in
     checkPartitions = lib.mkOption {
       type = lib.types.ints.between 1 100;
       default = 12;
-      description = "Rotate pack verification across this many weekly partitions; advance only after success.";
+      description = "Rotate pack verification across this many partitions; advance only after success.";
+    };
+    automatic = automaticOptions { };
+    minimumIntervalSeconds = lib.mkOption {
+      type = intervals {
+        backup = 0;
+        check = 7 * 86400;
+        restore-test = 7 * 86400;
+        maintenance = 30 * 86400;
+      };
+      default = { };
+      description = "Minimum interval from a successful operation. Manual --force bypasses this interval.";
+    };
+    health = lib.mkOption {
+      type = intervals {
+        backup = 36 * 3600;
+        check = 14 * 86400;
+        restore-test = 14 * 86400;
+        maintenance = 45 * 86400;
+      };
+      default = { };
+      description = "Health deadlines from the last success or initial scope observation.";
     };
     schedule = {
       timeZone = lib.mkOption {
@@ -260,22 +341,57 @@ in
     targets = lib.mkOption {
       default = { };
       type = lib.types.attrsOf (
-        lib.types.submodule {
-          options = {
-            repositoryFile = lib.mkOption {
-              type = lib.types.str;
-              description = "Runtime file containing repository URL.";
+        lib.types.submodule (
+          { name, ... }: {
+            options = {
+              repositoryFile = lib.mkOption {
+                type = lib.types.str;
+                description = "Runtime file containing repository URL.";
+              };
+              passwordFile = lib.mkOption {
+                type = lib.types.str;
+                description = "Runtime repository password; never a Nix store path.";
+              };
+              environmentFile = lib.mkOption {
+                type = lib.types.str;
+                description = "Runtime provider access credentials.";
+              };
+              schedule = {
+                timeZone = lib.mkOption {
+                  type = lib.types.str;
+                  default = cfg.schedule.timeZone;
+                };
+                windows = lib.mkOption {
+                  type = (lib.getAttrFromPath [ "site" "backup" "schedule" "windows" ] options).type;
+                  default = cfg.schedule.windows;
+                };
+                retryMinutes = lib.mkOption {
+                  type = lib.types.ints.between 1 60;
+                  default = cfg.schedule.retryMinutes;
+                  description = "How often the timer evaluates due work within each window.";
+                };
+                offsetMinutes = lib.mkOption {
+                  type = lib.types.ints.between 0 59;
+                  default = cfg.schedule.offsets.${name} or 0;
+                };
+              };
+              automatic = automaticOptions cfg.automatic;
+              minimumIntervalSeconds = lib.mkOption {
+                type = intervals cfg.minimumIntervalSeconds;
+                default = { };
+              };
+              health = lib.mkOption {
+                type = intervals cfg.health;
+                default = { };
+              };
+              recoverStaleLocks = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Single-host repositories only: inspect lock owners, remove proven dead local locks with ordinary unlock, then retry once.";
+              };
             };
-            passwordFile = lib.mkOption {
-              type = lib.types.str;
-              description = "Runtime repository password; never a Nix store path.";
-            };
-            environmentFile = lib.mkOption {
-              type = lib.types.str;
-              description = "Runtime provider access credentials.";
-            };
-          };
-        }
+          }
+        )
       );
     };
   };
@@ -302,8 +418,22 @@ in
         ) (builtins.attrValues cfg.targets);
         message = "Backup credentials and repository locations must be runtime absolute paths outside the store.";
       }
+      {
+        assertion = lib.all (
+          target:
+          lib.all (
+            window: minutes window.start + target.schedule.offsetMinutes < minutes window.end
+          ) target.schedule.windows
+        ) (builtins.attrValues cfg.targets);
+        message = "Backup windows must end on the same day, after the start plus repository offset.";
+      }
     ];
-    environment.etc."backup/policy.json".source = policy;
+    environment.etc = {
+      "backup/policy.json".source = policy;
+    }
+    // lib.mapAttrs' (
+      name: source: lib.nameValuePair "backup/targets/${name}.json" { inherit source; }
+    ) targetPolicies;
     environment.systemPackages = [
       pkgs.restic
       (pkgs.writeShellScriptBin "backup-status" ''
@@ -383,7 +513,7 @@ in
             AccuracySec = "1s";
           };
         }
-      ) cfg.targets)
+      ) (lib.filterAttrs (_: target: target.automatic.enable) cfg.targets))
       // lib.optionalAttrs notifications (
         lib.mapAttrs' (
           target: _:

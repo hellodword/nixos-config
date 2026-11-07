@@ -395,7 +395,7 @@ Mullvad DNS 使用 `default` 模式，从本地自定义隧道取得网关地址
 
 ## 日志与保留
 
-DNS 事件由 dnsdist 原生 dnstap 经本地 UNIX socket 交给 DNS Collector，写入 `site-dns-events` journal。每个事件保留原始 DNS payload；解码后可以查看 RCODE、flags、问题和 AN/NS/AR 各区的名称、类型、TTL 与数据。journal 单行限额为 512 KiB，容纳大响应的结构化字段和完整报文编码。
+DNS 事件由 dnsdist 原生 dnstap 经本地 UNIX socket 交给 DNS Collector，写入 `network` 命名空间的 `site-dns-events` journal。`site-dns`、两个 `site-dns-race-*` 和 `sing-box` 共用这个独立 journal。每个事件保留原始 DNS payload；解码后可以查看 RCODE、flags、问题和 AN/NS/AR 各区的名称、类型、TTL 与数据。命名空间的单行限额为 512 KiB，容纳大响应的结构化字段和完整报文编码。
 
 | 标记 | 信息 |
 | --- | --- |
@@ -407,18 +407,19 @@ DNS 事件由 dnsdist 原生 dnstap 经本地 UNIX socket 交给 DNS Collector�
 
 ```sh
 # 完整 DNS 消息；--name 可选，按完整域名筛选
-sudo journalctl -u site-dns-events -o cat --since '10 minutes ago' |
+sudo journalctl --namespace=network -u site-dns-events -o cat --since '10 minutes ago' |
   network-dns-log --name example.com
 
 # 实时结构化事件及已解码字段
-sudo journalctl -u site-dns-events -o cat -f |
+sudo journalctl --namespace=network -u site-dns-events -o cat -f |
   jq -Rrc 'fromjson? | select(.dns.qname == "example.com") | {dns, policy: (.dnstap.extra | fromjson)}'
 
-sudo journalctl -u site-dns -u site-dns-race-cn -u site-dns-race-global -f
-sudo journalctl -u sing-box -u mullvad-daemon --since today
+sudo journalctl --namespace=network -u site-dns -u site-dns-race-cn -u site-dns-race-global -f
+sudo journalctl --namespace='*' -u sing-box -u mullvad-daemon --since today
 sudo journalctl -k --since today | rg wireguard
 sudo tail -F /var/log/mullvad-vpn/daemon.log
 sudo journalctl --disk-usage
+sudo journalctl --namespace=network --disk-usage
 systemctl list-timers site-network-logrotate.timer
 ```
 
@@ -432,4 +433,13 @@ sudo sh -c "printf '%s\n' 'module wireguard -p' > /proc/dynamic_debug/control"
 
 当前内核 WireGuard 的调试入口见 [官方说明](https://www.wireguard.com/quickstart/#debug-info)。用户态实现的日志位于 `/var/log/mullvad-vpn/wireguard.log`，与 daemon 日志一起轮转。
 
-journal 持久化，总预算 512 MiB、单文件 32 MiB、最长 14 天，按空间或时间先到者淘汰。Mullvad 文件位于持久化的 `/var/log/mullvad-vpn`；每五分钟检查，每日或文件超过 16 MiB 时轮转，保留四份压缩归档，轮转时清理超过七天的归档。文件可能在检查间隔内超过阈值；`copytruncate` 保持打开的日志描述符和隧道运行，复制与截断之间存在短暂丢失窗口。日志用于本机排障，Restic 精确路径策略备份规则与节点配置。
+两个 journal 都保存在持久挂载的 `/var/log/journal` 下，各自按空间或时间先到者淘汰；保留天数是最长时间。网络服务继续输出完整 DNS、verbose/debug 日志，命名空间关闭速率丢弃。它的文件位于 `<machine-id>.network`，启动顺序等待持久挂载就绪。
+
+| 日志 | 空间预算 | 单文件 | 最长保留 |
+| --- | --- | --- | --- |
+| 系统默认 journal：备份、登录、内核及其他服务 | 512 MiB | 32 MiB | 14 天 |
+| `network` journal：DNS、竞速分支、sing-box | 4 GiB，启用压缩 | 64 MiB | 7 天 |
+
+高频网络正文的轮转独立于备份和系统历史。服务管理器的生命周期消息仍可能出现在默认 journal；查询跨命名空间的服务时使用 `--namespace='*'`。历史上写入默认 journal 的网络记录仍按原预算保留，切换命名空间不迁移旧日志。
+
+Mullvad 文件位于持久化的 `/var/log/mullvad-vpn`；每五分钟检查，每日或文件超过 16 MiB 时轮转，保留四份压缩归档，轮转时清理超过七天的归档。文件可能在检查间隔内超过阈值；`copytruncate` 保持打开的日志描述符和隧道运行，复制与截断之间存在短暂丢失窗口。Mullvad journal 与内核记录仍在默认命名空间。日志用于本机排障，Restic 精确路径策略备份规则与节点配置。

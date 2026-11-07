@@ -93,12 +93,18 @@ class DeliveryTest(unittest.TestCase):
     def test_latest_result_survives_offline_delivery_and_concurrent_completion(self):
         with tempfile.TemporaryDirectory() as temporary:
             state = Path(temporary)
-            first = {"id": "first", "operation": "backup", "result": "failure", "finished": 1}
+            first = {"id": "first", "operation": "backup", "result": "failure", "finished": 1,
+                     "phase": "selection-and-backup", "resticExitCode": 11,
+                     "error": "Fatal: repository is locked at https://synthetic:credential@fixture.invalid/private?token=hidden"}
             latest = first | {"id": "latest", "result": "success", "finished": 2}
             backup.record_result(state, first)
             offline = SimpleNamespace(stdout=json.dumps({"channels": [{"channel": "bark", "delivered": False}]}))
-            with patch.object(notify.subprocess, "run", return_value=offline):
+            with patch.object(notify.subprocess, "run", return_value=offline) as send:
                 notify.deliver(state, "host", "repo", ["bark"], "client")
+                body = send.call_args.args[0][-1]
+                self.assertIn("resticExitCode=11; error=Fatal: repository is locked", body)
+                self.assertNotIn("fixture.invalid", body)
+                self.assertNotIn("credential@", body)
             self.assertEqual(backup.read_record(state / "backup-pending.json")["id"], "first")
             def completed_while_sending(*_args, **_kwargs):
                 backup.record_result(state, latest)

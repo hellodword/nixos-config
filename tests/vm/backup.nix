@@ -16,6 +16,7 @@ in
   name = "restic-recovery";
   globalTimeout = 900;
   qemu.forceAccel = true;
+  node.pkgsReadOnly = false;
   node.specialArgs = {
     inherit inputs;
     userName = "developer";
@@ -41,7 +42,22 @@ in
       }
     ];
   };
-  nodes.machine = {
+  nodes.machine = { pkgs, ... }: {
+    # Leave enough time to observe an acquired remote lock before interrupting
+    # the real Restic upload. Small recovery fixtures otherwise finish too fast.
+    nixpkgs.overlays = [
+      (_: prev: {
+        restic = prev.symlinkJoin {
+          name = "restic-paced-upload";
+          paths = [ prev.restic ];
+          nativeBuildInputs = [ prev.makeWrapper ];
+          postBuild = ''
+            wrapProgram $out/bin/restic --add-flags '--limit-upload 512'
+          '';
+          meta.mainProgram = "restic";
+        };
+      })
+    ];
     users.users.developer.isNormalUser = true;
     users.users.outsider.isNormalUser = true;
     site.containers.enable = true;
@@ -99,11 +115,18 @@ in
         repositoryFile = "/etc/backup-test/${name}";
         passwordFile = "/etc/backup-test/password";
         environmentFile = "/etc/backup-test/environment";
+        recoverStaleLocks = true;
+        automatic = lib.mkIf (name == "first") {
+          backupAttemptsPerWindow = 1;
+          heavySpacingSeconds = 86400;
+        };
+        minimumIntervalSeconds.check = lib.mkIf (name == "first") 0;
       });
     };
   };
   testScript = builtins.readFile ./notifications.py + ''
     from datetime import timedelta
+    import time
 
     upstream.start()
     upstream.wait_for_unit("restic-rest-server.service")
@@ -178,23 +201,40 @@ in
     machine.succeed("umount /persist/data/mounted; systemctl reset-failed site-backup-third-backup; systemctl start site-backup-third-backup")
     restore("third", "/restore-retry")
 
-    # A real Restic request is waiting on its remote backend during shutdown.
+    # Stop an upload only after its lock exists. Healthy transport lets Restic
+    # release that lock while the runner continues draining its diagnostics.
+    machine.succeed("dd if=/dev/urandom of=/persist/data/inflight bs=1M count=8 status=none; systemctl start --no-block site-backup-first-backup")
+    upstream.wait_until_succeeds("test -n \"$(find /var/lib/restic/first/locks -type f -print -quit)\"", timeout=30)
+    stopped_at = time.monotonic()
+    machine.succeed("systemctl stop site-backup-first-backup", timeout=35)
+    assert time.monotonic() - stopped_at < 30
+    upstream.succeed("test -z \"$(find /var/lib/restic/first/locks -type f -print -quit)\"")
+    assert record("first", "backup-result")["result"] == "interrupted"
+    assert record("first", "backup-success") == evening
+
+    # Losing the backend after acquiring a lock still allows bounded shutdown.
     # Another operation for the same repository skips immediately instead of queuing.
-    upstream.succeed("systemctl kill -s STOP restic-rest-server.service")
     machine.succeed("systemctl start --no-block site-backup-first-backup")
-    machine.wait_until_succeeds("ss -Htn state established '( dst 192.168.1.2 and dport = :8000 )' | grep -q .", timeout=30)
+    upstream.wait_until_succeeds("test -n \"$(find /var/lib/restic/first/locks -type f -print -quit)\"", timeout=30)
+    upstream.succeed("systemctl kill -s STOP restic-rest-server.service")
     machine.succeed("systemctl start site-backup-first-check", timeout=10)
     assert record("first", "check-result")["result"] == "skipped"
     machine.execute("systemctl poweroff --no-block", check_return=False, check_output=False)
     machine.wait_for_shutdown(timeout=timedelta(seconds=60))
     upstream.succeed("systemctl kill -s CONT restic-rest-server.service; echo 0 > /run/notification-fixture/failures")
+    upstream.succeed("test -n \"$(find /var/lib/restic/first/locks -type f -print -quit)\"")
     machine.start()
     machine.wait_for_unit("multi-user.target")
     machine.succeed("systemctl stop 'site-backup-*-automatic.timer'; date -s '2027-03-16 13:40:00 UTC'")
     assert record("first", "backup-result")["result"] == "interrupted"
     assert record("first", "backup-success") == evening
     assert health()["first"]["backup"]["state"] == "fresh"
-    machine.succeed("systemctl start site-backup-first-backup")
+    machine.succeed("rm /persist/data/inflight; systemctl start site-backup-first-backup")
+    # A leftover shared backup lock permits another backup. The next exclusive
+    # check exercises exit-11 recovery and removes that dead owner's lock.
+    machine.succeed("systemctl start site-backup-first-check")
+    assert record("first", "check-result")["result"] == "success"
+    upstream.succeed("test -z \"$(find /var/lib/restic/first/locks -type f -print -quit)\"")
     restore("first", "/restore-after-reboot")
     latest = record("first", "backup-result")["id"]
     # Boot-time delivery and job completion both use the same latest-result queue.

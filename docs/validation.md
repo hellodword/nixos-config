@@ -6,11 +6,11 @@
 
 | flake 检查 | 覆盖的行为 | 实现位置 |
 | --- | --- | --- |
-| `unit` | 路径选择与仓库/策略状态、策略切换/恢复、显示布局；真实 Restic 三仓库备份和完整恢复；公钥推导、手动 agent 注册及签名、Git 验签与子密钥轮换 | `tests/unit/`、`tests/integration/backup.py`、`secrets.py` |
+| `unit` | 路径选择与仓库/策略状态、策略切换/恢复、显示布局；真实 Restic 三仓库备份和完整恢复，独立频率、手动额外执行与持久重试，远端检查请求量、损坏检测、信号中断和锁恢复；公钥推导、手动 agent 注册及签名、Git 验签与子密钥轮换 | `tests/unit/`、`tests/integration/backup.py`、`secrets.py` |
 | `network` | 真实 dnsdist/dnsproxy/sing-box、DoT/HTTP2 DoH、独立 DNS/显式代理及组合、文件顺序/规则集/逻辑匹配与路由一致性、TLS/ECS/缓存、完整响应日志和代理故障 | `tests/integration/dns.py`、`network.py` |
 | `configuration` | 合成 SOPS 密文经过真实主机字段与 Wi-Fi/身份绑定；完整主机、网络、Tailscale 及桌面/应用能力组合，验证有效服务、会话、禁用能力后的持久清单与所有权，求值系统闭包；临时 Git 仓库验证持续备份推送 | `tests/configuration.nix` |
 | `desktop` | 生产 Fontconfig 字形匹配、混排宽度与图标/emoji；原生 Sway/i3 配置验证 | `tests/desktop.nix`、`tests/integration/desktop.py` |
-| `vm-backup` | 真实 Restic 三仓库、上海时间窗口、故障重试、路径边界、后端无响应时的关机与恢复；gVisor 内 Apprise/Bark 中文通知、官方 TLS 模拟上游、凭据隔离和跨重启的最新结果补发 | `tests/vm/backup.nix` |
+| `vm-backup` | 真实 Restic 三仓库、上海时间窗口、故障重试、路径边界、取得真实仓库锁后的正常中断及后端无响应时的关机、重启解锁与恢复；gVisor 内 Apprise/Bark 中文通知、官方 TLS 模拟上游、凭据隔离和跨重启的最新结果补发 | `tests/vm/backup.nix` |
 | `vm-network` | 本机与 Tailscale 出口客户端的持续双栈流量、DNS、NAT 穿透与 DERP；独立 WireGuard/OpenVPN 接口传输、策略更新及就绪失败恢复、服务故障、日志轮转、断网及重启恢复；三种网络能力组合下的通知、普通 Docker/Compose 的 DNS 与出口、服务名互通及端口发布、网络重建、prune 与 Docker 重启 | `tests/vm/network.nix` |
 | `vm-desktop` | SDDM 三会话登录、原生与 Rofi 注销、重新登录；电源菜单对虚拟机和备份任务的阻挡及正常重启/关机；空闲与手动锁屏、显示布局变化后的解锁、Plymouth 加密启动；标签布局、Waybar、截图剪贴板、输入法、KWallet、壁纸，以及显示布局、NetworkManager 连接和 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
 | `vm-applications` | 默认 1920×1080 下，三会话中的 Firefox、VS Code Dev Containers、Bitwarden Desktop、Kitty、Rofi 基础操作，以及真实应用运行时的注销提醒 | `tests/vm/applications.nix`、`applications.py` |
@@ -72,7 +72,7 @@ nix develop .#vm --command vm-test-submit --help
 
 网络 VM 在目标端记录本机及 exit-node 客户端的实际出口，持续覆盖 direct/代理 × TCP/UDP × IPv4/IPv6；从默认 IPv4 启动，验证 HTTPS、运行时启用/关闭 IPv6，以及重启后回到声明式默认值。主机、普通 Docker/Compose 和出口客户端显式指定外部 DNS 地址的 TCP/UDP 查询均走共享解析。私网、Tailnet 和默认/自建 Docker bridge 访问宿主服务，公网访问按发布前的宿主端口判断；UDP 通配监听验证回复源地址。HTTP/SOCKS 与 SSH ProxyCommand 使用实际 mixed 入口，KDE Connect 使用合成设备发现、配对和传输文件。Tailscale 场景从已有 `shields-up=true` 的身份应用声明，然后验证客户端真实出口 HTTP 和 DNS。通知使用真实 Apprise API、Bark 和 runsc，由独立节点模拟官方 TLS 服务，记录合成推送。
 
-备份 VM 使用受控时间验证首次等待、超期、真实失败及成功后的健康状态，继续覆盖窗口调度与关机恢复。桌面 VM 通过 SDDM 登录、正常注销再登录，检查网络托盘、KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。应用 VM 保存 Kitty 初始提示符以及 Kitty/Firefox 的拼音候选截图，并验证中文提交结果。
+备份 VM 使用受控时间验证首次等待、超期、真实失败及成功后的健康状态，覆盖窗口调度、持锁中断、后端不可用时有界关机以及重启后锁恢复。网络 VM 验证完整 DNS 正文和 debug 日志进入独立命名空间，系统记录、轮转和跨重启历史分别保留。桌面 VM 通过 SDDM 登录、正常注销再登录，检查网络托盘、KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。应用 VM 保存 Kitty 初始提示符以及 Kitty/Firefox 的拼音候选截图，并验证中文提交结果。
 
 设备验收覆盖真实 SOPS 解密、AP 认证、外接屏幕/合盖、Secure Boot、正常注销/锁屏，以及云端权限和资料恢复。
 

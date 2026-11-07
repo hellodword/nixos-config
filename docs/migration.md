@@ -617,6 +617,8 @@ ssh-add -L
 
 Docker 使用原 Btrfs 数据目录；`local` 日志驱动对新建容器生效。现有容器通过所属 Compose 或服务正常重建即可采用新默认值，重建时保留已有挂载与卷。
 
+备份频率和重试间隔按仓库配置，使用[受控启用流程](backup.md#受控启用)逐步核对真实云端请求与下载预算，再启用自动任务。网络诊断位于独立 `network` journal，混合查询使用 `--namespace='*'`；备份日志留在系统默认 journal。
+
 ## 回退
 
 ### 选择旧 generation
@@ -645,7 +647,7 @@ sudo cp -a -- /persist/usr/local/etc/sing-box "$recovery/sing-box-after-attempt"
 sudo cp -ai -- "$recovery/sing-box-original/." /persist/usr/local/etc/sing-box/
 sudo systemctl start sing-box.service tailscaled.service
 sudo tailscale status
-journalctl -b -u sing-box.service -u tailscaled.service -u home-manager-ubuntu.service
+journalctl --namespace='*' -b -u sing-box.service -u tailscaled.service -u home-manager-ubuntu.service
 ```
 
 旧 sing-box 继续读取自己的 `rules.json`、`experimental.json`；原 DNS 配置未改写。旧 Tailscale 使用保留下来的 `/persist/var/lib/private/tailscale`。新路径的状态保留作另一次尝试的资料，不覆盖旧私有目录。

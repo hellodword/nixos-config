@@ -9,7 +9,7 @@ import subprocess
 import time
 import uuid
 
-from runner import OPERATIONS, atomic_json, read_record, record_result
+from runner import OPERATIONS, atomic_json, read_record, record_result, safe_error
 
 
 def finalize(state, run_state):
@@ -39,9 +39,17 @@ def deliver(state, host, target, channels, client):
             if channel in event.get("deliveredChannels", []):
                 continue
             result = event["result"]
+            body = f"host={host}; target={target}; operation={operation}; result={result}"
+            if result in ("failure", "interrupted"):
+                if event.get("phase"):
+                    body += "; phase=" + event["phase"]
+                if "resticExitCode" in event:
+                    body += "; resticExitCode=" + str(event["resticExitCode"])
+                if event.get("error"):
+                    body += "; error=" + safe_error(event["error"])
             command = [client, "send", "--group", "backup", "--channel", channel,
                        "--title", f"{host}: {operation} {result}",
-                       f"host={host}; target={target}; operation={operation}; result={result}"]
+                       body]
             try:
                 completed = subprocess.run(command, capture_output=True, timeout=100)
                 delivery = json.loads(completed.stdout)["channels"][0]

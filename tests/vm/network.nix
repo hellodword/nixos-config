@@ -729,7 +729,7 @@ in
         except Exception:
             for command in ("ip -4 rule show", "ip -6 rule show", "ip -4 route show table all",
                             "ip -6 route show table all", "ip -j address show dev eth1", "nft list ruleset",
-                            "journalctl -u sing-box -u site-network-underlay -n 80 --no-pager"):
+                            "journalctl --namespace=\"*\" -u sing-box -u site-network-underlay -n 80 --no-pager"):
                 print(command, client.execute(command)[1])
             raise
         client.succeed("ip -4 route get 198.19.0.30 | grep 'dev wg0-mullvad'")
@@ -787,7 +787,7 @@ in
         machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -l --id-only | grep -Fx ' + device, timeout=45)
     kde(client, "kdeconnect-cli --pair -d " + target_device)
     device_path = "/modules/kdeconnect/devices/" + client_device
-    target.wait_until_succeeds(f'busctl --address="{kde_bus}" get-property org.kde.kdeconnect {device_path} org.kde.kdeconnect.device isPairRequestedByPeer | grep true', timeout=30)
+    target.wait_until_succeeds(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device isPairRequestedByPeer | grep true', timeout=30)
     target.succeed(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device acceptPairing')
     for machine, device in ((client, target_device), (target, client_device)):
         machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -a --id-only | grep -Fx ' + device, timeout=30)
@@ -881,7 +881,7 @@ in
                 peer.succeed(f"dig {transport} +time=3 +tries=1 +short {name} A | grep -Fx {expected}")
         peer.succeed("dig +time=3 +tries=1 exit.blocked.test | grep NXDOMAIN")
         peer.succeed("dig +short client.fixture.ts.net A | grep -Fx " + client4)
-        client.wait_until_succeeds("journalctl -u site-dns-events -o cat --no-pager | network-dns-log --name exit.direct.test | grep '40-fixture.json/rules/2'")
+        client.wait_until_succeeds("journalctl --namespace=network -u site-dns-events -o cat --no-pager | network-dns-log --name exit.direct.test | grep '40-fixture.json/rules/2'")
         for name, source in (("exit.direct.test", "192.168.1.10"), ("exit.proxy.test", "192.168.1.20")):
             assert peer.succeed(f"curl -4 --noproxy '*' --max-time 8 -sSf http://{name}:18080/exit-domain").strip() == source
 
@@ -977,21 +977,25 @@ in
         print(json.dumps({"hostname": hostname, "observed_source": observed}))
         assert observed in sources, (hostname, observed, sources)
     http("blocked.test", True)
-    # Journals and file rotation remain live while the egress observer runs.
-    client.wait_until_succeeds("journalctl -u site-dns-events -o cat --no-pager | network-dns-log --name direct.test | grep '40-fixture.json/rules/2'")
-    client.wait_until_succeeds("journalctl -u site-dns-race-cn -o cat --no-pager | grep direct.test")
+    # Network records use their own journal while ordinary operational records
+    # retain independent storage through rotation and reboot.
+    client.succeed("printf '%s\\n' backup-history-fixture | systemd-cat -t backup-history-fixture")
+    client.wait_until_succeeds("journalctl --namespace=network -u site-dns-events -o cat --no-pager | network-dns-log --name direct.test | grep '40-fixture.json/rules/2'")
+    client.wait_until_succeeds("journalctl --namespace=network -u site-dns-race-cn -o cat --no-pager | grep direct.test")
     client.succeed("python3 -c 'import dns.message,dns.query; from pathlib import Path; r=dns.query.tcp(dns.message.make_query(\"large.direct.test\",\"TXT\"),\"127.0.0.1\",port=5300); assert r.answer[0][0].strings==(b\"x\"*200,)*200; Path(\"/run/large-answer.wire\").write_bytes(r.to_wire(max_size=65535))'")
-    client.wait_until_succeeds("journalctl -u site-dns-events -o cat --no-pager | network-dns-log --name large.direct.test > /run/large-events.jsonl; python3 -c 'import json,dns.message; from pathlib import Path; expected=dns.message.from_wire(Path(\"/run/large-answer.wire\").read_bytes()).answer; events=[json.loads(line) for line in Path(\"/run/large-events.jsonl\").read_text().splitlines()]; assert any(e[\"identity\"]==\"dnsdist-client\" and dns.message.from_text(e[\"dns\"]).answer==expected for e in events)'")
-    client.succeed("journalctl -u sing-box -o cat --no-pager | grep DEBUG")
+    client.wait_until_succeeds("journalctl --namespace=network -u site-dns-events -o cat --no-pager | network-dns-log --name large.direct.test > /run/large-events.jsonl; python3 -c 'import json,dns.message; from pathlib import Path; expected=dns.message.from_wire(Path(\"/run/large-answer.wire\").read_bytes()).answer; events=[json.loads(line) for line in Path(\"/run/large-events.jsonl\").read_text().splitlines()]; assert any(e[\"identity\"]==\"dnsdist-client\" and dns.message.from_text(e[\"dns\"]).answer==expected for e in events)'")
+    client.succeed("journalctl --namespace=network -u sing-box -o cat --no-pager | grep DEBUG")
     client.succeed("journalctl -u mullvad-daemon -o cat --no-pager | grep DEBUG")
     pids = client.succeed("systemctl show mullvad-daemon sing-box site-dns -p MainPID")
     client.succeed("python3 -c 'from pathlib import Path; p=Path(\"/var/log/mullvad-vpn/daemon.log\"); p.open(\"a\").write(\"rotation-fixture\\n\" * 1200000)'")
     client.succeed("systemctl start site-network-logrotate; gzip -t /var/log/mullvad-vpn/daemon.log.1.gz")
     healthy()
     assert pids == client.succeed("systemctl show mullvad-daemon sing-box site-dns -p MainPID")
-    client.succeed("journalctl --sync; journalctl --rotate")
+    client.succeed("journalctl --namespace=network --sync; journalctl --namespace=network --rotate")
+    client.succeed("journalctl -t backup-history-fixture -o cat --no-pager | grep -Fx backup-history-fixture")
+    client.succeed("test -z \"$(journalctl _SYSTEMD_UNIT=site-dns-events.service -o cat --no-pager)\"")
     user("dig +short after-rotation.direct.test A | grep -Fx 198.18.0.30")
-    client.wait_until_succeeds("journalctl -u site-dns-events -o cat --no-pager | network-dns-log --name after-rotation.direct.test | grep 198.18.0.30")
+    client.wait_until_succeeds("journalctl --namespace=network -u site-dns-events -o cat --no-pager | network-dns-log --name after-rotation.direct.test | grep 198.18.0.30")
     upstream.fail("nc -z -w2 192.168.1.10 5300")
     # A single unbound UDP socket changes destinations without retaining its old policy.
     code = "import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(4); "
@@ -1105,7 +1109,7 @@ in
     healthy()
     persistent = {"rules": [{"domain": "persisted.policy.example", "outbound": "direct"}]}
     client.succeed("printf '%s' " + shlex.quote(json.dumps(persistent)) + " > /var/lib/network-policy/route.d/05-local.json; network-policy apply")
-    client.succeed("journalctl --sync")
+    client.succeed("journalctl --namespace=network --sync; journalctl --sync")
     # The observer remains running through both orderly and abrupt power loss.
     for shutdown in (client.shutdown, client.crash):
         client.succeed("network-ipv6 on")
@@ -1113,7 +1117,8 @@ in
         shutdown()
         client.start()
         client.wait_for_unit("multi-user.target")
-        client.succeed("journalctl -u site-dns-events -o cat --no-pager | network-dns-log --name after-rotation.direct.test | grep 198.18.0.30")
+        client.succeed("journalctl --namespace=network -u site-dns-events -o cat --no-pager | network-dns-log --name after-rotation.direct.test | grep 198.18.0.30")
+        client.succeed("journalctl -t backup-history-fixture -o cat --no-pager | grep -Fx backup-history-fixture")
         client.succeed("test -s /var/log/mullvad-vpn/daemon.log.1.gz")
         blocked()  # runtime provider deliberately absent; no permissive startup.
         client.wait_for_unit("tailscaled.service")

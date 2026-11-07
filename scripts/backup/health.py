@@ -7,14 +7,18 @@ from pathlib import Path
 import tempfile
 import time
 
-from runner import atomic_json, read_record, scope
+from runner import OPERATIONS, atomic_json, attempt, automatic_decision, read_record, scope
 
 
 def status(root, targets, policy, source, now):
     result = {}
-    for target, repository_file in targets.items():
+    for target, settings in targets.items():
+        repository_file = settings["repositoryFile"] if isinstance(settings, dict) else settings
+        policy_file = Path(settings["policyFile"]) if isinstance(settings, dict) else policy
+        definition = {}
         try:
-            expected = scope(policy, source, Path(repository_file).read_bytes())
+            definition = json.loads(policy_file.read_text())
+            expected = scope(policy_file, source, Path(repository_file).read_bytes())
         except (OSError, ValueError, TypeError):
             expected = None
         operations = {}
@@ -31,6 +35,8 @@ def status(root, targets, policy, source, now):
                    if (record := read_record(directory / f"{operation}-result.json"))
                    and (matches(record) or (operation == "automatic" and record.get("result") == "skipped"))}
         for operation, limit in (("backup", 36 * 3600), ("check", 14 * 86400), ("restore", 14 * 86400), ("maintenance", 45 * 86400)):
+            name = "restore-test" if operation == "restore" else operation
+            limit = definition.get("health", {}).get(name, limit)
             success_path = directory / (operation + "-success.json")
             recorded = read_record(success_path)
             timestamp = recorded.get("time")
@@ -45,10 +51,20 @@ def status(root, targets, policy, source, now):
                     item.update(partition=part, partitions=total)
                 else:
                     item = {"ageSeconds": None, "state": "unknown"}
-            last = results.get("restore-test" if operation == "restore" else operation, {})
+            last = attempt(directory, name, expected) if expected else {}
+            last = last or results.get(name, {})
             if last.get("result") == "failure" and (age is None or last.get("finished", 0) >= timestamp):
                 item["state"] = "failed"
             operations["canaryRestore" if operation == "restore" else operation] = item
+        if expected and definition.get("schedule"):
+            operations["automatic"] = {
+                operation: automatic_decision(directory, operation, expected, definition, now,
+                                              definition["schedule"].get("offsetMinutes", 0))
+                | ({"requires": ["AC power", "successful backup in this window"]} if operation != "backup" else {})
+                for operation in OPERATIONS
+            }
+            operations["attempts"] = {op: record for op in OPERATIONS
+                                      if (record := attempt(directory, op, expected))}
         deliveries = {}
         for operation in ("backup", "check", "restore-test", "maintenance"):
             recorded = read_record(directory / (operation + "-notification.json"))

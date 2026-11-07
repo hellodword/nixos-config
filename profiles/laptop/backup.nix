@@ -27,6 +27,19 @@ in
       r2 = 5;
       b2 = 10;
     };
+    # These repositories are used only by this host. Ordinary unlock remains
+    # conditional on every observed owner being local and definitely gone.
+    targets = {
+      scaleway.recoverStaleLocks = true;
+      r2.recoverStaleLocks = true;
+      b2 = {
+        recoverStaleLocks = true;
+        automatic = {
+          backupAttemptsPerWindow = 1;
+          heavySpacingSeconds = 86400;
+        };
+      };
+    };
     roots = [
       {
         path = "etc/machine-id";

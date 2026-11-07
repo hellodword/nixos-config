@@ -96,6 +96,8 @@ Sway/i3 的快捷键：
 | Super+Shift+E | WM 原生退出确认 |
 | Super+Space | 切换输入法 |
 
+备份属于系统服务，注销后继续运行。Rofi 的重启和关机会等待用户先完成正在执行或排队的备份任务；任务结束后重新选择动作。其他关机入口按备份服务的 30 秒停止上限中断，远端锁的清理和恢复见[备份退出行为](backup.md#注销关机与锁恢复)。
+
 Rofi 使用 Noto Sans 16 pt，应用列表、命令列表和电源菜单共用这一字号。模式包含 `drun,run,calc,emoji`。`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
 
 两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。标题使用 10 pt JetBrainsMono Nerd Font，中文回退到 Noto Sans CJK SC。mpv、feh、Emulator、Waydroid 窗口默认浮动。
@@ -168,7 +170,7 @@ Kitty 默认使用 JetBrainsMono Nerd Font 12 pt，窗口内边距为零。Ctrl+
 
 `git backup <名称>` 在 `~/backups/git/<名称>` 建立 bare 仓库，并把它加入 origin 的推送地址，另提供 `laptop-git-backup` 推送 remote。后续 `git push origin` 会更新本地备份；没有 origin 时可用 `git backup -f <名称>`，再推送到 `laptop-git-backup`。注册命令本身不立即复制所有分支。Starship 在这个本地备份目录不存在时提示。
 
-Shell 保留构建、哈希、Nix 查询、媒体、二维码及容器便利入口，定义集中在 `home/cli.nix`。三个 rebuild 入口使用 daemon 的临时目录；`nixos-rebuild-boot-offline` 的含义是关闭 substitute。`sing-box-log` 查看 journal，`sing-box-config` 查看已生成的运行配置。
+Shell 保留构建、哈希、Nix 查询、媒体、二维码及容器便利入口，定义集中在 `home/cli.nix`。三个 rebuild 入口使用 daemon 的临时目录；`nixos-rebuild-boot-offline` 的含义是关闭 substitute。`sing-box-log` 查看 `network` 命名空间的 journal，`sing-box-config` 查看已生成的运行配置。
 
 `feh` 别名使用 `--scale-down --auto-zoom`，仍经过应用隔离入口。`7zaencrypt` 使用启用 unfree 编解码支持的 p7zip。`gobuild` 保留既有构建参数；Go 工具链可从项目开发环境提供。APKiD 使用原有 gVisor 容器命令。`wget`、`tcpdump`、`ipset`、`inotify-tools`、`nix-prefetch` 和 inetutils 可直接使用；OpenSSL 工具带 legacy provider 支持。
 

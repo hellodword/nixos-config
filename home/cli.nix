@@ -66,7 +66,7 @@ in
         "fb" =
           "touch /home/${userName}/Downloads/fb.db; mkdir -p /home/${userName}/Downloads/fb; docker run --runtime runsc --name filebrowser --rm -e PUID=$(id -u) -e PGID=$(id -g) -p 8000:80 -v /home/${userName}/Downloads/fb.db:/database.db -v /home/${userName}/Downloads/fb:/srv filebrowser/filebrowser --password '$2a$10$0pAHur.o8M0qtqteRy7/..51338k3VFYc9NvJ9ckltEhAmdYaUE6a'";
 
-        "sing-box-log" = "sudo journalctl -fu sing-box.service";
+        "sing-box-log" = "sudo journalctl --namespace=network -fu sing-box.service";
         "sing-box-config" = "sudo cat /run/sing-box/config.json | jq";
 
         "nix-prefetch-url-sha256" =
