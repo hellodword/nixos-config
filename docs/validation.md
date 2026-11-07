@@ -30,6 +30,8 @@ nix develop --command python3 -m tests.integration.cache
 
 缓存检查通过临时 OCI registry 和 oranc 完成签名闭包的发布、读取与恢复，详见[缓存指南](cache.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
 
+验证范围按实际改动选择既有入口：声明式桌面配置和字体使用 `configuration`、`desktop` 及生产系统/Home Manager 构建；登录界面、会话生命周期和壁纸调度使用完整 `vm-desktop`。应用启动、隔离或开发容器行为涉及 `vm-applications`；依赖升级和跨子系统验收使用 `e2e`。
+
 ## CI
 
 升级门禁是独立的 Nix 检查，可由 CI 在候选工作副本中调用：
@@ -78,6 +80,8 @@ nix develop .#vm --command vm-test-submit --help
 
 加密启动场景将合成测试系统迁入 VM 专属空磁盘，使用合成口令安装带 Breeze 的启动代次，经图形控制台输入 LUKS 口令后登录 SDDM/Sway。图形解锁截图属于测试产物；实际 i915 显示和 Secure Boot 签名链仍在 laptop2 验收。
 
-壁纸场景使用本地 HTTPS 图片源，验证获取和去重、原有图片参与轮换、离线继续显示、配置重载及重新登录后的实际背景像素。KWallet 使用合成 Secret Service 条目的存取和重启后读取来验收解锁。
+壁纸场景使用本地 HTTPS 图片源，通过受控响应延迟、请求记录和实际背景像素，验证先恢复本地图片、到期下载、成功后的新图切换、无新图或离线时保留画面，以及本地轮换、配置重载、注销和重启后的状态恢复。测试调整合成用户的持久下载时间，经过生产 timer 与服务执行到期任务。KWallet 使用合成 Secret Service 条目的存取和重启后读取来验收解锁。
+
+桌面 VM 保留 SDDM 登录界面和实际 Kitty 字体样张。Kitty 样张覆盖中英网格、编程连字、文字/emoji 表示及肤色、ZWJ、国旗、键帽组合；`desktop` 的 Fontconfig/Pango 检查负责字体选择和通用文本度量，不能替代终端自身的显示验证。
 
 音频、双电池、真实外屏 DPI 与触控板手感在 laptop2 验收：播放媒体、进行浏览器通话并切换麦克风/耳机；检查虚拟机客体音频；逐块外屏保存、拔插并重新登录；确认轻触点击、双指滚动和打字抑制。VM 可验证服务和配置生命周期，不能替代这些硬件行为。

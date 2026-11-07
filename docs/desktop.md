@@ -2,6 +2,8 @@
 
 SDDM 提供 Sway、i3 和 Plasma，默认 Sway。会话登录时加载用户配置并启动对应后台服务，退出时清理这些服务。
 
+登录界面使用 `site-breeze`，保留用户、会话和键盘布局选择，以及重启、关机入口；不显示睡眠、休眠或虚拟键盘。主题由锁定版本的 Breeze 资源独立生成，KDE、Qt 和 SDDM 原包的 derivation 保持不变，可继续使用原有 binary cache。
+
 | 服务 | Sway | i3 | Plasma |
 | --- | --- | --- | --- |
 | 状态栏 | Waybar | i3bar + i3status-rust | Plasma panel |
@@ -52,15 +54,21 @@ busctl --user get-property org.freedesktop.secrets "$wallet_path" \
 
 ## 随机壁纸
 
-Sway 和 i3 复用 `~/Pictures/wallpaper` 中的 JPEG、PNG、WebP、BMP 图片；原有非 Bing 图片同样参与随机选择。每 30 分钟换一张，有多张图片时避开上一张。所有显示器使用同一张图片，按 fill 裁切填满；Plasma 在系统设置中管理壁纸。
+Sway 和 i3 复用 `~/Pictures/wallpaper` 中的 JPEG、PNG、WebP、BMP 图片；原有非 Bing 图片同样参与随机选择。显示环境就绪后立即恢复上次壁纸，没有可用记录时从本地图库选择。会话内每 30 分钟换一张，有多张图片时避开上一张。所有显示器使用同一张图片，按 fill 裁切填满；Plasma 在系统设置中管理壁纸。
 
-登录后独立获取 Bing 最近八张图片，随后每小时检查新图。下载使用 HTTPS、日期文件名和原子发布，已有文件保留；断网时继续使用本地图库，下次定时检查重试。图片目录位于已经持久化的 Pictures 下，不自动删除旧图片。
+当前图片保存在 `~/.local/state/site-wallpaper/current`，最近下载尝试、成功时间和结果保存在同目录的 `fetch.json`；这些状态与图库均跨注销、重启保留。下载检查按上次尝试后一小时到期，成功、没有新图和失败都计入间隔。登录恢复剩余等待时间；已经到期或从未下载时补一次检查，登录本身不重置间隔。
 
-Sway 使用原生背景命令，i3 使用 feh。登录、配置重载以及显示布局变化会应用当前图片；定时任务随 WM 会话启动和停止。可手动换图或查看下载记录：
+下载获取 Bing 最近八张图片，使用 HTTPS、日期文件名、图片解码校验和原子发布。下载完成且获得新的有效图片后才切换背景；下载期间、失败或没有新图时保留当前画面。本地轮换独立运行，不等待网络。图库不自动删除旧图片。
+
+Sway 使用原生背景命令，i3 使用 feh。配置重载和显示布局变化继续应用当前图片；定时任务随 WM 会话启动和停止。可手动轮换、查看下一次下载时间和持久记录：
 
 ```sh
 systemctl --user start site-wallpaper.service
-journalctl --user -u site-wallpaper -u site-wallpaper-apply -u site-wallpaper-fetch -b
+systemctl --user list-timers --all 'site-wallpaper-fetch@*.timer'
+cat ~/.local/state/site-wallpaper/current
+jq . ~/.local/state/site-wallpaper/fetch.json
+journalctl --user -u site-wallpaper -u site-wallpaper-apply \
+  -u site-wallpaper-fetch -u site-wallpaper-schedule -b
 ```
 
 ## 常用操作
@@ -88,7 +96,7 @@ Sway/i3 的快捷键：
 | Super+Shift+E | WM 原生退出确认 |
 | Super+Space | 切换输入法 |
 
-Rofi 模式包含 `drun,run,calc,emoji`。`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
+Rofi 使用 Noto Sans 16 pt，应用列表、命令列表和电源菜单共用这一字号。模式包含 `drun,run,calc,emoji`。`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
 
 两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。标题使用 10 pt JetBrainsMono Nerd Font，中文回退到 Noto Sans CJK SC。mpv、feh、Emulator、Waydroid 窗口默认浮动。
 
@@ -120,20 +128,24 @@ Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触
 | --- | --- |
 | 界面、无衬线正文 | Noto Sans → Noto Sans CJK SC |
 | 衬线正文 | Noto Serif → Noto Serif CJK SC |
-| 终端、编辑器、等宽正文 | Sarasa Term SC |
+| Kitty | JetBrainsMono Nerd Font，12 pt；中文按覆盖范围回退 |
+| 编辑器、通用等宽正文 | Sarasa Term SC |
+| Rofi | Noto Sans → Noto Sans CJK SC，16 pt |
 | Sway/i3 窗口标题 | JetBrainsMono Nerd Font → Noto Sans CJK SC，10 pt |
 | Waybar | Noto Sans → Noto Sans CJK SC → Symbols Nerd Font，13 px |
 | Emoji | Noto Color Emoji |
 | Nerd 图标 | Symbols Nerd Font；等宽场景使用 Mono 版本 |
 | 生僻字 | Jigmo / Jigmo2 / Jigmo3 → Unifont |
 
-简体中文字形在英文界面下同样优先。正文优先使用文字字体，emoji、图标和生僻字按覆盖范围回退。GTK、Plasma 和通知读取系统字体默认值；窗口标题与状态栏使用上表的尺寸。Kitty 与 VS Code 共用等宽字体，浏览器通过 Fontconfig 使用通用字体。已有个人设置继续优先。
+简体中文字形在英文界面下同样优先。正文优先使用文字字体，emoji、图标和生僻字按覆盖范围回退。GTK、Plasma 和通知读取系统字体默认值；窗口标题与状态栏使用上表的尺寸。Kitty 使用 JetBrains Mono 的等宽字形和编程连字，连字保持终端字符网格；VS Code 和通用 monospace 使用 Sarasa Term SC。浏览器通过 Fontconfig 使用通用字体。已有个人设置继续优先。
+
+Emoji 遵循 Unicode 的文字与 emoji 表示：`☺`、`❤` 等文字形式可以是黑白，带 FE0F 的 `☺️`、`❤️` 以及默认 emoji 使用 Noto Color Emoji。字符位于 BMP 还是补充平面、UTF-8 编码占三个还是四个字节，都不能单独决定其显示样式；肤色、ZWJ、国旗和键帽还包含多个码点。Kitty 保留自动字体回退，不把整段符号范围强制映射到 emoji 字体。
 
 i3status-rust 使用面向 Nerd Fonts 的 [`material-nf` 图标集](https://github.com/greshake/i3status-rust/blob/master/doc/themes.md)，由 Symbols Nerd Font 提供字形。
 
 Noto 是覆盖多语言的常见系统字体选择，可参考 [Fedora 的默认字体方案](https://fedoraproject.org/wiki/Changes/DefaultToNotoFonts) 和 [Noto CJK](https://github.com/notofonts/noto-cjk)。[Sarasa Gothic](https://github.com/be5invis/Sarasa-Gothic) 的 SC 变体适合简体中文代码混排；选择 Term SC 的依据是同一字体内的中西文度量。锁定环境中的 Pango 实测覆盖 16/20/24 px、常规/粗体/斜体，中文双字与四个拉丁字符的表格行在九种组合中均对齐。这里选择的是符合本机语言与混排需求的组合。
 
-系统使用灰度抗锯齿和轻微 hinting；缩放由各会话的显示器管理器决定。`desktop` 检查产出 `fonts.json`、字体样张和 Sway/i3 配置校验日志；实际会话截图由 VM 检查生成，覆盖英文 locale 下的 SC 字形、混排宽度、图标和 emoji。外接屏的视觉大小与清晰度由真实设备验收。
+系统使用灰度抗锯齿和轻微 hinting；缩放由各会话的显示器管理器决定。`desktop` 检查产出 Fontconfig/Pango 的 `fonts.json`、字体样张和 Sway/i3 配置校验日志；`vm-desktop` 的实际 Kitty 窗口展示中英网格、运算符连字、文字/emoji 表示和组合 emoji。外接屏的视觉大小与清晰度由真实设备验收。
 
 ## 会话排障
 
@@ -152,7 +164,7 @@ Home Manager 激活报告用户文件冲突时，在 `journalctl -u home-manager
 
 `BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池和 Git 本地备份入口的提示。
 
-Kitty 默认字号为 12.5 pt，窗口内边距为零。Ctrl+Shift+加号 / 减号临时放大 / 缩小，Ctrl+Shift+Backspace 恢复配置字号；也可用 `kitty -o font_size=12.5` 打开单独窗口比较。Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
+Kitty 默认使用 JetBrainsMono Nerd Font 12 pt，窗口内边距为零。Ctrl+Shift+加号 / 减号临时放大 / 缩小，Ctrl+Shift+Backspace 恢复配置字号；也可用 `kitty -o font_size=12` 打开单独窗口比较。Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
 
 `git backup <名称>` 在 `~/backups/git/<名称>` 建立 bare 仓库，并把它加入 origin 的推送地址，另提供 `laptop-git-backup` 推送 remote。后续 `git push origin` 会更新本地备份；没有 origin 时可用 `git backup -f <名称>`，再推送到 `laptop-git-backup`。注册命令本身不立即复制所有分支。Starship 在这个本地备份目录不存在时提示。
 

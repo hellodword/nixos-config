@@ -1,5 +1,6 @@
 { pkgs }:
 pkgs.writeShellScriptBin "site-wallpaper" ''
   exec ${pkgs.python3.withPackages (p: [ p.pillow ])}/bin/python3 ${../scripts/desktop/wallpaper.py} \
-    --swaymsg ${pkgs.sway}/bin/swaymsg --feh ${pkgs.feh}/bin/feh "$@"
+    --swaymsg ${pkgs.sway}/bin/swaymsg --feh ${pkgs.feh}/bin/feh \
+    --systemctl ${pkgs.systemd}/bin/systemctl "$@"
 ''

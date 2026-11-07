@@ -16,7 +16,7 @@ sudo nixos-rebuild boot --flake .#laptop2 --no-update-lock-file
 sudo bootctl list
 ```
 
-核对新代次与上一可启动代次均在列表中，保存工作并正常退出应用，再重启。`boot` 安装下次启动所用的系统，不在当前桌面中切换会话服务。启动后确认 Breeze 磁盘解锁、SDDM 登录和 Kitty 12.5 pt；分别用电源菜单注销到 SDDM 并切换 Sway/i3/Plasma，测试手动和空闲锁屏，在新会话播放音频并录音。
+核对新代次与上一可启动代次均在列表中，保存工作并正常退出应用，再重启。`boot` 安装下次启动所用的系统，不在当前桌面中切换会话服务。启动后确认 Breeze 磁盘解锁、精简 Breeze 的 SDDM 登录、Kitty 的 JetBrainsMono Nerd Font 12 pt 和 Rofi 16 pt；分别用电源菜单注销到 SDDM 并切换 Sway/i3/Plasma，测试手动和空闲锁屏，在新会话播放音频并录音。Sway/i3 应先恢复本地壁纸，注销和重启后保留当前图片及下载到期时间；下载期间或失败时画面继续可用。
 
 ```sh
 nixos-version

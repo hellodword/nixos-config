@@ -171,7 +171,16 @@ def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
                 with raw.open("wb") as stream:
                     subprocess.run(["pngtopnm", str(frame)], stdout=stream, stderr=subprocess.PIPE, check=True, timeout=remaining(deadline))
                 observed = []
-                for contrast in ([], ["-threshold", "50%"]):
+                # Normalize dark desktops first: a failed OCR pass can consume
+                # the entire wait for a short-lived tooltip.
+                brightness = float(subprocess.check_output(
+                    ["magick", str(raw), "-colorspace", "Gray", "-format", "%[fx:mean]", "info:"],
+                    text=True, timeout=remaining(deadline),
+                ))
+                contrasts = [("grayscale", []), ("inverted", ["-negate"])]
+                if brightness < 0.5:
+                    contrasts.reverse()
+                for label, contrast in [*contrasts, ("threshold", ["-threshold", "50%"])]:
                     if time.monotonic() >= deadline:
                         break
                     if keep_active:
@@ -181,19 +190,24 @@ def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
                          "-resize", "300%", "-colorspace", "Gray", *contrast, str(prepared)],
                         check=True, capture_output=True, timeout=remaining(deadline),
                     )
-                    try:
-                        result = subprocess.run(
-                            ["tesseract", str(prepared), "stdout", "--oem", "1", "--psm", "11"],
-                            check=True, capture_output=True, text=True,
-                            timeout=remaining(deadline),
-                            env={**os.environ, "OMP_THREAD_LIMIT": "1"},
-                        ).stdout
-                    except subprocess.TimeoutExpired:
-                        observed.append("OCR timed out for " + ("threshold" if contrast else "grayscale"))
-                        continue
-                    observed.append(result)
-                    if re.search(pattern, result):
-                        return
+                    # Sparse text handles menus; automatic page layout also
+                    # finds notification text enclosed by a window border.
+                    for page_mode in ("11", "3"):
+                        if time.monotonic() >= deadline:
+                            break
+                        try:
+                            result = subprocess.run(
+                                ["tesseract", str(prepared), "stdout", "--oem", "1", "--psm", page_mode],
+                                check=True, capture_output=True, text=True,
+                                timeout=remaining(deadline),
+                                env={**os.environ, "OMP_THREAD_LIMIT": "1"},
+                            ).stdout
+                        except subprocess.TimeoutExpired:
+                            observed.append("OCR timed out for " + label + "/" + page_mode)
+                            continue
+                        observed.append(result)
+                        if re.search(pattern, result):
+                            return
                 assert time.monotonic() < deadline, (pattern, observed)
                 time.sleep(min(1, max(0, deadline - time.monotonic())))
         except Exception as error:

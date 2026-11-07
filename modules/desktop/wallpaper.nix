@@ -18,7 +18,6 @@ let
     ];
     serviceConfig = {
       Type = "oneshot";
-      ExecCondition = "${pkgs.systemd}/bin/systemctl --user is-active --quiet ${lib.concatStringsSep " " targets}";
       ExecStart = "${wallpaper}/bin/site-wallpaper ${action}";
       TimeoutStartSec = if action == "fetch" then "5min" else "20s";
       TimeoutStopSec = "5s";
@@ -34,6 +33,7 @@ let
       RuntimeDirectoryPreserve = true;
       ReadWritePaths = [
         "%t/site-wallpaper"
+        "%h/.local/state/site-wallpaper"
       ]
       ++ lib.optional (action == "fetch") "%h/Pictures/wallpaper";
       RestrictAddressFamilies = [
@@ -44,17 +44,24 @@ let
         "AF_INET6"
       ];
       InaccessiblePaths = [ config.site.storage.persistRoot ];
+    }
+    // lib.optionalAttrs (action != "apply") {
+      ExecCondition = "${pkgs.systemd}/bin/systemctl --user is-active --quiet ${lib.concatStringsSep " " targets}";
     };
   };
 in
 {
   config = lib.mkIf (cfg.enable && targets != [ ]) {
-    systemd.user.tmpfiles.rules = [ "d %h/Pictures/wallpaper 0700 - - -" ];
+    systemd.user.tmpfiles.rules = [
+      "d %h/Pictures/wallpaper 0700 - - -"
+      "d %h/.local/state/site-wallpaper 0700 - - -"
+    ];
     systemd.user.services = {
       site-wallpaper = service "rotate";
       site-wallpaper-apply = service "apply";
+      site-wallpaper-schedule = service "schedule";
       site-wallpaper-fetch = lib.recursiveUpdate (service "fetch") {
-        serviceConfig.ExecStartPost = "${pkgs.systemd}/bin/systemctl --user --no-block start site-wallpaper-apply.service";
+        serviceConfig.ExecStopPost = "${wallpaper}/bin/site-wallpaper schedule";
       };
     };
     systemd.user.timers = {
@@ -62,16 +69,17 @@ in
         wantedBy = targets;
         partOf = targets;
         timerConfig = {
-          OnActiveSec = "1s";
+          OnActiveSec = "30min";
           OnUnitActiveSec = "30min";
         };
       };
-      site-wallpaper-fetch = {
-        wantedBy = targets;
+      "site-wallpaper-fetch@" = {
         partOf = targets;
         timerConfig = {
-          OnActiveSec = "10s";
-          OnUnitActiveSec = "1h";
+          OnCalendar = "@%i";
+          Unit = "site-wallpaper-fetch.service";
+          AccuracySec = "1s";
+          RemainAfterElapse = false;
         };
       };
     };

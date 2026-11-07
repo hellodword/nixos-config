@@ -73,11 +73,14 @@ let
     ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd \
       "''${displayVars[@]}" XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_ID XDG_VTNR \
       "''${imVars[@]}"
+    # The compositor has exported its sockets; paint before wallet initialization.
+    ${pkgs.systemd}/bin/systemctl --user start site-wallpaper-apply.service || true
     if [ -n "''${PAM_KWALLET5_LOGIN:-}" ]; then
       ${pkgs.systemd}/bin/systemctl --user start --wait plasma-kwallet-pam.service
       ${pkgs.glib}/bin/gdbus wait --session --timeout 30 org.freedesktop.secrets
     fi
     ${pkgs.systemd}/bin/systemctl --user start "site-$session.target"
+    ${pkgs.systemd}/bin/systemctl --user --no-block start site-wallpaper-schedule.service
   '';
   common = ''
     set $mod Mod4
@@ -290,11 +293,12 @@ in
         "kitty_mod+t" = "new_tab_with_cwd";
       };
       font = {
-        name = mono;
-        size = 12.5;
+        name = "JetBrainsMono Nerd Font";
+        size = 12;
       };
       settings = {
         window_padding_width = 0;
+        disable_ligatures = "never";
         background = c.background;
         foreground = c.text;
         selection_background = c.accent;
@@ -323,7 +327,7 @@ in
       package = pkgs.rofi;
       enable = true;
       settings.terminal = "${pkgs.kitty}/bin/kitty";
-      settings.font = "${sans} 11";
+      settings.font = "${sans} 16";
       plugins = [
         pkgs.rofi-calc
         pkgs.rofi-emoji

@@ -8,12 +8,15 @@ KEY_DELAY = timedelta(milliseconds=150)
 
 def open_action(machine, user, visible, action, *, shortcut=False):
     user(machine, "fcitx5-remote -c")
+    # Clear bar tooltips before driving the menu with the keyboard.
+    machine.move_pointer(90, 90, 100, 100)
     if shortcut:
         machine.send_key("meta_l-shift-p", delay=KEY_DELAY)
     else:
         user(machine, "systemd-run --user --collect --unit=power-menu-fixture desktop-power")
     visible(machine, r"Session", timeout=30)
     machine.send_chars(action, delay=KEY_DELAY)
+    visible(machine, re.escape(action), timeout=30)
     machine.send_key("ret", delay=KEY_DELAY)
 
 
