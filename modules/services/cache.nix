@@ -7,7 +7,7 @@
 }:
 let
   cfg = config.site.cache;
-  oranc = pkgs.callPackage (inputs.oranc + /package.nix) { };
+  oranc = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.oranc;
 in
 {
   options.site.cache = {

@@ -2,7 +2,6 @@
   config,
   lib,
   pkgs,
-  inputs,
   ...
 }:
 let
@@ -13,7 +12,7 @@ let
   apiAddress = "${prefix}.2";
   barkAddress = "${prefix}.3";
   images = import ../../nix/notifications.nix {
-    inherit pkgs inputs;
+    inherit pkgs;
     inherit (config.security.pki) caBundle;
   };
   client = pkgs.writeShellScriptBin "site-notify" ''

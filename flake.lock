@@ -1,39 +1,5 @@
 {
   "nodes": {
-    "apprise": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1792870344,
-        "narHash": "sha256-JgPYySIOyIq/l7ysT/yy69HIdxhdhJMBBTG7Jg4k7uw=",
-        "owner": "caronc",
-        "repo": "apprise",
-        "rev": "736fcf36c5acabe153e5b0b0b444caea8dc4c235",
-        "type": "github"
-      },
-      "original": {
-        "owner": "caronc",
-        "ref": "v2.1.0",
-        "repo": "apprise",
-        "type": "github"
-      }
-    },
-    "apprise-api": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1792878638,
-        "narHash": "sha256-aRU+Mhoz2fftydl8UhvaBdZ/qhEIs7Pia4hKE1Hx3qQ=",
-        "owner": "caronc",
-        "repo": "apprise-api",
-        "rev": "308498f6f00389420c998c12019cceed315909f1",
-        "type": "github"
-      },
-      "original": {
-        "owner": "caronc",
-        "ref": "v2.0.2",
-        "repo": "apprise-api",
-        "type": "github"
-      }
-    },
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
@@ -451,8 +417,6 @@
     },
     "root": {
       "inputs": {
-        "apprise": "apprise",
-        "apprise-api": "apprise-api",
         "arkenfox-userjs": "arkenfox-userjs",
         "catppuccin-fcitx5": "catppuccin-fcitx5",
         "disko": "disko",

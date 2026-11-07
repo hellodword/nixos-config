@@ -1,13 +1,17 @@
 {
   pkgs,
-  inputs,
   caBundle,
 }:
 let
   py = pkgs.python3Packages;
   apprise = py.apprise.overridePythonAttrs (old: {
     version = "2.1.0";
-    src = inputs.apprise;
+    src = pkgs.fetchFromGitHub {
+      owner = "caronc";
+      repo = "apprise";
+      tag = "v2.1.0";
+      hash = "sha256-JgPYySIOyIq/l7ysT/yy69HIdxhdhJMBBTG7Jg4k7uw=";
+    };
     dependencies = old.dependencies ++ [
       py.urllib3
       py.certifi
@@ -16,7 +20,12 @@ let
   api = py.buildPythonPackage {
     pname = "apprise-api";
     version = "2.0.2";
-    src = inputs.apprise-api;
+    src = pkgs.fetchFromGitHub {
+      owner = "caronc";
+      repo = "apprise-api";
+      tag = "v2.0.2";
+      hash = "sha256-aRU+Mhoz2fftydl8UhvaBdZ/qhEIs7Pia4hKE1Hx3qQ=";
+    };
     pyproject = true;
     build-system = [ py.setuptools ];
     dependencies = [

@@ -1,5 +1,6 @@
-{ pkgs }:
+{ pkgs, inputs }:
 {
+  oranc = pkgs.callPackage (inputs.oranc + /package.nix) { };
   # The existing laptop fix is also a public, reusable cache output.
   virtualbox = pkgs.virtualbox.overrideAttrs (old: {
     postFixup = (old.postFixup or "") + ''

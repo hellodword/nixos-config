@@ -6,7 +6,7 @@ let
     mullvad = true;
     proxy = true;
     backup = true;
-    cache = false;
+    cache = true;
     displayManager = true;
     browser = true;
     cli = true;
@@ -27,12 +27,8 @@ let
   cases = {
     full = { };
     cache = {
-      module.site.cache = {
-        enable = true;
-        repository = "synthetic/cache-test";
-        publicKey = "fixture:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
-      };
-      expected.cache = true;
+      module = disabled "site.cache.enable";
+      expected.cache = false;
     };
     storage-root = {
       module.site.storage.persistRoot = lib.mkForce "/state";

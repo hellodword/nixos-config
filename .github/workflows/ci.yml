@@ -1,0 +1,88 @@
+name: Verify, update and cache
+
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '37 19 * * *'
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Check the selected revision, or update tracked inputs on master
+        type: choice
+        default: check
+        options: [check, update]
+
+permissions:
+  contents: read
+
+# One active build/publisher; a new pending run replaces the older pending run.
+concurrency:
+  group: nixos-verify-update-cache
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
+    # The union needed by the merge and publication steps. Credentials are
+    # supplied only to those steps and never persisted by checkout.
+    permissions:
+      contents: write
+      pull-requests: write
+      packages: write
+    env:
+      # Nix 2.34.9; the official image also supplies the initial /nix store.
+      NIX_IMAGE: docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select operation
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          OPERATION: ${{ inputs.operation }}
+        run: |
+          update=false
+          if [[ $GITHUB_REF == refs/heads/master && ( $EVENT == schedule || $OPERATION == update ) ]]; then
+            update=true
+          fi
+          echo "update=$update" >> "$GITHUB_OUTPUT"
+      - name: Prepare disk, KVM and shared Nix store
+        run: bash scripts/ci/runner.sh prepare
+      - name: Update tracked inputs without committing
+        id: update
+        if: steps.mode.outputs.update == 'true'
+        run: |
+          bash scripts/ci/runner.sh exec update
+          changed=false
+          if ! git diff --quiet -- flake.lock; then changed=true; fi
+          echo "changed=$changed" >> "$GITHUB_OUTPUT"
+      - name: Static checks, OCI integration and full E2E
+        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
+        run: bash scripts/ci/runner.sh exec check
+      - name: Commit the accepted lockfile
+        if: steps.update.outputs.changed == 'true'
+        run: python3 scripts/ci/update.py commit --state "$RUNNER_TEMP/nixos-ci"
+      - name: Build the final committed configuration
+        if: steps.update.outputs.changed == 'true'
+        run: bash scripts/ci/runner.sh exec build
+      - name: Create PR and fast-forward the verified revision
+        if: steps.update.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ci/update.py merge --state "$RUNNER_TEMP/nixos-ci"
+      - name: Publish signed redistributable paths
+        if: github.ref == 'refs/heads/master' && (steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true')
+        env:
+          ORANC_USERNAME: ${{ github.actor }}
+          ORANC_PASSWORD: ${{ github.token }}
+          ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+        run: |
+          bash scripts/ci/runner.sh publish
+          echo 'Signed cache publication completed.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Report disk use and release the runner store
+        if: always()
+        run: bash scripts/ci/runner.sh finish

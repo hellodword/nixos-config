@@ -28,7 +28,7 @@ nix develop --command python3 -m tests.integration.backup -v
 nix develop --command python3 -m tests.integration.cache
 ```
 
-缓存检查通过临时 OCI registry 和 oranc 完成签名闭包的发布、读取与恢复，详见[缓存指南](cache.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
+缓存检查通过临时 OCI registry 和 oranc 验证可再分发路径筛选、直接签名发布，以及在受限依赖已准备好的情况下恢复公共输出，详见[缓存指南](cache.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
 
 验证范围按实际改动选择既有入口：声明式桌面配置和字体使用 `configuration`、`desktop` 及生产系统/Home Manager 构建；登录界面、会话生命周期和壁纸调度使用完整 `vm-desktop`。应用启动、隔离或开发容器行为涉及 `vm-applications`；依赖升级和跨子系统验收使用 `e2e`。
 
@@ -41,7 +41,7 @@ nix flake update nixpkgs home-manager plasma-manager
 nix build --no-link --no-update-lock-file .#checks.x86_64-linux.e2e
 ```
 
-候选配置通过检查后再提交、合并。完整系统构建使用正式 secrets 默认路径和绑定，构建不解密 SOPS；行为场景使用独立的合成凭据。仓库工作流执行验收，依赖更新、提交与合并由维护者操作；在候选分支上手动运行 workflow 可在合并前取得结果。
+候选配置通过检查后再提交、合并。完整系统构建使用正式 secrets 默认路径和绑定，构建不解密 SOPS；行为场景使用独立的合成凭据。工作流定期更新指定输入，验收后提交锁文件、重新构建正式 revision，并通过 PR 将相同提交快进合并。触发方式、更新清单和首次启用步骤见 [CI 指南](ci.md)。其他分支的手动运行只负责验收。
 
 运行节点需要 x86_64 Linux、KVM 和相应的 Nix 构建器系统特性。应用 VM 依次启动，每台配置 6 GiB 内存和 2 个 vCPU。
 
@@ -56,7 +56,7 @@ nix build --no-link --no-update-lock-file .#checks.x86_64-linux.e2e
 
 `tests/fixtures/applications/` 提供本地站点和开发容器，VS Code Server 来自 `vscode.vscodeServer`。中文输入通过 VM 键盘和 Fcitx5 完成。桌面与应用场景共用 `tests/vm/gui.py`，同一 VM 的键鼠输入、截图及 monitor 操作串行执行；窗口等待和图像转换受截止时间限制。活动维持线程先结束，再关闭 VM；正常关机最多等待 120 秒，超时则释放该测试 VM 并报告失败，收尾错误与原始错误一并保留。测试输出保留按应用、会话命名的日志、截图和结果。
 
-`.github/workflows/check.yml` 在 `master` push 或手动触发时调用 `scripts/ci.sh`。配置 KVM 后直接运行完整 `e2e`，再运行 Nix 格式、ShellCheck、actionlint 和本地缓存集成。Nix 同时只调度一个构建任务，避免多组 VM 争用内存。镜像及 action 版本由 workflow 自身固定。
+`.github/workflows/ci.yml` 在 `master` push、定期更新或手动触发时调用 `scripts/ci.sh`。先运行格式、ShellCheck、actionlint 和缓存集成，再准备不公开发布的依赖，构建完整 `e2e` 与两个开发 shell。没有锁文件变化的自动更新不运行昂贵检查。Nix 同时只调度一个构建任务，VM 结果可按哈希从签名缓存复用；镜像及 action 版本由 workflow 自身固定。
 
 该脚本为 Docker 内的嵌套构建设置 `sandbox = false`；本地开发直接使用各项检查与主机 daemon 的设置。
 

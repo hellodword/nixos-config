@@ -69,10 +69,9 @@ HAProxy 只转发允许的官方域名和端口，不解密 TLS。它把受限�
 
 Docker 每周执行原生自动 prune：清理停止的容器、未使用网络、悬空镜像和构建缓存，卷不在默认清理范围。带有 `org.nixos-config.service` 标签的服务资源由配置管理，自动 prune 保留它们；通知网络即使暂时没有容器连接，也继续存在。通知容器与 HAProxy 随网络服务停止，并随 Docker 重启重新建立服务关系。`live-restore` 在兼容的 daemon 重启期间尽量保持普通容器运行，系统关机和应用服务明确停止仍会结束容器。默认 `local` 日志驱动提供按大小轮转的容器 stdout/stderr 日志，使用 `docker logs` 查看；新默认值用于新建容器。
 
-镜像由 Nix 构建，内置最终 `security.pki.caBundle`；证书包变化更新镜像和对应服务。Apprise 与 Apprise API 由配套的 `flake=false` 输入锁定，分别按两个 Python 叶子包构建，其余依赖使用 nixpkgs binary cache。升级时先在 `flake.nix` 选择兼容的发布 tag，再更新并验证：
+镜像由 Nix 构建，内置最终 `security.pki.caBundle`；证书包变化更新镜像和对应服务。Apprise 与 Apprise API 的版本、发布 tag 和源码 hash 声明在 [nix/notifications.nix](../nix/notifications.nix)，通过 `fetchFromGitHub` 获取并作为两个 Python 叶子包构建，其余依赖使用 nixpkgs binary cache。它们不参与每日 flake 输入更新。升级时在包定义中选择兼容的版本并更新源码 hash，再验证通知行为：
 
 ```sh
-nix flake update apprise apprise-api
 nix build --no-link .#checks.x86_64-linux.vm-backup
 ```
 

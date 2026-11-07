@@ -42,14 +42,6 @@
       url = "github:linyinfeng/oranc";
       flake = false;
     };
-    apprise = {
-      url = "github:caronc/apprise/v2.1.0";
-      flake = false;
-    };
-    apprise-api = {
-      url = "github:caronc/apprise-api/v2.0.2";
-      flake = false;
-    };
     vm-test-tools = {
       url = "github:hellodword/agents-misc";
       flake = false;
@@ -83,7 +75,7 @@
     {
       nixosConfigurations.laptop2 = laptop;
       nixosModules.default = import ./modules;
-      packages.${system} = import ./nix/packages.nix { inherit pkgs; };
+      packages.${system} = import ./nix/packages.nix { inherit pkgs inputs; };
       devShells.${system} = {
         default = pkgs.mkShell {
           packages = with pkgs; [
@@ -111,7 +103,7 @@
             nixfmt
             shellcheck
             actionlint
-            (callPackage (inputs.oranc + /package.nix) { })
+            self.packages.${system}.oranc
             distribution
           ];
         };

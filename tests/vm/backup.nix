@@ -3,7 +3,7 @@
 let
   notification = import ../fixtures/notifications.nix { inherit pkgs; };
   notificationPackages = import ../../nix/notifications.nix {
-    inherit pkgs inputs;
+    inherit pkgs;
     caBundle = notification.ca;
   };
   targets = [

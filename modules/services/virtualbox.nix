@@ -3,6 +3,7 @@
   lib,
   userName,
   config,
+  inputs,
   ...
 }:
 
@@ -40,7 +41,7 @@ in
     virtualisation.virtualbox = {
       host = {
         enable = true;
-        package = (import ../../nix/packages.nix { inherit pkgs; }).virtualbox;
+        package = (import ../../nix/packages.nix { inherit pkgs inputs; }).virtualbox;
       };
     };
 

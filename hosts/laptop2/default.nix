@@ -8,6 +8,9 @@
   ];
 
   site.storage.persistRoot = "/persist";
+  site.cache = (builtins.fromJSON (builtins.readFile ../../nix/cache-identity.json)) // {
+    enable = true;
+  };
 
   networking.hostName = "laptop2";
   time.timeZone = "America/New_York";
