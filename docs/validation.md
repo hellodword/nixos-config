@@ -29,7 +29,7 @@ nix develop --command python3 -m tests.integration.secrets -v
 nix develop --command python3 -m tests.integration.cache
 ```
 
-缓存检查通过临时 OCI registry 和 oranc 验证可再分发路径筛选、直接签名发布，以及在受限依赖已准备好的情况下恢复公共输出，详见[缓存指南](cache.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
+缓存检查通过临时 OCI registry 和 oranc 验证可再分发路径筛选、直接签名发布，以及在受限依赖已准备好的情况下恢复公共输出。小型真实 Nix derivation 同时覆盖依赖准备、实际执行、本地复用、远端恢复和对应的事件计时，详见[缓存指南](cache.md)与[CI 指南](ci.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
 
 验证范围按实际改动选择既有入口：声明式桌面配置和字体使用 `configuration`、`desktop` 及生产系统/Home Manager 构建；登录界面、会话生命周期和壁纸调度使用完整 `vm-desktop`。应用启动、隔离或开发容器行为涉及 `vm-applications`；依赖升级和跨子系统验收使用 `e2e`。
 
@@ -57,7 +57,9 @@ nix build --no-link --no-update-lock-file .#checks.x86_64-linux.e2e
 
 `tests/fixtures/applications/` 提供本地站点和开发容器，VS Code Server 来自 `vscode.vscodeServer`。中文输入通过 VM 键盘和 Fcitx5 完成。桌面与应用场景共用 `tests/vm/gui.py`，同一 VM 的键鼠输入、截图及 monitor 操作串行执行；窗口等待和图像转换受截止时间限制。活动维持线程先结束，再关闭 VM；正常关机最多等待 120 秒，超时则释放该测试 VM 并报告失败，收尾错误与原始错误一并保留。测试输出保留按应用、会话命名的日志、截图和结果。
 
-`.github/workflows/ci.yml` 在 `master` push、定期更新或手动触发时调用 `scripts/ci.sh`。先运行格式、ShellCheck、actionlint 和缓存集成，再准备不公开发布的依赖，构建完整 `e2e` 与两个开发 shell。没有锁文件变化的自动更新不运行昂贵检查。Nix 同时只调度一个构建任务，VM 结果可按哈希从签名缓存复用；镜像及 action 版本由 workflow 自身固定。
+`.github/workflows/ci.yml` 在 `master` push、定期更新或手动触发时调用 `scripts/ci.sh`。工具检查后，构建受限依赖、生产系统、Home Manager、开发 shell、非 VM 检查及全部 VM driver。VM 分为 network + desktop、applications + backup 两批，每批最多两个并行测试，最后构建完整 `e2e` 汇总。没有锁文件变化的自动更新不运行昂贵检查；镜像及 action 版本由 workflow 自身固定。
+
+构建 VM 的 `.driver` 只准备运行环境，构建 `vm-*` 结果才会执行测试。Actions summary 单独统计软件和依赖准备、VM 阶段墙钟时间及每个 VM 构建器的实际执行时间，并区分远端缓存恢复与本地复用。相同哈希的成功结果继续复用；只有四组 VM 都在本轮执行成功时，才能把该次 VM 阶段耗时作为完整重新执行的测量值。资源分配、swap、故障记录和最终 revision 的复验流程见 [CI 指南](ci.md)。
 
 该脚本为 Docker 内的嵌套构建设置 `sandbox = false`；本地开发直接使用各项检查与主机 daemon 的设置。
 

@@ -59,16 +59,11 @@ def publish(paths, registry, repository, *, oranc="oranc", no_ssl=False, immutab
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["prepare", "build", "select", "publish"])
+    parser.add_argument("operation", choices=["select", "publish"])
     parser.add_argument("--state", type=Path, required=True)
     args = parser.parse_args()
     policy = json.loads((args.state / "policy.json").read_text())
-    if args.operation in ("prepare", "build"):
-        roots = policy["prepare" if args.operation == "prepare" else "roots"]
-        # Evaluation has exited before the VM builder starts, releasing its heap.
-        subprocess.run(["nix", "build", "--no-link", "--print-build-logs",
-                        *[drv + "^*" for drv in roots]], check=True)
-    elif args.operation == "select":
+    if args.operation == "select":
         paths, excluded = select_paths(policy)
         (args.state / "publish-paths.json").write_text(json.dumps(paths) + "\n")
         (args.state / "excluded-paths.json").write_text(json.dumps(excluded, indent=2) + "\n")

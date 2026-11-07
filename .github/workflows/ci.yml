@@ -50,8 +50,10 @@ jobs:
             update=true
           fi
           echo "update=$update" >> "$GITHUB_OUTPUT"
-      - name: Prepare disk, KVM and shared Nix store
-        run: bash scripts/ci/runner.sh prepare
+      - name: Prepare disk, swap, KVM and shared Nix store
+        run: |
+          python3 -m scripts.ci.report run --state "$RUNNER_TEMP/nixos-ci" --phase runner -- \
+            bash scripts/ci/runner.sh prepare
       - name: Update tracked inputs without committing
         id: update
         if: steps.mode.outputs.update == 'true'
@@ -60,15 +62,27 @@ jobs:
           changed=false
           if ! git diff --quiet -- flake.lock; then changed=true; fi
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
-      - name: Static checks, OCI integration and full E2E
+      - name: Tooling, static checks, OCI integration and build plan
         if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
         run: bash scripts/ci/runner.sh exec check
+      - name: Build systems, non-VM checks and all VM drivers
+        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
+        run: bash scripts/ci/runner.sh exec dependencies
+      - name: Run network and desktop VM tests
+        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
+        run: bash scripts/ci/runner.sh exec vm-network-desktop
+      - name: Run application and backup VM tests
+        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
+        run: bash scripts/ci/runner.sh exec vm-applications-backup
+      - name: Assemble the complete E2E result and cache inventory
+        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
+        run: bash scripts/ci/runner.sh exec aggregate
       - name: Commit the accepted lockfile
         if: steps.update.outputs.changed == 'true'
         run: python3 scripts/ci/update.py commit --state "$RUNNER_TEMP/nixos-ci"
       - name: Build the final committed configuration
         if: steps.update.outputs.changed == 'true'
-        run: bash scripts/ci/runner.sh exec build
+        run: bash scripts/ci/runner.sh exec final
       - name: Create PR and fast-forward the verified revision
         if: steps.update.outputs.changed == 'true'
         env:
@@ -83,6 +97,6 @@ jobs:
         run: |
           bash scripts/ci/runner.sh publish
           echo 'Signed cache publication completed.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Report disk use and release the runner store
+      - name: Report timings and resources, release runner storage
         if: always()
         run: bash scripts/ci/runner.sh finish

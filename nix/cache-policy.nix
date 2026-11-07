@@ -1,4 +1,4 @@
-# Publication inventory for the production system, development tools and tests.
+# Build phases and publication inventory for the system, development tools and tests.
 { flake }:
 let
   system = "x86_64-linux";
@@ -29,10 +29,22 @@ let
     flake.devShells.${system}.vm
     flake.packages.${system}.oranc
   ];
+  checks = flake.checks.${system};
+  build = name: package: {
+    inherit name;
+    drv = package.drvPath;
+    outputs = outputs package;
+  };
+  vm = name: (build name checks.${name}) // { vm = true; };
+  vmNames = [
+    "vm-network"
+    "vm-desktop"
+    "vm-applications"
+    "vm-backup"
+  ];
 in
 {
   roots = map (package: package.drvPath) roots;
-  prepare = map (package: package.drvPath) (packages ++ [ image ]);
   excludedPaths = lib.unique (
     lib.concatMap (
       package: outputs package ++ lib.optional (package ? src) (toString package.src)
@@ -42,4 +54,27 @@ in
   # This image copies VS Code Server. Exclude its payload-bearing intermediates
   # too, while retaining ordinary system symlinks and successful test results.
   bundles = [ image.drvPath ];
+  builds = {
+    private = map (package: build (lib.getName package) package) (packages ++ [ image ]);
+    dependencies = [
+      (build "laptop2-system" host.config.system.build.toplevel)
+      (build "laptop2-home" home.home.activationPackage)
+      (build "development-shell" flake.devShells.${system}.default)
+      (build "vm-tools-shell" flake.devShells.${system}.vm)
+      (build "oranc" flake.packages.${system}.oranc)
+    ]
+    ++ map (name: build name checks.${name}) (
+      lib.filter (name: name != "e2e" && !(lib.elem name vmNames)) (builtins.attrNames checks)
+    )
+    ++ map (name: build "${name}-driver" checks.${name}.driver) vmNames;
+    vm-network-desktop = map vm [
+      "vm-network"
+      "vm-desktop"
+    ];
+    vm-applications-backup = map vm [
+      "vm-applications"
+      "vm-backup"
+    ];
+    aggregate = [ (build "e2e" checks.e2e) ];
+  };
 }

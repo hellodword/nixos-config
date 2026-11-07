@@ -7,11 +7,13 @@ export NIX_CONFIG="${NIX_CONFIG:-}
 sandbox = false
 accept-flake-config = false
 system-features = nixos-test benchmark big-parallel kvm
-max-jobs = 1
-cores = 2
 "
 state=/ci
 operation=${1:-check}
+cpus=$(nproc)
+jobs=$((cpus < 2 ? cpus : 2))
+cores=$((cpus / jobs))
+build_options=(--max-jobs "$jobs" --cores "$cores" --no-update-lock-file)
 
 if [[ $operation == update ]]; then
   nix flake update \
@@ -26,9 +28,11 @@ if [[ $operation == publish ]]; then
   exit
 fi
 
-oranc_root=$(nix build --no-link --no-update-lock-file --print-out-paths .#oranc)
-printf '%s\n' "$oranc_root/bin/oranc" > "$state/oranc"
-"$oranc_root/bin/oranc" server --listen 127.0.0.1:37515 > "$state/oranc.log" 2>&1 &
+if [[ ! -f $state/oranc ]]; then
+  oranc_root=$(nix build "${build_options[@]}" --no-link --print-out-paths .#oranc)
+  printf '%s\n' "$oranc_root/bin/oranc" > "$state/oranc"
+fi
+"$(cat "$state/oranc")" server --listen 127.0.0.1:37515 > "$state/oranc.log" 2>&1 &
 proxy_pid=$!
 trap 'kill "$proxy_pid" 2>/dev/null || true; wait "$proxy_pid" 2>/dev/null || true' EXIT
 for ((attempt = 0; attempt < 50; attempt++)); do
@@ -50,7 +54,7 @@ else
 fi
 
 if [[ $operation == check ]]; then
-  nix develop --no-update-lock-file --command bash -c '
+  nix develop "${build_options[@]}" --command bash -c '
     set -euo pipefail
     actionlint .github/workflows/ci.yml
     shellcheck scripts/ci.sh scripts/ci/runner.sh
@@ -61,11 +65,25 @@ if [[ $operation == check ]]; then
   '
 fi
 
-# Prepare source-only dependencies before asking Nix to restore test outputs
-# whose reference closures include files we cannot redistribute.
-nix eval --json --impure --expr \
-  'import ./nix/cache-policy.nix { flake = builtins.getFlake (toString ./.); }' > "$state/policy.json"
-nix develop --no-update-lock-file --command bash -c 'command -v python3' > "$state/python"
-"$(cat "$state/python")" scripts/ci/cache.py prepare --state "$state"
-"$(cat "$state/python")" scripts/ci/cache.py build --state "$state"
-"$(cat "$state/python")" scripts/ci/cache.py select --state "$state"
+if [[ $operation == check || $operation == final ]]; then
+  # This process exits before any product or VM build starts, releasing the
+  # evaluator heap. A committed revision gets its own freshly evaluated roots.
+  nix eval --no-update-lock-file --json --impure --expr \
+    'import ./nix/cache-policy.nix { flake = builtins.getFlake (toString ./.); }' > "$state/policy-next.json"
+  mv -- "$state/policy-next.json" "$state/policy.json"
+  nix develop "${build_options[@]}" --command bash -c 'command -v python3' > "$state/python"
+fi
+
+case "$operation" in
+  check) ;;
+  dependencies|vm-network-desktop|vm-applications-backup|aggregate)
+    "$(cat "$state/python")" -m scripts.ci.build "$operation" --state "$state"
+    ;;
+  final)
+    "$(cat "$state/python")" -m scripts.ci.build all --state "$state" --pass-name committed
+    ;;
+  *) echo "Unknown CI phase: $operation" >&2; exit 2 ;;
+esac
+if [[ $operation == aggregate || $operation == final ]]; then
+  "$(cat "$state/python")" scripts/ci/cache.py select --state "$state"
+fi

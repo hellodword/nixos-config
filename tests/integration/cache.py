@@ -13,6 +13,8 @@ import tempfile
 
 from tests.support import ROOT
 from scripts.ci.cache import publish, select_paths
+from scripts.ci.build import run_build, valid_paths
+from scripts.ci.report import read_records, render
 
 
 def run(args, **kwargs):
@@ -67,16 +69,35 @@ def main():
           source = pkgs.writeText "${prefix}-source" "synthetic restricted content";
           restricted = pkgs.runCommand "${prefix}-restricted" {} "cp ${source} $out";
           bundle = pkgs.runCommand "${prefix}-bundle" {} "cp ${restricted} $out";
-          root = pkgs.writeText "${prefix}-result" "public: ${child}; prepared: ${bundle}";
+          driver = pkgs.writeText "${prefix}-driver" "ready";
+          root = pkgs.runCommand "${prefix}-result" {} ''
+            test "$(cat ${driver})" = ready
+            printf '%s' 'public: ${child}; prepared: ${bundle}' > $out
+          '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
-          { inherit child source restricted bundle root; }
+          { inherit child source restricted bundle driver root; }
         '''.replace("PREFIX", json.dumps(work.name))
         fixture = json.loads(run(["nix", "eval", "--impure", "--json", "--expr", fixture], cwd=ROOT))
-        run(["nix", "build", "--no-link", fixture["root"]["drv"] + "^*"])
+
+        def entry(name, **kwargs):
+            return {"name": name, "drv": fixture[name]["drv"], "outputs": [fixture[name]["path"]], **kwargs}
+
+        state = work / "metrics"
+        test = entry("root", vm=True)
+        dependencies = [entry(name) for name in ("bundle", "driver", "child")]
+        run_build(dependencies, state=state, phase="dependencies")
+        assert valid_paths([fixture["root"]["path"]]) == set(), "preparation must leave execution for the test stage"
+        run_build([test], state=state, phase="vm-fixture")
+        run_build([test], state=state, phase="vm-fixture", pass_name="committed")
+        targets = [event for event in read_records(state / "timings.jsonl") if event.get("vm")]
+        assert targets[0]["source"] == "built" and targets[0]["success"] and targets[0]["buildSeconds"] > 0
+        assert targets[1]["source"] == "local" and targets[1]["success"] and targets[1]["buildSeconds"] is None
         policy = {"roots": [fixture["root"]["drv"]],
                   "excludedPaths": [fixture[name]["path"] for name in ("source", "restricted")],
                   "excludedDerivations": [fixture["restricted"]["drv"]],
-                  "bundles": [fixture["bundle"]["drv"]]}
+                  "bundles": [fixture["bundle"]["drv"]],
+                  "builds": {"dependencies": dependencies, "vm-fixture": [test]}}
+        (state / "policy.json").write_text(json.dumps(policy))
         selected, excluded = select_paths(policy)
         roots = [fixture[name]["path"] for name in ("root", "child")]
         assert set(roots) <= set(selected)
@@ -110,14 +131,27 @@ def main():
             run(["nix-store", "--delete", *roots])
             # The excluded bundle is already present, just as CI prepares it
             # before restoring a successful test result from the public cache.
-            run(["nix-store", "--realise", fixture["root"]["path"],
-                 "--option", "substituters", uri, "--option", "extra-substituters", "",
-                 "--option", "trusted-public-keys", public, "--option", "extra-trusted-public-keys", "",
-                 "--option", "require-sigs", "true"])
+            previous_config = os.environ.get("NIX_CONFIG")
+            os.environ["NIX_CONFIG"] = (previous_config or "") + (
+                f"\nsubstituters = {uri}\nextra-substituters =\ntrusted-public-keys = {public}\n"
+                "extra-trusted-public-keys =\nrequire-sigs = true\n"
+            )
+            try:
+                run_build([test], state=state, phase="vm-fixture", pass_name="restored")
+            finally:
+                if previous_config is None:
+                    del os.environ["NIX_CONFIG"]
+                else:
+                    os.environ["NIX_CONFIG"] = previous_config
+            restored = [event for event in read_records(state / "timings.jsonl") if event.get("vm")][-1]
+            assert restored["source"] == "substituted" and restored["success"]
+            assert restored["buildSeconds"] is None and restored["restoreSeconds"] > 0
             verify("auto", roots, public)
             assert all(Path(path).read_bytes() == content for path, content in expected.items())
+        print(render(state))
     print(json.dumps({"result": "passed", "scenarios": ["redistribution selection including embedded payloads",
-          "direct signed OCI publication", "signature and content verification", "restore with prepared private dependency"]}))
+          "direct signed OCI publication", "signature and content verification", "restore with prepared private dependency",
+          "dependency preparation, fresh execution, local reuse and cache restore timing"]}))
 
 
 if __name__ == "__main__":
