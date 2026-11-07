@@ -2,6 +2,26 @@
 { pkgs, lib, ... }:
 let
   notification = import ../fixtures/notifications.nix { inherit pkgs; };
+  kdeconnect = pkgs.kdePackages.kdeconnect-kde;
+  discoveryNode = {
+    environment.systemPackages = [ kdeconnect ];
+    systemd.services.kdeconnect-fixture = {
+      path = [ pkgs.dbus ];
+      environment = {
+        HOME = "/run/kdeconnect-fixture";
+        XDG_RUNTIME_DIR = "/run/kdeconnect-fixture";
+        QT_QPA_PLATFORM = "offscreen";
+      };
+      serviceConfig = {
+        RuntimeDirectory = "kdeconnect-fixture";
+        RuntimeDirectoryMode = "0700";
+        ExecStart = "${pkgs.dbus}/bin/dbus-run-session -- ${pkgs.writeShellScript "kdeconnect-fixture" ''
+          printf '%s' "$DBUS_SESSION_BUS_ADDRESS" > /run/kdeconnect-fixture/bus-address
+          exec ${kdeconnect}/bin/kdeconnectd
+        ''}";
+      };
+    };
+  };
   containerImage = pkgs.dockerTools.buildLayeredImage {
     name = "network-workflow";
     tag = "test";
@@ -40,7 +60,10 @@ let
             "/www"
           ];
           restart = "unless-stopped";
-          ports = [ "18084:8080" ];
+          ports = [
+            "18084:8080"
+            "18085:8080"
+          ];
         };
       };
       networks.default = {
@@ -53,10 +76,9 @@ let
     }
   );
   containerNode = {
-    site.network.containers = {
-      hostTCPPorts = [ 18080 ];
-      hostUDPPorts = [ 18081 ];
-    };
+    site.network.localAccess.enable = true;
+    networking.firewall.allowedTCPPorts = [ 18085 ];
+    networking.firewall.interfaces.eth1.allowedUDPPorts = [ 18081 ];
     systemd.services.host-observer = {
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
@@ -250,6 +272,7 @@ in
         ../../modules/services/notifications.nix
         notification.credentials
         containerNode
+        discoveryNode
       ];
       _module.args.userName = "desktop";
       site.connections.enable = true;
@@ -267,6 +290,7 @@ in
         enable = true;
         useRoutingFeatures = "both";
         extraSetFlags = [
+          "--shields-up=false"
           "--advertise-exit-node=true"
           "--snat-subnet-routes=true"
         ];
@@ -481,7 +505,12 @@ in
       };
     };
     target = {
-      imports = [ notification.server ];
+      imports = [
+        notification.server
+        discoveryNode
+      ];
+      services.openssh.enable = true;
+      services.openssh.settings.PasswordAuthentication = false;
       systemd.services.notification-fixture.serviceConfig.ExecStart =
         notification.command + " --address 198.19.0.30";
       networking.firewall.enable = false;
@@ -603,6 +632,19 @@ in
         source = node.succeed("docker inspect ordinary --format '{{.NetworkSettings.Networks.bridge.IPAddress}}'").strip()
         container_request(node, f"docker exec ordinary curl --max-time 6 -fsS http://{gateway}:18080/host | grep -Fx {source}")
         container_request(node, f"printf host-access | docker exec -i ordinary nc -u -w 2 {gateway} 18081 | grep -Fx {source}")
+        # A custom bridge has the same host-service contract as docker0.
+        custom = node.succeed(compose_command + " ps -q app").strip()
+        network = json.loads(node.succeed("docker inspect " + custom))[0]["NetworkSettings"]["Networks"]
+        custom_network = next(iter(network.values()))
+        for command, endpoint, expected in ((compose_exec, custom_network["Gateway"], custom_network["IPAddress"]),
+                                             ("docker exec ordinary", address, source)):
+            container_request(node, f"{command} curl --max-time 6 -fsS http://{endpoint}:18080/host | grep -Fx {expected}")
+        # A wildcard UDP socket replies from the egress interface's address.
+        # Use each bridge's gateway for connected UDP clients; TCP also covers
+        # access through the host's physical-interface address above.
+        container_request(node, compose_exec + " sh -c " + shlex.quote(
+            f"printf host-access | nc -u -w 2 {custom_network['Gateway']} 18081 | grep -Fx {custom_network['IPAddress']}"
+        ))
         name = "web.proxy.test" if node == client else "www.example.org"
         intercepted_dns(node, name, ["", "docker exec ordinary ", compose_exec + " "])
 
@@ -711,6 +753,55 @@ in
     containers_active = True
     container_web(client, "192.168.1.20", ipv6=True)
     container_local(client)
+    def local_access():
+        # Native private replies and opened public UDP replies must preserve
+        # their source even when the server binds a wildcard socket.
+        target.succeed("curl --noproxy '*' --max-time 6 -fsS http://192.168.1.10:18080/lan | grep -Fx 192.168.1.30")
+        target.succeed("printf lan | nc -u -w 2 192.168.1.10 18081 | grep -Fx 192.168.1.30")
+        target.succeed("printf public | nc -s 198.18.0.30 -u -w 2 192.168.1.10 18081 | grep -Fx 198.18.0.30")
+        target.succeed("curl --noproxy '*' --max-time 6 -fsS http://192.168.1.10:18084 | grep -Fx 'container service'")
+        target.succeed("curl --interface 198.18.0.30 --noproxy '*' --max-time 6 -fsS http://192.168.1.10:18085 | grep -Fx 'container service'")
+        # Both published ports reach container 8080; only the declared host
+        # port is public. The proxy listener is private as well.
+        for port in (18080, 18084):
+            target.fail(f"curl --interface 198.18.0.30 --noproxy '*' --max-time 2 -fsS http://192.168.1.10:{port}/public")
+        target.fail("curl --interface 198.18.0.30 --proxy socks5h://192.168.1.10:10800 --max-time 2 -fsS http://web.proxy.test:18080/public")
+
+    def explicit_proxy(machine, endpoint):
+        for protocol in ("http", "socks5h"):
+            machine.succeed(f"curl --proxy {protocol}://{endpoint}:10800 --max-time 8 -fsS http://web.proxy.test:18080/explicit | grep -Fx 192.168.1.20")
+
+    local_access()
+    # Real KDE Connect devices discover each other using LAN broadcast/mDNS,
+    # then establish an authenticated connection without public port ranges.
+    for machine in (client, target):
+        machine.succeed("systemctl start kdeconnect-fixture.service")
+    kde_bus = '$(cat /run/kdeconnect-fixture/bus-address)'
+    def kde(machine, command):
+        return machine.succeed('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" ' + command)
+    for machine in (client, target):
+        machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli --my-id | grep .', timeout=30)
+    client_device = kde(client, "kdeconnect-cli --my-id").strip()
+    target_device = kde(target, "kdeconnect-cli --my-id").strip()
+    for machine, device in ((client, target_device), (target, client_device)):
+        machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -l --id-only | grep -Fx ' + device, timeout=45)
+    kde(client, "kdeconnect-cli --pair -d " + target_device)
+    device_path = "/modules/kdeconnect/devices/" + client_device
+    target.wait_until_succeeds(f'busctl --address="{kde_bus}" get-property org.kde.kdeconnect {device_path} org.kde.kdeconnect.device isPairRequestedByPeer | grep true', timeout=30)
+    target.succeed(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device acceptPairing')
+    for machine, device in ((client, target_device), (target, client_device)):
+        machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -a --id-only | grep -Fx ' + device, timeout=30)
+    # Send a file through the paired connection and observe the remote result.
+    client.succeed("printf 'LAN discovery and transfer' > /run/kdeconnect-transfer.txt")
+    kde(client, "kdeconnect-cli --share /run/kdeconnect-transfer.txt -d " + target_device)
+    target.wait_until_succeeds("find /run/kdeconnect-fixture -name kdeconnect-transfer.txt -exec grep -lFx 'LAN discovery and transfer' {} + | grep .", timeout=30)
+    explicit_proxy(client, "127.0.0.1")
+    explicit_proxy(target, "192.168.1.10")
+    container_request(client, "docker exec ordinary curl --proxy socks5h://172.17.0.1:10800 --max-time 8 -fsS http://web.proxy.test:18080/explicit | grep -Fx 192.168.1.20")
+    client.succeed('ssh-keygen -q -t ed25519 -N "" -f /run/proxy-test-key')
+    public_key = client.succeed("cat /run/proxy-test-key.pub")
+    target.succeed("install -d -m700 /root/.ssh; printf %s " + shlex.quote(public_key) + " > /root/.ssh/authorized_keys")
+    client.succeed("ssh -i /run/proxy-test-key -o UserKnownHostsFile=/run/proxy-known-hosts -o StrictHostKeyChecking=accept-new -o 'ProxyCommand=nc -x 127.0.0.1:10800 %h %p' root@198.19.0.30 printf proxy-ssh | grep -Fx proxy-ssh")
     intercepted_dns(client, "web.proxy.test", ["", compose_exec + " "], dual=True)
     client.succeed("curl -6 --noproxy '*' --cacert ${certificates.ca.cert} --max-time 10 -fsS https://proxy.test.nix:18087/dual | grep -Fx 2001:db8:10::20")
     client.wait_for_unit("docker-site-apprise.service")
@@ -736,7 +827,8 @@ in
     authkey = target.succeed("headscale preauthkeys -u 1 create --reusable").strip()
     login = "tailscale up --accept-dns=false --login-server https://headscale.test.nix --auth-key " + shlex.quote(authkey)
     client.wait_for_unit("tailscaled.service")
-    client.succeed(login + " --advertise-exit-node --snat-subnet-routes=true")
+    client.succeed(login + " --advertise-exit-node --snat-subnet-routes=true --shields-up=true")
+    client.succeed("systemctl restart tailscaled-set.service")
     peer.succeed(login)
     peer4 = peer.succeed("tailscale ip -4").strip()
     peer6 = peer.succeed("tailscale ip -6").strip()
@@ -770,6 +862,8 @@ in
     # A real Tailnet client selects this host as its dual-stack Internet exit.
     # Observe both clients at the destination through every later lifecycle event.
     client4 = client.succeed("tailscale ip -4").strip()
+    peer.succeed(f"curl --noproxy '*' --max-time 6 -fsS http://{client4}:18080/tailnet | grep -Fx {peer4}")
+    explicit_proxy(peer, client4)
     nodes = json.loads(target.succeed("headscale nodes list --output json"))
     exit_id = next(node["id"] for node in nodes if client4 in node["ip_addresses"])
     target.succeed(f"headscale nodes approve-routes --identifier {exit_id} --routes 0.0.0.0/0,::/0")
@@ -823,6 +917,7 @@ in
     client.succeed("systemctl restart docker")
     healthy()
     container_local(client)
+    local_access()
     client.succeed(compose_command + " down; " + compose_command + " up -d", timeout=60)
     container_local(client)
     container_web(client, "192.168.1.20", ipv6=True)
@@ -897,7 +992,6 @@ in
     client.succeed("journalctl --sync; journalctl --rotate")
     user("dig +short after-rotation.direct.test A | grep -Fx 198.18.0.30")
     client.wait_until_succeeds("journalctl -u site-dns-events -o cat --no-pager | network-dns-log --name after-rotation.direct.test | grep 198.18.0.30")
-    upstream.fail("nc -z -w2 192.168.1.10 10800")
     upstream.fail("nc -z -w2 192.168.1.10 5300")
     # A single unbound UDP socket changes destinations without retaining its old policy.
     code = "import socket; s=socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(4); "
@@ -919,6 +1013,7 @@ in
     for unit in ("sing-box", "site-network-routing", "mullvad-daemon"):
         client.succeed("systemctl stop " + unit)
         tailnet()
+        local_access()
         blocked()
         # These requests overlap the watcher during reconnection. Readiness is
         # established by actual dual-stack egress below, not a systemd job race.

@@ -74,6 +74,7 @@ in
         "graphical-session.target"
       ];
       unitConfig.ConditionEnvironment = "XDG_CURRENT_DESKTOP=i3";
+      path = [ pkgs.systemd ];
       serviceConfig = sandbox ".config/autorandr" // {
         Type = "exec";
         ExecStart = "${layout}/bin/site-display-layout --watch";

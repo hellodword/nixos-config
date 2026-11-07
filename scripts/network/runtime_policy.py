@@ -128,6 +128,7 @@ def ready(generation, units, run, *, wait_binding=False):
                 )
             processes.append(state.get("MainPID"))
             for address, port in listeners[unit]:
+                address = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(address, address)
                 try:
                     with socket.create_connection((address, port), timeout=min(0.2, max(0.001, deadline - time.monotonic()))):
                         pass

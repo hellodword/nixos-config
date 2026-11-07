@@ -165,6 +165,7 @@ let
           dwt enabled
         }
         exec ${start} sway
+        exec_always ${pkgs.systemd}/bin/systemctl --user is-active --quiet site-sway.target && ${pkgs.systemd}/bin/systemctl --user --no-block start site-wallpaper-apply.service
         bindsym $mod+Shift+e exec ${pkgs.sway}/bin/swaynag -t warning -m 'End this session?' -B 'Log out' '${pkgs.sway}/bin/swaymsg exit'
         bindsym $mod+semicolon exec ${pkgs.swaylock}/bin/swaylock -f -c 1e1e2e
         bindsym Print exec ${tools.shot}/bin/desktop-shot area copy
@@ -178,6 +179,7 @@ let
     common
     + ''
       exec ${start} i3
+      exec_always --no-startup-id ${pkgs.systemd}/bin/systemctl --user is-active --quiet site-i3.target && ${pkgs.systemd}/bin/systemctl --user --no-block start site-wallpaper-apply.service
       bindsym $mod+p exec ${pkgs.arandr}/bin/arandr
       exec --no-startup-id ${pkgs.xsetroot}/bin/xsetroot -solid '${c.background}'
       bindsym $mod+Shift+e exec ${pkgs.i3}/bin/i3-nagbar -t warning -m 'End this session?' -B 'Log out' '${pkgs.i3}/bin/i3-msg exit'

@@ -12,7 +12,7 @@
 | `desktop` | 生产 Fontconfig 字形匹配、混排宽度与图标/emoji；原生 Sway/i3 配置验证 | `tests/desktop.nix`、`tests/integration/desktop.py` |
 | `vm-backup` | 真实 Restic 三仓库、上海时间窗口、故障重试、路径边界、后端无响应时的关机与恢复；gVisor 内 Apprise/Bark 中文通知、官方 TLS 模拟上游、凭据隔离和跨重启的最新结果补发 | `tests/vm/backup.nix` |
 | `vm-network` | 本机与 Tailscale 出口客户端的持续双栈流量、DNS、NAT 穿透与 DERP；独立 WireGuard/OpenVPN 接口传输、策略更新及就绪失败恢复、服务故障、日志轮转、断网及重启恢复；三种网络能力组合下的通知、普通 Docker/Compose 的 DNS 与出口、服务名互通及端口发布、网络重建、prune 与 Docker 重启 | `tests/vm/network.nix` |
-| `vm-desktop` | SDDM 三会话登录/正常注销/重新登录；标签布局、Waybar 悬浮详情和月历、空闲抑制与锁屏、截图剪贴板、输入法、KWallet；显示布局、NetworkManager 连接及 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
+| `vm-desktop` | SDDM 三会话登录/正常注销/重新登录；标签布局、Waybar 悬浮详情和月历、空闲抑制与锁屏、截图剪贴板、输入法、KWallet；壁纸获取、实际画面切换与离线图库；显示布局、NetworkManager 连接及 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
 | `vm-applications` | 默认 1920×1080 下，三会话中的 Firefox、VS Code Dev Containers、Bitwarden Desktop、Kitty、Rofi 基础可用性 | `tests/vm/applications.nix`、`applications.py` |
 | `e2e` | 完整 laptop2 系统与 ubuntu Home Manager 激活产物，以及配置、进程集成、字体与桌面配置、备份/网络/桌面/应用 VM 的必需结果 | `nix/checks.nix` |
 
@@ -68,10 +68,12 @@ nix develop .#vm --command vm-test-submit --help
 
 项目检查不依赖执行器协议；本地与 CI 消费相同的 Nix 测试定义，传输和资源管理由所选执行工具负责。
 
-网络 VM 在目标端记录本机及 exit-node 客户端的实际出口，持续覆盖 direct/代理 × TCP/UDP × IPv4/IPv6；从默认 IPv4 启动，验证 HTTPS、运行时启用/关闭 IPv6，以及重启后回到声明式默认值。主机、普通 Docker/Compose 和出口客户端显式指定外部 DNS 地址的 TCP/UDP 查询均走共享解析；默认 bridge 容器通过实际网关访问声明允许的宿主 TCP/UDP 服务。通知使用真实 Apprise API、Bark 和 runsc，由独立节点模拟官方 TLS 服务，记录合成推送。
+网络 VM 在目标端记录本机及 exit-node 客户端的实际出口，持续覆盖 direct/代理 × TCP/UDP × IPv4/IPv6；从默认 IPv4 启动，验证 HTTPS、运行时启用/关闭 IPv6，以及重启后回到声明式默认值。主机、普通 Docker/Compose 和出口客户端显式指定外部 DNS 地址的 TCP/UDP 查询均走共享解析。私网、Tailnet 和默认/自建 Docker bridge 访问宿主服务，公网访问按发布前的宿主端口判断；UDP 通配监听验证回复源地址。HTTP/SOCKS 与 SSH ProxyCommand 使用实际 mixed 入口，KDE Connect 使用合成设备发现、配对和传输文件。Tailscale 场景从已有 `shields-up=true` 的身份应用声明，然后验证客户端真实出口 HTTP 和 DNS。通知使用真实 Apprise API、Bark 和 runsc，由独立节点模拟官方 TLS 服务，记录合成推送。
 
 备份 VM 使用受控时间验证首次等待、超期、真实失败及成功后的健康状态，继续覆盖窗口调度与关机恢复。桌面 VM 通过 SDDM 登录、正常注销再登录，检查网络托盘、KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。应用 VM 保存 Kitty 初始提示符以及 Kitty/Firefox 的拼音候选截图，并验证中文提交结果。
 
 设备验收覆盖真实 SOPS 解密、AP 认证、外接屏幕/合盖、休眠、Secure Boot、正常注销/锁屏，以及云端权限和资料恢复。
+
+壁纸场景使用本地 HTTPS 图片源，验证获取和去重、原有图片参与轮换、离线继续显示、配置重载及重新登录后的实际背景像素。KWallet 使用合成 Secret Service 条目的存取和重启后读取来验收解锁。
 
 音频、双电池、真实外屏 DPI 与触控板手感在 laptop2 验收：播放媒体、进行浏览器通话并切换麦克风/耳机；检查虚拟机客体音频；逐块外屏保存、拔插并重新登录；确认轻触点击、双指滚动和打字抑制。VM 可验证服务和配置生命周期，不能替代这些硬件行为。

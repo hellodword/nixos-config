@@ -43,6 +43,7 @@
     enable = true;
     useRoutingFeatures = "both";
     extraUpFlags = [
+      "--shields-up=false"
       "--accept-dns=false"
       "--accept-routes=false"
       "--advertise-exit-node=true"
@@ -50,6 +51,7 @@
       "--advertise-routes=10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     ];
     extraSetFlags = [
+      "--shields-up=false"
       "--accept-dns=false"
       "--accept-routes=false"
       "--advertise-exit-node=true"

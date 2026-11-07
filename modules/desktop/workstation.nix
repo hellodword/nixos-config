@@ -41,7 +41,10 @@ let
     };
 in
 {
-  imports = [ ./displays.nix ];
+  imports = [
+    ./displays.nix
+    ./wallpaper.nix
+  ];
   options.site.desktop = {
     enable = lib.mkEnableOption "Sway, i3 and Plasma workstation";
     sway.enable = lib.mkOption {

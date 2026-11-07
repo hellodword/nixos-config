@@ -6,6 +6,28 @@ let
   identityFixture = "${
     pkgs.python3.withPackages (ps: [ ps.pyyaml ])
   }/bin/python3 ${../fixtures/gpg_identity.py}";
+  wallpaper = import ../../nix/wallpaper.nix { inherit pkgs; };
+  certificates = import (pkgs.path + /nixos/tests/nginx/proxyprotocol/snakeoil-certs.nix);
+  wallpaperImages =
+    pkgs.runCommand "wallpaper-fixture"
+      {
+        nativeBuildInputs = [ (pkgs.python3.withPackages (p: [ p.pillow ])) ];
+      }
+      ''
+        mkdir -p "$out"
+        python3 - "$out" <<'PY'
+        import json, sys
+        from pathlib import Path
+        from PIL import Image
+        root = Path(sys.argv[1])
+        images = []
+        for date, color in (("202601010000", (180, 40, 70)), ("202601020000", (40, 70, 180))):
+            Image.new("RGB", (64, 64), color).save(root / (date + ".jpg"))
+            images.append({"fullstartdate": date, "url": "/" + date + ".jpg"})
+        Image.new("RGB", (64, 64), (40, 160, 70)).save(root / "personal.png")
+        (root / "feed.json").write_text(json.dumps({"images": images}))
+        PY
+      '';
 
 in
 {
@@ -54,6 +76,26 @@ in
     };
     site.desktop.enable = true;
     site.connections.enable = true;
+    networking.extraHosts = "127.0.0.1 wallpaper.test.nix";
+    security.pki.certificateFiles = [ certificates.ca.cert ];
+    services.nginx = {
+      enable = true;
+      virtualHosts."wallpaper.test.nix" = {
+        onlySSL = true;
+        listen = [
+          {
+            addr = "127.0.0.1";
+            port = 8449;
+            ssl = true;
+          }
+        ];
+        sslCertificate = certificates."*.test.nix".cert;
+        sslCertificateKey = certificates."*.test.nix".key;
+        root = wallpaperImages;
+      };
+    };
+    systemd.user.services.site-wallpaper-fetch.serviceConfig.ExecStart =
+      lib.mkForce "${wallpaper}/bin/site-wallpaper fetch --feed-url https://wallpaper.test.nix:8449/feed.json";
     services.safeeyes.enable = true;
     hardware.graphics.enable = true;
     services.displayManager.sddm.settings.Users.MaximumUid = 1000;
@@ -222,7 +264,7 @@ in
         if status:
             print("Session logout command:", status, output)
         try:
-            for unit in ("graphical-session.target", "desktop-health.timer", "site-sway.target", "site-i3.target"):
+            for unit in ("graphical-session.target", "desktop-health.timer", "site-sway.target", "site-i3.target", "site-wallpaper.timer", "site-wallpaper-fetch.timer"):
                 machine.wait_until_fails(user_command("systemctl --user is-active " + unit), timeout=60)
             # A late notification must not restart a notifier after logout.
             user(machine, "notify-send 'Session has ended'", True)
@@ -261,6 +303,28 @@ in
             subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=10)
         pixels = subprocess.check_output(["magick", str(raw), "-crop", f"{width}x1+0+2", "-depth", "8", "RGB:-"], timeout=10)
         return width, height, pixels
+
+    def wallpaper_visible(machine, session):
+        selected = Path(user(machine, "cat /run/user/1000/site-wallpaper/current").strip()).name
+        expected = {"202601010000.jpg": (180, 40, 70), "202601020000.jpg": (40, 70, 180),
+                    "personal.png": (40, 160, 70)}[selected]
+        user(machine, ("swaymsg" if session == "sway" else "i3-msg") + " workspace 9")
+        with tempfile.TemporaryDirectory() as temporary:
+            frame = Path(temporary) / "background.png"
+            raw = Path(temporary) / "background.ppm"
+            deadline = time.monotonic() + 20
+            while True:
+                machine.screenshot(str(frame), timeout=gui["remaining"](deadline))
+                width, height = struct.unpack(">II", frame.read_bytes()[16:24])
+                with raw.open("wb") as stream:
+                    subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=gui["remaining"](deadline))
+                pixel = subprocess.check_output(["magick", str(raw), "-crop", f"1x1+{width//3}+{height//2}", "-depth", "8", "RGB:-"], timeout=gui["remaining"](deadline))
+                if len(pixel) == 3 and all(abs(a-b) < 5 for a, b in zip(pixel, expected)):
+                    break
+                assert time.monotonic() < deadline, (selected, list(pixel))
+                time.sleep(0.2)
+        user(machine, ("swaymsg" if session == "sway" else "i3-msg") + " workspace 1")
+        return selected
 
     def click_eye(machine, color, expected):
         # Locate the visible button's background and click through the VM tablet.
@@ -307,6 +371,24 @@ in
         machine.wait_for_unit("persist.mount")
         login_session(machine, session, compositor)
         unlock(machine, session)
+        if session in ("sway", "i3"):
+            machine.wait_for_unit("nginx.service")
+            user(machine, "systemctl --user start site-wallpaper-fetch.service site-wallpaper-apply.service")
+            user(machine, "cp ${wallpaperImages}/personal.png ~/Pictures/wallpaper/personal.png")
+            initial_files = user(machine, "stat -c '%n %i %Y' ~/Pictures/wallpaper/*")
+            assert len(initial_files.splitlines()) == 3, initial_files
+            user(machine, "systemctl --user start site-wallpaper-fetch.service")
+            assert user(machine, "stat -c '%n %i %Y' ~/Pictures/wallpaper/*") == initial_files
+            machine.wait_until_succeeds(user_command("test -s /run/user/1000/site-wallpaper/current"), timeout=30)
+            previous = wallpaper_visible(machine, session)
+            machine.succeed("systemctl stop nginx")
+            user(machine, "systemctl --user start site-wallpaper-fetch.service site-wallpaper.service")
+            assert wallpaper_visible(machine, session) != previous
+            user(machine, ("swaymsg" if session == "sway" else "i3-msg") + " reload")
+            wallpaper_visible(machine, session)
+            machine.succeed("systemctl start nginx")
+        else:
+            user(machine, "systemctl --user is-active site-wallpaper.timer", True)
         machine.wait_until_succeeds(user_command("printf 'wallet-fixture' | timeout 20 secret-tool store --label=Desktop-test purpose desktop-test"), timeout=60)
         assert user(machine, "timeout 15 secret-tool lookup purpose desktop-test").strip() == "wallet-fixture"
         user(machine, "gdbus call --session --dest org.freedesktop.portal.Desktop --object-path /org/freedesktop/portal/desktop --method org.freedesktop.DBus.Properties.Get org.freedesktop.portal.Settings version")
@@ -506,17 +588,24 @@ in
             user(machine, "xrandr --output " + shlex.quote(i3_output) + " --rotate normal")
             reconnect_i3_display(machine, i3_output)
             machine.wait_until_succeeds(user_command("autorandr --current | grep -Fx vm-reconnected"), timeout=30)
+        if session in ("sway", "i3"):
+            wallpaper_visible(machine, session)
         stop_session(machine, compositor)
         login_session(machine, session, compositor)
         if session == "sway":
             assert_display_layout(machine, saved_single)
         elif session == "i3":
             machine.wait_until_succeeds(user_command("autorandr --current | grep vm-reconnected"), timeout=60)
+        if session in ("sway", "i3"):
+            machine.wait_until_succeeds(user_command("test -s /run/user/1000/site-wallpaper/current"), timeout=30)
+            wallpaper_visible(machine, session)
         stop_session(machine, compositor)
         if session in ("sway", "i3"):
             machine.reboot()
             login_session(machine, session, compositor)
             assert user(machine, "timeout 15 secret-tool lookup purpose desktop-test").strip() == "wallet-fixture"
+            machine.wait_until_succeeds(user_command("test -s /run/user/1000/site-wallpaper/current"), timeout=30)
+            wallpaper_visible(machine, session)
             if session == "sway":
                 machine.wait_until_succeeds(user_command("systemctl --user is-active kanshi.service"))
                 assert_display_layout(machine, saved_single)

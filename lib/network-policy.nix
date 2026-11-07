@@ -46,11 +46,11 @@
     disable_cache = true;
     reverse_mapping = true;
   };
-  inbounds = lib.optionals (!lockdown) [
+  inbounds = [
     {
       type = "mixed";
       tag = "mixed";
-      listen = "127.0.0.1";
+      listen = "0.0.0.0";
       listen_port = mixedPort;
     }
     {

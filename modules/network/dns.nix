@@ -151,6 +151,7 @@ in
         ];
         serviceConfig = hardened // {
           ExecStart = "${pkgs.dnsdist}/bin/dnsdist --supervised --disable-syslog -C ${cfg.activePolicy}/dnsdist.conf";
+          LimitNOFILE = 65536;
         };
       };
     }

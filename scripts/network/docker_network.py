@@ -41,7 +41,6 @@ def topology():
     finally:
         connection.close()
     bridges = set()
-    gateways = set()
     only4 = ipv6.ipv4_only()
     reconcile = False
     addresses = {link["ifname"]: {str(ipaddress.ip_interface(f"{a['local']}/{a['prefixlen']}"))
@@ -53,10 +52,6 @@ def topology():
         name = (network.get("Options") or {}).get("com.docker.network.bridge.name")
         name = name or ("docker0" if network["Name"] == "bridge" else "br-" + network["Id"][:12])
         bridges.add(name)
-        if network["Name"] == "bridge":
-            for ipam in network.get("IPAM", {}).get("Config") or []:
-                if gateway := ipam.get("Gateway"):
-                    gateways.add((name, str(ipaddress.ip_address(gateway))))
         # Disabling IPv6 removes bridge addresses in the host namespace.
         # Docker retains its IPAM configuration and the containers' addresses;
         # restore its gateway when the host enables IPv6 again.
@@ -85,7 +80,7 @@ def topology():
             if network.is_link_local or network.is_multicast:
                 continue
             routes[family, str(network)] = (route["dev"], route.get("prefsrc"))
-    return sorted(bridges), routes, sorted(gateways)
+    return sorted(bridges), routes
 
 
 def rules(action):
@@ -112,17 +107,9 @@ def routing(desired):
             run("ip", family, "route", "del", "table", ROUTE_TABLE, prefix, "proto", PROTOCOL)
 
 
-def firewall(bridges, routes, gateways, lockdown, host_ports):
+def firewall(bridges, routes, lockdown):
     interfaces = ", ".join(json.dumps(name) for name in bridges)
     local_output = []
-    host_input = []
-    for interface, gateway in gateways:
-        family = "ip" if ipaddress.ip_address(gateway).version == 4 else "ip6"
-        for protocol, ports in host_ports.items():
-            if ports:
-                port_set = ", ".join(str(port) for port in sorted(set(ports)))
-                host_input.append(f'iifname {json.dumps(interface)} {family} daddr {gateway} '
-                                  f'{protocol} dport {{ {port_set} }} ct mark set 0xf41 meta mark set 0x646f636b')
     if lockdown:
         # OUTPUT retains the original interface after Docker's DNAT. Match the
         # translated destination against the bridge routes we actually own.
@@ -133,10 +120,6 @@ def firewall(bridges, routes, gateways, lockdown, host_ports):
                                     "ct mark set 0xf41 meta mark set 0x6d6f6c65")
     contents = f"""table inet {TABLE} {{
     set bridges {{ type ifname; {('elements = { ' + interfaces + ' };') if bridges else ''} }}
-    chain input {{
-        type filter hook input priority -15; policy accept;
-        {chr(10).join(host_input)}
-    }}
     chain output {{
         type route hook output priority -90; policy accept;
         {chr(10).join(local_output)}
@@ -151,17 +134,17 @@ def firewall(bridges, routes, gateways, lockdown, host_ports):
     run("nft", "-f", "-", data=(f"delete table inet {TABLE}\n" if exists else "") + contents)
 
 
-def dns_clients(bridges):
+def bridge_set(table, bridges):
     # nftables reload recreates declared sets. Compare their actual contents,
     # so the ordinary Docker networks are restored without replacing DNS rules.
-    result = run("nft", "-j", "list", "set", "inet", "site_dns", "docker_bridges", check=False)
+    result = run("nft", "-j", "list", "set", "inet", table, "docker_bridges", check=False)
     if result.returncode:
         return
     current = next(item["set"].get("elem", []) for item in json.loads(result.stdout)["nftables"] if "set" in item)
     if sorted(current) != bridges:
-        commands = "flush set inet site_dns docker_bridges\n"
+        commands = f"flush set inet {table} docker_bridges\n"
         if bridges:
-            commands += "add element inet site_dns docker_bridges { " + ", ".join(json.dumps(name) for name in bridges) + " }\n"
+            commands += f"add element inet {table} docker_bridges {{ " + ", ".join(json.dumps(name) for name in bridges) + " }\n"
         run("nft", "-f", "-", data=commands)
 
 
@@ -206,12 +189,12 @@ def notify():
             channel.sendall(b"READY=1")
 
 
-def watch(dns, lockdown, host_ports):
+def watch(dns, lockdown, local_access):
     # Subscribe before the initial inventory. Periodic reconciliation also
     # observes address-family changes and an administrator's firewall reload.
     commands = [("docker", "events", "--filter", "type=network", "--format", "{{json .}}"),
                 ("ip", "monitor", "link", "address", "route")]
-    if lockdown:
+    if lockdown or local_access or dns:
         commands.append(("nft", "monitor", "ruleset"))
     processes = []
     try:
@@ -225,15 +208,17 @@ def watch(dns, lockdown, host_ports):
             previous_neighbors = None
             rules("add")
             while True:
-                bridges, routes, gateways = topology()
+                bridges, routes = topology()
                 routing(routes)
-                current = (bridges, routes, gateways)
+                current = (bridges, routes)
                 if current != previous or run("nft", "list", "table", "inet", TABLE, check=False).returncode:
-                    firewall(bridges, routes, gateways, lockdown, host_ports)
+                    firewall(bridges, routes, lockdown)
                     print(f"Docker local routing: {len(bridges)} bridges, {len(routes)} routes", flush=True)
                     previous = current
                 if dns:
-                    dns_clients(bridges)
+                    bridge_set("site_dns", bridges)
+                if local_access:
+                    bridge_set("site_local_access", bridges)
                 if lockdown:
                     previous_neighbors = neighbors(bridges, previous_neighbors)
                 notify()
@@ -252,7 +237,8 @@ def watch(dns, lockdown, host_ports):
 
 
 def stop():
-    dns_clients([])
+    bridge_set("site_dns", [])
+    bridge_set("site_local_access", [])
     neighbors([], None)
     rules("del")
     for family in ("-4", "-6"):
@@ -266,11 +252,10 @@ if __name__ == "__main__":
     parser.add_argument("action", choices=["run", "stop"])
     parser.add_argument("--dns", action="store_true")
     parser.add_argument("--lockdown", action="store_true")
-    parser.add_argument("--host-tcp-port", action="append", type=int, default=[])
-    parser.add_argument("--host-udp-port", action="append", type=int, default=[])
+    parser.add_argument("--local-access", action="store_true")
     args = parser.parse_args()
     try:
-        watch(args.dns, args.lockdown, {"tcp": args.host_tcp_port, "udp": args.host_udp_port}) if args.action == "run" else stop()
+        watch(args.dns, args.lockdown, args.local_access) if args.action == "run" else stop()
     except (OSError, ValueError, RuntimeError, http.client.HTTPException, subprocess.SubprocessError) as error:
         print(f"Docker local networking: {error}", file=sys.stderr)
         if isinstance(error, subprocess.CalledProcessError):

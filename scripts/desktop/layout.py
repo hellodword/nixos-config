@@ -77,9 +77,10 @@ def watch(autorandr, xrandr):
 
     server = display.Display()
     try:
-        server.screen().root.xrandr_select_input(randr.RROutputChangeNotifyMask)
+        server.screen().root.xrandr_select_input(
+            randr.RROutputChangeNotifyMask | randr.RRCrtcChangeNotifyMask | randr.RRScreenChangeNotifyMask
+        )
         server.sync()
-        output_event, output_subtype = server.extension_event.OutputChangeNotify
         previous = None
         deadline = time.monotonic()
         while True:
@@ -88,14 +89,15 @@ def watch(autorandr, xrandr):
                 if topology != previous:
                     arrange(autorandr, xrandr)
                     previous = topology
+                subprocess.run(["systemctl", "--user", "--no-block", "start", "site-wallpaper-apply.service"], check=True)
                 deadline = None
             timeout = None if deadline is None else max(0, deadline - time.monotonic())
             if server.pending_events() or select.select([server.fileno()], [], [], timeout)[0]:
                 while server.pending_events():
                     event = server.next_event()
-                    if event.type == output_event and event.sub_code == output_subtype:
-                        if event.connection != randr.Connected:
-                            previous = None
+                    if isinstance(event, randr.OutputChangeNotify) and event.connection != randr.Connected:
+                        previous = None
+                    if isinstance(event, (randr.OutputChangeNotify, randr.CrtcChangeNotify, randr.ScreenChangeNotify)):
                         # Apply the settled connector topology. Changes to a
                         # mode or rotation keep the user's current adjustment.
                         deadline = time.monotonic() + 0.3

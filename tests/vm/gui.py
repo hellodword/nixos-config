@@ -206,6 +206,14 @@ def login(machine):
     from datetime import timedelta
     machine.wait_for_unit("display-manager.service")
     machine.wait_for_unit("home-manager-desktop.service")
+    # SDDM can render its first frame before registering the view and giving
+    # the password field keyboard focus. Observe the current greeter instance
+    # so this also applies to a fresh login after logout.
+    machine.wait_until_succeeds(
+        "pid=$(pgrep -u sddm -n -f sddm-greeter); "
+        "test -n \"$pid\" && journalctl -b _PID=\"$pid\" --no-pager -o cat | grep -F 'Adding view for'",
+        timeout=60,
+    )
     # The selected account stays legible across greeter sizes; the password
     # placeholder is small and low contrast in Breeze.
     visible(machine, r"(?i)\bdesktop\b", timeout=90)

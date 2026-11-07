@@ -5,12 +5,12 @@
 | `dns.enable` | `singBox.enable` | `lockdown.enable` | 行为 |
 | --- | --- | --- | --- |
 | true | false | false | 系统 DNS 分流；CN/GLOBAL 通过物理网络访问各自的加密上游 |
-| false | true | false | loopback 10800 的 HTTP/SOCKS 显式代理，使用现有系统解析器 |
+| false | true | false | 10800 的 HTTP/SOCKS 显式代理，使用现有系统解析器 |
 | true | true | false | 系统 DNS + 显式代理；CN 和节点 bootstrap 直接解析，GLOBAL DNS 经代理 |
 | true | true | true | DNS + 整机透明分流 + Mullvad Lockdown |
 | false | false | false | 使用主机原有网络与解析配置 |
 
-开关位于 `site.network`。Lockdown 依赖 DNS 与 sing-box；显式代理模式由应用选择 `127.0.0.1:10800` 或 `[::1]:10800`。DNS-only 配置只需要域名规则和上游；代理模式另需要节点文件。
+开关位于 `site.network`。Lockdown 依赖 DNS 与 sing-box。sing-box 启用时始终监听 `0.0.0.0:10800`，供 HTTP/SOCKS 显式代理使用；双栈时另有 `[::1]:10800`。本机可用 `127.0.0.1:10800`，其他设备使用宿主对应网络的 IPv4 地址并遵守入站策略。显式代理和透明接管使用同一套分流规则。DNS-only 配置只需要域名规则和上游；代理模式另需要节点文件。
 
 能力组合由 NixOS 配置选择。切换涉及 Lockdown 的组合时，构建新的启动代次并重启，使防火墙、策略路由和服务一起进入目标状态。日常域名规则与代理节点通过下述 `network-policy apply` 更新。
 
@@ -28,6 +28,42 @@ flowchart TD
   Race --> Filter[dnsdist 响应过滤与 TLS 认证]
   Filter -->|固定目的地隧道| SB
 ```
+
+## 私网开发访问与公网入站
+
+laptop2 启用独立的 `site.network.localAccess.enable`。同一策略用于宿主服务和 Docker 发布端口：
+
+| 来源或目的 | 行为 |
+| --- | --- |
+| RFC1918 IPv4：`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16` | 双向原生通信，入站允许所有监听的 TCP/UDP 服务 |
+| Tailnet | 允许访问宿主服务及 Docker 发布端口；遵守 Tailnet 的访问规则 |
+| 普通 Docker bridge | 允许访问宿主所有监听的 TCP/UDP 服务；包括默认和自建 bridge |
+| 公网来源 | 仅允许 NixOS 防火墙明确声明的端口 |
+| 通知专用网络 | 使用通知服务自己的隔离规则 |
+
+私网直连与 IPv4 广播、组播独立于 sing-box；停止代理后仍可访问局域网开发服务和使用 mDNS、SSDP、KDE Connect 等发现协议。组播只在应用选择的本地链路发送，不在 Tailnet 与 LAN 之间中继。宿主、普通 Docker bridge 和出口节点客户端的 TCP/UDP 53 查询仍由项目 DNS 接管，DNS 监听入口保留自己的来源限制。IPv6 私网不套用 RFC1918 的宽松策略。
+
+服务需监听对应网络地址或 `0.0.0.0`；仅监听 `127.0.0.1` 的服务只供本机使用。KDE Connect 由应用目录提供，连接和发现使用私网规则。公网开放端口统一声明，例如：
+
+```nix
+networking.firewall.allowedTCPPorts = [ 8443 ];
+networking.firewall.interfaces.enp0s20f0u1.allowedUDPPorts = [ 9999 ];
+```
+
+同样支持 `allowedTCPPortRanges`、`allowedUDPPortRanges`。Docker 的 `8443:443` 发布按宿主端口 `8443` 判断，容器端口 `443` 不构成公网授权。显式代理端口 10800 默认只向上述可信来源提供服务。
+
+`inet site_local_access` 管理入站分类和回复标记。私网目的地优先查找原生路由；本地 WireGuard peer 的 `10.67.0.1` 是保留的内部 DNS 地址，始终使用隧道路径。获准的公网入站连接，其回复使用原生出口。开放的 UDP 服务端口有首次源地址选择规则，以支持绑定通配地址的服务器；从相同源端口主动建立的公网 UDP 连接仍受 Lockdown 约束。普通公网出站和出口节点的公网转发继续进入透明分流。
+
+SSH 可在 `identity.sops.yaml` 的 `ssh.hosts` 或 `~/.ssh/hosts.d/*.conf` 中为特定 Host 声明显式代理：
+
+```sshconfig
+Host example-vps
+  HostName vps.example.invalid
+  ProxyCommand nc -x 127.0.0.1:10800 %h %p
+  IdentityFile /etc/ssh/gpg.vps.0123456789ABCDEF.pub
+```
+
+OpenSSH 仅通过此 ProxyCommand 建立连接，代理不可用时连接失败；最终使用 direct 还是远程节点仍由 sing-box 的连接规则决定。
 
 ## 地址族与运行时切换
 
@@ -70,7 +106,7 @@ sudo network-ipv6 off
 | Tailscale 单独启用，或搭配 DNS / 显式 sing-box | Tailscale 原生连接走物理网络 | Tailscale 原生路由 | 原生转发；DNS 启用时使用共享解析策略，显式代理仍由应用选择 |
 | DNS + sing-box + Lockdown + Tailscale | `mullvad-exclude` 启动守护进程，走物理网络 | Tailnet 路由表优先于透明接管，数据进入 `tailscale0` | 与本机普通应用共用透明分流和 Lockdown |
 
-laptop2 声明为出口节点，启用原生转发及 SNAT，实际可用的地址族遵循上述主机模式。管理端批准该节点作为出口后，其他节点选择它并启用 Tailscale DNS，即可使用出口策略；另外公告 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`，供获授权的 Tailnet 节点访问 laptop2 可达的私网。路由仍需管理端批准及访问规则允许；本机保持 `accept-routes=false`。
+laptop2 声明为出口节点，启用原生转发及 SNAT，实际可用的地址族遵循上述主机模式。`shields-up=false` 通过 `tailscale set` 应用到当前身份，允许对端连接和出口转发。管理端批准该节点作为出口后，其他节点选择它并启用 Tailscale DNS，即可使用出口策略；另外公告 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`，供获授权的 Tailnet 节点访问 laptop2 可达的私网。路由仍需管理端批准及访问规则允许；本机保持 `accept-routes=false`。
 
 ```mermaid
 flowchart TD
@@ -89,7 +125,7 @@ flowchart TD
   WG -->|DNS| DNS[dnsdist / dnsproxy]
 ```
 
-出口节点收到的互联网流量经过内核转发，Tailscale 原生 SNAT 使用本地隧道地址进入 sing-box。连接返回时由 conntrack 恢复目标节点地址。只有访问本机的 Tailnet 连接及 Tailscale 的底层传输获得直连豁免；转发连接使用 Mullvad 的隧道放行与故障阻断规则。代理节点不可达时，direct 仍可使用，proxy 保持阻断；分流服务或本地隧道不可用时，出口上网受阻，Tailnet 通信仍可使用。
+出口节点收到的互联网流量经过内核转发，Tailscale 原生 SNAT 使用本地隧道地址进入 sing-box。连接返回时由 conntrack 恢复目标节点地址。公网转发使用 Mullvad 的隧道放行与故障阻断规则；访问本机的 Tailnet 连接、Tailscale 的底层传输及启用 `localAccess` 后的 IPv4 私网访问使用原生网络。代理节点不可达时，direct 仍可使用，proxy 保持阻断；分流服务或本地隧道不可用时，出口上网受阻，Tailnet 通信仍可使用。
 
 Tailscale 默认将出口客户端的公共 DNS 查询通过 PeerAPI 交给出口节点的系统解析器，本项目再交给 dnsdist；MagicDNS 保留原生处理。客户端需启用 `accept-dns`，管理端另行指定的 “Use with exit node” nameserver 会改变默认路径。使用应用自带 DoH 时，其连接按普通应用流量处理。[出口节点 DNS 行为](https://tailscale.com/docs/reference/dns-in-tailscale)
 
@@ -117,11 +153,11 @@ sudo tailscale set --exit-node=laptop2 --accept-dns=true
 
 同时启用 Docker 和项目 DNS 时，Docker 的默认 DNS 指向宿主的 `169.254.53.53`。默认 bridge 直接使用它；Compose 和自建 bridge 保留 Docker 的 `127.0.0.11` 内嵌解析器，用于服务名解析并将外部查询转给宿主入口。已有容器需要重新创建，才能取得新的 DNS 默认值。
 
-默认 `bridge` 网络的容器可通过该网络的宿主网关访问显式声明的宿主端口。`site.network.containers.hostTCPPorts` 和 `hostUDPPorts` 分别列出允许的 TCP、UDP 端口，默认均为空；laptop2 开放 TCP 8765，例如 `http://172.17.0.1:8765/`。服务需监听网关地址或通配地址；仅监听 `127.0.0.1` 的服务不能从容器访问。规则从 Docker IPAM 读取实际网关，不固定子网，也不向局域网开放端口。这个访问范围适用于默认 bridge；自建 bridge 与通知专用网络继续使用各自的访问边界。
+启用 `localAccess` 时，默认和自建 bridge 的容器可通过宿主网关访问所有监听的 TCP/UDP 服务，例如 `http://172.17.0.1:8765/`；网关可用 `docker network inspect` 查看。服务需监听网关地址或通配地址。公网访问 Docker 发布端口遵循上方的统一声明；通知专用网络继续使用独立限制。
 
 `site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。启用 IPv6 时，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
 
-路由表 `64500`、规则优先级 `94` 与 `inet site_containers` 防火墙表由同步服务管理，均为运行时状态；Docker 重启后重新读取网络清单。DNS 模块管理 `inet site_dns`，同步服务更新其中的普通 bridge 集合。带 `org.nixos-config.service` 标签的通知专用网络使用通知模块自己的限制和路由。
+路由表 `64500`、规则优先级 `94` 与 `inet site_containers` 防火墙表由同步服务管理，均为运行时状态；Docker 重启后重新读取网络清单。DNS 模块管理 `inet site_dns`，本地访问模块管理 `inet site_local_access`；同步服务更新其中的普通 bridge 集合。带 `org.nixos-config.service` 标签的通知专用网络使用通知模块自己的限制和路由。
 
 IPv6 bridge 的邻居发现使用独立的规则：同步服务在 Mullvad 的 input/output/forward 链中管理带 `site-container-neighbors` 注释的规则，只允许 Docker bridge 上 hop limit 为 255 的邻居请求与通告，支持容器与网关、同桥容器之间的地址解析。它监听防火墙重建并重新同步，停止时删除这些规则；普通 TCP/UDP 出口继续遵循分流与 Lockdown。
 

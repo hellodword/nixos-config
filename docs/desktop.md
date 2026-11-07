@@ -26,7 +26,25 @@ Chrome、VS Code 和 Bitwarden Desktop 通过标准 Secret Service 使用 KSecre
 
 ```sh
 busctl --user status org.freedesktop.secrets
-journalctl --user -u plasma-kwallet-pam.service -b
+wallet_path=$(busctl --user call org.freedesktop.secrets /org/freedesktop/secrets \
+  org.freedesktop.Secret.Service ReadAlias s default | cut -d '"' -f 2)
+busctl --user get-property org.freedesktop.secrets "$wallet_path" \
+  org.freedesktop.Secret.Collection Locked
+```
+
+`Locked` 为 `false` 表示默认钱包已经解锁。`ReadAlias` 返回 `/` 时尚未设定默认钱包，可在 KWallet Manager 中创建或选择 `kdewallet`。PAM 初始化服务完成后会退出；判断解锁状态使用 Secret Service 的 collection 属性或实际应用读取。KWallet Manager 的 Open 操作会打开管理视图；[兼容接口的 `isOpen`](https://github.com/KDE/kwallet/blob/v6.31.0/src/runtime/kwalletd/kwalletd.cpp) 查询该接口已登记的访问句柄。
+
+## 随机壁纸
+
+Sway 和 i3 复用 `~/Pictures/wallpaper` 中的 JPEG、PNG、WebP、BMP 图片；原有非 Bing 图片同样参与随机选择。每 30 分钟换一张，有多张图片时避开上一张。所有显示器使用同一张图片，按 fill 裁切填满；Plasma 在系统设置中管理壁纸。
+
+登录后独立获取 Bing 最近八张图片，随后每小时检查新图。下载使用 HTTPS、日期文件名和原子发布，已有文件保留；断网时继续使用本地图库，下次定时检查重试。图片目录位于已经持久化的 Pictures 下，不自动删除旧图片。
+
+Sway 使用原生背景命令，i3 使用 feh。登录、配置重载以及显示布局变化会应用当前图片；定时任务随 WM 会话启动和停止。可手动换图或查看下载记录：
+
+```sh
+systemctl --user start site-wallpaper.service
+journalctl --user -u site-wallpaper -u site-wallpaper-apply -u site-wallpaper-fetch -b
 ```
 
 ## 常用操作

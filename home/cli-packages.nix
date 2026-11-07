@@ -20,6 +20,7 @@
       ipset
       inotify-tools
       inetutils
+      netcat-openbsd
       nix-prefetch
       nix-prefetch-scripts
       (p7zip.override { enableUnfree = true; })
