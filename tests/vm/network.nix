@@ -2,6 +2,10 @@
 { pkgs, lib, ... }:
 let
   notification = import ../fixtures/notifications.nix { inherit pkgs; };
+  caches = import ../../nix/cache-config.nix;
+  oranc = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.oranc;
+  cachePayload = pkgs.writeText "network-cache-payload" "shared host cache content\n";
+  cacheURI = "http://${caches.local.listen}/cache.test.nix:5000/synthetic/network-cache";
   kdeconnect = pkgs.kdePackages.kdeconnect-kde;
   discoveryNode = {
     environment.systemPackages = [ kdeconnect ];
@@ -30,6 +34,7 @@ let
       pkgs.curl
       pkgs.dig
       pkgs.netcat-openbsd
+      pkgs.zstd
     ];
     extraCommands = ''
       mkdir -p www tmp
@@ -76,6 +81,14 @@ let
     }
   );
   containerNode = {
+    imports = [ ../../modules/services/cache.nix ];
+    site.cache = caches.project // {
+      enable = true;
+    };
+    systemd.services.oranc = {
+      wants = [ "docker.service" ];
+      after = [ "docker.service" ];
+    };
     site.network.localAccess.enable = true;
     networking.firewall.allowedTCPPorts = [ 18085 ];
     networking.firewall.interfaces.eth1.allowedUDPPorts = [ 18081 ];
@@ -85,6 +98,7 @@ let
       serviceConfig.ExecStart = "${fixture} host";
     };
     virtualisation.docker.daemon.settings = {
+      bip = "${caches.project.listenAddress}/16";
       ipv6 = true;
       fixed-cidr-v6 = "fd12:3456:789b::/64";
     };
@@ -243,7 +257,7 @@ in
     virtualisation.cores = 2;
     networking.useDHCP = false;
     networking.interfaces.eth0.useDHCP = lib.mkForce false;
-    networking.extraHosts = "192.168.1.30 headscale.test.nix";
+    networking.extraHosts = "192.168.1.30 headscale.test.nix cache.test.nix";
     security.pki.certificateFiles = [
       certificates.ca.cert
       notification.ca
@@ -255,6 +269,7 @@ in
       pkgs.nftables
       pkgs.tcpdump
       pkgs.wireguard-tools
+      pkgs.zstd
       python
     ];
   };
@@ -514,6 +529,16 @@ in
       systemd.services.notification-fixture.serviceConfig.ExecStart =
         notification.command + " --address 198.19.0.30";
       networking.firewall.enable = false;
+      nix.settings.experimental-features = [ "nix-command" ];
+      virtualisation.additionalPaths = [ cachePayload ];
+      services.dockerRegistry = {
+        enable = true;
+        listenAddress = "192.168.1.30";
+        extraConfig.http.tls = {
+          certificate = "${cert}";
+          key = "${key}";
+        };
+      };
       # STUN observes the peer after SNAT, on a server outside its router.
       services.headscale = {
         enable = true;
@@ -549,7 +574,10 @@ in
           };
         };
       };
-      environment.systemPackages = [ pkgs.headscale ];
+      environment.systemPackages = [
+        pkgs.headscale
+        oranc
+      ];
       networking.interfaces.eth1 = {
         ipv4.addresses = lib.mkForce (
           map
@@ -647,6 +675,23 @@ in
         ))
         name = "web.proxy.test" if node == client else "www.example.org"
         intercepted_dns(node, name, ["", "docker exec ordinary ", compose_exec + " "])
+        shared_cache(node)
+
+    def shared_cache(node):
+        # Every client downloads real NAR bytes through the hardened host
+        # service. A separate OCI integration verifies signature acceptance by
+        # native Nix; this scenario exercises the network and service lifecycle.
+        node.wait_for_unit("oranc.service")
+        narinfo = node.succeed("curl --max-time 15 -fsS ${cacheURI}/${
+          builtins.substring 0 32 (builtins.baseNameOf cachePayload)
+        }.narinfo")
+        fields = dict(line.split(": ", 1) for line in narinfo.splitlines() if ": " in line)
+        assert fields["StorePath"] == "${cachePayload}" and fields["Sig"].startswith("network-cache-test:"), fields
+        nar_url = "${cacheURI}/" + fields["URL"]
+        for prefix in ("", "docker exec ordinary ", compose_exec + " "):
+            command = "set -eu; curl --max-time 15 -fsS " + shlex.quote(nar_url) + " -o /tmp/cache-payload.nar.zst; "
+            command += "zstd -dc /tmp/cache-payload.nar.zst | sha256sum | cut -d' ' -f1 | grep -Fx " + cache_nar_hash
+            container_request(node, prefix + "sh -c " + shlex.quote(command))
 
     def intercepted_dns(node, name, prefixes, dual=False):
         servers = ["203.0.113.53"] + (["2001:db8:ffff::53"] if dual else [])
@@ -667,6 +712,12 @@ in
     upstream.wait_for_open_port(24001)
     target.wait_for_unit("headscale.service")
     target.wait_for_open_port(443, addr="192.168.1.30")
+    target.wait_for_unit("docker-registry.service")
+    target.succeed("umask 077; nix key generate-secret --key-name network-cache-test > /run/cache-signing-key")
+    publisher = "oranc push --registry cache.test.nix:5000 --repository synthetic/network-cache --no-closure --parallel 1 --zstd-level 3"
+    target.succeed('ORANC_SIGNING_KEY="$(cat /run/cache-signing-key)" ' + publisher + " initialize --priority 41")
+    target.succeed("printf '%s\\n' '${cachePayload}' | ORANC_SIGNING_KEY=\"$(cat /run/cache-signing-key)\" " + publisher)
+    cache_nar_hash = target.succeed("nix hash path --type sha256 --base16 ${cachePayload}").strip()
     # Exercise independent combinations first, with one client VM at a time.
     for node, address in ((dnsOnly, "192.168.1.11"), (dnsProxy, "192.168.1.12")):
         node.start()

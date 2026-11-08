@@ -29,7 +29,7 @@ nix develop --command python3 -m tests.integration.secrets -v
 nix develop --command python3 -m tests.integration.cache
 ```
 
-缓存检查通过临时 OCI registry 和 oranc 验证可再分发路径筛选、直接签名发布，以及在受限依赖已准备好的情况下恢复公共输出。小型真实 Nix derivation 同时覆盖依赖准备、实际执行、本地复用、远端恢复和对应的事件计时，详见[缓存指南](cache.md)与[CI 指南](ci.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
+缓存检查通过临时 OCI registry 和 oranc 验证可再分发路径筛选、直接签名发布，以及在受限依赖已准备好的情况下恢复公共输出。客户端运行生产安装器生成持久配置，保留原有设置并支持重复安装，然后通过普通 Nix 命令恢复和验证签名产物。小型真实 Nix derivation 同时覆盖依赖准备、实际执行、本地复用、远端恢复和对应的事件计时，详见[缓存指南](cache.md)与[CI 指南](ci.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
 
 验证范围按实际改动选择既有入口：声明式桌面配置和字体使用 `configuration`、`desktop` 及生产系统/Home Manager 构建；登录界面、会话生命周期和壁纸调度使用完整 `vm-desktop`。应用启动、隔离或开发容器行为涉及 `vm-applications`；依赖升级和跨子系统验收使用 `e2e`。
 
@@ -74,6 +74,8 @@ nix develop .#vm --command vm-test-submit --help
 项目检查不依赖执行器协议；本地与 CI 消费相同的 Nix 测试定义，传输和资源管理由所选执行工具负责。
 
 网络 VM 在目标端记录本机及 exit-node 客户端的实际出口，持续覆盖 direct/代理 × TCP/UDP × IPv4/IPv6；从默认 IPv4 启动，验证 HTTPS、运行时启用/关闭 IPv6，以及重启后回到声明式默认值。主机、普通 Docker/Compose 和出口客户端显式指定外部 DNS 地址的 TCP/UDP 查询均走共享解析。私网、Tailnet 和默认/自建 Docker bridge 访问宿主服务，公网访问按发布前的宿主端口判断；UDP 通配监听验证回复源地址。HTTP/SOCKS 与 SSH ProxyCommand 使用实际 mixed 入口，KDE Connect 使用合成设备发现、配对和传输文件。Tailscale 场景从已有 `shields-up=true` 的身份应用声明，然后验证客户端真实出口 HTTP 和 DNS。通知使用真实 Apprise API、Bark 和 runsc，由独立节点模拟官方 TLS 服务，记录合成推送。
+
+缓存网络场景使用合成签名产物和 TLS registry，通过生产 oranc 服务读取 narinfo 与真实 NAR；宿主、默认 Docker bridge 和 Compose bridge 的下载内容必须一致。该场景随普通容器网络生命周期执行，覆盖 Docker 重启和主机重启后的访问；Mullvad 重连后的完整 IPv4/IPv6 出口检查持续覆盖显式 MTU 的实际效果。
 
 备份 VM 使用受控时间验证首次等待、超期、真实失败及成功后的健康状态，覆盖窗口调度、持锁中断、后端不可用时有界关机以及重启后锁恢复。网络 VM 验证完整 DNS 正文和 debug 日志进入独立命名空间，系统记录、轮转和跨重启历史分别保留。桌面 VM 通过 SDDM 登录、正常注销再登录，检查网络托盘、KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。应用 VM 保存 Kitty 初始提示符以及 Kitty/Firefox 的拼音候选截图，并验证中文提交结果。
 

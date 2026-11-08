@@ -14,7 +14,7 @@
 | 使用桌面会话、浏览器和排查登录问题 | [桌面](docs/desktop.md) |
 | 修改模块、脚本或测试 | [架构](docs/architecture.md)、[验证](docs/validation.md) |
 | 理解组件选择与应用权限 | [选择与隔离边界](docs/choices.md) |
-| 准备和使用 OCI 构建缓存 | [缓存](docs/cache.md) |
+| 为宿主、开发容器和 CI 配置构建缓存 | [缓存](docs/cache.md) |
 
 ## 构建与检查
 
@@ -26,6 +26,8 @@ nix build --no-link .#nixosConfigurations.laptop2.config.system.build.toplevel
 ```
 
 依赖由 `flake.lock` 固定；开发工具通过 `nix develop` 提供。构建使用公开配置和 SOPS 密文，个人数据在目标机激活时解密。
+
+laptop2 的 Nix 配置自动包含公共缓存和项目 OCI 缓存。开发容器首次使用时运行 `bash scripts/nix-cache.sh install`，随后直接使用上述 Nix 命令；多用户 daemon 的信任配置与其他机器的公共缓存安装方式见[缓存指南](docs/cache.md)。
 
 部署使用 `nixos-rebuild`。
 

@@ -1,21 +1,57 @@
-# OCI 构建缓存
+# 构建缓存
+
+## 声明与配置来源
+
+[flake.nix](../flake.nix) 的 `nixConfig` 声明 [Nix Community](https://nix-community.org/cache/) 与 [Numtide](https://github.com/numtide/llm-agents.nix#binary-cache) 的 URL 和签名公钥，以 `extra-` 设置保留 Nix 的官方缓存。Nix 在 flake 求值前读取这些设置，因此这里使用字面量列表。
+
+[nix/cache-config.nix](../nix/cache-config.nix) 读取这份声明和 [nix/cache-identity.json](../nix/cache-identity.json) 中的项目仓库、签名公钥，生成 NixOS、开发容器和 CI 使用的配置。宿主代理地址与端口也在该汇总层声明。公共缓存更新时修改 `flake.nix`；项目签名身份更新时修改 `cache-identity.json`。
+
+缓存只能提供精确 store path 对应的产物。公共缓存可覆盖部分官方缓存缺失的依赖，但自定义源码、构建参数或修改后的 derivation 需要项目自身发布。首次验收尚未产生项目缓存时，这些产物仍在本地构建；不同包的并行构建时间不能简单相加估算节省量。
+
+## 项目 OCI 缓存
 
 [oranc](https://github.com/linyinfeng/oranc) 将 `ghcr.io/hellodword/nixos-config` 作为标准 Nix binary cache。上游由 `flake.lock` 固定，`packages.x86_64-linux.oranc` 使用项目的 nixpkgs 构建；主机服务、开发 shell 和 CI 复用该包。oranc 不参与每日更新，单独升级使用 `nix flake update oranc`。
 
 ## laptop2 的读取方式
 
-laptop2 启用 `site.cache`，[nix/cache-identity.json](../nix/cache-identity.json) 同时提供主机和 CI 使用的仓库名与签名公钥。`oranc.service` 监听 `127.0.0.1:37515`，Nix 的持久配置加入 `http://127.0.0.1:37515/ghcr.io/hellodword/nixos-config`，保留官方缓存并要求签名。
+laptop2 启用 `site.cache`，`oranc.service` 监听 **`172.17.0.1:37515`**。Docker 默认网桥固定使用 `172.17.0.1/16`，服务排在 Docker 启动之后；地址暂未就绪时由服务的失败重启策略恢复。Nix 的持久配置包含公共缓存及 `http://172.17.0.1:37515/ghcr.io/hellodword/nixos-config`，保留官方缓存并要求签名。
 
-切换到该配置后，`nixos-rebuild`、`nix build` 和 `nix develop` 自动使用缓存，无需每次增加参数。首次切换的构建仍使用旧代次的 Nix 配置。公共 GHCR 包可匿名读取，无需给 laptop2 配置 registry token。服务使用动态用户、只读系统目录、独立临时目录和设备视图，并限制能力、命名空间与内核管理接口。
+切换到该配置后，`nixos-rebuild`、`nix build` 和 `nix develop` 自动使用缓存，无需每次增加参数。首次切换的构建仍使用旧代次的 Nix 配置。公共 GHCR 包可匿名读取，无需给 laptop2 配置 registry token。服务使用动态用户、只读系统目录、独立临时目录和设备视图，并限制能力、命名空间与内核管理接口。宿主、默认 bridge 和普通 Compose bridge 共用这一个代理，容器访问沿用现有 `localAccess` 策略；没有为缓存新增公网端口放行。
 
 ```sh
 systemctl status oranc
 journalctl -u oranc
 nix config show | rg 'substituters|trusted-public-keys|require-sigs'
-nix store info --store http://127.0.0.1:37515/ghcr.io/hellodword/nixos-config
+nix store info --store http://172.17.0.1:37515/ghcr.io/hellodword/nixos-config
 ```
 
-`site.cache` 仍可由其他主机指定仓库、公钥与端口。私有仓库可配置 `netrcFile` 指向 root 所有的 0600 运行时文件，内容形如 `machine 127.0.0.1 login USER password TOKEN`；凭据由 Nix 发送给本机代理，再用于上游认证。凭据内容不进入 Nix store。
+其他主机可通过 `site.cache` 指定仓库、公钥、`listenAddress` 和端口；监听默认值是 `127.0.0.1`。禁用项目代理时仍保留公共缓存。私有仓库可配置 `netrcFile` 指向 root 所有的 0600 运行时文件，`machine` 应与客户端使用的代理地址一致；凭据由 Nix 发送给代理，再用于上游认证。凭据内容不进入 Nix store。
+
+## 开发容器及其他 Nix 客户端
+
+在 laptop2 上运行的开发容器直接访问宿主 `172.17.0.1`。容器只安装客户端设置，服务由宿主 systemd 管理。在源码 checkout 中执行一次：
+
+```sh
+bash scripts/nix-cache.sh print
+bash scripts/nix-cache.sh install
+nix config show | rg 'substituters|trusted-public-keys|require-sigs'
+nix develop
+```
+
+`install` 将配置写入 `${XDG_CONFIG_HOME:-$HOME/.config}/nix/nixos-config-cache.conf`，并在同目录 `nix.conf` 中加入相对 `include`，保留原有设置。再次运行会更新托管片段，不重复添加 include。之后直接使用原生 Nix 命令。重建容器或更新缓存声明后重新执行安装命令，也可将它接入容器自身已有的初始化流程。
+
+其他机器若无法访问这台宿主，可用 `print --public-only` 查看、`install --public-only` 安装公共缓存。`print --ci` 输出使用回环代理的 CI 配置。脚本只依赖 Nix、Bash 和基本命令行工具，不要求先构建开发 shell。成功返回 0，用法错误返回 2，配置生成或文件写入失败返回非零；配置输出走 stdout，安装说明走 stderr。
+
+多用户 Nix 的下载和信任由 daemon 决定，仅修改普通用户配置不能授权新的缓存公钥。在非 NixOS 的 daemon 安装中，由管理员执行：
+
+```sh
+sudo bash scripts/nix-cache.sh install --system
+sudo systemctl restart nix-daemon.service
+```
+
+系统模式写入 `${NIX_CONF_DIR:-/etc/nix}`，由当前平台的服务管理器重启运行中的 daemon。NixOS 主机通过上述声明式配置和 `nixos-rebuild` 应用。脚本不增加 `trusted-users`，不关闭签名验证，也不全局自动接受任意 flake 配置。若设置了 `NIX_USER_CONF_FILES`，需确认它包含安装目标的 `nix.conf`；`NIX_CONFIG` 和命令行仍遵循 Nix 自身的优先级。
+
+直接打开 flake 时，Nix 可能要求首次确认仓库内的缓存设置。审阅 URL 和公钥后作出信任决定即可；持久配置已经为日常命令提供相同公共缓存，无需每次附加参数。配置层次与 daemon 行为见 [Nix 配置文档](https://nix.dev/manual/nix/2.34/command-ref/conf-file.html)。
 
 ## 发布范围
 
@@ -44,4 +80,4 @@ nix build --no-link .#oranc
 nix develop --command python3 -m tests.integration.cache
 ```
 
-集成使用临时 OCI registry 和合成密钥，执行与 CI 相同的发布筛选及直接 oranc 上传。场景包含复制受限内容的合成 bundle：保留该本地依赖，删除本次测试独有的公共输出，再从 registry 恢复并读取真实 NAR，验证内容和签名。真实 GHCR 权限、匿名访问与后续 CI 的缓存命中由托管环境验收。
+集成使用临时 OCI registry 和合成密钥，执行与 CI 相同的发布筛选及直接 oranc 上传。场景包含复制受限内容的合成 bundle：保留该本地依赖，删除本次测试独有的公共输出，通过安装器生成的持久配置运行普通 Nix 构建，从 registry 恢复并读取真实 NAR，验证内容和签名，同时检查重复安装保留既有设置。网络 VM 使用生产 oranc 服务，让宿主、默认 Docker bridge 与 Compose bridge 下载同一份真实 NAR，并验证网络与服务恢复后的访问。真实 GHCR 权限、匿名访问与后续 CI 的缓存命中由托管环境验收。

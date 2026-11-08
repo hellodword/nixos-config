@@ -35,6 +35,8 @@ Nix 将上游 revision 写入 `flake.lock`。`flake.nix` 继续声明跟踪来�
 
 VM 的 `.driver` 包含测试脚本、客体系统和运行依赖，构建它不会启动测试 VM。软件编译与依赖包自身的测试计入构建准备；VM 阶段使用已准备好的输入。`e2e` 继续要求完整生产系统、Home Manager 和全部检查结果。
 
+第一次构建之前，`scripts/ci.sh` 通过纯 Nix 配置汇总层加载 `flake.nix` 声明的公共缓存 URL 和公钥，因而 oranc 和开发 shell 自身也能使用这些缓存。随后启动本轮容器内的回环 oranc，项目缓存可读时加入同一组 Nix 设置。Actions 使用本轮代理，开发容器使用 laptop2 的宿主代理；两者共享仓库和签名身份。[缓存指南](cache.md)说明完整的声明与应用方式。
+
 成功后只提交 `flake.lock`。系统的 `configurationRevision` 包含 Git revision，因此提交后重新求值构建清单，按相同构建与 VM 阶段验证正式 revision；未改变 derivation 的 VM 结果直接复用。最终提交重新构建成功后，`gh` 创建 PR，并通过 Git refs API 的 `force=false` 将 `master` 快进到这个精确提交。GitHub 确认 PR 为 merged 后删除自动分支。这样主机取得的系统 revision 与验收并发布的 revision 相同。
 
 若验收期间 `master` 前进，非快进更新被拒绝，本轮 PR 关闭，自动分支删除；后续更新从新的基线重新验收。流程依赖允许直接快进的分支策略；启用新的保护规则时需重新设计合并方式，不能绕过规则。
@@ -54,7 +56,7 @@ VM 的 `.driver` 包含测试脚本、客体系统和运行依赖，构建它不
    ```
 
    私钥保留在 0600 的仓库外文件中并妥善备份；不写入 Git、Nix store、日志或构建产物。更换密钥时同步可信公钥与 GitHub secret，并考虑旧缓存的签名信任。
-4. 首轮发布后检查 `ghcr.io/hellodword/nixos-config` 的 package 设置：visibility 为 **Public**，关联本仓库，Actions 有写入权限。GHCR 首次创建的包默认 private；公开后 laptop2 和 CI 均可匿名读取，无需 PAT。首轮缓存尚不可访问时，CI 使用官方缓存和本地构建。
+4. 首轮发布后检查 `ghcr.io/hellodword/nixos-config` 的 package 设置：visibility 为 **Public**，关联本仓库，Actions 有写入权限。GHCR 首次创建的包默认 private；公开后 laptop2 和 CI 均可匿名读取，无需 PAT。首轮项目缓存尚不可访问时，CI 使用已配置的公共缓存和本地构建。
 5. 首轮成功后在 `master` 手动运行 `check`，确认相同哈希的 VM 结果和自定义构建产物从缓存恢复；同时查看资源记录和发布耗时。laptop2 切换到本配置后，后续 Nix 命令使用持久配置中的缓存，无需附加参数。
 
 首次 GitHub 执行负责验收真实 GITHUB_TOKEN 权限、包的匿名访问、runner 资源上限和完整 E2E；本地集成使用临时 registry 与合成密钥。

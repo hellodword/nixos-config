@@ -113,6 +113,9 @@ def connect(state):
     public = run(["wg", "pubkey"], data=(state / "gateway.key").read_text()).stdout.strip()
     commands = [
         ["lockdown-mode", "set", "on"], ["lan", "set", "block"],
+        # The peer is the local sing-box endpoint, also configured for 1280.
+        # An explicit MTU keeps automatic probing from disabling IPv6 below 1280.
+        ["tunnel", "set", "mtu", "1280"],
         ["relay", "set", "custom", "127.0.0.1", "51820", public, CLIENT4,
          *([] if only4 else [CLIENT6]), "--v4-gateway", GATE4,
          *([] if only4 else ["--v6-gateway", GATE6])],

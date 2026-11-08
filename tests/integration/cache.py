@@ -4,12 +4,14 @@
 from contextlib import contextmanager
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
 import tempfile
+from unittest.mock import patch
 
 from tests.support import ROOT
 from scripts.ci.cache import publish, select_paths
@@ -131,18 +133,36 @@ def main():
             run(["nix-store", "--delete", *roots])
             # The excluded bundle is already present, just as CI prepares it
             # before restoring a successful test result from the public cache.
-            previous_config = os.environ.get("NIX_CONFIG")
-            os.environ["NIX_CONFIG"] = (previous_config or "") + (
-                f"\nsubstituters = {uri}\nextra-substituters =\ntrusted-public-keys = {public}\n"
-                "extra-trusted-public-keys =\nrequire-sigs = true\n"
+            # Install the production client's persistent configuration against
+            # this registry and signing identity, without changing the caller's
+            # nix.conf. The installer and renderer are the ordinary entrypoints.
+            client = work / "client"
+            (client / "scripts").mkdir(parents=True)
+            (client / "nix").mkdir()
+            installer = client / "scripts/nix-cache.sh"
+            shutil.copyfile(ROOT / "scripts/nix-cache.sh", installer)
+            project = {"listenAddress": "127.0.0.1", "port": proxy_port, "publicKey": public,
+                       "registry": f"127.0.0.1:{registry_port}", "repository": "synthetic/cache-test"}
+            (client / "nix/cache-config.nix").write_text(
+                f"let caches = import {ROOT / 'nix/cache-config.nix'}; in caches // {{\n"
+                f"  local = caches.withProject (builtins.fromJSON {json.dumps(json.dumps(project))});\n}}\n"
             )
-            try:
+            config_home = work / "config"
+            nix_conf = config_home / "nix/nix.conf"
+            nix_conf.parent.mkdir(parents=True)
+            nix_conf.write_text("# Existing client settings\nconnect-timeout = 7\n")
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config_home), "NIX_USER_CONF_FILES": str(nix_conf)}):
+                run(["bash", str(installer), "install"])
+                run(["bash", str(installer), "install"])
+                lines = nix_conf.read_text().splitlines()
+                assert "# Existing client settings" in lines
+                assert lines.count("include nixos-config-cache.conf") == 1
+                settings = json.loads(run(["nix", "config", "show", "--json"]))
+                assert settings["connect-timeout"]["value"] == 7
+                assert uri in settings["substituters"]["value"]
+                assert public in settings["trusted-public-keys"]["value"]
+                assert settings["require-sigs"]["value"]
                 run_build([test], state=state, phase="vm-fixture", pass_name="restored")
-            finally:
-                if previous_config is None:
-                    del os.environ["NIX_CONFIG"]
-                else:
-                    os.environ["NIX_CONFIG"] = previous_config
             restored = [event for event in read_records(state / "timings.jsonl") if event.get("vm")][-1]
             assert restored["source"] == "substituted" and restored["success"]
             assert restored["buildSeconds"] is None and restored["restoreSeconds"] > 0
@@ -150,7 +170,8 @@ def main():
             assert all(Path(path).read_bytes() == content for path, content in expected.items())
         print(render(state))
     print(json.dumps({"result": "passed", "scenarios": ["redistribution selection including embedded payloads",
-          "direct signed OCI publication", "signature and content verification", "restore with prepared private dependency",
+          "direct signed OCI publication", "signature and content verification", "persistent native Nix client configuration",
+          "restore with prepared private dependency",
           "dependency preparation, fresh execution, local reuse and cache restore timing"]}))
 
 

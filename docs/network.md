@@ -155,6 +155,8 @@ sudo tailscale set --exit-node=laptop2 --accept-dns=true
 
 启用 `localAccess` 时，默认和自建 bridge 的容器可通过宿主网关访问所有监听的 TCP/UDP 服务，例如 `http://172.17.0.1:8765/`；网关可用 `docker network inspect` 查看。服务需监听网关地址或通配地址。公网访问 Docker 发布端口遵循上方的统一声明；通知专用网络继续使用独立限制。
 
+laptop2 将 Docker 默认网桥固定为 `172.17.0.1/16`，宿主的 oranc 缓存代理监听 `172.17.0.1:37515`。宿主、默认 bridge 和普通自建 bridge 共用这个地址，容器通过一次性 Nix 客户端配置接入。代理启动排在 Docker 之后，沿用现有的服务加固和 `localAccess`，没有额外的全局端口放行。具体设置见[缓存指南](cache.md)。
+
 `site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。启用 IPv6 时，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
 
 路由表 `64500`、规则优先级 `94` 与 `inet site_containers` 防火墙表由同步服务管理，均为运行时状态；Docker 重启后重新读取网络清单。DNS 模块管理 `inet site_dns`，本地访问模块管理 `inet site_local_access`；同步服务更新其中的普通 bridge 集合。带 `org.nixos-config.service` 标签的通知专用网络使用通知模块自己的限制和路由。
@@ -388,6 +390,8 @@ ECS 默认 IPv4/IPv6 `/0`，客户端自带 ECS 被拒绝；有明确 CDN 定位
 物理出口由 main 默认路由及真实网卡选择，接口或地址变化时先停止代理再更新绑定。Mullvad 断开或状态读取失败时停止代理。受排除的基础设施 sing-box 使用专用 cgroup 和受限能力，普通应用保持在保护路径内。这些出口绑定及故障处理由 Lockdown 模块管理。
 
 Mullvad DNS 使用 `default` 模式，从本地自定义隧道取得网关地址。锁定版本会将 `custom` 模式中的私网 DNS 归入隧道外，故应保留这里的模式。路由优先级和包补丁的原因见[架构说明](architecture.md)。
+
+本地 Mullvad 隧道和 sing-box 对端使用相同的 MTU 1280。连接入口在每次启动、重连时通过 `mullvad tunnel set mtu 1280` 显式应用，使这条本地链路保持 IPv6 所需的最小 MTU；Mullvad 对显式 MTU 不运行自动探测调整。对端位于回环地址，这项设置不改变外部代理协议的配置。网络 VM 通过重连后的宿主与容器双栈请求验证完整通信路径。
 
 本地 peer 密钥及 Mullvad 设置持久化于 `/var/lib/site-network`，规则生成物位于 `/run/site-network-policy`。恢复时使用持久源文件和官方 CLI；升级 Mullvad 同时复核持久格式、路由及启动/断开场景。
 
