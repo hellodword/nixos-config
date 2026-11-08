@@ -133,7 +133,7 @@ Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触
 | 界面、无衬线正文 | Noto Sans → Noto Sans CJK SC |
 | 衬线正文 | Noto Serif → Noto Serif CJK SC |
 | Kitty | JetBrainsMono Nerd Font，12 pt；中文按覆盖范围回退 |
-| 编辑器、通用等宽正文 | Sarasa Term SC |
+| 通用等宽正文 | Sarasa Term SC |
 | Rofi | Noto Sans → Noto Sans CJK SC，16 pt |
 | Sway/i3 窗口标题 | JetBrainsMono Nerd Font → Noto Sans CJK SC，10 pt |
 | Waybar | Noto Sans → Noto Sans CJK SC → Symbols Nerd Font，13 px |
@@ -141,7 +141,9 @@ Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触
 | Nerd 图标 | Symbols Nerd Font；等宽场景使用 Mono 版本 |
 | 生僻字 | Jigmo / Jigmo2 / Jigmo3 → Unifont |
 
-简体中文字形在英文界面下同样优先。正文优先使用文字字体，emoji、图标和生僻字按覆盖范围回退。GTK、Plasma 和通知读取系统字体默认值；窗口标题与状态栏使用上表的尺寸。Kitty 使用 JetBrains Mono 的等宽字形和编程连字，连字保持终端字符网格；VS Code 和通用 monospace 使用 Sarasa Term SC。浏览器通过 Fontconfig 使用通用字体。已有个人设置继续优先。
+简体中文字形在英文界面下同样优先。正文优先使用文字字体，emoji、图标和生僻字按覆盖范围回退。GTK、Plasma 和通知读取系统字体默认值；窗口标题与状态栏使用上表的尺寸。Kitty 使用 JetBrains Mono 的等宽字形和编程连字，连字保持终端字符网格。浏览器通过 Fontconfig 使用通用字体。已有个人设置继续优先。
+
+VS Code 编辑器和集成终端共用用户级字体设置，中文回退到 Sarasa Term SC。临时比较字体或字号时，在命令面板打开 `Preferences: Open Workspace Settings (JSON)`；确认后修改 [用户设置](../data/vscode.json)，并移除临时的工作区覆盖，让其他项目也使用这一偏好。项目自身的工作区设置优先于用户设置。
 
 Emoji 遵循 Unicode 的文字与 emoji 表示：`☺`、`❤` 等文字形式可以是黑白，带 FE0F 的 `☺️`、`❤️` 以及默认 emoji 使用 Noto Color Emoji。字符位于 BMP 还是补充平面、UTF-8 编码占三个还是四个字节，都不能单独决定其显示样式；肤色、ZWJ、国旗和键帽还包含多个码点。Kitty 保留自动字体回退，不把整段符号范围强制映射到 emoji 字体。
 
@@ -194,14 +196,17 @@ Shell 便利入口见 [home/cli.nix](../home/cli.nix)。其中 `nixos-rebuild-bo
 
 | 应用 | 可用的个人文件范围 |
 | --- | --- |
-| Firefox、Chrome | 各自配置、缓存和下载目录；浏览器保持自身沙箱 |
+| Firefox | 自身配置、缓存和下载目录；浏览器保持自身沙箱 |
+| Chrome | 可打开工作目录中的 PDF，并通过文件选择器上传文档和图片；浏览器保持自身沙箱 |
 | Bitwarden Desktop | 客户端配置；通过受限 D-Bus 访问桌面密钥环、输入法和文件选择器 |
 | Bitwarden CLI | CLI 配置和下载目录，导出文件可写到下载目录 |
-| mpv | 播放器配置及预置 profile 中的媒体目录 |
-| feh | 图片、文档、下载目录和 feh 配置 |
+| mpv | 可播放工作目录、共享目录和个人媒体目录中的文件；截图保存到图片目录 |
+| feh | 可查看工作目录、共享目录及个人图片，也可打开 `~/.codex/generated_images` 中的生成图片 |
 | SQLite Browser | 应用配置和文档目录 |
 | Anytype | 自身配置与文档、下载目录 |
 | Remmina | 自身配置、SSH 与下载目录；SSH 用于远程连接认证 |
+
+Chrome、feh 和 mpv 都能读取 `~/dev`，在沙箱内该目录为只读；需要保存修改时，可另存到 `~/share` 或下载目录。feh 对生成图片目录同样只读。`~/share` 可用于临时交接其他位置的文件。命令行接受白名单内的相对路径和绝对路径，含空格的路径用引号包裹；桌面入口使用同一访问范围。
 
 `/run/current-system` 保留为 NixOS 共享资源入口，供 GTK 读取输入法模块缓存、主题和其他声明式资源。持久化目录通过正常的 home 路径使用，直接访问 `persistRoot` 受到限制。图形应用按需获得输入法、通知、文件选择器及密钥环的 D-Bus 通信权限。VS Code Dev Containers 和 Kitty 使用常规启动方式，保留开发环境访问能力。
 

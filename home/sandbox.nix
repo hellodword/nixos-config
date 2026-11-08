@@ -72,7 +72,22 @@ in
             "google-chrome"
             "google-chrome-stable"
           ];
-          profile = profile "google-chrome" (desktopBus + keyring);
+          profile = profile "google-chrome" (
+            desktopBus
+            + keyring
+            + ''
+
+              noblacklist ''${DOCUMENTS}
+              noblacklist ''${PICTURES}
+              mkdir ''${HOME}/dev
+              mkdir ''${HOME}/share
+              whitelist ''${HOME}/dev
+              read-only ''${HOME}/dev
+              whitelist ''${HOME}/share
+              whitelist ''${DOCUMENTS}
+              whitelist ''${PICTURES}
+            ''
+          );
         })
         (wrap {
           package = pkgs.bitwarden-desktop;
@@ -92,12 +107,29 @@ in
             "umpv"
             "mpv_identify.sh"
           ];
-          profile = profile "mpv" desktopBus;
+          profile = profile "mpv" (
+            desktopBus
+            + ''
+              mkdir ''${HOME}/dev
+              mkdir ''${HOME}/share
+              whitelist ''${HOME}/dev
+              read-only ''${HOME}/dev
+              whitelist ''${HOME}/share
+            ''
+          );
         })
         (wrap {
           package = pkgs.feh;
           binaries = [ "feh" ];
           profile = profile "feh" ''
+            mkdir ''${HOME}/dev
+            mkdir ''${HOME}/share
+            mkdir ''${HOME}/.codex/generated_images
+            whitelist ''${HOME}/dev
+            read-only ''${HOME}/dev
+            whitelist ''${HOME}/share
+            whitelist ''${HOME}/.codex/generated_images
+            read-only ''${HOME}/.codex/generated_images
             whitelist ''${HOME}/.config/feh
             whitelist ''${PICTURES}
             whitelist ''${DOWNLOADS}

@@ -9,7 +9,6 @@
 let
   browser = builtins.fromJSON (builtins.readFile ../data/firefox.json);
   code = builtins.fromJSON (builtins.readFile ../data/vscode.json);
-  mono = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.monospace;
   prefs = {
     "keyword.enabled" = true;
     "browser.search.suggest.enabled" = false;
@@ -102,10 +101,7 @@ in
           jnoortheen.nix-ide
           ms-vscode-remote.remote-containers
         ];
-        userSettings = code.userSettings // {
-          "editor.fontFamily" = "'${mono}', monospace";
-          "terminal.integrated.fontFamily" = mono;
-        };
+        userSettings = code.userSettings;
         keybindings = code.keybindings;
       };
     };
@@ -114,6 +110,7 @@ in
       config = {
         hwdec = "auto-safe";
         keep-open = true;
+        screenshot-directory = config.xdg.userDirs.pictures;
       };
     };
     xdg.mimeApps = {
