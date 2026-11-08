@@ -403,14 +403,3 @@ jobs:
             ${{ runner.temp }}/nixos-ci/oom-*.log
             ${{ runner.temp }}/nixos-ci/monitor.log
             ${{ runner.temp }}/nixos-ci/oranc.log
-      - name: Release runner storage
-        if: always()
-        run: |
-          docker rm --force nixos-ci || true
-          docker volume rm nixos-ci-store || true
-          swap="$RUNNER_TEMP/nixos-ci/swap"
-          if [[ -f $swap ]]; then
-            if swapon --show=NAME --noheadings --raw | grep -Fxq "$swap"; then sudo swapoff "$swap"; fi
-            sudo rm -- "$swap"
-          fi
-          df -h / /mnt
