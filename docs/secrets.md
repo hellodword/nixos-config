@@ -39,7 +39,7 @@
 gpg --list-keys --keyid-format long --with-subkey-fingerprint --with-keygrip
 ```
 
-SSH 选择 `[A]` 子密钥，Git 签名选择 `[S]` 子密钥。系统从证书推导 keygrip、SSH 公钥和文件名 `/etc/ssh/gpg.<用途>.<16 位长 Key ID>.pub`。`ssh.hosts` 中的 `IdentityFile` 使用这个完整路径，格式与普通 OpenSSH 配置相同；更换子密钥时，同步修改声明指纹与对应路径。示例见 `data/secrets/identity.example.yaml`。
+SSH 选择 `[A]` 子密钥，Git 签名选择 `[S]` 子密钥。系统从证书推导 keygrip、SSH 公钥和文件名 `/etc/ssh/gpg.<用途>.<16 位长 Key ID>.pub`。`ssh.hosts` 中的 `IdentityFile` 使用这个完整路径，格式与普通 OpenSSH 配置相同；更换子密钥时，同步修改声明指纹与对应路径。填写方式见[身份示例](../data/secrets/identity.example.yaml)。
 
 解密后，`site-identity.service` 在隔离公钥环中生成一整组文件，再切换 `/run/site-identity/<用户名>/current`；生成失败时保留上一组可用文件。`current/manifest.json` 给出每个用途的完整指纹、keygrip 和公钥文件名。
 
@@ -85,20 +85,18 @@ git verify-commit HEAD
 
 ## 声明式 Wi-Fi
 
-SSID 和密码都只需写入 `system.sops.yaml` 的 `wifi/environment`。公开的 Nix 声明通过变量名引用它们。`home`、`work` 是 NetworkManager 中显示的连接别名，可以自行改名，与真实 SSID 无关。
+SSID 和密码写入 `system.sops.yaml` 的 `wifi/environment`，公开的 Nix 声明通过变量名引用它们。以下 `home` 是 NetworkManager 中显示的连接别名，可以自行改名，与真实 SSID 无关。
 
-先按主机 `secrets.nix` 中的连接 profile 变量名填写密文。下面的 `WIFI_HOME_*`、`WIFI_WORK_*` 是两组示例变量；完整例子也在 `data/secrets/system.example.yaml` 中：
+先按主机 `secrets.nix` 中的连接 profile 变量名填写密文：
 
 ```yaml
 wifi:
   environment: |
     WIFI_HOME_SSID='示例家庭 Wi-Fi'
     WIFI_HOME_PASSWORD='REPLACE_WITH_HOME_PASSWORD'
-    WIFI_WORK_SSID='示例办公 Wi-Fi'
-    WIFI_WORK_PASSWORD='REPLACE_WITH_WORK_PASSWORD'
 ```
 
-这是 systemd `EnvironmentFile` 格式，单引号内的空格、`$` 和双引号按原样保留。值含单引号时可用双引号包围，并将值内的双引号和反斜杠分别写为 `\"`、`\\`。各变量值保持单行。
+这是 [systemd EnvironmentFile](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#EnvironmentFile=) 格式，单引号内的空格、`$` 和双引号按原样保留。值含单引号时可用双引号包围，并将值内的双引号和反斜杠分别写为 `\"`、`\\`。各变量值保持单行。
 
 对应的 Nix 结构如下，可据此编辑现有 `profiles` 属性集。该文件已有的 `environmentFiles` 绑定会自动提供 `/run/secrets/wifi-environment`：
 
@@ -119,26 +117,11 @@ networking.networkmanager.ensureProfiles.profiles = {
     ipv4.method = "auto";
     ipv6.method = "auto";
   };
-  work = {
-    connection = {
-      id = "work";
-      uuid = "db81c3e7-b1be-4ff2-a3f2-2aa8c93c9d87";
-      type = "wifi";
-      autoconnect = true;
-    };
-    wifi.ssid = "$WIFI_WORK_SSID";
-    wifi-security = {
-      key-mgmt = "wpa-psk";
-      psk = "$WIFI_WORK_PASSWORD";
-    };
-    ipv4.method = "auto";
-    ipv6.method = "auto";
-  };
 };
 ```
 
-这里使用 `"$WIFI_HOME_SSID"`，保留 `$变量名` 给运行时替换。示例使用共享密码（`wpa-psk`）连接。新增第三个网络时，在密文中增加一对变量，并在 `profiles` 中增加一个独立 UUID 的连接；只填写环境变量不会自动创建 profile。
+这里使用 `"$WIFI_HOME_SSID"`，保留 `$变量名` 给运行时替换。示例使用共享密码（`wpa-psk`）连接。添加其他网络时，在密文中增加一对变量，并在 `profiles` 中增加一个独立 UUID 的连接；只填写环境变量不会自动创建 profile。
 
-应用配置时，SOPS 提供环境文件，`NetworkManager-ensure-profiles.service` 将变量替换为实际值，生成 `/run/NetworkManager/system-connections/home.nmconnection` 和 `work.nmconnection`，权限为 root 所有、0600，然后通知 NetworkManager 重新加载。凭据更新会重启这个生成服务。Nix store 中的连接模板只包含变量引用。
+应用配置时，SOPS 提供环境文件，`NetworkManager-ensure-profiles.service` 将变量替换为实际值，生成 `/run/NetworkManager/system-connections/home.nmconnection`，权限为 root 所有、0600，然后通知 NetworkManager 重新加载。凭据更新会重启这个生成服务。Nix store 中的连接模板只包含变量引用。
 
-运行 `nmcli connection show` 查看已加载连接，`nmcli connection up home` 连接对应网络。声明和加密凭据变化在重新部署配置后生效；GUI、`nmcli` / `nmtui` 创建的额外连接即时保存到持久目录，日常使用无需 rebuild。
+运行 `nmcli connection show` 查看已加载连接，`nmcli connection up home` 连接对应网络。声明和加密凭据变化在重新部署配置后生效；日常使用 GUI 或命令行维护连接，见[本机 Wi-Fi](local-state.md#wi-fi)。

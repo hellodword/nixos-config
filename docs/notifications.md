@@ -31,7 +31,7 @@ HTTP 入口为 `/run/site-notifications/send.sock`，只允许 `site-notificatio
 {"title":"标题","body":"内容","tag":"bark","format":"text","template":{"group":"工作","sound":"glass"}}
 ```
 
-凭据和目的地在固定配置中，调用方只提供正文、标题、已配置的 tag 和 group/sound。选择多个通道时逐个投递到全部选中通道，某个通道失败不会跳过后面的通道，也不把第一个成功当作全部完成。每个通道最多尝试三次，间隔 1、2 秒，每次请求超时 30 秒；没有持久发送队列。响应丢失时重试可能产生重复通知。
+凭据和目的地在固定配置中，调用方只提供正文、标题、已配置的 tag 和 group/sound。选择多个通道时逐个投递，某个通道失败不影响其余通道。客户端在超时或失败后有限重试，没有持久发送队列；响应丢失时重试可能产生重复通知。
 
 Restic 的 backup、check、restore-test、maintenance 各自记录成功、失败或中断结果；因时间窗口、供电、成功间隔或本地锁而跳过时不发送通知。消息包含主机、目标别名、操作和结果。
 
@@ -61,21 +61,19 @@ Bark 自带的 APNs 签名实现由上游包提供；个人 device token 只挂�
 
 ## 隔离与维护
 
-两个容器使用锁定 nixpkgs 的 gVisor netstack，非 root UID、只读根文件系统、空 capabilities、no-new-privileges 和有限 tmpfs。API 初始限额 512 MiB，Bark 256 MiB，各 1 CPU。API 用一个 Gunicorn worker；初始化和插件导入同样发生在容器内。
+两个容器在 gVisor 中以非 root 用户运行，文件写入、内存和 CPU 均受限。调整资源或挂载范围时修改[通知模块](../modules/services/notifications.nix)。
 
 HAProxy 只转发允许的官方域名和端口，不解密 TLS。它把受限容器的出站连接变成宿主普通连接，让既有 DNS、分流和 Lockdown 统一决定出口；容器本身无需获得任意互联网连接能力。
 
 内部 Docker bridge 默认使用 `172.31.255.0/29`。如与现有网络重叠，在主机设置 `site.notifications.networkPrefix`。仅允许 API 到 Bark 的固定端口，以及各自到宿主 TLS 转发入口；官方地址使用静态 hosts，容器 DNS 不向外解析。宿主普通进程只能通过发送 socket 访问 API。官方连接由 HAProxy 新建，适用宿主的 DNS、sing-box 与 Lockdown；本地桥接通信使用明确的路由和连接标记。
 
-Docker 每周执行原生自动 prune：清理停止的容器、未使用网络、悬空镜像和构建缓存，卷不在默认清理范围。带有 `org.nixos-config.service` 标签的服务资源由配置管理，自动 prune 保留它们；通知网络即使暂时没有容器连接，也继续存在。通知容器与 HAProxy 随网络服务停止，并随 Docker 重启重新建立服务关系。`live-restore` 在兼容的 daemon 重启期间尽量保持普通容器运行，系统关机和应用服务明确停止仍会结束容器。默认 `local` 日志驱动提供按大小轮转的容器 stdout/stderr 日志，使用 `docker logs` 查看；新默认值用于新建容器。
+通知容器与 HAProxy 随网络服务停止，并随 Docker 重启恢复。通知网络由配置管理，即使暂时没有容器连接也会保留。通用的清理、日志轮转和 daemon 重启行为见 [Docker 维护](maintenance.md#docker-维护)。
 
-镜像由 Nix 构建，内置最终 `security.pki.caBundle`；证书包变化更新镜像和对应服务。Apprise 与 Apprise API 的版本、发布 tag 和源码 hash 声明在 [nix/notifications.nix](../nix/notifications.nix)，通过 `fetchFromGitHub` 获取并作为两个 Python 叶子包构建，其余依赖使用 nixpkgs binary cache。它们不参与每日 flake 输入更新。升级时在包定义中选择兼容的版本并更新源码 hash，再验证通知行为：
+证书包变化会更新通知镜像和对应服务。Apprise 与 Apprise API 单独维护，不参与每日 flake 输入更新；升级时修改 [nix/notifications.nix](../nix/notifications.nix) 中的版本和源码 hash，再验证通知行为：
 
 ```sh
 nix build --no-link .#checks.x86_64-linux.vm-backup
 ```
-
-[上游 API 的环境变量](https://appriseit.com/api/reference/environment/)定义配置锁、身份验证、服务集合及附件限制。
 
 桌面用户属于 rootful Docker 管理组，具有等同 root 的管理能力，可以读取容器凭据。容器权限限制针对其中的应用进程。
 

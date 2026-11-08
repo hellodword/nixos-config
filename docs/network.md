@@ -142,7 +142,8 @@ Tailnet 地址范围为 `100.64.0.0/10` 和 `fd7a:115c:a1e0::/48`。规则只为
 ```sh
 tailscale status
 tailscale netcheck
-tailscale ping <peer>
+tailnet_peer=peer-name  # 换成对端的设备名或 Tailnet IP
+tailscale ping "$tailnet_peer"
 journalctl -u tailscaled -u site-tailscale-routes -b
 
 # 在另一个客户端选择已获管理端批准的出口节点
@@ -156,7 +157,7 @@ sudo tailscale set --exit-node="$exit_node" --accept-dns=true
 
 启用 `localAccess` 时，默认和自建 bridge 的容器可通过宿主网关访问所有监听的 TCP/UDP 服务，例如 `http://172.17.0.1:8765/`；网关可用 `docker network inspect` 查看。服务需监听网关地址或通配地址。公网访问 Docker 发布端口遵循上方的统一声明；通知专用网络继续使用独立限制。
 
-[laptop2 的主机配置](../hosts/laptop2/default.nix)将 Docker 默认网桥固定为 `172.17.0.1/16`，宿主的 oranc 缓存代理监听 `172.17.0.1:37515`。宿主、默认 bridge 和普通自建 bridge 共用这个地址，容器通过一次性 Nix 客户端配置接入。代理启动排在 Docker 之后，沿用现有的服务加固和 `localAccess`，没有额外的全局端口放行。具体设置见[缓存指南](cache.md)。
+宿主的构建缓存代理也可通过网桥供容器使用，监听和客户端配置见[缓存指南](cache.md#nixos-主机与容器)。
 
 `site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。启用 IPv6 时，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
 
@@ -359,16 +360,16 @@ sudo mullvad-exclude setpriv --reuid="$(id -un)" --regid="$(id -gn)" --init-grou
 
 ## 规则来源与更新
 
-laptop 的域名与 IP 数据来自 [lyc8503/sing-box-rules](https://github.com/lyc8503/sing-box-rules) 的 `rule-set-geosite` 和 `rule-set-geoip` 分支。它们是 `flake = false` 的 inputs，提交与完整内容的 NAR 哈希由 `flake.lock` 保存。运行配置只引用本 profile 使用的三个规则文件。
+laptop 的域名与 IP 数据来自 [lyc8503/sing-box-rules](https://github.com/lyc8503/sing-box-rules)，规则选择由 [laptop 网络配置](../profiles/laptop/network.nix)决定。更新对应输入并检查生成结果：
 
 ```sh
 nix flake update sing-box-geosite sing-box-geoip
 nix build --no-link .#checks.x86_64-linux.network .#checks.x86_64-linux.configuration
-host=laptop2
+host=laptop2  # 换成要构建的主机
 nix build --no-link ".#nixosConfigurations.$host.config.site.network.generatedPolicy"
 ```
 
-更新锁文件并构建系统后，新默认列表进入系统代次。本机片段继续按同名替换和文件顺序生效。主题及工具也分别通过 `nix flake update catppuccin-fcitx5`、`nix flake update vm-test-tools`、`nix flake update oranc` 更新；这些输入均由项目消费锁定的源码。
+部署后，新默认列表进入系统代次；本机片段继续按同名替换和文件顺序生效。其他输入的升级见[更新与验证](maintenance.md#更新与验证)。
 
 ## DNS 响应与缓存
 
@@ -391,9 +392,9 @@ ECS 默认 IPv4/IPv6 `/0`，客户端自带 ECS 被拒绝；有明确 CDN 定位
 
 物理出口由 main 默认路由及真实网卡选择，接口或地址变化时先停止代理再更新绑定。Mullvad 断开或状态读取失败时停止代理。受排除的基础设施 sing-box 使用专用 cgroup 和受限能力，普通应用保持在保护路径内。这些出口绑定及故障处理由 Lockdown 模块管理。
 
-Mullvad DNS 使用 `default` 模式，从本地自定义隧道取得网关地址。锁定版本会将 `custom` 模式中的私网 DNS 归入隧道外，故应保留这里的模式。路由优先级和包补丁的原因见[架构说明](architecture.md)。
+Mullvad DNS 使用 `default` 模式，从本地自定义隧道取得网关地址。锁定版本会将 `custom` 模式中的私网 DNS 归入隧道外，故应保留这里的模式。[路由优先级定制](../nix/patches/mullvad-routing-priority.patch)使宿主显式声明的路由规则先于 Mullvad 的接管规则生效；升级 Mullvad 时需要复核这项关系。
 
-本地 Mullvad 隧道和 sing-box 对端使用相同的 MTU 1280。连接入口在每次启动、重连时通过 `mullvad tunnel set mtu 1280` 显式应用，使这条本地链路保持 IPv6 所需的最小 MTU；Mullvad 对显式 MTU 不运行自动探测调整。对端位于回环地址，这项设置不改变外部代理协议的配置。网络 VM 通过重连后的宿主与容器双栈请求验证完整通信路径。
+本地 Mullvad 隧道和 sing-box 对端使用相同的 MTU 1280。连接入口在每次启动、重连时通过 `mullvad tunnel set mtu 1280` 显式应用，使这条本地链路保持 IPv6 所需的最小 MTU；Mullvad 对显式 MTU 不运行自动探测调整。对端位于回环地址，这项设置不改变外部代理协议的配置。
 
 本地 peer 密钥及 Mullvad 设置持久化于 `/var/lib/site-network`，规则生成物位于 `/run/site-network-policy`。恢复时使用持久源文件和官方 CLI；升级 Mullvad 同时复核持久格式、路由及启动/断开场景。
 
@@ -446,6 +447,6 @@ sudo sh -c "printf '%s\n' 'module wireguard -p' > /proc/dynamic_debug/control"
 | 系统默认 journal：备份、登录、内核及其他服务 | 512 MiB | 32 MiB | 14 天 |
 | `network` journal：DNS、竞速分支、sing-box | 4 GiB，启用压缩 | 64 MiB | 7 天 |
 
-高频网络正文的轮转独立于备份和系统历史。服务管理器的生命周期消息仍可能出现在默认 journal；查询跨命名空间的服务时使用 `--namespace='*'`。历史上写入默认 journal 的网络记录仍按原预算保留，切换命名空间不迁移旧日志。
+高频网络正文的轮转独立于备份和系统历史。服务管理器的生命周期消息仍可能出现在默认 journal；查询跨命名空间的服务时使用 `--namespace='*'`。
 
 Mullvad 文件位于持久化的 `/var/log/mullvad-vpn`；每五分钟检查，每日或文件超过 16 MiB 时轮转，保留四份压缩归档，轮转时清理超过七天的归档。文件可能在检查间隔内超过阈值；`copytruncate` 保持打开的日志描述符和隧道运行，复制与截断之间存在短暂丢失窗口。Mullvad journal 与内核记录仍在默认命名空间。日志用于本机排障，Restic 精确路径策略备份规则与节点配置。

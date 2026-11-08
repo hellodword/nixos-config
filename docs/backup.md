@@ -2,7 +2,7 @@
 
 每个备份目标使用独立的 Restic 仓库，分别读取源数据、加密上传并保存状态。一个目标故障时，其他目标独立执行。日常维护依据每个仓库的成功时间和恢复结果。
 
-数据范围由 `profiles/laptop/backup.nix` 选择，实际目标与频率由 `hosts/<主机>/` 声明，服务调度在 `modules/services/backup.nix`，运行逻辑在 `scripts/backup/`。每个仓库独立完成备份、检查、恢复通路验证与空间回收。初始化和独立灾难恢复使用 Restic 原生命令。
+调整备份资料范围时修改 [laptop 的备份策略](../profiles/laptop/backup.nix)，目标仓库与频率在各[主机配置](../hosts)中选择。初始化和独立灾难恢复使用 Restic 原生命令。
 
 ## 路径范围与成本
 
@@ -92,7 +92,7 @@ site.backup.targets.b2 = {
 
 账户额度、存储类别和实际仓库规模按主机记录，见 [laptop2 的预算记录](../hosts/laptop2/README.md#备份账户与预算)。更换账户后需重新核对控制台，不能直接沿用另一台机器的额度。
 
-B2 S3 的 GET/HEAD 属 B、LIST 和桶位置查询属 C；R2 的 LIST/PUT 属 A、GET/HEAD 属 B，DELETE 免费。以下为锁定 Restic 0.19.1 对合成 S3 仓库的请求观测：500 个目录、两个快照、25 个变更文件，无分页、重试和分段上传。它用于判断操作量级，不能当成实际仓库的固定单价。[B2 分类](https://www.backblaze.com/cloud-storage/transaction-pricing)、[R2 分类](https://developers.cloudflare.com/r2/pricing/#class-a-operations)。
+B2 S3 的 GET/HEAD 属 B、LIST 和桶位置查询属 C；R2 的 LIST/PUT 属 A、GET/HEAD 属 B，DELETE 免费。以下是使用 Restic 0.19.1 对合成 S3 仓库的一次请求观测：500 个目录、两个快照、25 个变更文件，无分页、重试和分段上传。它用于判断操作量级，不能当成实际仓库的固定单价。[B2 分类](https://www.backblaze.com/cloud-storage/transaction-pricing)、[R2 分类](https://developers.cloudflare.com/r2/pricing/#class-a-operations)。
 
 | 操作 | B2 B / C | R2 A / B |
 | --- | --- | --- |
@@ -125,12 +125,14 @@ B2 S3 的 GET/HEAD 属 B、LIST 和桶位置查询属 C；R2 的 LIST/PUT 属 A�
 ```sh
 backup-status
 systemctl list-timers 'site-backup-*'
-sudo systemctl start site-backup-r2-automatic
-sudo systemctl start site-backup-r2-backup
-sudo systemctl start site-backup-r2-check
-sudo systemctl start site-backup-r2-restore-test
-sudo systemctl start site-backup-r2-maintenance
+
+# 按需要选择一个仓库和操作
+backup_target=r2
+backup_operation=backup
+sudo systemctl start "site-backup-${backup_target}-${backup_operation}.service"
 ```
+
+`backup_target` 使用主机已配置的目标名称；`backup_operation` 可选 `automatic`、`backup`、`check`、`restore-test` 或 `maintenance`。`automatic` 按调度策略决定是否执行，其余入口执行指定操作，无需把所有操作依次运行。
 
 `backup-status` 按当前仓库、源路径和数据策略核对成功记录，分别公开 `backup`、`check`、`canaryRestore` 和 `maintenance` 的年龄、状态与首次截止时间，并显示当前阶段及最近的成功、失败、中断或跳过结果。`attempts` 保留实际尝试，`automatic` 给出推迟原因与 `nextEligibleAt`（Unix 秒）；这个时间还需要供电、当前窗口备份和互斥条件满足，不承诺届时必定开始。失败包含 Restic 退出码与有限长度、隐去地址和凭据的摘要。启动时和之后每小时更新本地状态，不访问远端仓库。`check` 还显示本次校验的分区及总分区数；一次分区校验或 canary 恢复不代表全部资料已验证。
 
@@ -144,9 +146,7 @@ sudo systemctl start site-backup-r2-maintenance
 
 每个仓库和数据范围首次出现时，持久记录观察时间。默认备份等待期为 36 小时，检查与 canary 恢复为 14 天，空间回收为 45 天，各仓库可覆盖；重启不会重新计时。更换仓库、源路径或数据策略后单独计算，历史记录不再充当当前结果。操作实际失败立即显示 `failed`，等待期不会掩盖失败。窗口外跳过保持原有健康状态。
 
-各操作的通知投递结果与待发送状态单独列出，并标明是否属于当前数据范围。每仓库、每类操作仅持久保留最新待发送结果，由独立服务投递和重试；备份停止流程只写本地结果。配置与查看方式见[本地通知](notifications.md)。桌面提示具体仓库、操作及失败、超期或未知状态；首次等待中的仓库不报警。历史投递失败与当前备份健康状态分别呈现。
-
-失败通知包含目标、操作、阶段、Restic 退出码和错误摘要。投递频率与逐事件的渠道确认机制保持独立；了解具体失败仍需查看 root-only 日志。网络详细日志使用单独的 `network` journal，备份与系统 journal 的保留预算见[网络日志](network.md#日志与保留)。
+通知投递与备份结果分别记录，通知失败不会改变备份的成功记录。桌面提示具体仓库、操作及失败、超期或未知状态；首次等待中的仓库不报警。失败通知包含阶段、Restic 退出码和错误摘要，详细原因需查看受限日志。投递、补发和通道设置见[本地通知](notifications.md)，备份与系统 journal 的保留预算见[网络日志](network.md#日志与保留)。
 
 详细记录与最近 Restic 输出位于 root-only 的 `/var/lib/site-backup-<target>/`。`last-command.log` 按 4 MiB 轮转并保留一份旧日志；失败时先查看它和相应服务的 journal。Restic exit 3 表示有文件未读到，也按失败处理。`automatic` 入口遵守时间窗口；上面的手动操作入口可按需执行，维护仍要求接电。需跳过成功间隔时，在相同运行时凭据环境下使用 runner 的 `--force`；本地锁和自动窗口规则继续生效。
 

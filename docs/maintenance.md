@@ -3,7 +3,7 @@
 主机在 `flake.nix` 的 `nixosConfigurations` 中明确注册。以下命令在仓库根目录运行，先选择要维护的机器：
 
 ```sh
-host=laptop2
+host=laptop2  # 换成要维护的主机
 nix eval --json .#nixosConfigurations --apply builtins.attrNames
 ```
 
@@ -34,7 +34,15 @@ nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 nix flake check --no-build
 ```
 
-`--no-build` 只检查求值，不执行检查。跨领域修改或依赖升级的完整验收还包括领域检查、OCI 缓存集成和四组 VM 测试。`checks.e2e` 仅聚合 VM 结果。
+`--no-build` 只检查求值，不执行检查。依赖升级或跨领域修改按[完整验收流程](validation.md#完整验收与计时)验证后再部署。
+
+自动更新的输入清单由[更新工作流](../.github/workflows/update.yml)维护。单独更新一个 input 使用 `nix flake update <名称>`，例如输入法主题：
+
+```sh
+nix flake update catppuccin-fcitx5
+```
+
+网络规则、缓存代理和可选 VM 客户端的升级要求分别见[网络](network.md#规则来源与更新)、[缓存](cache.md#项目-oci-缓存)和[VM 工具说明](../tools/vm-test-mcp/README.md)。
 
 ## 回退与激活故障
 
@@ -54,7 +62,19 @@ systemctl status "home-manager-${login_user}.service"
 journalctl -b -u "home-manager-${login_user}.service"
 ```
 
-对日志指出的冲突文件逐项保存、合并；确认处理完成后可重启对应服务。不要把整个用户配置目录删除后重试。
+对日志指出的冲突文件，先停止所属应用，用 `findmnt -T <路径>` 确认是否涉及持久挂载，再将文件保存到选定的持久目录并逐项合并。挂载点按其持久化声明处理；完成后重启对应服务。不要把整个用户配置目录删除后重试。
+
+## Docker 维护
+
+[容器配置](../modules/services/containers.nix)启用每周自动 prune，清理停止的容器、未使用网络、悬空镜像和构建缓存；卷不在默认清理范围。启用通知服务时，清理会保留带有 `org.nixos-config.service` 标签的受管资源。观察空间与清理记录：
+
+```sh
+docker system df
+systemctl list-timers docker-prune.timer
+journalctl -u docker-prune.service
+```
+
+新建容器默认使用 `local` 日志驱动，按大小轮转，通过 `docker logs <容器名>` 查看。`live-restore` 在兼容的 Docker daemon 重启期间尽量保持普通容器运行；系统关机或明确停止应用服务仍会结束容器。容器联网见[网络指南](network.md#docker-与-compose)。
 
 ## 增加主机
 

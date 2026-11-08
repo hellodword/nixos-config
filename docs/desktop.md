@@ -2,7 +2,7 @@
 
 SDDM 提供 Sway、i3 和 Plasma，默认 Sway。会话登录时加载用户配置并启动对应后台服务，退出时清理这些服务。
 
-登录界面使用 `site-breeze`，保留用户、会话和键盘布局选择，以及重启、关机入口；不显示睡眠、休眠或虚拟键盘。主题由锁定版本的 Breeze 资源独立生成，KDE、Qt 和 SDDM 原包的 derivation 保持不变，可继续使用原有 binary cache。
+登录界面提供用户、会话和键盘布局选择，以及重启、关机入口。
 
 | 服务 | Sway | i3 | Plasma |
 | --- | --- | --- | --- |
@@ -14,13 +14,9 @@ SDDM 提供 Sway、i3 和 Plasma，默认 Sway。会话登录时加载用户配�
 | PolicyKit | KDE agent | KDE agent | Plasma 自带 |
 | 网络连接 | nm-applet | nm-applet | Plasma 网络面板 |
 
-共用 PipeWire/WirePlumber、Fcitx、Noto/CJK SC 字体与 Sarasa Term SC 等宽字体。GTK/Qt 使用桌面原生外观，光标统一为 Breeze 24；Kitty、WM 和状态栏使用项目配色。Secret Service 由 KDE KSecretD 提供，三个会话共用 KWallet。Plasma 布局与配色保存在本机。三个会话均在空闲一分钟后锁屏，挂起时锁屏，并立即要求密码。
+三个会话共用音频、输入法和桌面密码钱包。GTK/Qt 使用桌面原生外观，Plasma 布局与配色保存在本机。字体选择见[字体与缩放](#字体与缩放)，可写设置的位置见[本机配置](local-state.md)。
 
 Plasma 的 Baloo 文件索引关闭；Dolphin 按目录浏览文件，KRunner 继续提供应用和命令入口。
-
-GTK 3/4 的字体与光标默认值位于 `/etc/xdg/gtk-{3,4}.0/settings.ini`，用户设置保存在持久化的 `~/.config/gtk-{3,4}.0/`。GTK 2 使用 `~/.config/gtk-2.0/gtkrc`，首次初始化写入默认值，之后由桌面和用户维护。Plasma 的外观设置可以正常更新这些文件；三个版本的设置文件均纳入精确备份。
-
-[GTK 3](https://docs.gtk.org/gtk3/class.Settings.html) 和 [GTK 4](https://docs.gtk.org/gtk4/class.Settings.html) 定义系统默认值与用户配置的读取顺序；[KDE 的 GTK 2 配置器](https://invent.kde.org/plasma/kde-gtk-config/-/blob/master/kded/config_editor/gtk2.cpp) 直接重建目标文件，因此 GTK 2 使用持久化目录中的普通文件。
 
 ## 注销与电源操作
 
@@ -32,11 +28,13 @@ Log out 通过当前桌面的原生接口退出：Sway 使用 `swaymsg exit`，i
 
 注销会结束当前图形会话及其窗口，桌面专属服务、通知和 portal 随会话停止。系统服务和系统级备份任务不随图形注销停止。普通用户服务是否继续取决于其所属 target、其他登录会话和用户管理器生命周期；关闭桌面终端前，应将需要继续运行的任务放入适当的服务中。新桌面重新建立图形环境，应用的恢复能力由应用自身决定。
 
+其他关机入口如何中断备份，以及遗留锁的处理，见[备份退出行为](backup.md#注销关机与锁恢复)。
+
 ## 锁屏与启动解锁
 
-Sway 和 i3 使用固定的深蓝紫色几何渐变背景，不跟随随机桌面壁纸，不显示时钟或日期。背景随系统配置构建，离线也可使用。Super+semicolon 和一分钟空闲锁屏共用 `desktop-lock`，密码验证分别由原生 swaylock 和 i3lock 的 PAM 接口完成。Sway 按每块屏幕填充背景；i3 按当前显示布局为各输出裁切和拼接，包括旋转屏幕。i3 的图片准备受时间限制，失败时用相同配色的纯色背景继续锁屏。Plasma 使用自己的锁屏设置。
+三个会话均在空闲一分钟后锁屏，并立即要求密码。Sway 和 i3 可按 Super+semicolon 手动锁屏，使用固定的深蓝紫色几何渐变背景，离线也可使用。背景按各屏幕布局裁切，i3 准备图片失败时使用相同配色的纯色背景。Plasma 在系统设置中管理锁屏外观。
 
-启动时由 Plymouth Breeze 显示 LUKS 解锁提示，主机在 initrd 中配置对应的显示驱动，供早期图形显示使用。输入现有磁盘密码后继续启动至 SDDM，再输入用户登录密码；磁盘解锁和桌面登录使用各自的凭据。Esc 可切换启动详情，图形提示不可用时使用文本提示排障。Plymouth 配置进入 initrd，需要安装启动代次并重启才能验收。LUKS 设备和 Lanzaboote/Secure Boot 的签名身份沿用现有声明。
+启动时由 Plymouth Breeze 显示 LUKS 解锁提示，主机需要在 initrd 中配置对应的显示驱动。输入磁盘密码后继续启动至 SDDM，再输入用户登录密码；磁盘解锁和桌面登录使用各自的凭据。Esc 可切换启动详情，图形提示不可用时使用文本提示排障。Plymouth 配置进入 initrd，需要安装启动代次并重启才能验收。
 
 ## 桌面密码钱包
 
@@ -104,25 +102,21 @@ Sway/i3 的快捷键：
 | Super+Shift+E | WM 原生退出确认 |
 | Super+Space | 切换输入法 |
 
-备份属于系统服务，注销后继续运行。Rofi 的重启和关机会等待用户先完成正在执行或排队的备份任务；任务结束后重新选择动作。其他关机入口按备份服务的 30 秒停止上限中断，远端锁的清理和恢复见[备份退出行为](backup.md#注销关机与锁恢复)。
+`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
 
-Rofi 使用 Noto Sans 16 pt，应用列表、命令列表和电源菜单共用这一字号。模式包含 `drun,run,calc,emoji`。`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
-
-两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。标题使用 10 pt JetBrainsMono Nerd Font，中文回退到 Noto Sans CJK SC。mpv、feh、Emulator、Waydroid 窗口默认浮动。
+两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。mpv、feh、Emulator、Waydroid 窗口默认浮动。
 
 Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态、本地/中国时间。本地时钟使用主机时区；中国时钟固定 `Asia/Shanghai`。
 
-Waybar 高度 24 px、字号 13 px、模块间距 4 px，工作区位于左侧、窗口标题居中、状态模块在右侧，以不同底色区分资源、网络、音频、电池和时钟；i3bar 高度同为 24 px。Waybar 标题右侧的眼睛按钮控制原生空闲抑制，初始关闭，点击后可在演示时保持活动。手动锁屏和休眠锁屏继续生效；再次点击恢复一分钟空闲锁屏。
+Waybar 标题右侧的眼睛按钮可在演示时阻止空闲锁屏，初始关闭；再次点击恢复空闲锁屏。手动锁屏仍然可用。
 
 Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网关和即时流量；Wi-Fi 另显示 SSID 与信号。Tailscale 悬浮显示本机连接状态及 Tailnet 地址。本地时钟悬浮显示日期和月历，中国时钟显示上海日期与时间。电池显示充放电状态、剩余时间和功率；内存、磁盘、音频、亮度及温度也提供对应详情。
 
 `Failed 0/0` 表示上次采样时系统和用户均无失败单元，采样间隔一分钟；`?` 表示尚无结果，悬浮可查看系统和用户的失败单元名称。电量降至 60% 和 50% 时分别提醒，恢复充电后重新计次。温度、亮度及电池的时间和功率由设备支持情况决定。
 
-显示器调整、Wi-Fi 和输入法偏好保存在[本机入口](local-state.md)。Plasma Wayland 使用 KWin 的“虚拟键盘”接口启动 Fcitx 5；Sway/i3 使用对应会话的自动启动项。KWin 的输入法可在“虚拟键盘”设置中选择。Sway 下 GTK 应用和 Kitty 使用 Wayland 原生输入协议，由 Fcitx 绘制候选列表；X11 GTK 应用使用 GTK 的 Fcitx 模块，Kitty 的 X11 后端通过 `GLFW_IM_MODULE=ibus` 使用兼容接口。Fcitx 提供全部 Catppuccin 配色，可在输入法配置中选择主题。
+显示器调整、Wi-Fi 和输入法偏好保存在[本机入口](local-state.md)。Plasma Wayland 的输入法在系统设置的“虚拟键盘”中选择；Sway/i3 登录时自动启动 Fcitx。输入法主题可在 Fcitx 配置工具中选择。
 
-Sway/i3 先将显示环境导入用户 systemd，再启动对应会话 target 和 nm-applet；注销随会话停止。Plasma 使用自己的网络面板。
-
-`firefox` 和桌面入口读取 `~/.config/mozilla/firefox/default`，`firefox-origin` 读取 `origin`；显式 `--profile` 或 `-P` 使用指定资料。Arkenfox 加项目覆盖项保留会话、cookie 和登录资料。Violentmonkey 的版本、URL、哈希和 ID 来自锁定的 `reproducible-violentmonkey`，`fetchurl` 保存原始签名 XPI，由 Home Manager 按 profile 安装，`origin` 保持独立。Firefox 与 Chrome 的 DNS 走系统分流。Firefox 原生搜索配置保留默认引擎、顺序和每个引擎的全部别名。VS Code 使用可写扩展目录，既支持声明式扩展也支持界面安装，扩展数据与编辑器运行状态持久化，默认设置由 `home/apps.nix` 声明。
+`firefox` 和桌面入口读取 `~/.config/mozilla/firefox/default`，`firefox-origin` 读取 `origin`；显式 `--profile` 或 `-P` 使用指定资料。默认资料使用 Arkenfox 加项目覆盖项，保留会话、cookie 和登录资料，并安装 Violentmonkey；`origin` 保持独立。Firefox 与 Chrome 的 DNS 走系统分流。VS Code 既支持声明式扩展也支持界面安装，扩展数据与编辑器运行状态持久化。
 
 ## 音频与触控板
 
@@ -153,9 +147,16 @@ Emoji 遵循 Unicode 的文字与 emoji 表示：`☺`、`❤` 等文字形式�
 
 i3status-rust 使用面向 Nerd Fonts 的 [`material-nf` 图标集](https://github.com/greshake/i3status-rust/blob/master/doc/themes.md)，由 Symbols Nerd Font 提供字形。
 
-Noto 是覆盖多语言的常见系统字体选择，可参考 [Fedora 的默认字体方案](https://fedoraproject.org/wiki/Changes/DefaultToNotoFonts) 和 [Noto CJK](https://github.com/notofonts/noto-cjk)。[Sarasa Gothic](https://github.com/be5invis/Sarasa-Gothic) 的 SC 变体适合简体中文代码混排；选择 Term SC 的依据是同一字体内的中西文度量。锁定环境中的 Pango 实测覆盖 16/20/24 px、常规/粗体/斜体，中文双字与四个拉丁字符的表格行在九种组合中均对齐。这里选择的是符合本机语言与混排需求的组合。
+[Sarasa Gothic](https://github.com/be5invis/Sarasa-Gothic) 的 Term SC 在同一字体内提供适合简体中文代码混排的中西文度量。
 
-系统使用灰度抗锯齿和轻微 hinting；缩放由各会话的显示器管理器决定。`desktop` 检查产出 Fontconfig/Pango 的 `fonts.json`、字体样张和 Sway/i3 配置校验日志；`vm-desktop` 的实际 Kitty 窗口展示中英网格、运算符连字、文字/emoji 表示和组合 emoji。外接屏的视觉大小与清晰度由真实设备验收。
+临时比较字号，不修改配置：
+
+```sh
+kitty -o font_size=14
+rofi -show drun -font 'Noto Sans 18'
+```
+
+Kitty 中 Ctrl+Shift+加号 / 减号可放大 / 缩小，Ctrl+Shift+Backspace 恢复配置字号。确定偏好后修改 [桌面配置](../home/desktop.nix)。显示缩放由各会话的显示器管理器调整，实际大小与清晰度需在所用屏幕上确认。字体自动检查的范围见[验证指南](validation.md)。
 
 ## 会话排障
 
@@ -167,7 +168,7 @@ journalctl -b -u "home-manager-${login_user}.service"
 systemctl --user status site-sway.target site-i3.target
 ```
 
-Home Manager 激活报告用户文件冲突时，在 `journalctl -u "home-manager-$(id -un).service" -b` 中确认具体路径，停止所属应用，将冲突文件保存到自己选定的持久目录，再按应用入口合并配置并重启该服务。先用 `findmnt -T` 判断路径是否属于持久挂载，挂载点按其持久化声明处理。WM 和会话服务直接读取构建产物，图形登录可以继续。通知按当前会话选择进程；输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
+激活报告用户文件冲突时，按[主机维护](maintenance.md#回退与激活故障)中的步骤保留和合并原文件。输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
 
 桌面检查与三会话 VM 的范围见[验证指南](validation.md)。首次设备验收包括正常注销、屏幕锁、portal 共享和外接显示器。
 
@@ -177,13 +178,11 @@ Home Manager 激活报告用户文件冲突时，在 `journalctl -u "home-manage
 
 `BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池和 Git 本地备份入口的提示。
 
-Kitty 默认使用 JetBrainsMono Nerd Font 12 pt，窗口内边距为零。Ctrl+Shift+加号 / 减号临时放大 / 缩小，Ctrl+Shift+Backspace 恢复配置字号；也可用 `kitty -o font_size=12` 打开单独窗口比较。Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
+Kitty 中 Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
 
 `git backup <名称>` 在 `~/backups/git/<名称>` 建立 bare 仓库，并把它加入 origin 的推送地址，另提供 `laptop-git-backup` 推送 remote。后续 `git push origin` 会更新本地备份；没有 origin 时可用 `git backup -f <名称>`，再推送到 `laptop-git-backup`。注册命令本身不立即复制所有分支。Starship 在这个本地备份目录不存在时提示。
 
-Shell 保留构建、哈希、Nix 查询、媒体、二维码及容器便利入口，定义集中在 `home/cli.nix`。三个 rebuild 入口使用 daemon 的临时目录；`nixos-rebuild-boot-offline` 的含义是关闭 substitute。`sing-box-log` 查看 `network` 命名空间的 journal，`sing-box-config` 查看已生成的运行配置。
-
-`feh` 别名使用 `--scale-down --auto-zoom`，仍经过应用隔离入口。`7zaencrypt` 使用启用 unfree 编解码支持的 p7zip。`gobuild` 保留既有构建参数；Go 工具链可从项目开发环境提供。APKiD 使用原有 gVisor 容器命令。`wget`、`tcpdump`、`ipset`、`inotify-tools`、`nix-prefetch` 和 inetutils 可直接使用；OpenSSL 工具带 legacy provider 支持。
+Shell 便利入口见 [home/cli.nix](../home/cli.nix)。其中 `nixos-rebuild-boot-offline` 关闭 substitute；`sing-box-log` 查看 `network` 命名空间的 journal，`sing-box-config` 查看已生成的运行配置。
 
 先用 `bw login` 登录账户，再调用 `bw-unlock` 解锁并将会话 token 留在当前 shell 的 `BW_SESSION`；`bw-lock` 清理变量并锁定 CLI。提示符显示 `BW_SESSION` 是否存在，实际请求仍以 Bitwarden 的状态和响应为准，token 不写入历史或提示内容。
 
@@ -191,7 +190,7 @@ Shell 保留构建、哈希、Nix 查询、媒体、二维码及容器便利入�
 
 ## 应用隔离
 
-Firefox、Chrome、Bitwarden Desktop/CLI、mpv、feh、SQLite Browser、Anytype 和 Remmina 的常规启动入口经过 Firejail。版本和预置 profile 来自当前锁定的 nixpkgs。`home/sandbox.nix` 声明应用范围与适配；`nix/firejail.nix` 生成独立启动包装，保留原包的桌面图标、MIME 类型、桌面操作和其他资源。原应用 derivation 保持不变，仍可使用其 binary cache。
+下列应用的常规启动入口经过 Firejail，访问范围由 [home/sandbox.nix](../home/sandbox.nix) 中的 profile 配置：
 
 | 应用 | 可用的个人文件范围 |
 | --- | --- |

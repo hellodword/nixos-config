@@ -2,7 +2,7 @@
 
 以 laptop profile 组合桌面、网络、备份和开发环境的 NixOS 配置。支持 Sway、i3 和 Plasma，使用声明式系统配置，同时保留应用需要自行修改的持久状态。
 
-目前注册的主机是 [laptop2](hosts/laptop2/README.md)。主机目录记录具体机器的硬件、身份和策略；`profiles/laptop/` 维护共同选择，`modules/` 提供能力。
+主机目录记录具体机器的硬件、身份和策略，例如 [laptop2](hosts/laptop2/README.md)。`profiles/laptop/` 维护共同选择，`modules/` 提供能力。
 
 | 要做什么 | 从这里开始 |
 | --- | --- |
@@ -21,9 +21,8 @@
 在 checkout 中选择主机并构建：
 
 ```sh
-host=laptop2
+host=laptop2  # 换成要构建的主机
 nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
-nix build --no-link .#checks.x86_64-linux.identity
 ```
 
 依赖由 `flake.lock` 固定，开发工具通过 `nix develop` 提供。Home Manager 随 NixOS 系统一起构建和激活。构建读取公开配置与 SOPS 密文，凭据在目标机激活时解密。

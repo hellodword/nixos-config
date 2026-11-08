@@ -15,6 +15,7 @@
 | Plasma 显示器 | 系统设置 → 显示配置 | 原生保存到 KWin/KScreen 状态 |
 | 桌面钱包 | KWallet Manager、`~/.config/kwalletrc` | 钱包与偏好持久化，密码登录时自动解锁 |
 | 输入法 | Fcitx 配置工具 | 配置、词库和学习记录持久保存 |
+| GTK 外观 | Plasma 外观设置、`~/.config/gtk-{2,3,4}.0/` | 用户设置持久保存，优先于系统默认值 |
 | VS Code 扩展 | 扩展界面 | 即时安装；用户扩展目录与编辑器运行状态持久化 |
 | 代理节点与独立 endpoint | `/persist/usr/local/etc/sing-box/outbounds.json` | 校验后运行 `sudo network-policy apply`，见[网络指南](network.md) |
 | 共享域名 route 片段 | `/persist/usr/local/etc/network-policy/route.d/*.{json,jsonc}` | `sudo network-policy check` 后 `apply`，见[网络指南](network.md) |
@@ -57,12 +58,18 @@ Plasma 使用原生显示设置，`~/.config/kwinoutputconfig.json` 等文件通
 
 Fcitx 用户配置位于 `~/.config/fcitx5/`，学习数据位于 `~/.local/share/fcitx5/`，包括 `pinyin/user.dict` 和 `pinyin/user.history`。`/etc/xdg/fcitx5/` 提供初始默认值；已有偏好继续生效。旧学习记录可从备份恢复。
 
+## GTK 外观
+
+GTK 3/4 的系统默认值位于 `/etc/xdg/gtk-{3,4}.0/settings.ini`，用户修改写入 `~/.config/gtk-{3,4}.0/`。GTK 2 使用 `~/.config/gtk-2.0/gtkrc`，仅首次初始化时写入默认值。Plasma 外观设置可以更新这些文件，用户设置均持久化并纳入备份。
+
+[GTK 3](https://docs.gtk.org/gtk3/class.Settings.html) 和 [GTK 4](https://docs.gtk.org/gtk4/class.Settings.html) 按配置层次读取设置；[KDE 的 GTK 2 配置器](https://invent.kde.org/plasma/kde-gtk-config/-/blob/master/kded/config_editor/gtk2.cpp) 会重建目标文件，因此 GTK 2 使用持久化目录中的普通文件。
+
 ## 修改加密基线
 
 SSH、Git/GPG 等基线保存在所选主机的 `secrets/` 目录，激活使用该主机的 SOPS 身份。文件按系统、备份和身份分组，填写方式见[主机凭据](secrets.md)。
 
 ```sh
-host=laptop2
+host=laptop2  # 换成要编辑的主机
 nix develop --command sops edit "hosts/$host/secrets/identity.sops.yaml"
 ```
 

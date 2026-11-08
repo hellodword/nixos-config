@@ -18,7 +18,7 @@
 
 ## 配置归属
 
-laptop2 是 laptop profile 的一个具体 host。实际机器在主机目录声明用户名、UID、系统与 Home Manager 的 `stateVersion`、磁盘和密钥位置；新增机器在 flake 中显式注册。测试使用独立的合成 laptop，不导入某台机器的硬件或真实密文。
+每台机器在主机目录声明用户名、UID、系统与 Home Manager 的 `stateVersion`、磁盘和密钥位置，并在 flake 中注册。profile 组合多台机器可以共用的选择。测试使用独立的合成 laptop，不依赖某台机器的硬件或真实密文。
 
 Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户配置。系统闭包已经包含用户激活产物，维护入口统一见[主机维护](maintenance.md)。
 
@@ -26,14 +26,14 @@ Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户�
 
 ## 从服务找到脚本
 
-| 行为 | 配置与执行关系 |
-| --- | --- |
-| 备份 | laptop profile 选择路径，host 选择目标和频率，服务模块生成策略与单元；`runner.py` 执行 Restic，`schedule.py` 计算到期时间，`state.py` 维护共享记录；健康检查和通知读取这些记录 |
-| 网络切换 | 模块生成声明，运行时编译合并本机规则；校验后发布配置并等待服务就绪，失败按明确顺序恢复前一代配置 |
-| 桌面电源菜单 | 检查重要进程和备份、确认、再次检查，再调用当前桌面的原生注销或 systemd 电源动作 |
-| 壁纸 | 显示就绪后恢复持久记录；本地轮换与到期下载各自触发，下载有效新图后更新状态和画面 |
-| SSH/GPG | 系统发布公钥、SSH/Git 配置和身份清单，用户服务根据清单启用本机已有的签名身份 |
-| CI | YAML 明确安排步骤，Nix 提供 derivation 和缓存清单，Python 处理结构化结果与发布；步骤之间不经过通用调度器 |
+| 行为 | 配置入口 | 运行逻辑 |
+| --- | --- | --- |
+| 备份 | [服务与策略](../modules/services/backup.nix) | [Restic 作业、调度、状态与通知](../scripts/backup) |
+| 网络切换 | [策略模块](../modules/network/policy.nix) | [生成、应用与回退](../scripts/network/runtime_policy.py) |
+| 桌面电源菜单 | [桌面配置](../home/desktop.nix) | [进程提醒与电源操作](../scripts/desktop/power.py) |
+| 壁纸 | [会话与定时任务](../modules/desktop/wallpaper.nix) | [恢复、轮换与下载](../scripts/desktop/wallpaper.py) |
+| SSH/GPG | [系统和用户服务](../modules/core/cli.nix) | [公钥发布与身份注册](../scripts/secrets/identity.py) |
+| CI | [工作流](../.github/workflows) | [构建统计、发布与更新](../.github/ci) |
 
 脚本选 Python 是为了文件状态、结构化数据和进程协调；简单线性调用留在 shell 或 Nix 服务定义。网络规则中的 Go 辅助程序使用实际 RE2 语义，避免以另一种正则实现近似判断规则。
 
@@ -57,8 +57,8 @@ laptop profile 的持久清单独立于功能开关。禁用应用后数据仍�
 
 Restic 按仓库分离可写状态与 cache，源目录只读。Apprise/Bark 使用各自的 gVisor 容器和运行时凭据，Waydroid 使用上游 LXC 边界。常见基础服务继续使用 NixOS 上游单元定义。
 
-桌面 Firejail 包装保留原包和桌面资源。默认 profile 来自锁定的 nixpkgs；Anytype 复用上游 Electron 公共配置。服务的限制由 systemd 表达，源码不承担隔离策略。文件访问入口见[桌面指南](desktop.md)，实现位于 `home/sandbox.nix`、`lib/service-hardening.nix`、`lib/desktop-service-hardening.nix` 及对应服务模块。
+服务限制由 systemd 表达，共享设置位于[系统服务隔离](../lib/service-hardening.nix)和[桌面服务隔离](../lib/desktop-service-hardening.nix)，具体权限由服务模块选择。
 
 图形用户服务仍使用会话 socket，包括用户 D-Bus 和窗口管理器 IPC；这些接口保留了会话级权限，文件系统限制约束的是进程的直接访问。X11 还允许较广泛的窗口与输入访问。因此，这些服务与桌面会话处于同一信任范围。Firejail 应用另外使用各自的 D-Bus 规则；文件选择器可见范围由其文件系统视图决定。
 
-`kernel.io_uring_disabled=1` 将 io_uring 留给具有 `CAP_SYS_ADMIN` 的进程；普通用户及受限应用使用其他 I/O 接口。这一设置减少桌面进程可达的内核接口，不代表 io_uring 在所有场景均不适用。wheel 的文件描述符 soft limit 为 524288、hard limit 为 unlimited，Docker 单元使用 infinity；这些限额不授予文件访问权限，实际打开文件仍受内核上限、权限与可用资源约束。
+[基础模块](../modules/core/base.nix)将 io_uring 限于具有 `CAP_SYS_ADMIN` 的进程，减少桌面进程可达的内核接口。普通用户及受限应用需要使用其他 I/O 接口。
