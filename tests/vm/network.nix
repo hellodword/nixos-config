@@ -15,6 +15,7 @@ let
         HOME = "/run/kdeconnect-fixture";
         XDG_RUNTIME_DIR = "/run/kdeconnect-fixture";
         QT_QPA_PLATFORM = "offscreen";
+        QT_LOGGING_RULES = "kdeconnect.core.debug=true";
       };
       serviceConfig = {
         RuntimeDirectory = "kdeconnect-fixture";
@@ -834,18 +835,26 @@ in
         machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli --my-id | grep .', timeout=30)
     client_device = kde(client, "kdeconnect-cli --my-id").strip()
     target_device = kde(target, "kdeconnect-cli --my-id").strip()
-    for machine, device in ((client, target_device), (target, client_device)):
-        machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -l --id-only | grep -Fx ' + device, timeout=45)
-    kde(client, "kdeconnect-cli --pair -d " + target_device)
-    device_path = "/modules/kdeconnect/devices/" + client_device
-    target.wait_until_succeeds(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device isPairRequestedByPeer | grep true', timeout=30)
-    target.succeed(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device acceptPairing')
-    for machine, device in ((client, target_device), (target, client_device)):
-        machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -a --id-only | grep -Fx ' + device, timeout=30)
-    # Send a file through the paired connection and observe the remote result.
-    client.succeed("printf 'LAN discovery and transfer' > /run/kdeconnect-transfer.txt")
-    kde(client, "kdeconnect-cli --share /run/kdeconnect-transfer.txt -d " + target_device)
-    target.wait_until_succeeds("find /run/kdeconnect-fixture -name kdeconnect-transfer.txt -exec grep -lFx 'LAN discovery and transfer' {} + | grep .", timeout=30)
+    try:
+        for machine, device in ((client, target_device), (target, client_device)):
+            machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -l --id-only | grep -Fx ' + device, timeout=45)
+        kde(client, "kdeconnect-cli --pair -d " + target_device)
+        device_path = "/modules/kdeconnect/devices/" + client_device
+        target.wait_until_succeeds(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device isPairRequestedByPeer | grep true', timeout=30)
+        target.succeed(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device acceptPairing')
+        for machine, device in ((client, target_device), (target, client_device)):
+            machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -a --id-only | grep -Fx ' + device, timeout=30)
+        # Send a file through the paired connection and observe the remote result.
+        client.succeed("printf 'LAN discovery and transfer' > /run/kdeconnect-transfer.txt")
+        kde(client, "kdeconnect-cli --share /run/kdeconnect-transfer.txt -d " + target_device)
+        target.wait_until_succeeds("find /run/kdeconnect-fixture -name kdeconnect-transfer.txt -exec grep -lFx 'LAN discovery and transfer' {} + | grep .", timeout=30)
+    except Exception:
+        for machine in (client, target):
+            for command in (f'busctl --address="{kde_bus}" tree org.kde.kdeconnect',
+                            f'env DBUS_SESSION_BUS_ADDRESS="{kde_bus}" kdeconnect-cli -l',
+                            "journalctl -u kdeconnect-fixture --no-pager -n 200"):
+                print(machine.name, command, machine.execute(command, timeout=10)[1])
+        raise
     explicit_proxy(client, "127.0.0.1")
     explicit_proxy(target, "192.168.1.10")
     container_request(client, "docker exec ordinary curl --proxy socks5h://172.17.0.1:10800 --max-time 8 -fsS http://web.proxy.test:18080/explicit | grep -Fx 192.168.1.20")

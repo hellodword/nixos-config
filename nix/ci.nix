@@ -32,14 +32,12 @@ in
       lib.filter (name: name != "e2e" && !(lib.elem name vmNames)) (builtins.attrNames checks)
     )
     ++ map (name: build "${name}-driver" checks.${name}.driver) vmNames;
-    vm-network-desktop = map vm [
+    vm-network-backup = map vm [
       "vm-network"
-      "vm-desktop"
-    ];
-    vm-applications-backup = map vm [
-      "vm-applications"
       "vm-backup"
     ];
+    vm-desktop = [ (vm "vm-desktop") ];
+    vm-applications = [ (vm "vm-applications") ];
     aggregate = [ (build "e2e" checks.e2e) ];
   };
 }

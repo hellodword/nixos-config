@@ -46,15 +46,23 @@ def select_paths(policy):
     return sorted(candidates - excluded), sorted(candidates & excluded)
 
 
-def publish(paths, registry, repository, *, oranc="oranc", no_ssl=False, immutable=False):
+def publish(paths, registry, repository, *, state, oranc="oranc", no_ssl=False, immutable=False):
+    # oranc signs the uploaded narinfo without adding signatures to the local
+    # Nix database. Remember completed batches across this run's checkpoints.
+    receipt = state / "published-paths.json"
+    previous = set(json.loads(receipt.read_text())) if receipt.exists() else set()
+    pending = sorted(set(paths) - previous)
+    if not pending:
+        return []
     command = [oranc, "push", "--registry", registry, "--repository", repository,
                "--no-closure", "--parallel", "1", "--zstd-level", "3", "--max-retry", "3"]
     if no_ssl:
         command.append("--no-ssl")
     if immutable:
         command.append("--allow-immutable-db")
-    subprocess.run([*command, "initialize", "--priority", "41"], check=True)
-    subprocess.run(command, input="".join(path + "\n" for path in paths), text=True, check=True)
+    subprocess.run(command, input="".join(path + "\n" for path in pending), text=True, check=True)
+    receipt.write_text(json.dumps(sorted(previous | set(pending))) + "\n")
+    return pending
 
 
 def main():
@@ -75,7 +83,9 @@ def main():
         if public != identity["publicKey"]:
             raise RuntimeError("NIX_CACHE_SIGNING_KEY does not match nix/cache-identity.json")
         paths = json.loads((args.state / "publish-paths.json").read_text())
-        publish(paths, "ghcr.io", identity["repository"], oranc=(args.state / "oranc").read_text().strip())
+        published = publish(paths, "ghcr.io", identity["repository"], state=args.state,
+                            oranc=(args.state / "oranc").read_text().strip())
+        print(json.dumps({"newPaths": len(published), "selectedPaths": len(paths)}))
 
 
 if __name__ == "__main__":

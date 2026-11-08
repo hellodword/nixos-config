@@ -5,6 +5,8 @@ import json
 from datetime import timedelta
 from pathlib import Path
 import re
+import shutil
+import struct
 import subprocess
 import tempfile
 import threading
@@ -153,14 +155,28 @@ def remaining(deadline):
     return min(15, value)
 
 
-def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
+def wait_for_session(machine, session, user_command):
+    # The WM target is started after environment import and PAM wallet setup.
+    # graphical-session.target alone can become active before those finish.
+    target = {"sway": "site-sway.target", "i3": "site-i3.target", "KDE": "plasma-workspace.target"}[session]
+    machine.wait_until_succeeds(user_command("systemctl --user is-active " + target), timeout=180)
+    machine.wait_until_succeeds(user_command(
+        "systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"
+    ), timeout=60)
+    machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
+
+
+def visible(machine, pattern, timeout=60, keep_active=True, rotation=0, region=None):
     # Bound image processing so a visibility check cannot consume the
     # desktop's entire idle interval. Idle locking is exercised separately.
     with machine.nested("waiting for visible text: " + pattern), tempfile.TemporaryDirectory() as directory:
         deadline = time.monotonic() + timeout
         frame = Path(directory) / "frame.png"
         raw = Path(directory) / "frame.ppm"
+        cropped = Path(directory) / "region.ppm"
         prepared = Path(directory) / "text.ppm"
+        observations = []
+        started = time.monotonic()
         try:
             while True:
                 if keep_active:
@@ -170,24 +186,41 @@ def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
                 # provides the PNG decoder used for retained screenshots.
                 with raw.open("wb") as stream:
                     subprocess.run(["pngtopnm", str(frame)], stdout=stream, stderr=subprocess.PIPE, check=True, timeout=remaining(deadline))
+                transform = ["-rotate", str(rotation)] if rotation else []
+                if region is not None:
+                    width, height = struct.unpack(">II", frame.read_bytes()[16:24])
+                    if rotation % 180:
+                        width, height = height, width
+                    x, y, w, h = (round(value * extent) for value, extent in
+                                  zip(region, (width, height, width, height)))
+                    transform += ["-crop", f"{w}x{h}+{x}+{y}", "+repage"]
+                subprocess.run(["magick", str(raw), *transform, str(cropped)],
+                               check=True, capture_output=True, timeout=remaining(deadline))
                 observed = []
                 # Normalize dark desktops first: a failed OCR pass can consume
                 # the entire wait for a short-lived tooltip.
                 brightness = float(subprocess.check_output(
-                    ["magick", str(raw), "-colorspace", "Gray", "-format", "%[fx:mean]", "info:"],
+                    ["magick", str(cropped), "-colorspace", "Gray", "-format", "%[fx:mean]", "info:"],
                     text=True, timeout=remaining(deadline),
                 ))
                 contrasts = [("grayscale", []), ("inverted", ["-negate"])]
                 if brightness < 0.5:
                     contrasts.reverse()
-                for label, contrast in [*contrasts, ("threshold", ["-threshold", "50%"])]:
+                # Native-size text is usually sufficient. Enlarge only the
+                # selected region when its first OCR pass needs more pixels.
+                passes = [(label, contrast, scale) for scale in ("100%", "200%")
+                          for label, contrast in contrasts]
+                # Low-contrast greeter labels need a binary image when
+                # grayscale text blends into the background.
+                passes += [("threshold", ["-threshold", "50%"], scale)
+                           for scale in ("200%", "300%")]
+                for label, contrast, scale in passes:
                     if time.monotonic() >= deadline:
                         break
                     if keep_active:
                         machine.send_key("ctrl")
                     subprocess.run(
-                        ["magick", str(raw), *(["-rotate", str(rotation)] if rotation else []),
-                         "-resize", "300%", "-colorspace", "Gray", *contrast, str(prepared)],
+                        ["magick", str(cropped), "-resize", scale, "-colorspace", "Gray", *contrast, str(prepared)],
                         check=True, capture_output=True, timeout=remaining(deadline),
                     )
                     # Sparse text handles menus; automatic page layout also
@@ -195,6 +228,7 @@ def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
                     for page_mode in ("11", "3"):
                         if time.monotonic() >= deadline:
                             break
+                        ocr_start = time.monotonic()
                         try:
                             result = subprocess.run(
                                 ["tesseract", str(prepared), "stdout", "--oem", "1", "--psm", page_mode],
@@ -203,8 +237,13 @@ def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
                                 env={**os.environ, "OMP_THREAD_LIMIT": "1"},
                             ).stdout
                         except subprocess.TimeoutExpired:
-                            observed.append("OCR timed out for " + label + "/" + page_mode)
+                            result = "OCR timed out for " + label + "/" + page_mode
+                            observations.append({"contrast": label, "scale": scale, "psm": page_mode,
+                                                 "seconds": time.monotonic() - ocr_start, "timeout": True})
+                            observed.append(result)
                             continue
+                        observations.append({"contrast": label, "scale": scale, "psm": page_mode,
+                                             "seconds": time.monotonic() - ocr_start, "text": result})
                         observed.append(result)
                         if re.search(pattern, result):
                             return
@@ -213,6 +252,22 @@ def visible(machine, pattern, timeout=60, keep_active=True, rotation=0):
         except Exception as error:
             if isinstance(error, subprocess.SubprocessError):
                 print("Image processing failed:", getattr(error, "stderr", None))
+            details = {"pattern": pattern, "region": region, "rotation": rotation,
+                       "seconds": time.monotonic() - started, "passes": observations}
+            print("OCR observations:", json.dumps(details))
+            try:
+                evidence = Path(machine.out_dir) / ("ocr-" + machine.name + "-" + str(time.monotonic_ns()))
+                evidence.mkdir(parents=True)
+                (evidence / "ocr.json").write_text(json.dumps(details, indent=2))
+                if frame.exists():
+                    shutil.copyfile(frame, evidence / "frame.png")
+                if cropped.exists():
+                    with (evidence / "region.png").open("wb") as stream:
+                        subprocess.run(["pnmtopng", str(cropped)], stdout=stream,
+                                       stderr=subprocess.PIPE, timeout=10, check=True)
+                print("OCR evidence:", evidence)
+            except Exception as collection_error:
+                error.add_note("Collecting OCR evidence: " + str(collection_error))
             raise
 
 
@@ -231,7 +286,7 @@ def login(machine):
     )
     # The selected account stays legible across greeter sizes; the password
     # placeholder is small and low contrast in Breeze.
-    visible(machine, r"(?i)\bdesktop\b", timeout=90)
+    visible(machine, r"(?i)\bdesktop\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7))
     delay = timedelta(milliseconds=150)
     machine.send_key("ctrl-u", delay=delay)
     machine.send_chars("synthetic-fixture-only", delay=delay)

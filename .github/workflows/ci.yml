@@ -4,6 +4,11 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      initialize-cache:
+        description: Create the cache package only; then configure Public and Actions Write in Package settings
+        type: boolean
+        default: false
   workflow_call:
     inputs:
       candidate-artifact:
@@ -19,13 +24,65 @@ on:
 permissions:
   contents: read
 
+env:
+  NIX_IMAGE: docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f
+
 # One verifier/publisher at a time. GitHub retains only the newest pending run.
 concurrency:
   group: nixos-verify
   cancel-in-progress: false
 
 jobs:
+  initialize-cache:
+    if: github.event_name == 'workflow_dispatch' && inputs.initialize-cache
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Require the trusted branch
+        run: test "$GITHUB_REF" = refs/heads/master
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Initialize the GHCR cache package
+        env:
+          ORANC_USERNAME: ${{ github.actor }}
+          ORANC_PASSWORD: ${{ github.token }}
+        run: |
+          # Initialization publishes only nix-cache-info and needs no signing key.
+          # Use the same finite descriptor limit as the verification container.
+          docker run --rm -i --ulimit nofile=65536:65536 \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" --workdir /workspace \
+            --env ORANC_USERNAME --env ORANC_PASSWORD \
+            --env NIX_USER_CONF_FILES=/tmp/ci-nix.conf \
+            --env 'NIX_CONFIG=experimental-features = nix-command flakes' \
+            "$NIX_IMAGE" bash -euo pipefail <<'BASH'
+          git config --global --add safe.directory /workspace
+          cat > /tmp/ci-nix.conf <<'CONFIG'
+          sandbox = false
+          accept-flake-config = false
+          max-jobs = 1
+          cores = 0
+          CONFIG
+          bash scripts/nix-cache.sh print --public-only >> /tmp/ci-nix.conf
+          oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths .#oranc)
+          repository=$(nix eval --raw --file nix/cache-config.nix project.repository)
+          "$oranc_root/bin/oranc" push --repository "$repository" --parallel 1 initialize --priority 41
+          BASH
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Cache package initialized
+
+          Open your GitHub profile → Packages → the cache package → Package settings.
+          Set visibility to Public, disable inherited repository access, then set this
+          repository to Write under Manage Actions access. GitHub initially grants
+          the publishing repository package Admin. Public visibility cannot be reversed.
+
+          Run Verify and cache on master again with initialize-cache unchecked.
+          SUMMARY
   verify:
+    if: github.event_name != 'workflow_dispatch' || !inputs.initialize-cache
     strategy:
       max-parallel: 1
       fail-fast: false
@@ -38,7 +95,6 @@ jobs:
       packages: write
     env:
       HOST: ${{ matrix.host }}
-      NIX_IMAGE: docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f
     steps:
       - uses: actions/checkout@v7
         with:
@@ -92,37 +148,68 @@ jobs:
             > "$state/monitor.log" 2>&1 &
       - name: Start the cache proxy and prepare tools
         run: |
-          docker exec nixos-ci bash -euo pipefail -c '
-            cpus=$(nproc)
-            jobs=$((cpus < 2 ? cpus : 2))
-            cat > /ci/nix-base.conf <<CONFIG
+          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase tools -- \
+            docker exec -i nixos-ci bash -euo pipefail <<'BASH'
+          cat > /ci/nix-base.conf <<'CONFIG'
           sandbox = false
           accept-flake-config = false
           system-features = nixos-test benchmark big-parallel kvm
-          max-jobs = $jobs
-          cores = $((cpus / jobs))
+          max-jobs = 1
+          cores = 0
           CONFIG
-            cat /ci/nix-base.conf > /ci/nix.conf
-            bash scripts/nix-cache.sh print --public-only >> /ci/nix.conf
-            oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths .#oranc)
-            printf "%s\n" "$oranc_root/bin/oranc" > /ci/oranc
-            listen=$(nix eval --raw --file nix/cache-config.nix ci.listen)
-            "$oranc_root/bin/oranc" server --listen "$listen" > /ci/oranc.log 2>&1 < /dev/null &
-            proxy_pid=$!
-            for ((attempt=0; attempt<50; attempt++)); do
-              if (exec 3<>"/dev/tcp/${listen%:*}/${listen##*:}") 2>/dev/null; then break; fi
-              kill -0 "$proxy_pid"
-              sleep 0.1
-            done
-            cache_uri=$(nix eval --raw --file nix/cache-config.nix ci.uri)
-            if nix store info --store "$cache_uri"; then
-              cat /ci/nix-base.conf > /ci/nix.conf
-              bash scripts/nix-cache.sh print --ci >> /ci/nix.conf
-            else
-              echo "Project cache unavailable; using public caches and local builds."
-            fi
-            nix develop --no-update-lock-file --command bash -c "command -v python3" > /ci/python
-          '
+          cat /ci/nix-base.conf > /ci/nix.conf
+          bash scripts/nix-cache.sh print --public-only >> /ci/nix.conf
+          oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths .#oranc)
+          printf '%s\n' "$oranc_root/bin/oranc" > /ci/oranc
+          listen=$(nix eval --raw --file nix/cache-config.nix ci.listen)
+          "$oranc_root/bin/oranc" server --listen "$listen" > /ci/oranc.log 2>&1 < /dev/null &
+          proxy_pid=$!
+          for ((attempt=0; attempt<50; attempt++)); do
+            if (exec 3<>"/dev/tcp/${listen%:*}/${listen##*:}") 2>/dev/null; then break; fi
+            kill -0 "$proxy_pid"
+            sleep 0.1
+          done
+          python_root=$(nix build --no-update-lock-file --no-link --print-out-paths --impure --expr \
+            '(builtins.getFlake ("git+file://" + toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux.python3')
+          cache_uri=$(nix eval --raw --file nix/cache-config.nix ci.uri)
+          # A plain GET cannot turn a missing cache into an implicit PUT.
+          "$python_root/bin/python3" - "$cache_uri" <<'PY'
+          import sys
+          import urllib.request
+          try:
+              with urllib.request.urlopen(sys.argv[1] + '/nix-cache-info', timeout=30) as response:
+                  info = response.read().decode()
+              if 'StoreDir: /nix/store' not in info:
+                  raise ValueError('unexpected nix-cache-info content')
+          except Exception as error:
+              raise SystemExit(f'Project cache is not anonymously readable: {error}. '
+                               'Run the manual initialize-cache entry if needed, then set the '
+                               'package to Public and grant this repository Actions Write access.')
+          PY
+          cat /ci/nix-base.conf > /ci/nix.conf
+          bash scripts/nix-cache.sh print --ci >> /ci/nix.conf
+          nix develop --no-update-lock-file --command bash -c 'command -v python3' > /ci/python
+          BASH
+      - name: Verify cache signing identity and write access
+        if: github.ref == 'refs/heads/master'
+        env:
+          ORANC_USERNAME: ${{ github.actor }}
+          ORANC_PASSWORD: ${{ github.token }}
+          ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+        run: |
+          docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY \
+            nixos-ci bash -euo pipefail <<'BASH'
+          expected=$(nix eval --raw --file nix/cache-config.nix project.publicKey)
+          actual=$(printf '%s' "$ORANC_SIGNING_KEY" | nix key convert-secret-to-public)
+          if [[ "$actual" != "$expected" ]]; then
+            echo 'NIX_CACHE_SIGNING_KEY does not match the declared cache public key.' >&2
+            exit 1
+          fi
+          repository=$(nix eval --raw --file nix/cache-config.nix project.repository)
+          # Anonymous reading already succeeded. Rewrite the same index to
+          # verify write access to the existing package before expensive work.
+          "$(cat /ci/oranc)" push --repository "$repository" --parallel 1 initialize --priority 41
+          BASH
       - name: Static checks and OCI integration
         run: |
           docker exec nixos-ci nix develop --no-update-lock-file --command bash -euo pipefail -c '
@@ -134,37 +221,60 @@ jobs:
             python3 -m tests.integration.cache
           '
       - name: Evaluate the build inventory
+        id: inventory
         run: |
           docker exec --env HOST nixos-ci bash -euo pipefail -c '
             nix eval --no-update-lock-file --json --impure --expr \
               '\''import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; }'\'' > /ci/policy.json
           '
       - name: Build systems, non-VM checks and all VM drivers
+        id: build
         run: |
           docker exec nixos-ci bash -euo pipefail -c '
             "$(cat /ci/python)" .github/ci/build.py private --state /ci
             "$(cat /ci/python)" .github/ci/build.py dependencies --state /ci
           '
-      - name: Run network and desktop VM tests
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-desktop --state /ci'
-      - name: Run application and backup VM tests
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-applications-backup --state /ci'
-      - name: Assemble VM results and select cache paths
-        run: |
-          docker exec nixos-ci bash -euo pipefail -c '
-            "$(cat /ci/python)" .github/ci/build.py aggregate --state /ci
-            "$(cat /ci/python)" .github/ci/cache.py select --state /ci
-          '
-      - name: Publish signed redistributable paths
-        if: github.ref == 'refs/heads/master'
+      - name: Publish completed dependency paths
+        if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.inventory.outcome == 'success' && steps.build.outcome != 'skipped' }}
         env:
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}
           ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
         run: |
-          docker exec --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
-            bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py publish --state /ci'
-          echo "Signed cache publication completed for $HOST." >> "$GITHUB_STEP_SUMMARY"
+          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase publish-dependencies -- \
+            docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
+            bash -euo pipefail <<'BASH'
+          "$(cat /ci/python)" .github/ci/cache.py select --state /ci
+          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci
+          BASH
+      - name: Run network and backup VM tests
+        id: network-backup
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-backup --jobs 2 --state /ci'
+      - name: Run desktop VM tests
+        id: desktop
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-desktop --state /ci'
+      - name: Run application VM tests
+        id: applications
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-applications --state /ci'
+      - name: Assemble VM results
+        if: ${{ !cancelled() && steps.network-backup.outcome == 'success' && steps.desktop.outcome == 'success' && steps.applications.outcome == 'success' }}
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py aggregate --state /ci'
+      - name: Publish newly completed paths
+        if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.build.outcome == 'success' }}
+        env:
+          ORANC_USERNAME: ${{ github.actor }}
+          ORANC_PASSWORD: ${{ github.token }}
+          ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+        run: |
+          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase publish-results -- \
+            docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
+            bash -euo pipefail <<'BASH'
+          "$(cat /ci/python)" .github/ci/cache.py select --state /ci
+          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci
+          BASH
       - name: Report timings and resources
         if: always()
         run: |

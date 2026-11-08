@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import time
 
 
@@ -81,6 +83,12 @@ def duration(seconds):
 def render(state):
     events = read_records(state / "timings.jsonl")
     lines = ["## Nix build and VM results"]
+    phases = [event for event in events if event["kind"] == "phase"]
+    if phases:
+        lines += ["", "### Preparation and publication", "",
+                  "| Phase | Exit status | Wall time |", "| --- | --- | --- |"]
+        for event in phases:
+            lines.append(f"| {event['phase']} | {event['returncode']} | {duration(event['seconds'])} |")
     builds = [event for event in events if event["kind"] == "build"]
     if builds:
         lines += ["", "### Nix build groups", "", "Group wall times include dependency work and cache transfers.",
@@ -88,6 +96,16 @@ def render(state):
         for event in builds:
             status = "success" if event["returncode"] == 0 else event.get("signal", f"exit {event['returncode']}")
             lines.append(f"| {event['pass']} | {event['phase']} | {status} | {duration(event['seconds'])} |")
+    activities = [event for event in events if event["kind"] == "activity"]
+    for source, title in (("build", "Longest builds"), ("restore", "Longest cache restores")):
+        selected = [event for event in activities if event["source"] == source]
+        if selected:
+            lines += ["", "### " + title, "",
+                      "Activities include dependencies. An ended activity alone does not establish build success.",
+                      "", "| Group | Store path | Activity | Elapsed |", "| --- | --- | --- | --- |"]
+            for event in sorted(selected, key=lambda item: item["seconds"], reverse=True)[:20]:
+                status = "ended" if event["finished"] else "unfinished"
+                lines.append(f"| {event['phase']} | `{event['path']}` | {status} | {duration(event['seconds'])} |")
     tests = [event for event in events if event["kind"] == "target" and event.get("vm")]
     if tests:
         sources = {"built": "executed", "local": "local reuse", "substituted": "cache restored", "unknown": "unclassified"}
@@ -143,8 +161,21 @@ def main():
         subparser.add_argument("--state", type=Path, required=True)
         if operation in ("monitor", "sample"):
             subparser.add_argument("--container-pid", type=int, required=True)
+    run = subparsers.add_parser("run", help="record wall time and exit status of a CI phase")
+    run.add_argument("--state", type=Path, required=True)
+    run.add_argument("--phase", required=True)
+    run.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    if args.operation == "monitor":
+    if args.operation == "run":
+        command = args.command[1:] if args.command[:1] == ["--"] else args.command
+        if not command:
+            parser.error("run requires a command after --")
+        started, start = utc_now(), time.monotonic()
+        result = subprocess.run(command)
+        record(args.state, {"kind": "phase", "phase": args.phase, "started": started,
+                            "seconds": time.monotonic() - start, "returncode": result.returncode})
+        sys.exit(result.returncode if result.returncode >= 0 else 128 - result.returncode)
+    elif args.operation == "monitor":
         monitor(args.state, args.container_pid)
     elif args.operation == "sample":
         resource_sample(args.state, cgroup_path(args.container_pid))

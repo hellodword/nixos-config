@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 import tempfile
 from unittest.mock import patch
+from urllib.request import urlopen
 
 from tests.support import ROOT
 from tests.support import load_source
@@ -77,12 +78,13 @@ def main():
           restricted = pkgs.runCommand "${prefix}-restricted" {} "cp ${source} $out";
           bundle = pkgs.runCommand "${prefix}-bundle" {} "cp ${restricted} $out";
           driver = pkgs.writeText "${prefix}-driver" "ready";
+          failure = pkgs.runCommand "${prefix}-failed" {} "exit 17";
           root = pkgs.runCommand "${prefix}-result" {} ''
             test "$(cat ${driver})" = ready
             printf '%s' 'public: ${child}; prepared: ${bundle}' > $out
           '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
-          { inherit child source restricted bundle driver root; }
+          { inherit child source restricted bundle driver root failure; }
         '''.replace("PREFIX", json.dumps(work.name))
         fixture = json.loads(run(["nix", "eval", "--impure", "--json", "--expr", fixture], cwd=ROOT))
 
@@ -92,24 +94,32 @@ def main():
         state = work / "metrics"
         test = entry("root", vm=True)
         dependencies = [entry(name) for name in ("bundle", "driver", "child")]
-        run_build(dependencies, state=state, phase="dependencies")
+        # A failed peer build must leave successfully realized dependencies
+        # available for the first cache checkpoint.
+        try:
+            run_build([*dependencies, entry("failure")], state=state, phase="dependencies")
+        except RuntimeError:
+            assert valid_paths([fixture[name]["path"] for name in ("bundle", "driver", "child")]) == {
+                fixture[name]["path"] for name in ("bundle", "driver", "child")}
+        else:
+            raise AssertionError("synthetic failing build unexpectedly succeeded")
         assert valid_paths([fixture["root"]["path"]]) == set(), "preparation must leave execution for the test stage"
-        run_build([test], state=state, phase="vm-fixture")
-        run_build([test], state=state, phase="vm-fixture", pass_name="committed")
-        targets = [event for event in read_records(state / "timings.jsonl") if event.get("vm")]
-        assert targets[0]["source"] == "built" and targets[0]["success"] and targets[0]["buildSeconds"] > 0
-        assert targets[1]["source"] == "local" and targets[1]["success"] and targets[1]["buildSeconds"] is None
         policy = {"roots": [fixture["root"]["drv"]],
                   "excludedPaths": [fixture[name]["path"] for name in ("source", "restricted")],
                   "excludedDerivations": [fixture["restricted"]["drv"]],
                   "bundles": [fixture["bundle"]["drv"]],
                   "builds": {"dependencies": dependencies, "vm-fixture": [test]}}
         (state / "policy.json").write_text(json.dumps(policy))
-        selected, excluded = select_paths(policy)
         roots = [fixture[name]["path"] for name in ("root", "child")]
-        assert set(roots) <= set(selected)
-        assert {fixture[name]["path"] for name in ("source", "restricted", "bundle")} <= set(excluded)
-        expected = {path: Path(path).read_bytes() for path in roots}
+
+        def checkpoint():
+            selected, excluded = select_paths(policy)
+            assert {fixture[name]["path"] for name in ("source", "restricted", "bundle")} <= set(excluded)
+            # Send the selected synthetic products; upstream toolchain copies
+            # add no coverage to this local registry exercise.
+            paths = [path for path in selected if f"-{work.name}-" in path]
+            return publish(paths, f"127.0.0.1:{registry_port}", "synthetic/cache-test", state=state,
+                           no_ssl=True, immutable=not os.access("/nix/var/nix/db", os.W_OK))
         # Each registry is empty; isolate Nix narinfo knowledge from earlier runs.
         os.environ["XDG_CACHE_HOME"] = str(work / "nix-client-cache")
         secret = work / "test.secret"
@@ -127,14 +137,24 @@ def main():
         }))
         with listening(["registry", "serve", str(configuration)], registry_port), \
              listening(["oranc", "server", "--no-ssl", "--listen", f"127.0.0.1:{proxy_port}"], proxy_port):
-            os.environ["ORANC_SIGNING_KEY"] = secret.read_text().strip()
-            # The developer daemon owns its DB; no Nix writes occur during push.
-            # CI's root-owned store uses the ordinary SQLite mode instead.
-            publish(roots, f"127.0.0.1:{registry_port}", "synthetic/cache-test",
-                    no_ssl=True, immutable=not os.access("/nix/var/nix/db", os.W_OK))
-            del os.environ["ORANC_SIGNING_KEY"]
+            run(["oranc", "push", "--registry", f"127.0.0.1:{registry_port}",
+                 "--repository", "synthetic/cache-test", "--no-ssl", "initialize", "--priority", "41"])
             uri = f"http://127.0.0.1:{proxy_port}/127.0.0.1:{registry_port}/synthetic/cache-test"
+            with urlopen(uri + "/nix-cache-info", timeout=10) as response:
+                assert b"StoreDir: /nix/store" in response.read()
+            os.environ["ORANC_SIGNING_KEY"] = secret.read_text().strip()
+            first = checkpoint()
+            assert set(first) == {fixture[name]["path"] for name in ("child", "driver")}
+            verify(uri, first, public)
+            run_build([test], state=state, phase="vm-fixture")
+            run_build([test], state=state, phase="vm-fixture", pass_name="committed")
+            targets = [event for event in read_records(state / "timings.jsonl") if event.get("vm")]
+            assert targets[0]["source"] == "built" and targets[0]["success"] and targets[0]["buildSeconds"] > 0
+            assert targets[1]["source"] == "local" and targets[1]["success"] and targets[1]["buildSeconds"] is None
+            assert checkpoint() == [fixture["root"]["path"]]
+            del os.environ["ORANC_SIGNING_KEY"]
             verify(uri, roots, public)
+            expected = {path: Path(path).read_bytes() for path in roots}
             run(["nix-store", "--delete", *roots])
             # The excluded bundle is already present, just as CI prepares it
             # before restoring a successful test result from the public cache.
@@ -175,7 +195,7 @@ def main():
             assert all(Path(path).read_bytes() == content for path, content in expected.items())
         print(render(state))
     print(json.dumps({"result": "passed", "scenarios": ["redistribution selection including embedded payloads",
-          "direct signed OCI publication", "signature and content verification", "persistent native Nix client configuration",
+          "partial build publication and incremental checkpoints", "signature and content verification", "persistent native Nix client configuration",
           "restore with prepared private dependency",
           "dependency preparation, fresh execution, local reuse and cache restore timing"]}))
 

@@ -400,16 +400,11 @@ in
     def login_session(machine, session, compositor):
         login(machine)
         machine.wait_until_succeeds(process(compositor), timeout=180)
+        gui["wait_for_session"](machine, session, user_command)
         machine.wait_until_succeeds(user_command("systemctl --user is-active graphical-session.target desktop-health.timer"), timeout=60)
-        # A compositor process exists before its config imports the session
-        # environment. Wait for that explicit readiness boundary.
-        machine.wait_until_succeeds(user_command("systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"), timeout=60)
-        machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
         if session == "KDE":
-            # Plasma's calendar starts Akonadi after the initial startup jobs
-            # finish. Exercise logout from the ready desktop: KDE's native
-            # StopUnit(..., "fail") otherwise conflicts with that late start.
-            machine.wait_until_succeeds(user_command("systemctl --user is-active akonadi_control.service"), timeout=60)
+            machine.wait_until_succeeds(user_command("systemctl --user is-active plasma-plasmashell.service"), timeout=60)
+            machine.wait_until_fails(process("ksplashqml"), timeout=90)
     layout_query = '[.[] | select(.active) | {key: .name, value: {active, scale, rect, current_mode, transform}}] | from_entries'
 
     def display_layout(machine):
@@ -509,7 +504,7 @@ in
                                   ("calendar", clocks[0] + 20, r"(?i)Mo.*Tu.*We"),
                                   ("shanghai", clocks[-1] - 20, r"Asia/Shanghai")):
                 machine.move_pointer(x, 12, width, height)
-                visible(machine, text, timeout=20, keep_active=False)
+                visible(machine, text, timeout=20, keep_active=False, region=(0, 0, 1, 0.4))
                 machine.screenshot("desktop-tooltip-" + name)
             machine.move_pointer(width // 2, height // 2, width, height)
         user(machine, "swaymsg output " + output["name"] + " mode " + str(original["width"]) + "x" + str(original["height"]))
@@ -603,7 +598,7 @@ in
             # Exercise the real Qt Wayland text-input path through KWin/Fcitx,
             # not a pre-rendered CJK string or a D-Bus name alone.
             user(machine, "systemd-run --user --collect --unit=ime-fixture sh -c 'QT_QPA_PLATFORM=wayland kdialog --title Native-input-check --inputbox \"Input method check\" > /run/user/1000/ime-result'")
-            visible(machine, "Input method check")
+            visible(machine, "Input method check", region=(0.3, 0.25, 0.4, 0.5))
             user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
             machine.send_chars("nihao ")
             machine.send_key("ret")

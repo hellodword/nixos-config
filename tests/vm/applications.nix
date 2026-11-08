@@ -216,7 +216,7 @@
         if session != "KDE":
             with machine.input_lock:
                 machine.send_key("meta_l-d", delay=key_delay)
-                visible(machine, r"\bdrun\b")
+                visible(machine, r"\bdrun\b", region=power_menu["REGION"])
                 machine.send_chars("kitty", delay=key_delay)
                 machine.send_key("ret", delay=key_delay)
         else:
@@ -238,7 +238,7 @@
         if session != "KDE":
             with machine.input_lock:
                 machine.send_key("meta_l-shift-d", delay=key_delay)
-                visible(machine, r"\brun\b")
+                visible(machine, r"\brun\b", region=power_menu["REGION"])
                 command = "kitty --title Rofi-command sh -c 'printf launched > ~/application-workspace/rofi-command.txt; sleep 2'"
                 # Keep the clipboard owner alive until Rofi consumes the command.
                 try:
@@ -247,7 +247,7 @@
                     machine.wait_until_succeeds(
                         user_command('test "$(' + clipboard + ')" = ' + shlex.quote(command)), timeout=10)
                     machine.send_key("ctrl-v", delay=key_delay)
-                    visible(machine, r"sleep\s+2")
+                    visible(machine, r"sleep\s+2", region=power_menu["REGION"])
                     machine.send_key("ctrl-ret", delay=key_delay)
                     machine.wait_until_succeeds("grep -Fx launched /home/desktop/application-workspace/rofi-command.txt", timeout=30)
                 finally:
@@ -263,8 +263,7 @@
             machine.wait_for_unit("docker.service")
             machine.wait_for_unit("vaultwarden.service")
             machine.wait_for_unit("nginx.service")
-            machine.wait_until_succeeds(user_command("systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"), timeout=180)
-            machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
+            gui["wait_for_session"](machine, session, user_command)
             if session == "KDE":
                 machine.wait_until_fails("pgrep -u 1000 -f '^([^ ]*/)?ksplashqml( |$)'", timeout=90)
             user(machine, "fcitx5-remote -c; mkdir -p ~/application-workspace/artifacts")
@@ -305,6 +304,11 @@
         except Exception as error:
             failures.append((session, "session", str(error)))
             traceback.print_exc()
+            try:
+                emit_frame(machine, "APPLICATION_FRAME_" + machine.name + "_session")
+                print(machine.execute("journalctl -b -u display-manager -n 60 --no-pager")[1])
+            except Exception as diagnostic_error:
+                print("Could not collect session diagnostics:", diagnostic_error)
         finally:
             try:
                 machine.stop_activity()

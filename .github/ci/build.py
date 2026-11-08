@@ -3,7 +3,6 @@
 
 import argparse
 import json
-import os
 from pathlib import Path
 import signal
 import subprocess
@@ -25,7 +24,7 @@ def valid_paths(paths):
     return set(paths) - set(result.stdout.splitlines())
 
 
-def run_build(entries, *, state, phase, pass_name="candidate", jobs=2, cores=2):
+def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
     """Keep ordinary Nix logs; consume its separate JSON stream while it runs."""
     if not entries:
         return
@@ -34,8 +33,10 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=2, cores=2):
     present = valid_paths(paths)
     active, activities = {}, []
     started, start = utc_now(), time.monotonic()
-    command = ["nix", "build", "--no-link", "--print-build-logs", "--max-jobs", str(jobs),
-               "--cores", str(cores), *[entry["drv"] + "^*" for entry in entries]]
+    command = ["nix", "build", "--no-link", "--print-build-logs", "--keep-going"]
+    if jobs is not None:
+        command += ["--max-jobs", str(jobs)]
+    command += [entry["drv"] + "^*" for entry in entries]
 
     def consume(line):
         event = json.loads(line)
@@ -81,6 +82,11 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=2, cores=2):
     if returncode < 0:
         batch["signal"] = signal.Signals(-returncode).name
     record(state, batch)
+    for activity in activities:
+        record(state, {"kind": "activity", "pass": pass_name, "phase": phase,
+                       "source": "build" if activity["type"] == BUILD else "restore",
+                       "path": activity["path"], "finished": "stop" in activity,
+                       "seconds": activity.get("stop", end) - activity["start"]})
     for entry in entries:
         built = [a for a in activities if a["type"] == BUILD and a["path"] == entry["drv"]]
         restored = [a for a in activities if a["type"] == SUBSTITUTE and a["path"] in entry["outputs"]]
@@ -101,12 +107,11 @@ def main():
     parser.add_argument("group", help="group in the evaluated build inventory")
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--pass-name", default="candidate")
+    parser.add_argument("--jobs", type=int, help="override Nix concurrency for a VM group")
     args = parser.parse_args()
     policy = json.loads((args.state / "policy.json").read_text())
-    cpus = len(os.sched_getaffinity(0))
-    jobs = min(2, cpus)
     run_build(policy["builds"][args.group], state=args.state, phase=args.group,
-              pass_name=args.pass_name, jobs=jobs, cores=max(1, cpus // jobs))
+              pass_name=args.pass_name, jobs=args.jobs)
 
 
 if __name__ == "__main__":
