@@ -17,7 +17,7 @@ import time
 import urllib.request
 from contextlib import contextmanager
 
-from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError, sync_playwright
+from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError, expect, sync_playwright
 
 
 ROOT = Path.home() / "application-workspace"
@@ -172,6 +172,8 @@ def vscode(*, full):
     workspace = ROOT / "project"
     workspace.mkdir(exist_ok=True)
     (workspace / "example.txt").write_text("Initial document\n")
+    for name in ("terminal.txt", "terminal-location.txt", "terminal-context.txt"):
+        (workspace / name).unlink(missing_ok=True)
     (workspace / ".vscode").mkdir(exist_ok=True)
     (workspace / ".vscode/settings.json").write_text(json.dumps({
         "workbench.startupEditor": "none", "security.workspace.trust.enabled": False,
@@ -213,7 +215,10 @@ def vscode(*, full):
                 # Wait for the Explorer file provider before opening the document.
                 page.get_by_role("tree", name="Files Explorer").get_by_role("treeitem", name="example.txt", exact=True).dblclick(timeout=90000)
                 page.get_by_role("tab", name="example.txt", exact=True).click()
-                page.locator(".monaco-editor .view-lines:visible").first.wait_for()
+                page.bring_to_front()
+                editor_input = page.locator(".monaco-editor:visible").get_by_role("textbox")
+                editor_input.focus()
+                expect(editor_input).to_be_focused(timeout=30000)
                 print("VS Code: document opened; editing with Fcitx", flush=True)
                 ui_input({"key": "ctrl-end"}, {"text": "Edited: "},
                          {"pinyin": "nihao "}, {"key": "ctrl-s"})
@@ -225,16 +230,24 @@ def vscode(*, full):
                 terminal_input = page.get_by_role("textbox", name=re.compile(r"^Terminal \d+,"))
                 terminal_input.wait_for()
                 terminal_input.focus()
+                expect(terminal_input).to_be_focused(timeout=30000)
                 terminal_root = "/workspaces/project" if full else str(workspace)
-                context_check = "; test -f /.dockerenv && printf container > " + terminal_root + "/terminal-context.txt" if full else ""
+                context_command = "pwd > " + terminal_root + "/terminal-location.txt"
+                context_results = {"terminal-location.txt": terminal_root + "\n"}
+                if full:
+                    context_command += "; test -f /.dockerenv && printf container > " + terminal_root + "/terminal-context.txt"
+                    context_results["terminal-context.txt"] = "container"
+                # A completed command confirms that the focused terminal's shell is ready.
+                ui_input({"text": context_command + "\n"})
+                wait_for(lambda: all(
+                    (workspace / name).exists() and (workspace / name).read_text() == expected
+                    for name, expected in context_results.items()
+                ), "integrated shell ready in " + terminal_root)
                 ui_input({"text": "printf '"}, {"pinyin": "nihao "},
-                         {"text": "\\n' > " + terminal_root + "/terminal.txt; pwd > " + terminal_root + "/terminal-location.txt" + context_check + "\n"})
+                         {"text": "\\n' > " + terminal_root + "/terminal.txt\n"})
                 terminal = workspace / "terminal.txt"
                 wait_for(lambda: terminal.exists() and terminal.read_text() == "你好\n",
                          "Chinese input and command execution in the integrated terminal")
-                assert (workspace / "terminal-location.txt").read_text().strip() == terminal_root
-                if full:
-                    assert (workspace / "terminal-context.txt").read_text() == "container"
                 page.screenshot(path=str(ARTIFACTS / "vscode-terminal.png"))
                 ui_input({"text": "exit\n"})
                 ui_input({"powerGuard": "VS Code"})
