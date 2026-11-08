@@ -35,9 +35,11 @@
 
 同一个 host 的步骤共享 runner、容器和 Nix store。不同 host 使用独立 runner，通过 GHCR 复用相同依赖和测试结果。各项检查的范围见[验证指南](validation.md)。
 
+oranc 启动前通过 GitHub Actions cache 复用运行依赖，master 在准备完成后立即保存，因此后续测试失败也能保留这份缓存。未命中或读取失败时照常构建；超过[工作流](../.github/workflows/ci.yml)中的容量上限时跳过保存，写入失败也不影响后续验证。运行 summary 中的 Oranc bootstrap cache 显示命中、大小和跳过原因，保存结果见对应步骤日志。
+
 新的提交不会中断正在运行的验证；等待中的验证只保留最新一项，因此连续 push 的每个中间提交不一定都会执行。更新与验证使用独立的并发组，避免调用方占用验证需要的组。排队规则见 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
-缓存发布和测试分别报告状态，任意一项失败都会使验证任务失败。依赖准备成功后，某组 VM 失败仍继续执行其余组。缓存可在全部验证完成前发布，其存在不代表验收通过或已经部署。自动更新直接调用验证工作流，因为 [GITHUB_TOKEN 引发的 push](https://docs.github.com/en/actions/concepts/security/github_token)不会再次触发 push 工作流。
+GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证任务失败。依赖准备成功后，某组 VM 失败仍继续执行其余组。缓存可在全部验证完成前发布，其存在不代表验收通过或已经部署。自动更新直接调用验证工作流，因为 [GITHUB_TOKEN 引发的 push](https://docs.github.com/en/actions/concepts/security/github_token)不会再次触发 push 工作流。
 
 ## 首次启用
 

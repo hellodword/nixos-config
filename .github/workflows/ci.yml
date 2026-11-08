@@ -95,6 +95,8 @@ jobs:
       packages: write
     env:
       HOST: ${{ matrix.host }}
+      # Bound the uncompressed bootstrap archive, independently of repository quota.
+      ORANC_CACHE_MAX_BYTES: '536870912'
     steps:
       - uses: actions/checkout@v7
         with:
@@ -146,10 +148,10 @@ jobs:
           container_pid=$(docker inspect --format '{{.State.Pid}}' nixos-ci)
           python3 .github/ci/report.py monitor --state "$state" --container-pid "$container_pid" \
             > "$state/monitor.log" 2>&1 &
-      - name: Start the cache proxy and prepare tools
+      - name: Configure public caches and identify oranc
+        id: oranc-key
         run: |
-          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase tools -- \
-            docker exec -i nixos-ci bash -euo pipefail <<'BASH'
+          docker exec -i nixos-ci bash -euo pipefail <<'BASH'
           cat > /ci/nix-base.conf <<'CONFIG'
           sandbox = false
           accept-flake-config = false
@@ -159,10 +161,108 @@ jobs:
           CONFIG
           cat /ci/nix-base.conf > /ci/nix.conf
           bash scripts/nix-cache.sh print --public-only >> /ci/nix.conf
+          nix eval --no-update-lock-file --raw .#oranc.outPath > /ci/oranc-root
+          BASH
+          oranc_root=$(cat "$RUNNER_TEMP/nixos-ci/oranc-root")
+          printf 'key=oranc-v1-%s-%s-%s-%s\n' \
+            "$RUNNER_OS" "$RUNNER_ARCH" "$ORANC_CACHE_MAX_BYTES" "${oranc_root##*/}" >> "$GITHUB_OUTPUT"
+      - name: Restore the oranc bootstrap cache
+        id: oranc-restore
+        uses: actions/cache/restore@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/nixos-ci/oranc-closure
+          key: ${{ steps.oranc-key.outputs.key }}
+      - name: Import or build oranc
+        id: oranc
+        run: |
+          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase oranc -- \
+            docker exec -i nixos-ci bash -euo pipefail <<'BASH'
+          if [[ -f /ci/oranc-closure ]]; then
+            if nix-store --import < /ci/oranc-closure; then
+              echo 'Imported' > /ci/oranc-import
+            else
+              echo '::warning::Unable to import the oranc cache; continuing with the normal Nix build.'
+              echo 'Failed; using normal Nix build' > /ci/oranc-import
+            fi
+          else
+            echo 'No archive; using normal Nix build' > /ci/oranc-import
+          fi
+          # Resolve the current output even after a cache hit.
           oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths .#oranc)
+          printf '%s\n' "$oranc_root" > /ci/oranc-root
           printf '%s\n' "$oranc_root/bin/oranc" > /ci/oranc
+          nix path-info --closure-size "$oranc_root" > /ci/oranc-size
+          BASH
+      - name: Prepare the oranc bootstrap archive
+        id: oranc-export
+        if: github.ref == 'refs/heads/master' && steps.oranc-restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        run: |
+          state="$RUNNER_TEMP/nixos-ci"
+          read -r _ closure_bytes < "$state/oranc-size"
+          if (( closure_bytes > ORANC_CACHE_MAX_BYTES )); then
+            echo 'skip-reason=Runtime closure exceeds the size limit' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          archive="$state/oranc-closure"
+          trap 'rm -f "$archive.partial"' EXIT
+          docker exec nixos-ci bash -euo pipefail -c '
+            nix-store --query --requisites "$(cat /ci/oranc-root)" > /ci/oranc-paths
+            mapfile -t paths < /ci/oranc-paths
+            nix-store --export "${paths[@]}"
+          ' > "$archive.partial"
+          archive_bytes=$(stat -c %s "$archive.partial")
+          echo "archive-bytes=$archive_bytes" >> "$GITHUB_OUTPUT"
+          if (( archive_bytes > ORANC_CACHE_MAX_BYTES )); then
+            echo 'skip-reason=Exported archive exceeds the size limit' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mv "$archive.partial" "$archive"
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+      - name: Save the oranc bootstrap cache
+        id: oranc-save
+        if: github.ref == 'refs/heads/master' && steps.oranc-export.outputs.ready == 'true'
+        uses: actions/cache/save@v6
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/nixos-ci/oranc-closure
+          key: ${{ steps.oranc-key.outputs.key }}
+      - name: Report the oranc bootstrap cache
+        if: ${{ !cancelled() && steps.oranc.outcome == 'success' }}
+        env:
+          CACHE_HIT: ${{ steps.oranc-restore.outputs.cache-hit == 'true' }}
+          RESTORE_OUTCOME: ${{ steps.oranc-restore.outcome }}
+          EXPORT_OUTCOME: ${{ steps.oranc-export.outcome }}
+          SAVE_OUTCOME: ${{ steps.oranc-save.outcome }}
+          ARCHIVE_BYTES: ${{ steps.oranc-export.outputs.archive-bytes }}
+          SKIP_REASON: ${{ steps.oranc-export.outputs.skip-reason }}
+        run: |
+          state="$RUNNER_TEMP/nixos-ci"
+          read -r _ closure_bytes < "$state/oranc-size"
+          if [[ "$CACHE_HIT" == true ]]; then
+            SKIP_REASON='Exact cache key already exists'
+            ARCHIVE_BYTES=$(stat -c %s "$state/oranc-closure")
+          elif [[ "$GITHUB_REF" != refs/heads/master ]]; then
+            SKIP_REASON='Cache saving is limited to master'
+          fi
+          {
+            printf '## Oranc bootstrap cache\n\n'
+            printf '| Item | Result |\n| --- | --- |\n'
+            printf '| Restore | %s; exact hit: %s |\n' "$RESTORE_OUTCOME" "$CACHE_HIT"
+            printf '| Import | %s |\n' "$(cat "$state/oranc-import")"
+            printf '| Runtime closure (NAR bytes) | %s |\n' "$closure_bytes"
+            printf '| Archive bytes | %s |\n' "${ARCHIVE_BYTES:-Not exported}"
+            printf '| Size limit (bytes) | %s |\n' "$ORANC_CACHE_MAX_BYTES"
+            printf '| Export / save actions | %s / %s |\n' "$EXPORT_OUTCOME" "$SAVE_OUTCOME"
+            printf '\n%s\n' "${SKIP_REASON:-See the save action log for the cache service result.}"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Start the cache proxy and prepare tools
+        run: |
+          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase tools -- \
+            docker exec -i nixos-ci bash -euo pipefail <<'BASH'
           listen=$(nix eval --raw --file nix/cache-config.nix ci.listen)
-          "$oranc_root/bin/oranc" server --listen "$listen" > /ci/oranc.log 2>&1 < /dev/null &
+          "$(cat /ci/oranc)" server --listen "$listen" > /ci/oranc.log 2>&1 < /dev/null &
           proxy_pid=$!
           for ((attempt=0; attempt<50; attempt++)); do
             if (exec 3<>"/dev/tcp/${listen%:*}/${listen##*:}") 2>/dev/null; then break; fi
