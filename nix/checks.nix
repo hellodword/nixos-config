@@ -2,100 +2,96 @@
   pkgs,
   inputs,
   laptop,
-  production,
+  userName,
 }:
 let
-  testSource =
-    paths:
-    pkgs.lib.fileset.toSource {
-      root = ../.;
-      fileset =
-        pkgs.lib.fileset.intersection (pkgs.lib.fileset.fileFilter (file: file.hasExt "py") ../.)
-          (
-            pkgs.lib.fileset.unions (
-              [
-                ../tests/__init__.py
-                ../tests/support.py
-                ../tests/integration/__init__.py
-              ]
-              ++ paths
-            )
-          );
-    };
-  unitSource = testSource [
-    ../scripts/secrets
-    ../scripts/backup
-    ../scripts/network
-    ../scripts/desktop/layout.py
-    ../tests/unit
-    ../tests/integration/secrets.py
-    ../tests/fixtures/gpg_identity.py
-    ../tests/fixtures/__init__.py
-    ../tests/integration/backup.py
-  ];
-  networkSource = testSource [
-    ../scripts/network
-    ../tests/integration/dns.py
-    ../tests/integration/network.py
-    ../tests/fixtures/__init__.py
-    ../tests/fixtures/dns_fixture.py
-    ../tests/fixtures/network_fixture.py
-  ];
+  pythonCheck =
+    name: paths: tools: command:
+    let
+      source = pkgs.lib.fileset.toSource {
+        root = ../.;
+        fileset =
+          pkgs.lib.fileset.intersection (pkgs.lib.fileset.fileFilter (file: file.hasExt "py") ../.)
+            (
+              pkgs.lib.fileset.unions (
+                [
+                  ../tests/__init__.py
+                  ../tests/support.py
+                  ../tests/integration/__init__.py
+                  ../tests/unit/__init__.py
+                ]
+                ++ paths
+              )
+            );
+      };
+    in
+    pkgs.runCommand name { nativeBuildInputs = tools; } ''
+      cp -r ${source}/. .
+      ${command}
+      touch $out
+    '';
   collector = (pkgs.formats.json { }).generate "dns-collector.json" (
     import ../lib/dns-collector.nix { }
   );
   policy = pkgs.writeText "network-test-policy.json" (
     builtins.toJSON (import ../tests/fixtures/network-policy.nix { inherit (pkgs) lib; })
   );
+  python = pkgs.python3.withPackages (p: [
+    p.pyyaml
+    p.dnspython
+    p.h2
+  ]);
 in
 rec {
-  unit =
-    pkgs.runCommand "configuration-behavior-tests"
-      {
-        nativeBuildInputs = [
-          (pkgs.python3.withPackages (p: [ p.pyyaml ]))
-          pkgs.sops
-          pkgs.age
-          pkgs.gnupg
-          pkgs.git
-          pkgs.openssh
-          (import ./route-regex.nix { inherit pkgs; })
-          pkgs.hujsonfmt
-          pkgs.restic
-        ];
-      }
+  backup =
+    pythonCheck "backup-behavior"
+      [ ../scripts/backup ../tests/unit/test_backup.py ../tests/integration/backup.py ]
+      [ python pkgs.restic ]
       ''
-        cp -r ${unitSource}/. .
-        python3 -m unittest discover -s tests/unit -t . -v
+        python3 -m unittest tests.unit.test_backup -v
         python3 -m tests.integration.backup -v
+      '';
+  identity =
+    pythonCheck "identity-registration"
+      [
+        ../scripts/secrets
+        ../tests/integration/secrets.py
+        ../tests/fixtures/gpg_identity.py
+        ../tests/fixtures/__init__.py
+      ]
+      [ python pkgs.sops pkgs.age pkgs.gnupg pkgs.git pkgs.openssh ]
+      ''
         python3 -m tests.integration.secrets -v
-        touch $out
       '';
   network =
-    pkgs.runCommand "network-protocol-tests"
-      {
-        nativeBuildInputs = [
-          (pkgs.python3.withPackages (p: [
-            p.dnspython
-            p.h2
-          ]))
-          pkgs.hujsonfmt
-          pkgs.sing-box
-          (import ./route-regex.nix { inherit pkgs; })
-          pkgs.dnsdist
-          pkgs.dnsproxy
-          pkgs.dns-collector
-          pkgs.openssl
-        ];
-      }
+    pythonCheck "network-protocol-tests"
+      [
+        ../scripts/network
+        ../tests/unit/test_network.py
+        ../tests/integration/dns.py
+        ../tests/integration/network.py
+        ../tests/fixtures/__init__.py
+        ../tests/fixtures/dns_fixture.py
+        ../tests/fixtures/network_fixture.py
+      ]
+      [
+        python
+        pkgs.hujsonfmt
+        pkgs.sing-box
+        (import ./route-regex.nix { inherit pkgs; })
+        pkgs.dnsdist
+        pkgs.dnsproxy
+        pkgs.dns-collector
+        pkgs.openssl
+      ]
       ''
-        cp -r ${networkSource}/. .
+        python3 -m unittest tests.unit.test_network -v
         python3 -m tests.integration.dns --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} > $out
         python3 -m tests.integration.network --sing-box ${pkgs.sing-box}/bin/sing-box --template ${policy} --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} >> $out
       '';
-  configuration = import ../tests/configuration.nix { inherit pkgs laptop; };
+  configuration = import ../tests/configuration.nix { inherit pkgs laptop userName; };
   desktop = import ../tests/desktop.nix {
-    inherit pkgs;
+    inherit pkgs userName;
     config = laptop.config;
   };
   vm-desktop = pkgs.testers.runNixOSTest (import ../tests/vm/desktop.nix { inherit inputs; });
@@ -104,26 +100,12 @@ rec {
   );
   vm-backup = pkgs.testers.runNixOSTest (import ../tests/vm/backup.nix { inherit inputs; });
   vm-network = pkgs.testers.runNixOSTest (import ../tests/vm/network.nix { inherit inputs; });
-  e2e = pkgs.linkFarm "configuration-e2e" (
-    [
-      {
-        name = "laptop2-system";
-        path = production.config.system.build.toplevel;
-      }
-      {
-        name = "laptop2-home";
-        path = production.config.home-manager.users.ubuntu.home.activationPackage;
-      }
-    ]
-    ++ (map
+  e2e = pkgs.linkFarm "nixos-vm-tests" (
+    map
       (name: {
         inherit name;
         path = builtins.getAttr name {
           inherit
-            unit
-            network
-            configuration
-            desktop
             vm-desktop
             vm-applications
             vm-backup
@@ -132,15 +114,10 @@ rec {
         };
       })
       [
-        "unit"
-        "network"
-        "configuration"
-        "desktop"
+        "vm-network"
         "vm-desktop"
         "vm-applications"
         "vm-backup"
-        "vm-network"
       ]
-    )
   );
 }

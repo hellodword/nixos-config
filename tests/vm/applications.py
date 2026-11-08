@@ -168,7 +168,7 @@ def ui_input(*actions):
         request.unlink(missing_ok=True)
 
 
-def vscode():
+def vscode(*, full):
     workspace = ROOT / "project"
     workspace.mkdir(exist_ok=True)
     (workspace / "example.txt").write_text("Initial document\n")
@@ -177,60 +177,64 @@ def vscode():
         "workbench.startupEditor": "none", "security.workspace.trust.enabled": False,
         "remote.autoForwardPorts": False, "dev.containers.copyGitConfig": False,
     }))
-    (workspace / ".devcontainer").mkdir(exist_ok=True)
-    (workspace / ".devcontainer/devcontainer.json").write_text(json.dumps({
-        "name": "Application workspace", "image": "workspace-fixture:locked",
-        "workspaceFolder": "/workspaces/project", "remoteUser": "root",
-        "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/project,type=bind",
-        "updateRemoteUserUID": False,
-    }))
+    if full:
+        (workspace / ".devcontainer").mkdir(exist_ok=True)
+        (workspace / ".devcontainer/devcontainer.json").write_text(json.dumps({
+            "name": "Application workspace", "image": "workspace-fixture:locked",
+            "workspaceFolder": "/workspaces/project", "remoteUser": "root",
+            "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/project,type=bind",
+            "updateRemoteUserUID": False,
+        }))
     container_id = None
     try:
         with sync_playwright() as playwright:
             print("VS Code: opening the configured workspace", flush=True)
             with electron(playwright, "vscode", ["code", "--wait", "--skip-welcome", "--disable-workspace-trust", "--new-window", str(workspace)], 9223) as page:
                 page.locator(".monaco-workbench").wait_for()
-                page.get_by_role("button", name="Reopen in Container", exact=True).click(timeout=60000)
-                print("VS Code: entering the development container", flush=True)
-                container_id = wait_for(lambda: subprocess.run(
-                    ["docker", "ps", "-q", "--filter", f"label=devcontainer.local_folder={workspace}"],
-                    capture_output=True, text=True, check=True, timeout=15,
-                ).stdout.strip(), "development container", timeout=180)
-                deadline = time.monotonic() + 180
-                while time.monotonic() < deadline:
-                    try:
-                        page.locator(".monaco-workbench").wait_for(timeout=5000)
-                        remote = page.locator('.statusbar-item[id="status.host"]')
-                        if "Dev Container: Application workspace" in remote.inner_text(timeout=5000):
-                            break
-                    except Exception:
-                        pass
-                    time.sleep(1)
-                else:
-                    raise AssertionError("VS Code did not connect to its development container")
-                # The remote status appears before the file provider is ready.
-                # Open the document once it is visible in the container Explorer.
+                if full:
+                    page.get_by_role("button", name="Reopen in Container", exact=True).click(timeout=60000)
+                    print("VS Code: entering the development container", flush=True)
+                    container_id = wait_for(lambda: subprocess.run(
+                        ["docker", "ps", "-q", "--filter", f"label=devcontainer.local_folder={workspace}"],
+                        capture_output=True, text=True, check=True, timeout=15,
+                    ).stdout.strip(), "development container", timeout=180)
+                    deadline = time.monotonic() + 180
+                    while time.monotonic() < deadline:
+                        try:
+                            page.locator(".monaco-workbench").wait_for(timeout=5000)
+                            remote = page.locator('.statusbar-item[id="status.host"]')
+                            if "Dev Container: Application workspace" in remote.inner_text(timeout=5000):
+                                break
+                        except Exception:
+                            pass
+                        time.sleep(1)
+                    else:
+                        raise AssertionError("VS Code did not connect to its development container")
+                # Wait for the Explorer file provider before opening the document.
                 page.get_by_role("tree", name="Files Explorer").get_by_role("treeitem", name="example.txt", exact=True).dblclick(timeout=90000)
                 page.get_by_role("tab", name="example.txt", exact=True).click()
                 page.locator(".monaco-editor .view-lines:visible").first.wait_for()
-                print("VS Code: container document opened; editing with Fcitx", flush=True)
-                ui_input({"key": "ctrl-end"}, {"text": "Edited in container: "},
+                print("VS Code: document opened; editing with Fcitx", flush=True)
+                ui_input({"key": "ctrl-end"}, {"text": "Edited: "},
                          {"pinyin": "nihao "}, {"key": "ctrl-s"})
-                wait_for(lambda: "Edited in container: 你好" in (workspace / "example.txt").read_text(),
-                         "saving Chinese text in the container editor")
+                wait_for(lambda: "Edited: 你好" in (workspace / "example.txt").read_text(),
+                         "saving Chinese text in the editor")
                 page.screenshot(path=str(ARTIFACTS / "vscode-editor.png"))
-                print("VS Code: executing commands with Chinese input in the container terminal", flush=True)
+                print("VS Code: executing commands with Chinese input in the integrated terminal", flush=True)
                 page.keyboard.press("Control+Shift+Backquote")
                 terminal_input = page.get_by_role("textbox", name=re.compile(r"^Terminal \d+,"))
                 terminal_input.wait_for()
                 terminal_input.focus()
+                terminal_root = "/workspaces/project" if full else str(workspace)
+                context_check = "; test -f /.dockerenv && printf container > " + terminal_root + "/terminal-context.txt" if full else ""
                 ui_input({"text": "printf '"}, {"pinyin": "nihao "},
-                         {"text": "\\n' > /workspaces/project/terminal.txt; pwd > /workspaces/project/terminal-location.txt; test -f /.dockerenv && printf container > /workspaces/project/terminal-context.txt\n"})
+                         {"text": "\\n' > " + terminal_root + "/terminal.txt; pwd > " + terminal_root + "/terminal-location.txt" + context_check + "\n"})
                 terminal = workspace / "terminal.txt"
                 wait_for(lambda: terminal.exists() and terminal.read_text() == "你好\n",
                          "Chinese input and command execution in the integrated terminal")
-                assert (workspace / "terminal-location.txt").read_text().strip() == "/workspaces/project"
-                assert (workspace / "terminal-context.txt").read_text() == "container"
+                assert (workspace / "terminal-location.txt").read_text().strip() == terminal_root
+                if full:
+                    assert (workspace / "terminal-context.txt").read_text() == "container"
                 page.screenshot(path=str(ARTIFACTS / "vscode-terminal.png"))
                 ui_input({"text": "exit\n"})
                 ui_input({"powerGuard": "VS Code"})
@@ -239,10 +243,10 @@ def vscode():
             # Complete network teardown before the next application starts.
             with cleanup("stopping development container"):
                 subprocess.run(["docker", "stop", container_id], check=True, capture_output=True, timeout=45)
-    return {"workspace": "/workspaces/project", "editor": "你好", "terminal": "你好"}
+    return {"workspace": "container" if full else "local", "editor": "你好", "terminal": "你好"}
 
 
-def firefox():
+def firefox(*, full):
     from selenium import webdriver
     from selenium.webdriver.firefox.options import Options
     from selenium.webdriver.firefox.service import Service
@@ -310,34 +314,42 @@ def register_vault():
     })
 
 
-def bitwarden():
-    register_vault()
+def bitwarden(*, full):
+    if full:
+        register_vault()
     with sync_playwright() as playwright:
         with electron(playwright, "bitwarden", ["bitwarden"], 9224) as page:
-            page.get_by_role("button", name="bitwarden.com", exact=True).click()
-            page.get_by_text("self-hosted", exact=True).click()
-            page.get_by_label("Server URL").fill(VAULT_URL)
-            page.get_by_role("button", name="Save", exact=True).click()
-            page.get_by_label("Email address").fill(EMAIL)
-            page.get_by_role("button", name="Continue", exact=True).click()
-            page.get_by_label(re.compile(r"^Master password\b")).fill(PASSWORD)
-            page.get_by_role("button", name="Log in", exact=True).click()
-            page.get_by_text("No items in the vault", exact=True).wait_for()
-            search = page.get_by_placeholder(re.compile(r"Search vault", re.I))
-            search.click()
-            ui_input({"pinyin": "nihao "})
-            assert search.input_value() == "你好", repr(search.input_value())
+            if full:
+                page.get_by_role("button", name="bitwarden.com", exact=True).click()
+                page.get_by_text("self-hosted", exact=True).click()
+                page.get_by_label("Server URL").fill(VAULT_URL)
+                page.get_by_role("button", name="Save", exact=True).click()
+                page.get_by_label("Email address").fill(EMAIL)
+                page.get_by_role("button", name="Continue", exact=True).click()
+                page.get_by_label(re.compile(r"^Master password\b")).fill(PASSWORD)
+                page.get_by_role("button", name="Log in", exact=True).click()
+                page.get_by_text("No items in the vault", exact=True).wait_for()
+                search = page.get_by_placeholder(re.compile(r"Search vault", re.I))
+                search.click()
+                ui_input({"pinyin": "nihao "})
+                assert search.input_value() == "你好", repr(search.input_value())
+            else:
+                field = page.get_by_label("Email address")
+                field.click()
+                ui_input({"pinyin": "nihao "})
+                assert field.input_value() == "你好", repr(field.input_value())
             ui_input({"powerGuard": "Bitwarden"})
-    return {"service": "local Vaultwarden", "account": EMAIL, "vault": "opened", "search": "你好"}
+    return {"flow": "local Vaultwarden login and search" if full else "login screen input", "input": "你好"}
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("application", choices=("vscode", "firefox", "bitwarden"))
+    parser.add_argument("--full", action="store_true", help="exercise shared container and vault workflows")
     args = parser.parse_args()
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     try:
-        result = globals()[args.application]()
+        result = globals()[args.application](full=args.full)
     finally:
         network_log = ARTIFACTS / (args.application + "-network.json")
         if network_log.exists():

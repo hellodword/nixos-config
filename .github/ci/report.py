@@ -6,11 +6,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
-import signal
-import subprocess
-import sys
 import time
-import uuid
 
 
 def utc_now():
@@ -21,20 +17,6 @@ def record(state, event, filename="timings.jsonl"):
     state.mkdir(parents=True, exist_ok=True)
     with (state / filename).open("a") as stream:
         stream.write(json.dumps(event) + "\n")
-
-
-def timed_command(state, phase, command):
-    event = {"kind": "phase", "id": uuid.uuid4().hex, "phase": phase,
-             "started": utc_now(), "command": command, "status": "running"}
-    record(state, event)
-    start = time.monotonic()
-    result = subprocess.run(command)
-    event.update(seconds=time.monotonic() - start, returncode=result.returncode,
-                 status="success" if result.returncode == 0 else "failure")
-    if result.returncode < 0:
-        event["signal"] = signal.Signals(-result.returncode).name
-    record(state, event)
-    return result.returncode if result.returncode >= 0 else 128 - result.returncode
 
 
 def cgroup_path(pid):
@@ -98,14 +80,10 @@ def duration(seconds):
 
 def render(state):
     events = read_records(state / "timings.jsonl")
-    steps = {event["id"]: event for event in events if event["kind"] == "phase"}
-    lines = ["## CI phases", "", "| Phase | Result | Wall time |", "| --- | --- | --- |"]
-    for event in steps.values():
-        status = "interrupted" if event["status"] == "running" else event["status"]
-        lines.append(f"| {event['phase']} | {status} | {duration(event.get('seconds'))} |")
+    lines = ["## Nix build and VM results"]
     builds = [event for event in events if event["kind"] == "build"]
     if builds:
-        lines += ["", "### Nix build groups", "", "Times are included in the phases above; do not add both tables.",
+        lines += ["", "### Nix build groups", "", "Group wall times include dependency work and cache transfers.",
                   "", "| Revision | Group | Result | Wall time |", "| --- | --- | --- | --- |"]
         for event in builds:
             status = "success" if event["returncode"] == 0 else event.get("signal", f"exit {event['returncode']}")
@@ -160,21 +138,13 @@ def render(state):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="operation", required=True)
-    for operation in ("run", "monitor", "sample", "summary"):
+    for operation in ("monitor", "sample", "summary"):
         subparser = subparsers.add_parser(operation)
         subparser.add_argument("--state", type=Path, required=True)
-        if operation == "run":
-            subparser.add_argument("--phase", required=True)
-            subparser.add_argument("command", nargs=argparse.REMAINDER)
-        elif operation in ("monitor", "sample"):
+        if operation in ("monitor", "sample"):
             subparser.add_argument("--container-pid", type=int, required=True)
     args = parser.parse_args()
-    if args.operation == "run":
-        command = args.command[1:] if args.command[:1] == ["--"] else args.command
-        if not command:
-            parser.error("run requires a command after --")
-        sys.exit(timed_command(args.state, args.phase, command))
-    elif args.operation == "monitor":
+    if args.operation == "monitor":
         monitor(args.state, args.container_pid)
     elif args.operation == "sample":
         resource_sample(args.state, cgroup_path(args.container_pid))

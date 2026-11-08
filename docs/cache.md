@@ -12,11 +12,11 @@
 
 [oranc](https://github.com/linyinfeng/oranc) 将 `ghcr.io/hellodword/nixos-config` 作为标准 Nix binary cache。上游由 `flake.lock` 固定，`packages.x86_64-linux.oranc` 使用项目的 nixpkgs 构建；主机服务、开发 shell 和 CI 复用该包。oranc 不参与每日更新，单独升级使用 `nix flake update oranc`。
 
-## laptop2 的读取方式
+## NixOS 主机与容器
 
-laptop2 启用 `site.cache`，`oranc.service` 监听 **`172.17.0.1:37515`**。Docker 默认网桥固定使用 `172.17.0.1/16`，服务排在 Docker 启动之后；地址暂未就绪时由服务的失败重启策略恢复。Nix 的持久配置包含公共缓存及 `http://172.17.0.1:37515/ghcr.io/hellodword/nixos-config`，保留官方缓存并要求签名。
+主机通过 `site.cache` 启用 OCI 缓存并提供缓存身份。[laptop2](../hosts/laptop2/default.nix) 的配置让 `oranc.service` 监听 **`172.17.0.1:37515`**。Docker 默认网桥固定使用 `172.17.0.1/16`，服务排在 Docker 启动之后；地址暂未就绪时由服务的失败重启策略恢复。Nix 的持久配置包含公共缓存及 `http://172.17.0.1:37515/ghcr.io/hellodword/nixos-config`，保留官方缓存并要求签名。
 
-切换到该配置后，`nixos-rebuild`、`nix build` 和 `nix develop` 自动使用缓存，无需每次增加参数。首次切换的构建仍使用旧代次的 Nix 配置。公共 GHCR 包可匿名读取，无需给 laptop2 配置 registry token。服务使用动态用户、只读系统目录、独立临时目录和设备视图，并限制能力、命名空间与内核管理接口。宿主、默认 bridge 和普通 Compose bridge 共用这一个代理，容器访问沿用现有 `localAccess` 策略；没有为缓存新增公网端口放行。
+切换到该配置后，`nixos-rebuild`、`nix build` 和 `nix develop` 自动使用缓存，无需每次增加参数。首次切换的构建仍使用旧代次的 Nix 配置。公共 GHCR 包可匿名读取，消费缓存的主机无需配置 registry token。服务使用动态用户、只读系统目录、独立临时目录和设备视图，并限制能力、命名空间与内核管理接口。宿主、默认 bridge 和普通 Compose bridge 共用这一个代理，容器访问沿用现有 `localAccess` 策略；没有为缓存新增公网端口放行。
 
 ```sh
 systemctl status oranc
@@ -29,7 +29,7 @@ nix store info --store http://172.17.0.1:37515/ghcr.io/hellodword/nixos-config
 
 ## 开发容器及其他 Nix 客户端
 
-在 laptop2 上运行的开发容器直接访问宿主 `172.17.0.1`。容器只安装客户端设置，服务由宿主 systemd 管理。在源码 checkout 中执行一次：
+在采用上述网桥配置的宿主上，开发容器直接访问 `172.17.0.1`。容器只安装客户端设置，服务由宿主 systemd 管理。在源码 checkout 中执行一次：
 
 ```sh
 bash scripts/nix-cache.sh print
@@ -55,23 +55,49 @@ sudo systemctl restart nix-daemon.service
 
 ## 发布范围
 
-[GitHub 工作流](ci.md)只在验收成功后发布。[nix/cache-policy.nix](../nix/cache-policy.nix) 定义系统、Home Manager、开发 shell、oranc 与 E2E 输出的构建根；[scripts/ci/cache.py](../scripts/ci/cache.py) 从这些 derivation 中选取实际已存在的运行依赖、构建依赖和源码路径，排除 `.drv` 与受限内容。
+[GitHub 工作流](ci.md)只在验收成功后发布。[nix/cache-policy.nix](../nix/cache-policy.nix) 定义所选主机系统、开发 shell、oranc 与检查输出的构建根；[.github/ci/cache.py](../.github/ci/cache.py) 从这些 derivation 中选取实际已存在的运行依赖、构建依赖和源码路径，排除 `.drv` 与受限内容。
 
 公开范围包括可再分发的自定义包、配置产物及成功的 Nix VM 测试结果。输入和测试实现均未改变时，Nix 可以直接恢复已通过的测试输出；哈希变化的检查重新执行。oranc 跳过已有官方签名或本缓存签名的路径，使用 `--no-closure` 发布已筛选的清单，避免再次展开出受限依赖。
 
-软件许可证的 `redistributable` 元数据用于筛选主机、Home Manager 和 VS Code 扩展中的直接软件包。VS Code、VS Code Server、Chrome、Remote Containers 扩展、p7zip 的受限输出与下载源不发布。应用测试的开发容器复制了 VS Code Server，其镜像及依赖链上携带受限内容的中间产物也被排除。普通系统包装脚本、符号链接和元数据可以保留对这些路径的引用。
+软件许可证的 `redistributable` 元数据用于筛选所选主机、该主机全部 Home Manager 用户、测试配置及 VS Code 扩展中的直接软件包。VS Code、VS Code Server、Chrome、Remote Containers 扩展、p7zip 的受限输出与下载源不发布。应用测试的开发容器复制了 VS Code Server，其镜像及依赖链上携带受限内容的中间产物也被排除。普通系统包装脚本、符号链接和元数据可以保留对这些路径的引用。
 
 新增软件或将软件复制进其他 bundle 时，需要同步这份清单并审阅许可证；单纯读取 Nix store 引用无法判定文件的再分发权。`unfreeRedistributable` 与禁止再分发的许可分别处理，不会一概排除所有 unfree 软件。
 
-CI 先从原始来源构建被排除的软件及容器，再请求 E2E 结果，保证恢复测试结果时所需的受限依赖已经存在。laptop2 仍自行取得这些应用；部分引用它们的上层产物可能由 Nix 在本地组装，其余可发布依赖继续命中缓存。公开缓存不是完整主机闭包的独立离线副本。
+CI 先从原始来源构建被排除的软件及容器，再请求 E2E 结果，保证恢复测试结果时所需的受限依赖已经存在。消费缓存的主机仍自行取得这些应用；部分引用它们的上层产物可能由 Nix 在本地组装，其余可发布依赖继续命中缓存。公开缓存不是完整主机闭包的独立离线副本。
 
 ## 签名、重试与历史对象
 
-发布使用运行时的 `NIX_CACHE_SIGNING_KEY`、GITHUB_TOKEN 和 `oranc push`。在任何 registry 写入之前，将私钥推导出的公钥与仓库中声明的公钥核对。私钥不保存在仓库或 Nix 构建环境中；首次配置和密钥交接见 [CI 启用步骤](ci.md#首次启用)。
+发布使用运行时的 `NIX_CACHE_SIGNING_KEY`、GITHUB_TOKEN 和 `oranc push`。在任何 registry 写入之前，将私钥推导出的公钥与仓库中声明的公钥核对。私钥不保存在仓库或 Nix 构建环境中；密钥生成与交接见下文[签名密钥](#签名密钥)，仓库权限见 [CI 启用步骤](ci.md#首次启用)。
 
-发布并发为 1，zstd level 为 3，`max-retry=3` 使用锁定版本的内置重试。NAR 上传成功后才写入对应 narinfo。发布失败在 Actions 中单独可见，下一次在 `master` 运行 `check` 可以补齐对象。
+发布并发为 1，zstd level 为 3，`max-retry=3` 使用锁定版本的内置重试。NAR 上传成功后才写入对应 narinfo。发布失败在 Actions 中单独可见，下一次手动运行 `master` 的验证工作流可以补齐对象。
 
 历史 GHCR 对象持续保留。narinfo 引用对应 NAR，旧系统代次、开发环境和测试结果仍可能需要它们，因此没有按 tag 年龄删除对象的任务。未来清理需要以保留的根及可达对象为依据。个人资料的恢复由 [Restic 备份](backup.md)负责。
+
+## 签名密钥
+
+`NIX_CACHE_SIGNING_KEY` 保存 Nix 的 Ed25519 缓存签名私钥；CI 用它签名，消费者通过 `nix/cache-identity.json` 中的公钥验证构建产物。私钥由 [`nix key generate-secret`](https://nix.dev/manual/nix/2.34/command-ref/new-cli/nix3-key-generate-secret) 随机生成。`--key-name` 是签名标识，相同名称再次生成也会得到另一对密钥，无法据此恢复原私钥。
+
+已有缓存身份应复用配套私钥。以下命令用于首次创建，私钥文件权限为 0600；`set -C` 保护同名现有文件，括号将 shell 设置限制在本次操作内：
+
+```sh
+(
+  set -euC
+  umask 077
+  signing_key="${XDG_STATE_HOME:-$HOME/.local/state}/nixos-config/cache/nixos-config-1.secret"
+  mkdir -p -- "$(dirname -- "$signing_key")"
+  nix key generate-secret --key-name nixos-config-1 > "$signing_key"
+  nix key convert-secret-to-public < "$signing_key"
+)
+```
+
+最后输出的是公钥，将其填写到 `nix/cache-identity.json` 的 `publicKey`；私钥文件的完整内容上传为仓库 secret：
+
+```sh
+signing_key="${XDG_STATE_HOME:-$HOME/.local/state}/nixos-config/cache/nixos-config-1.secret"
+gh secret set NIX_CACHE_SIGNING_KEY < "$signing_key"
+```
+
+在正确的仓库 checkout 中执行，并先核对推导出的公钥。备份仓库外的私钥文件以便迁移和恢复。正式轮换时采用新的名称与文件名（例如 `nixos-config-2`），协调更新 CI 私钥和消费者信任，并安排旧缓存的签名过渡。
 
 ## 本地验证
 

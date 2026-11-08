@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+{ pkgs, userName, ... }:
 let
   credentials =
     pkgs.runCommand "synthetic-host-credentials"
@@ -49,6 +49,26 @@ let
       '';
 in
 {
-  # Exercise the host's own SOPS fields, identity and Wi-Fi bindings.
-  _module.args.hostSecretsDirectory = credentials;
+  imports = [
+    (import ../../lib/credentials.nix {
+      inherit userName;
+      hostSecretsDirectory = credentials;
+      backupTargets = [
+        "scaleway"
+        "r2"
+        "b2"
+      ];
+    })
+  ];
+  networking.networkmanager.ensureProfiles.profiles.fixture = {
+    connection = {
+      id = "fixture";
+      type = "wifi";
+    };
+    wifi.ssid = "$HOME_SSID";
+    wifi-security = {
+      key-mgmt = "wpa-psk";
+      psk = "$HOME_PSK";
+    };
+  };
 }

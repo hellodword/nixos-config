@@ -20,6 +20,8 @@ Plasma 的 Baloo 文件索引关闭；Dolphin 按目录浏览文件，KRunner �
 
 GTK 3/4 的字体与光标默认值位于 `/etc/xdg/gtk-{3,4}.0/settings.ini`，用户设置保存在持久化的 `~/.config/gtk-{3,4}.0/`。GTK 2 使用 `~/.config/gtk-2.0/gtkrc`，首次初始化写入默认值，之后由桌面和用户维护。Plasma 的外观设置可以正常更新这些文件；三个版本的设置文件均纳入精确备份。
 
+[GTK 3](https://docs.gtk.org/gtk3/class.Settings.html) 和 [GTK 4](https://docs.gtk.org/gtk4/class.Settings.html) 定义系统默认值与用户配置的读取顺序；[KDE 的 GTK 2 配置器](https://invent.kde.org/plasma/kde-gtk-config/-/blob/master/kded/config_editor/gtk2.cpp) 直接重建目标文件，因此 GTK 2 使用持久化目录中的普通文件。
+
 ## 注销与电源操作
 
 Sway/i3 的 Super+Shift+P 打开电源菜单，也可运行 `desktop-power`。菜单提供 Log out、Reboot、Power off。执行前列出仍在运行的 Firefox、Chrome/Chromium、VS Code、Bitwarden 和 VirtualBox/QEMU 虚拟机，以应用名、进程数和 PID 展示；重启与关机还检查其他用户的虚拟机，以及正在执行或排队的备份、检查、恢复演练和仓库维护任务。
@@ -34,7 +36,7 @@ Log out 通过当前桌面的原生接口退出：Sway 使用 `swaymsg exit`，i
 
 Sway 和 i3 使用固定的深蓝紫色几何渐变背景，不跟随随机桌面壁纸，不显示时钟或日期。背景随系统配置构建，离线也可使用。Super+semicolon 和一分钟空闲锁屏共用 `desktop-lock`，密码验证分别由原生 swaylock 和 i3lock 的 PAM 接口完成。Sway 按每块屏幕填充背景；i3 按当前显示布局为各输出裁切和拼接，包括旋转屏幕。i3 的图片准备受时间限制，失败时用相同配色的纯色背景继续锁屏。Plasma 使用自己的锁屏设置。
 
-启动时由 Plymouth Breeze 显示 LUKS 解锁提示，laptop2 在 initrd 中加载 i915，供早期图形显示使用。输入现有磁盘密码后继续启动至 SDDM，再输入用户登录密码；磁盘解锁和桌面登录使用各自的凭据。Esc 可切换启动详情，图形提示不可用时使用文本提示排障。Plymouth 配置进入 initrd，需要安装启动代次并重启才能验收。LUKS 设备和 Lanzaboote/Secure Boot 的签名身份沿用现有声明。
+启动时由 Plymouth Breeze 显示 LUKS 解锁提示，主机在 initrd 中配置对应的显示驱动，供早期图形显示使用。输入现有磁盘密码后继续启动至 SDDM，再输入用户登录密码；磁盘解锁和桌面登录使用各自的凭据。Esc 可切换启动详情，图形提示不可用时使用文本提示排障。Plymouth 配置进入 initrd，需要安装启动代次并重启才能验收。LUKS 设备和 Lanzaboote/Secure Boot 的签名身份沿用现有声明。
 
 ## 桌面密码钱包
 
@@ -51,6 +53,12 @@ busctl --user get-property org.freedesktop.secrets "$wallet_path" \
 ```
 
 `Locked` 为 `false` 表示默认钱包已经解锁。`ReadAlias` 返回 `/` 时尚未设定默认钱包，可在 KWallet Manager 中创建或选择 `kdewallet`。PAM 初始化服务完成后会退出；判断解锁状态使用 Secret Service 的 collection 属性或实际应用读取。KWallet Manager 的 Open 操作会打开管理视图；[兼容接口的 `isOpen`](https://github.com/KDE/kwallet/blob/v6.31.0/src/runtime/kwalletd/kwalletd.cpp) 查询该接口已登记的访问句柄。
+
+### 未决问题
+
+**KWallet 偶发读回失败。**
+
+真机曾出现钱包条目偶发无法读回；i3 VM 也在重新登录后出现读回退出码 1，触发条件尚未确定。复现时记录桌面会话、应用、登录方式、Secret Service 的锁状态和相关 journal，避免记录条目内容。桌面 VM 保留存取与重新登录场景，单次通过不足以关闭这个问题。
 
 ## 随机壁纸
 
@@ -102,7 +110,7 @@ Rofi 使用 Noto Sans 16 pt，应用列表、命令列表和电源菜单共用�
 
 两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。标题使用 10 pt JetBrainsMono Nerd Font，中文回退到 Noto Sans CJK SC。mpv、feh、Emulator、Waydroid 窗口默认浮动。
 
-Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态、本地/中国时间。laptop2 使用弗吉尼亚的 `America/New_York` 时区，自动切换 EST/EDT；中国时钟固定 `Asia/Shanghai`。
+Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态、本地/中国时间。本地时钟使用主机时区；中国时钟固定 `Asia/Shanghai`。
 
 Waybar 高度 24 px、字号 13 px、模块间距 4 px，工作区位于左侧、窗口标题居中、状态模块在右侧，以不同底色区分资源、网络、音频、电池和时钟；i3bar 高度同为 24 px。Waybar 标题右侧的眼睛按钮控制原生空闲抑制，初始关闭，点击后可在演示时保持活动。手动锁屏和休眠锁屏继续生效；再次点击恢复一分钟空闲锁屏。
 
@@ -153,16 +161,19 @@ Noto 是覆盖多语言的常见系统字体选择，可参考 [Fedora 的默认
 
 ```sh
 echo "$XDG_CURRENT_DESKTOP $XDG_SESSION_TYPE"
-systemctl status home-manager-ubuntu.service
-journalctl -b -u home-manager-ubuntu.service
+login_user=$(id -un)
+systemctl status "home-manager-${login_user}.service"
+journalctl -b -u "home-manager-${login_user}.service"
 systemctl --user status site-sway.target site-i3.target
 ```
 
-Home Manager 激活报告用户文件冲突时，在 `journalctl -u home-manager-ubuntu.service -b` 中确认具体路径，停止所属应用，将冲突文件保存到自己选定的持久目录，再按应用入口合并配置并重启该服务。先用 `findmnt -T` 判断路径是否属于持久挂载，挂载点按其持久化声明处理。WM 和会话服务直接读取构建产物，图形登录可以继续。通知按当前会话选择进程；输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
+Home Manager 激活报告用户文件冲突时，在 `journalctl -u "home-manager-$(id -un).service" -b` 中确认具体路径，停止所属应用，将冲突文件保存到自己选定的持久目录，再按应用入口合并配置并重启该服务。先用 `findmnt -T` 判断路径是否属于持久挂载，挂载点按其持久化声明处理。WM 和会话服务直接读取构建产物，图形登录可以继续。通知按当前会话选择进程；输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
 
 桌面检查与三会话 VM 的范围见[验证指南](validation.md)。首次设备验收包括正常注销、屏幕锁、portal 共享和外接显示器。
 
 ## Shell 与日常工具
+
+[Safe Eyes 的托盘说明](https://github.com/slgobinath/safeeyes/wiki/How-to-install-backend-for-Safe-Eyes-tray-icon) 推荐在 i3 使用 snixembed。它只随 i3 会话运行；Safe Eyes 在图形环境和托盘服务就绪后启动。
 
 `BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池和 Git 本地备份入口的提示。
 
@@ -197,4 +208,4 @@ Firefox、Chrome、Bitwarden Desktop/CLI、mpv、feh、SQLite Browser、Anytype 
 
 这些入口用于限制应用对会话资源的访问；用户仍可显式启动 Nix store 中的原始程序。文件选择器可选择的实际范围由 profile 的文件系统视图决定。需要扩展某个应用的访问目录时，调整对应 profile，按实际用途开放路径。
 
-Safe Eyes、显示器适配等后台服务使用 systemd 的文件系统与权限限制；对应服务只看到各自配置目录。autorandr hooks 需要额外文件时，在服务的 `BindReadOnlyPaths` 或 `BindPaths` 中声明具体目录。组件选择及服务边界见[选择与隔离边界](choices.md)。
+Safe Eyes、显示器适配等后台服务使用 systemd 的文件系统与权限限制；对应服务只看到各自配置目录。autorandr hooks 需要额外文件时，在服务的 `BindReadOnlyPaths` 或 `BindPaths` 中声明具体目录。组件选择及服务边界见[权限边界](architecture.md#权限边界)。

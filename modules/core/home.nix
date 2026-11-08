@@ -15,7 +15,6 @@
       home = {
         username = userName;
         homeDirectory = config.users.users.${userName}.home;
-        stateVersion = "22.11";
       };
     };
   };

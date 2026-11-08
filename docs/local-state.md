@@ -37,9 +37,7 @@ git config --file ~/.config/git/local.inc user.email you@example.net
 
 NetworkManager 管理物理网卡。Plasma 使用原生网络面板；Sway/i3 使用 nm-applet，也可以运行 `nmtui` 或 `nmcli --ask device wifi connect 'SSID'`。动态连接保存在 `/etc/NetworkManager/system-connections/`，文件为 root 所有、0600；目录持久化并纳入加密 Restic 备份。
 
-常用连接使用 NixOS 原生 `ensureProfiles`，SSID 与密码来自 `system.sops.yaml` 中的 `wifi/environment`。完整声明与填写方法见[主机凭据](secrets.md#声明式-wi-fi)。
-
-为每个声明式连接选择固定、唯一的 UUID。NixOS 在运行时生成 `/run/NetworkManager/system-connections/` 中的连接文件，环境变量替换发生在解密之后。常用连接的长期配置在 Nix 中修改；额外连接由 GUI/CLI 管理。要把某个声明式连接完全交给本机维护，可用 `nmcli connection clone home home-local` 创建独立 UUID，再从声明中移除原连接。
+常用连接的声明、凭据和 UUID 由[主机凭据](secrets.md#声明式-wi-fi)管理。要把某个声明式连接完全交给本机维护，可用 `nmcli connection clone home home-local` 创建独立 UUID，再从声明中移除原连接。
 
 启用本项目 DNS 时，NetworkManager 只管理链路、地址和路由；关闭该 DNS 功能后使用网络提供的解析器。Mullvad、Tailscale 和容器接口由各自服务管理。
 
@@ -61,17 +59,18 @@ Fcitx 用户配置位于 `~/.config/fcitx5/`，学习数据位于 `~/.local/shar
 
 ## 修改加密基线
 
-SSH、Git/GPG 等基线保存在 `hosts/laptop2/secrets/`，激活使用既有 `/persist/var/lib/sops-nix/keys.txt`。文件按系统、备份和身份分组，填写方式见[主机凭据](secrets.md)。
+SSH、Git/GPG 等基线保存在所选主机的 `secrets/` 目录，激活使用该主机的 SOPS 身份。文件按系统、备份和身份分组，填写方式见[主机凭据](secrets.md)。
 
 ```sh
-nix develop --command sops edit hosts/laptop2/secrets/identity.sops.yaml
+host=laptop2
+nix develop --command sops edit "hosts/$host/secrets/identity.sops.yaml"
 ```
 
 基线或系统配置变化需要重新构建；解密保持在目标机运行时。身份文档以完整子密钥指纹声明 SSH 用途和 Git 签名，系统推导公钥文件和 Git 配置，用户服务自动启用 GPG 中对应的 SSH 身份。密钥导入、智能卡初始化和旧身份停用由用户操作；自动注册及换钥流程见[身份配置](secrets.md#gpgssh-与-git-身份)。
 
 ## tmpfs 占用与临时持久化
 
-laptop2 的根目录 `/` 使用 16 GiB tmpfs，`/tmp` 使用独立 tmpfs，上限为物理内存的 80%，在这台机器上约 50 GiB。`/run`、`/dev/shm` 也有各自的挂载与上限。这些数值是容量限制，按实际写入消耗内存；可换出的页面还可能使用 swap。
+使用 tmpfs 根目录的主机需要分别观察 `/`、`/tmp`、`/run` 和 `/dev/shm`。它们有各自的挂载与容量上限，按实际写入消耗内存；可换出的页面还可能使用 swap。具体大小由主机的磁盘与启动配置决定，例如 [laptop2](../hosts/laptop2/README.md)。下文以持久根 `/persist` 为例，其他位置需相应替换。
 
 Firefox 配置及磁盘缓存、Chrome、Code、Docker、虚拟机、开发目录和个人文件继续写入持久盘；Fcitx 配置与词库也位于持久盘。Plasma 文件索引关闭。其他应用缓存仍可能写入根 tmpfs，需要按实际占用判断。
 
@@ -134,7 +133,7 @@ sudo mount -o remount,size=24G /
 df -hT /
 ```
 
-此操作只改变本次启动的容量上限，不释放已有占用，也不增加实际内存。`/tmp` 是独立挂载，需要对 `/tmp` 单独 remount；当前默认已经是 80%。
+此操作只改变本次启动的容量上限，不释放已有占用，也不增加实际内存。若 `/tmp` 是独立挂载，需要对 `/tmp` 单独 remount。
 
 ### 把一个目录转到持久盘
 
@@ -155,7 +154,7 @@ saved_gid=$(stat -c %g "$live")
 对本例创建对应的持久父目录，然后创建一个新的目标目录。逐步执行，创建失败就先检查已有目标：
 
 ```sh
-install -d -m 0700 /persist/home/ubuntu/.cache
+install -d -m 0700 "$(dirname -- "$persistent")"
 mkdir -m 0700 "$persistent"
 rsync -aHAXS --numeric-ids --one-file-system -- "$live/" "$persistent/"
 rsync -naHAXSc --numeric-ids --one-file-system --itemize-changes -- "$live/" "$persistent/"

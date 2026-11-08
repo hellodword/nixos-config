@@ -69,6 +69,7 @@ in
         neededForBoot = true;
       };
     };
+    home-manager.users.desktop.home.stateVersion = "22.11";
     users.users.desktop = {
       isNormalUser = true;
       uid = 1000;
@@ -226,7 +227,6 @@ in
     import re
     import json
     import shlex
-    import base64
     import runpy
     import tempfile
     import struct
@@ -235,6 +235,8 @@ in
     from datetime import datetime, timedelta, timezone
     import traceback
     from pathlib import Path
+
+    emit_frame = runpy.run_path("${../../tools/vm-test-mcp/failure_artifacts.py}")["emit_frame"]
 
     def user_command(command):
         prefix = "runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
@@ -859,13 +861,8 @@ in
         except Exception as error:
             traceback.print_exc()
             failures.append((session, str(error)))
-            # The remote executor retains this log even if Nix discards the
-            # failed output. Capture the synthetic screen for any UI failure.
             try:
-                with tempfile.TemporaryDirectory() as directory:
-                    frame = Path(directory) / "failure.png"
-                    machine.screenshot(str(frame))
-                    print("DESKTOP_FRAME_" + session + "_PNG=" + base64.b64encode(frame.read_bytes()).decode())
+                emit_frame(machine, "DESKTOP_FRAME_" + session + "_PNG")
                 print(machine.execute("journalctl -b -u home-manager-desktop.service -n 80 --no-pager")[1])
                 print(machine.execute("journalctl _UID=1000 -n 60 --no-pager")[1])
                 if session == "KDE":

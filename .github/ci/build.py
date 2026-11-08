@@ -10,10 +10,9 @@ import subprocess
 import tempfile
 import time
 
-from scripts.ci.report import record, utc_now
+from report import record, utc_now
 
 
-PHASES = ("dependencies", "vm-network-desktop", "vm-applications-backup", "aggregate")
 # Nix 2.34's internal-json activity types (logging.hh).
 BUILD, SUBSTITUTE = 105, 108
 
@@ -97,27 +96,17 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=2, cores=2):
         raise RuntimeError(f"{pass_name}/{phase}: nix build failed ({reason}); resource evidence is collected at runner finish")
 
 
-def build_phase(policy, phase, *, state, pass_name="candidate"):
-    cpus = len(os.sched_getaffinity(0))
-    jobs = min(2, cpus)
-    cores = max(1, cpus // jobs)
-    if phase == "dependencies":
-        # Public test closures may reference payloads we cannot redistribute.
-        run_build(policy["builds"]["private"], state=state, phase="private-dependencies",
-                  pass_name=pass_name, jobs=jobs, cores=cores)
-    run_build(policy["builds"][phase], state=state, phase=phase, pass_name=pass_name,
-              jobs=jobs, cores=cores)
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=[*PHASES, "all"])
+    parser.add_argument("group", help="group in the evaluated build inventory")
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--pass-name", default="candidate")
     args = parser.parse_args()
     policy = json.loads((args.state / "policy.json").read_text())
-    for phase in PHASES if args.phase == "all" else [args.phase]:
-        build_phase(policy, phase, state=args.state, pass_name=args.pass_name)
+    cpus = len(os.sched_getaffinity(0))
+    jobs = min(2, cpus)
+    run_build(policy["builds"][args.group], state=args.state, phase=args.group,
+              pass_name=args.pass_name, jobs=jobs, cores=max(1, cpus // jobs))
 
 
 if __name__ == "__main__":

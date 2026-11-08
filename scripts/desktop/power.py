@@ -113,6 +113,16 @@ def logout_command(args):
     raise RuntimeError("This desktop has no configured logout action")
 
 
+def show_blockers(args, action, system_action):
+    blockers = process_blockers(system_action)
+    if system_action:
+        blockers += backup_blockers(args.systemctl)
+    if blockers:
+        message(args.rofi, action + " is waiting for:\n\n" + "\n".join(blockers)
+                + "\n\nClose these applications or wait for the tasks, then try again.")
+    return bool(blockers)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("rofi", "systemctl", "swaymsg", "i3msg", "busctl"):
@@ -125,16 +135,12 @@ def main():
         system_action = action != "Log out"
         command = ([args.systemctl, "--check-inhibitors=yes", "reboot" if action == "Reboot" else "poweroff"]
                    if system_action else logout_command(args))
-        for confirmed in (False, True):
-            blockers = process_blockers(system_action)
-            if system_action:
-                blockers += backup_blockers(args.systemctl)
-            if blockers:
-                message(args.rofi, action + " is waiting for:\n\n" + "\n".join(blockers)
-                        + "\n\nClose these applications or wait for the tasks, then try again.")
-                return 0
-            if not confirmed and choose(args.rofi, action, ("Cancel", action)) != action:
-                return 0
+        if show_blockers(args, action, system_action):
+            return 0
+        if choose(args.rofi, action, ("Cancel", action)) != action:
+            return 0
+        if show_blockers(args, action, system_action):
+            return 0
         run(command)
         return 0
     except (OSError, ValueError, IndexError, KeyError, RuntimeError, subprocess.SubprocessError) as error:

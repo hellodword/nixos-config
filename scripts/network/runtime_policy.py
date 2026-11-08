@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate and apply local domain overrides without changing network protection."""
 import argparse
+from contextlib import contextmanager
 import fcntl
 import grp
 import hashlib
@@ -153,6 +154,15 @@ def ready(generation, units, run, *, wait_binding=False):
     raise ValueError(f"Policy services did not become locally ready within 30 seconds: {detail}")
 
 
+@contextmanager
+def recovery_step(primary):
+    """Attempt every recovery step while retaining the initial failure."""
+    try:
+        yield
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        primary.add_note("Restoring previous policy: " + ipv6.error_summary(error))
+
+
 def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, restart_all=False):
     current = root / "current"
     previous = current.resolve(strict=True)
@@ -186,18 +196,18 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
             run("systemctl", "start", *active)
             wait_ready(stage, active, run)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
-        recovery = [lambda: publish(root, previous)]
         if changed:
-            recovery = [lambda: run("systemctl", "stop", *changed),
-                        lambda: run("systemctl", "reset-failed", *changed)] + recovery
+            with recovery_step(error):
+                run("systemctl", "stop", *changed)
+            with recovery_step(error):
+                run("systemctl", "reset-failed", *changed)
+        with recovery_step(error):
+            publish(root, previous)
         if active:
-            recovery += [lambda: run("systemctl", "start", *active),
-                         lambda: wait_ready(previous, active, run)]
-        for step in recovery:
-            try:
-                step()
-            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as rollback:
-                error.add_note("Restoring previous policy: " + ipv6.error_summary(rollback))
+            with recovery_step(error):
+                run("systemctl", "start", *active)
+            with recovery_step(error):
+                wait_ready(previous, active, run)
         raise
     finally:
         if watching:

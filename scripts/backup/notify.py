@@ -9,7 +9,7 @@ import subprocess
 import time
 import uuid
 
-from runner import OPERATIONS, atomic_json, read_record, record_result, safe_error
+from state import OPERATIONS, atomic_json, read_record, record_result, safe_error
 
 
 def finalize(state, run_state):

@@ -1,78 +1,16 @@
+{ userName, ... }:
 {
-  config,
-  lib,
-  userName,
-  hostSecretsDirectory,
-  ...
-}:
-let
-  yaml = group: key: {
-    sopsFile = hostSecretsDirectory + "/${group}.sops.yaml";
-    inherit key;
-  };
-  secret = name: config.sops.secrets.${name}.path;
-  providers = {
-    scaleway = { };
-    r2 = { };
-    b2 = { };
-  };
-in
-{
-  _module.args.hostSecretsDirectory = lib.mkDefault ./secrets;
-
-  users.users.${userName}.hashedPasswordFile = secret "${userName}-password";
-  services.tailscale.authKeyFile = lib.mkIf config.services.tailscale.enable (
-    secret "tailscale-auth-key"
-  );
-  site.cli.identityFile = secret "personal-identity";
-  site.backup.targets = lib.mapAttrs (name: _: {
-    repositoryFile = secret "restic-repo-${name}";
-    passwordFile = secret "restic-password";
-    environmentFile = secret "restic-s3-${name}";
-  }) providers;
-  site.notifications = {
-    barkDeviceTokenFile = secret "bark-device-token";
-    extraConfigFile = secret "notification-channels";
-    users = [ userName ];
-  };
-  sops.secrets = {
-    "${userName}-password" = (yaml "system" "login/passwordHash") // {
-      neededForUsers = true;
-    };
-    tailscale-auth-key = lib.mkIf config.services.tailscale.enable (yaml "system" "tailscale/authKey");
-    restic-password = yaml "backup" "password";
-    bark-device-token = (yaml "system" "notifications/barkDeviceToken") // {
-      restartUnits = [ "site-notification-secrets.service" ];
-    };
-    notification-channels = {
-      sopsFile = hostSecretsDirectory + "/system.sops.yaml";
-      key = "notifications/channels";
-      restartUnits = [ "site-notification-secrets.service" ];
-    };
-    wifi-environment = lib.mkIf (config.networking.networkmanager.ensureProfiles.profiles != { }) {
-      sopsFile = hostSecretsDirectory + "/system.sops.yaml";
-      key = "wifi/environment";
-      restartUnits = [ "NetworkManager-ensure-profiles.service" ];
-    };
-    personal-identity = {
-      sopsFile = hostSecretsDirectory + "/identity.sops.yaml";
-      key = "";
-      mode = "0400";
-      restartUnits = [ "site-identity.service" ];
-    };
-  }
-  // lib.mapAttrs' (
-    name: _: lib.nameValuePair "restic-repo-${name}" (yaml "backup" "repositories/${name}/url")
-  ) providers
-  // lib.mapAttrs' (
-    name: _: lib.nameValuePair "restic-s3-${name}" (yaml "backup" "repositories/${name}/environment")
-  ) providers;
-
-  networking.networkmanager.ensureProfiles.environmentFiles = lib.optional (
-    config.networking.networkmanager.ensureProfiles.profiles != { }
-  ) (secret "wifi-environment");
-  # Public profile aliases reference SSID/password variables from wifi/environment.
-  # SSIDs and passwords are substituted from wifi/environment after decryption.
+  imports = [
+    (import ../../lib/credentials.nix {
+      inherit userName;
+      hostSecretsDirectory = ./secrets;
+      backupTargets = [
+        "scaleway"
+        "r2"
+        "b2"
+      ];
+    })
+  ];
   networking.networkmanager.ensureProfiles.profiles = {
     home = {
       connection = {

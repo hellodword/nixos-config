@@ -7,7 +7,6 @@ Symlinks are saved as links, never traversed. Selection fails on unreadable
 paths, required missing roots and mount boundaries.
 """
 import argparse
-from datetime import datetime, timedelta
 import fcntl
 import fnmatch
 import hashlib
@@ -24,10 +23,10 @@ import sys
 import tempfile
 import time
 import uuid
-from zoneinfo import ZoneInfo
 
 
-OPERATIONS = ("backup", "check", "restore-test", "maintenance")
+from state import OPERATIONS, atomic_json, read_record, scope, success_path, attempt, record_result, safe_error
+from schedule import automatic_decision, window_at, recent
 STOP_AT = None
 
 
@@ -43,19 +42,6 @@ class ResticError(RuntimeError):
         super().__init__(f"Restic failed (exit {code}): {self.detail}")
 
 
-def safe_error(message):
-    """Bound public diagnostics; URLs, paths and credential values stay private."""
-    text = str(message)
-    for name, value in os.environ.items():
-        if value and re.search(r"PASSWORD|TOKEN|SECRET|ACCESS_KEY|CREDENTIAL|AUTH", name, re.I):
-            text = text.replace(value, "[credential]")
-    text = re.sub(r"(?:[a-z][a-z0-9+.-]*://|(?:s3|b2|rest|sftp):)[^\s\"'<>]+", "[repository]", text, flags=re.I)
-    text = re.sub(r"(?i)\b(password|token|secret|authorization|access[_-]?key)(\s*[=:]\s*)\S+", r"\1\2[credential]", text)
-    text = re.sub(r"(?<!\w)/(?:[^\s\"'<>]+)", "[path]", text)
-    text = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', text)
-    return " ".join(text.split())[:512] or "see protected command log"
-
-
 def check_interrupted():
     if STOP_AT is not None:
         raise Interrupted()
@@ -66,40 +52,6 @@ def relative(value):
     if not value or path.is_absolute() or ".." in path.parts or str(path) != value:
         raise ValueError("policy paths must be canonical, nonempty relative paths")
     return path
-
-
-def atomic_json(path, value):
-    fd, temp = tempfile.mkstemp(dir=path.parent, prefix=".state-")
-    try:
-        with os.fdopen(fd, "w") as stream:
-            json.dump(value, stream, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temp, path)
-    finally:
-        if os.path.exists(temp):
-            os.unlink(temp)
-
-
-def read_record(path):
-    try:
-        value = json.loads(path.read_text())
-        return value if isinstance(value, dict) else {}
-    except (OSError, ValueError):
-        return {}
-
-
-def scope(policy, source, repository):
-    repository = repository.strip()
-    if not repository:
-        raise ValueError("repository must be explicitly configured")
-    identity = hashlib.sha256(repository).hexdigest()
-    data = {k: v for k, v in json.loads(policy.read_text()).items()
-            if k not in ("schedule", "minimumIntervalSeconds", "automatic", "health", "recoverStaleLocks")}
-    definition = json.dumps({"policy": data,
-                             "source": os.path.abspath(source), "repository": identity}, sort_keys=True)
-    return {"repository": identity, "scope": hashlib.sha256(definition.encode()).hexdigest()}
 
 
 def select(source, policy):
@@ -290,119 +242,9 @@ def backup(args, policy, metadata, common):
     print(json.dumps({"operation": "backup", "files": len(plan["paths"]), "bytes": plan["bytes"], "missingOptionalCount": len(plan["missingOptional"])}))
 
 
-def window_at(schedule, now, offset=0):
-    local = datetime.fromtimestamp(now, ZoneInfo(schedule["timeZone"]))
-    minute = local.hour * 60 + local.minute
-    for window in schedule["windows"]:
-        start, end = (sum(int(v) * factor for v, factor in zip(window[key].split(":"), (60, 1)))
-                      for key in ("start", "end"))
-        if start + offset <= minute < end:
-            return window | {"id": f"{local.date()}:{window['start']}:{window['end']}"}
-    return None
-
-
 def on_ac_power():
     # systemd-ac-power also handles desktops with no battery or power supplies.
     return subprocess.run(["systemd-ac-power"], timeout=5, check=False).returncode == 0
-
-
-def success_path(state, operation):
-    return state / (("restore" if operation == "restore-test" else operation) + "-success.json")
-
-
-def recent(state, operation, metadata, policy, now):
-    previous = read_record(success_path(state, operation))
-    interval = policy.get("minimumIntervalSeconds", {}).get(operation, 0)
-    return (previous.get("scope") == metadata["scope"]
-            and isinstance(previous.get("time"), (int, float))
-            and 0 <= now - previous["time"] < interval)
-
-
-def attempt(state, operation, metadata):
-    # Older installations have only result records. A skipped trigger must not
-    # overwrite the clock of the last operation that actually started.
-    for suffix in ("attempt", "result"):
-        record = read_record(state / f"{operation}-{suffix}.json")
-        if record.get("scope") == metadata["scope"] and isinstance(record.get("started"), (int, float)):
-            return record
-    return {}
-
-
-def next_window(schedule, earliest, offset, *, heavy=False):
-    zone = ZoneInfo(schedule["timeZone"])
-    local = datetime.fromtimestamp(earliest, zone)
-    windows = [w for w in schedule["windows"] if not heavy or w["maintenance"]]
-    for days in range(3):
-        day = local.date() + timedelta(days=days)
-        candidates = []
-        for window in windows:
-            start = datetime.combine(day, datetime.strptime(window["start"], "%H:%M").time(), zone) + timedelta(minutes=offset)
-            end = datetime.combine(day, datetime.strptime(window["end"], "%H:%M").time(), zone)
-            when = max(earliest, start.timestamp())
-            if when < end.timestamp():
-                candidates.append(when)
-        if candidates:
-            return int(min(candidates))
-    return None
-
-
-def automatic_decision(state, operation, metadata, policy, now, offset=0):
-    """Earliest policy-eligible time, without querying the repository or power state."""
-    automatic = policy.get("automatic", {})
-    if not automatic.get("enable", True):
-        return {"nextEligibleAt": None, "reason": "automatic execution disabled"}
-    schedule = policy.get("schedule")
-    if not schedule:
-        return {"nextEligibleAt": None, "reason": "no automatic windows"}
-    heavy = operation != "backup"
-    constraints = [(int(now), "ready")]
-    previous = read_record(success_path(state, operation))
-    if previous.get("scope") == metadata["scope"]:
-        constraints.append((previous.get("time", 0) + policy.get("minimumIntervalSeconds", {}).get(operation, 0), "recent successful run"))
-    last = attempt(state, operation, metadata)
-    if last.get("result") in ("failure", "interrupted", "running"):
-        retry = automatic.get("retryIntervalSeconds", {}).get(operation, 900 if not heavy else 86400)
-        constraints.append((last.get("finished", last["started"]) + retry, "retry interval"))
-    if heavy:
-        started = max((attempt(state, op, metadata).get("started", 0) for op in OPERATIONS[1:]), default=0)
-        constraints.append((started + automatic.get("heavySpacingSeconds", 0), "heavy operation spacing"))
-    else:
-        window = window_at(schedule, now, offset)
-        if window:
-            counted = read_record(state / "backup-window.json")
-            maximum = automatic.get("backupAttemptsPerWindow")
-            reason = None
-            if previous.get("scope") == metadata["scope"] and previous.get("window") == window["id"]:
-                reason = "backup already completed in this window"
-            elif (maximum is not None and counted.get("scope") == metadata["scope"]
-                  and counted.get("window") == window["id"] and counted.get("count", 0) >= maximum):
-                reason = "backup attempt limit for this window"
-            elif (maximum == 1 and last.get("window") == window["id"]):
-                # Existing result records also consume an attempt on upgrade.
-                reason = "backup attempt limit for this window"
-            if reason:
-                local = datetime.fromtimestamp(now, ZoneInfo(schedule["timeZone"]))
-                end = datetime.combine(local.date(), datetime.strptime(window["end"], "%H:%M").time(), local.tzinfo)
-                constraints.append((end.timestamp(), reason))
-    earliest, reason = max(constraints, key=lambda item: item[0])
-    eligible = next_window(schedule, earliest, offset, heavy=heavy)
-    if earliest == int(now) and eligible != int(now):
-        reason = "outside maintenance window" if heavy else "outside backup window"
-    return {"nextEligibleAt": eligible, "reason": reason}
-
-
-def record_result(state, record):
-    operation = record["operation"]
-    atomic_json(state / f"{operation}-result.json", record)
-    if operation in OPERATIONS and "started" in record:
-        atomic_json(state / f"{operation}-attempt.json", record)
-    if record["result"] == "skipped":
-        return
-    # Delivery acknowledges only the same event it read. The lock is held for
-    # local updates, never across a network request or a Restic operation.
-    with (state / "notifications.lock").open("a") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        atomic_json(state / f"{operation}-pending.json", record | {"deliveredChannels": []})
 
 
 def run_operation(args, policy, metadata, operation, *, checked=False, reuse_backup=False):

@@ -1,61 +1,64 @@
-# 架构与维护入口
+# 配置、脚本与状态
 
-`flake.nix` 锁定输入并提供系统、开发环境和检查入口。`hosts/laptop2/` 组合硬件与 `profiles/laptop/`；模块提供能力，profile 选择能力和默认策略。
+`flake.nix` 注册主机、开发环境和检查。找到一项行为时，先看由谁选择它，再看模块如何装配服务，最后跟到服务执行的脚本。
 
-| 位置 | 职责 |
+| 位置 | 负责的内容 |
 | --- | --- |
-| `hosts/laptop2/` | 现有磁盘、启动、硬件、功能组合与主机凭据绑定 |
-| `profiles/laptop/` | 功能组合、持久状态清单、备份范围和默认分流规则 |
-| `modules/core/` | 用户、存储根、Home Manager 接入与 CLI 系统服务 |
-| `modules/network/` | DNS、sing-box、Lockdown、Tailscale、Docker 桥接网络与 Wi-Fi |
-| `modules/desktop/` | 会话、显示管理、门户、字体、应用和生产力工具 |
-| `modules/services/` | Restic、本地通知、容器、虚拟机、Android 和 OCI cache |
-| `home/` | Home Manager 用户配置：CLI、应用、桌面与状态栏 |
-| `lib/` | 纯策略与数据组合 |
-| `nix/` | 包装工具、包定制与检查装配 |
-| `scripts/` | 服务运行逻辑和维护命令 |
-| `tests/` | 配置矩阵、行为测试、进程集成及 VM 场景 |
+| `hosts/<名称>/` | 硬件、启动、用户与版本、凭据位置、实际备份目标及主机特定策略 |
+| `profiles/laptop/` | 桌面与工具组合、持久状态清单、备份范围、共同网络默认值 |
+| `modules/` | 能力选项、NixOS 服务和软件装配 |
+| `home/` | 随系统激活的用户配置，包括 CLI、应用、桌面与状态栏 |
+| `lib/` | 策略组合、凭据字段绑定和共享服务设置 |
+| `nix/` | 包定制、工具包装、检查和缓存清单 |
+| `scripts/` | 系统服务及本地维护命令的运行逻辑 |
+| `.github/workflows/` | GitHub 事件、步骤、权限、runner 准备与释放 |
+| `.github/ci/` | 构建事件统计、资源采集、缓存筛选和候选提交处理 |
+| `tests/` | 合成配置、行为与进程检查、原生 NixOS VM 场景 |
+| `tools/vm-test-mcp/` | 可选远端执行客户端和可移除的兼容处理 |
 
-## 配置与状态所有权
+## 配置归属
 
-Home Manager 使用系统的 `pkgs`，通过 `useUserPackages` 安装用户软件。Firefox 的搜索设置、VS Code 扩展、SSH/Git 和桌面配置由各自原生模块生成。NixOS impermanence 管理系统与用户的持久挂载；应用可写目录使用内核 bind mount，支持原子替换的 Plasma 单文件使用持久化链接。
+laptop2 是 laptop profile 的一个具体 host。实际机器在主机目录声明用户名、UID、系统与 Home Manager 的 `stateVersion`、磁盘和密钥位置；新增机器在 flake 中显式注册。测试使用独立的合成 laptop，不导入某台机器的硬件或真实密文。
 
-Home Manager 激活失败不会阻止图形登录。i3、Sway 及其通知和状态栏服务直接读取构建出的配置；用户目录存在冲突时，可以先进入会话，再查看 `home-manager-ubuntu.service` 并处理具体路径。冲突文件由用户保存并按应用入口合并。
+Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户配置。系统闭包已经包含用户激活产物，维护入口统一见[主机维护](maintenance.md)。
 
-SSH/Git 覆盖、Wi-Fi、显示方案和输入法学习记录由应用管理。systemd 用户 tmpfiles 以 `C` 规则初始化缺失的 GTK 2 配置，并为 kanshi 创建空的可写配置文件，日常修改入口见[本机配置](local-state.md)。SSH、Git/GPG 基线使用分组 SOPS YAML 中的字符串字段，运行时由 sops-nix 交给消费者。NetworkManager 原生支持声明式连接与本机连接，凭据通过运行时环境文件提供。
+能力通过 `site.*.enable` 和原生 NixOS 选项选择。DNS、sing-box 和 Lockdown 可分别组合；Tailscale 使用原生模块；Sway、i3、Plasma 可分别选择。非自由软件的许可声明与选择它的模块放在一起，Home Manager 与系统共用这项策略。
 
-## 持久根与安装约定
+## 从服务找到脚本
 
-`site.storage.persistRoot` 是绝对、位于 Nix store 外的路径，默认 `/persist`，laptop2 在主机配置中显式选择它。模块通过 `config.site.storage.persistRoot` 派生持久化映射、SOPS key、Restic 源目录和运行时策略位置；新增主机可以覆盖该选项。
-
-此选项表示挂载位置。已有 laptop2 的物理分区、LUKS、Btrfs 子卷名称、swap 和 Secure Boot 身份由主机文件保留。改变挂载位置仍需单独安排已有数据和启动配置的迁移。个人用户 UID、系统与 Home Manager `stateVersion` 均沿用现有安装。
-
-`profiles/laptop/persistence.nix` 集中列出持久状态，独立于服务 enable。禁用应用后，数据仍通过原路径可见；sing-box 的状态所有者也随该清单保留。SSH 主机密钥按 `services.openssh.hostKeys` 逐个持久化，SSH 配置由 NixOS 生成。impermanence 对已有持久目录沿用盘上权限，声明的 mode 用于创建目录。NixOS 用户激活管理 home 本身的所有权和 0700 权限；服务状态同时遵循各自原生 `StateDirectory` 的权限设置。SSH/GPG 与密钥状态使用受限权限，应用可写配置保持原生文件格式。
-
-持久化与备份是两个清单：持久化覆盖应用正常使用所需的状态、开发目录和缓存；Restic 只选择[备份策略](backup.md)列出的资料。镜像、卷及历史容器目录的后续清理由数据所有者单独安排。
-
-## 功能与许可
-
-能力使用 `site.core`、`site.cli`、`site.desktop`、`site.apps`、`site.connections`、`site.backup`、`site.containers`、`site.virtualbox`、`site.android.*`、`site.productivity` 和 `site.cache`、`site.notifications` 的 `enable`。网络拆为 DNS、sing-box 和 Lockdown；Tailscale 使用原生 `services.tailscale.enable`。桌面可分别选择 Sway、i3、Plasma。
-
-需接受非自由软件许可的功能，在自身模块中声明原生 `nixpkgs.config.allowUnfreePackages` 包名列表。Home Manager 与系统共享这项许可策略，包的选择和许可入口放在一起维护。
-
-## 运行逻辑
-
-| 目录 | 职责 |
+| 行为 | 配置与执行关系 |
 | --- | --- |
-| `scripts/network/` | 共享 route 编译、代理节点合并、DNS 日志、策略发布、出口观察、Docker 本地路由同步与 Lockdown 控制 |
-| `scripts/backup/` | 文件选择、Restic 调度、仓库通路检查、结果通知和健康状态 |
-| `scripts/notifications/` | 容器内 API 初始化和本地发送客户端 |
-| `scripts/secrets/identity.py` | 在隔离公钥环中推导并发布 SSH/Git 文件 |
-| `scripts/desktop/` | 显示布局、截图、Tailscale 状态、健康通知 |
-| `scripts/cli/` | 电台播放和容器镜像拉取 |
-| `scripts/ci.sh` | 现有 CI 检查入口 |
+| 备份 | laptop profile 选择路径，host 选择目标和频率，服务模块生成策略与单元；`runner.py` 执行 Restic，`schedule.py` 计算到期时间，`state.py` 维护共享记录；健康检查和通知读取这些记录 |
+| 网络切换 | 模块生成声明，运行时编译合并本机规则；校验后发布配置并等待服务就绪，失败按明确顺序恢复前一代配置 |
+| 桌面电源菜单 | 检查重要进程和备份、确认、再次检查，再调用当前桌面的原生注销或 systemd 电源动作 |
+| 壁纸 | 显示就绪后恢复持久记录；本地轮换与到期下载各自触发，下载有效新图后更新状态和画面 |
+| SSH/GPG | 系统发布公钥、SSH/Git 配置和身份清单，用户服务根据清单启用本机已有的签名身份 |
+| CI | YAML 明确安排步骤，Nix 提供 derivation 和缓存清单，Python 处理结构化结果与发布；步骤之间不经过通用调度器 |
 
-DNS 与 sing-box 分别编译共享 route 子集；Mullvad 负责流量接管和 Lockdown，sing-box 的本地 WireGuard endpoint 接收后执行分流。Tailscale 传输和出口客户端流量各自按策略处理，拓扑、规则优先级和运行命令见[网络](network.md)。
+脚本选 Python 是为了文件状态、结构化数据和进程协调；简单线性调用留在 shell 或 Nix 服务定义。网络规则中的 Go 辅助程序使用实际 RE2 语义，避免以另一种正则实现近似判断规则。
 
-公开源码与 SOPS 密文放在同一仓库；公开构建使用合成资料与明确的[缓存范围](cache.md)。
+## 持久状态
 
-主机身份和服务凭据集中在 `hosts/laptop2/secrets.nix`，填写方式见[主机凭据](secrets.md)。显示管理由 `modules/desktop/displays.nix` 按会话选项启用。[本地通知](notifications.md)使用独立 gVisor 容器，发送入口是受 Unix 权限控制的 socket。
+`site.storage.persistRoot` 指定 Nix store 外的持久挂载位置，默认 `/persist`。模块据此派生 SOPS key、Restic 源和本机策略路径。改变位置需要同时处理磁盘挂载与已有数据，不能只改一个选项后切换。
 
-证书由 NixOS 最终 `security.pki.caBundle` 管理；sing-box 和 Tailscale 各自随 bundle 更新重启，通知镜像也使用同一信任源。
+laptop profile 的持久清单独立于功能开关。禁用应用后数据仍可通过原路径访问，必要的状态所有者也继续存在。impermanence 使用 bind mount 保存应用可写目录；需要原子替换的 Plasma 单文件通过持久链接管理。已有目录权限和原生服务的 `StateDirectory` 设置都参与实际权限结果。
+
+系统声明、应用可写偏好和恢复资料各有入口，详见[本机配置](local-state.md)。持久化清单覆盖正常使用所需的状态和缓存；备份只选择[备份范围](backup.md)中的资料。现有仓库状态、调度记录和通知队列随持久根保留。
+
+凭据由 SOPS 密文在目标机运行时解密，模块接收文件路径。`lib/credentials.nix` 统一 laptop 的字段绑定，host 提供密文目录、用户名和备份目标；Wi-Fi profile 等机器选择仍由 host 声明。测试通过同一绑定使用合成资料。
+
+证书由最终 `security.pki.caBundle` 管理，网络服务和通知镜像使用同一信任来源。公共构建及发布范围见[缓存](cache.md)。
+
+## 权限边界
+
+桌面应用的文件访问范围集中在[桌面指南](desktop.md#应用隔离)。Firejail 保护处理外部内容的应用，复用上游 profile 并保留浏览器的原生沙箱。VS Code Dev Containers 和 Kitty 需要完整开发环境，由常规桌面入口运行。
+
+后台桌面服务以 systemd 隔离各自的 home 状态和运行目录。dnsdist、dnsproxy、DNS Collector、oranc 处理网络输入，使用独立身份、只读系统及设备/能力限制；LuaJIT 所需的内存执行能力仅对 dnsdist 保留。sing-box 持有管理自身 TUN 所需的网络能力，配置生成先在无网络、只读输入的独立沙箱完成，发布进程仅控制声明的服务。
+
+Restic 按仓库分离可写状态与 cache，源目录只读。Apprise/Bark 使用各自的 gVisor 容器和运行时凭据，Waydroid 使用上游 LXC 边界。常见基础服务继续使用 NixOS 上游单元定义。
+
+桌面 Firejail 包装保留原包和桌面资源。默认 profile 来自锁定的 nixpkgs；Anytype 复用上游 Electron 公共配置。服务的限制由 systemd 表达，源码不承担隔离策略。文件访问入口见[桌面指南](desktop.md)，实现位于 `home/sandbox.nix`、`lib/service-hardening.nix`、`lib/desktop-service-hardening.nix` 及对应服务模块。
+
+图形用户服务仍使用会话 socket，包括用户 D-Bus 和窗口管理器 IPC；这些接口保留了会话级权限，文件系统限制约束的是进程的直接访问。X11 还允许较广泛的窗口与输入访问。因此，这些服务与桌面会话处于同一信任范围。Firejail 应用另外使用各自的 D-Bus 规则；文件选择器可见范围由其文件系统视图决定。
+
+`kernel.io_uring_disabled=1` 将 io_uring 留给具有 `CAP_SYS_ADMIN` 的进程；普通用户及受限应用使用其他 I/O 接口。这一设置减少桌面进程可达的内核接口，不代表 io_uring 在所有场景均不适用。wheel 的文件描述符 soft limit 为 524288、hard limit 为 unlimited，Docker 单元使用 infinity；这些限额不授予文件访问权限，实际打开文件仍受内核上限、权限与可用资源约束。

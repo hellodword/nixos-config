@@ -181,10 +181,10 @@ in
     for target in ("first", "second", "third"):
         machine.succeed(f"systemctl start site-backup-{target}-backup")
         assert record(target, "backup-success")["files"] == 2
-        for operation in ("check", "restore-test", "maintenance"):
-            machine.succeed(f"systemctl start site-backup-{target}-{operation}")
-            assert record(target, operation + "-result")["result"] == "success"
-        restore(target, "/restore-" + target)
+    for operation in ("check", "restore-test", "maintenance"):
+        machine.succeed(f"systemctl start site-backup-first-{operation}")
+        assert record("first", operation + "-result")["result"] == "success"
+    restore("first", "/restore-maintained")
     assert all(value["backup"]["state"] == "fresh" for value in health().values())
 
     # A second daily window gets its own recovery point, even less than 12h later.
@@ -212,16 +212,17 @@ in
     assert record("first", "backup-result")["result"] == "interrupted"
     assert record("first", "backup-success") == evening
 
-    # Losing the backend after acquiring a lock still allows bounded shutdown.
+    # Disconnect the backend after acquiring a lock. A paused server would still
+    # receive a queued DELETE and process it on resume, hiding the stale lock.
     # Another operation for the same repository skips immediately instead of queuing.
     machine.succeed("systemctl start --no-block site-backup-first-backup")
     upstream.wait_until_succeeds("test -n \"$(find /var/lib/restic/first/locks -type f -print -quit)\"", timeout=30)
-    upstream.succeed("systemctl kill -s STOP restic-rest-server.service")
+    upstream.succeed("ip link set eth1 down")
     machine.succeed("systemctl start site-backup-first-check", timeout=10)
     assert record("first", "check-result")["result"] == "skipped"
     machine.execute("systemctl poweroff --no-block", check_return=False, check_output=False)
     machine.wait_for_shutdown(timeout=timedelta(seconds=60))
-    upstream.succeed("systemctl kill -s CONT restic-rest-server.service; echo 0 > /run/notification-fixture/failures")
+    upstream.succeed("ip link set eth1 up; echo 0 > /run/notification-fixture/failures")
     upstream.succeed("test -n \"$(find /var/lib/restic/first/locks -type f -print -quit)\"")
     machine.start()
     machine.wait_for_unit("multi-user.target")

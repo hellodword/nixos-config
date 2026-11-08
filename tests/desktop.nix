@@ -1,11 +1,18 @@
-{ pkgs, config }:
+{
+  pkgs,
+  config,
+  userName,
+}:
 let
-  home = config.home-manager.users.ubuntu;
+  home = config.home-manager.users.${userName};
   source = pkgs.lib.fileset.toSource {
     root = ../.;
     fileset = pkgs.lib.fileset.unions [
       ./__init__.py
       ./support.py
+      ./unit/__init__.py
+      ./unit/test_display_layout.py
+      ../scripts/desktop/layout.py
       ./integration/__init__.py
       ./integration/desktop.py
     ];
@@ -37,6 +44,7 @@ pkgs.runCommand "desktop-configuration-and-fonts"
   }
   ''
     cp -r ${source}/. .
+    python3 -m unittest tests.unit.test_display_layout -v
     mkdir -p $out
     dbus-run-session --config-file ${pkgs.dbus}/share/dbus-1/session.conf -- \
       python3 -m tests.integration.desktop --settings ${fixtures} --output $out

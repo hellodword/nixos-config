@@ -1,47 +1,31 @@
-# laptop2 / NixOS
+# NixOS configuration
 
-已有 laptop2 安装的系统配置：Sway、i3 和 Plasma 桌面，可独立组合的 DNS、代理与 Lockdown，以及三个独立的 Restic 备份仓库。
+以 laptop profile 组合桌面、网络、备份和开发环境的 NixOS 配置。支持 Sway、i3 和 Plasma，使用声明式系统配置，同时保留应用需要自行修改的持久状态。
 
-## 从哪里开始
+目前注册的主机是 [laptop2](hosts/laptop2/README.md)。主机目录记录具体机器的硬件、身份和策略；`profiles/laptop/` 维护共同选择，`modules/` 提供能力。
 
-| 任务 | 文档 |
+| 要做什么 | 从这里开始 |
 | --- | --- |
+| 构建、升级、切换、回退或增加主机 | [主机维护](docs/maintenance.md) |
 | 修改 SSH、Wi-Fi、显示器、输入法和本机偏好 | [本机配置](docs/local-state.md) |
-| 调整域名分流、代理节点或 Lockdown | [网络](docs/network.md) |
-| 查看备份状态、控制范围和成本、恢复资料 | [备份](docs/backup.md) |
-| 填写和管理本机加密凭据 | [主机凭据](docs/secrets.md) |
-| 发送通知、配置通道和查看投递结果 | [本地通知](docs/notifications.md) |
-| 使用桌面会话、浏览器和排查登录问题 | [桌面](docs/desktop.md) |
-| 修改模块、脚本或测试 | [架构](docs/architecture.md)、[验证](docs/validation.md) |
-| 理解组件选择与应用权限 | [选择与隔离边界](docs/choices.md) |
-| 为宿主、开发容器和 CI 配置构建缓存 | [缓存](docs/cache.md) |
+| 调整分流、代理节点或 Lockdown | [网络](docs/network.md) |
+| 查看备份状态、控制成本、恢复资料 | [备份](docs/backup.md) |
+| 管理加密凭据与 SSH/GPG 身份 | [凭据](docs/secrets.md) |
+| 使用桌面和排查登录、钱包问题 | [桌面](docs/desktop.md) |
+| 配置通知与排查投递 | [通知](docs/notifications.md) |
+| 理解模块、脚本和状态之间的关系 | [架构](docs/architecture.md) |
+| 选择并运行检查 | [验证](docs/validation.md) |
+| 配置 GitHub 自动更新与验收 | [CI](docs/ci.md) |
+| 配置构建缓存、签名与发布 | [缓存](docs/cache.md) |
 
-## 构建与检查
-
-在源码 checkout 中运行：
-
-```sh
-nix build --no-link .#checks.x86_64-linux.unit .#checks.x86_64-linux.network .#checks.x86_64-linux.configuration
-nix build --no-link .#nixosConfigurations.laptop2.config.system.build.toplevel
-```
-
-依赖由 `flake.lock` 固定；开发工具通过 `nix develop` 提供。构建使用公开配置和 SOPS 密文，个人数据在目标机激活时解密。
-
-laptop2 的 Nix 配置自动包含公共缓存和项目 OCI 缓存。开发容器首次使用时运行 `bash scripts/nix-cache.sh install`，随后直接使用上述 Nix 命令；多用户 daemon 的信任配置与其他机器的公共缓存安装方式见[缓存指南](docs/cache.md)。
-
-部署使用 `nixos-rebuild`。
-
-## 日常升级与回退
-
-在候选 checkout 更新依赖或配置，由独立的 `checks.x86_64-linux.e2e` 完成验收，再合并候选修改。检查入口与执行条件见[验证](docs/validation.md)。
+在 checkout 中选择主机并构建：
 
 ```sh
-nix flake update nixpkgs home-manager plasma-manager
-nix build --no-link --no-update-lock-file .#checks.x86_64-linux.e2e
-nix build --out-link result .#nixosConfigurations.laptop2.config.system.build.toplevel
-sudo nixos-rebuild switch --flake .#laptop2
+host=laptop2
+nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
+nix build --no-link .#checks.x86_64-linux.identity
 ```
 
-涉及持久挂载、物理网络或 Lockdown 能力组合时，用 `nixos-rebuild boot` 后重启。升级成功后检查 `systemctl --failed`、`systemctl --user --failed`、`backup-status` 和日常应用。
+依赖由 `flake.lock` 固定，开发工具通过 `nix develop` 提供。Home Manager 随 NixOS 系统一起构建和激活。构建读取公开配置与 SOPS 密文，凭据在目标机激活时解密。
 
-回退前保存正在使用的应用数据，停止会话中会写配置的应用。可从启动菜单选择旧代次，也可以运行 `sudo nixos-rebuild switch --rollback`。系统回退选择旧程序与声明；应用数据库、钱包和本机偏好仍是当前持久数据，必要时从独立备份恢复到单独目录后审阅。Home Manager 冲突由 `journalctl -u home-manager-ubuntu.service -b` 给出，逐项保存对应文件，再重启该服务。
+已有安装的迁移恢复材料保存在[归档](docs/archive/laptop2-migration.md)，日常维护使用现行指南。

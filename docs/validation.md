@@ -1,94 +1,74 @@
 # 开发与验证
 
-构建和测试使用 `flake.lock` 中的依赖。测试源按执行环境组织，使用合成账户、凭据、仓库和网络服务。
+使用 `flake.lock` 中的依赖和合成测试资料。选择检查时先看改动触及的行为，不必为了一个领域的修改反复运行全部桌面。
 
-## 选择检查入口
+## 检查入口
 
-| flake 检查 | 覆盖的行为 | 实现位置 |
-| --- | --- | --- |
-| `unit` | 路径选择与仓库/策略状态、策略切换/恢复、显示布局；真实 Restic 三仓库备份和完整恢复，独立频率、手动额外执行与持久重试，远端检查请求量、损坏检测、信号中断和锁恢复；公钥推导、声明身份注册及签名、GPG 资料补齐、Git 验签与换钥期间的新旧身份共存 | `tests/unit/`、`tests/integration/backup.py`、`secrets.py` |
-| `network` | 真实 dnsdist/dnsproxy/sing-box、DoT/HTTP2 DoH、独立 DNS/显式代理及组合、文件顺序/规则集/逻辑匹配与路由一致性、TLS/ECS/缓存、完整响应日志和代理故障 | `tests/integration/dns.py`、`network.py` |
-| `configuration` | 合成 SOPS 密文经过真实主机字段与 Wi-Fi/身份绑定；完整主机、网络、Tailscale 及桌面/应用能力组合，验证有效服务、会话、禁用能力后的持久清单与所有权，求值系统闭包；临时 Git 仓库验证持续备份推送 | `tests/configuration.nix` |
-| `desktop` | 生产 Fontconfig 字形匹配、混排宽度与图标/emoji；原生 Sway/i3 配置验证 | `tests/desktop.nix`、`tests/integration/desktop.py` |
-| `vm-backup` | 真实 Restic 三仓库、上海时间窗口、故障重试、路径边界、取得真实仓库锁后的正常中断及后端无响应时的关机、重启解锁与恢复；gVisor 内 Apprise/Bark 中文通知、官方 TLS 模拟上游、凭据隔离和跨重启的最新结果补发 | `tests/vm/backup.nix` |
-| `vm-network` | 本机与 Tailscale 出口客户端的持续双栈流量、DNS、NAT 穿透与 DERP；独立 WireGuard/OpenVPN 接口传输、策略更新及就绪失败恢复、服务故障、日志轮转、断网及重启恢复；三种网络能力组合下的通知、普通 Docker/Compose 的 DNS 与出口、服务名互通及端口发布、网络重建、prune 与 Docker 重启 | `tests/vm/network.nix` |
-| `vm-desktop` | SDDM 三会话登录、原生与 Rofi 注销、重新登录；电源菜单对虚拟机和备份任务的阻挡及正常重启/关机；空闲与手动锁屏、显示布局变化后的解锁、Plymouth 加密启动；标签布局、Waybar、截图剪贴板、输入法、KWallet、壁纸，以及显示布局、NetworkManager 连接和 GPG 身份操作的重启恢复 | `tests/vm/desktop.nix` |
-| `vm-applications` | 默认 1920×1080 下，三会话中的 Firefox、VS Code Dev Containers、Bitwarden Desktop、Kitty、Rofi 基础操作，以及真实应用运行时的注销提醒 | `tests/vm/applications.nix`、`applications.py` |
-| `e2e` | 完整 laptop2 系统与 ubuntu Home Manager 激活产物，以及配置、进程集成、字体与桌面配置、备份/网络/桌面/应用 VM 的必需结果 | `nix/checks.nix` |
+| 检查 | 负责验证 |
+| --- | --- |
+| `backup` | 文件选取、持久状态、调度、通知；真实 Restic 备份和恢复、独立策略、中断、锁与损坏检测 |
+| `identity` | 公钥推导、已有身份自动注册、SSH 签名、Git 验签，以及换钥期间新旧身份共存 |
+| `network` | 配置组合、出口选择；真实 DNS/DoT/DoH 与代理进程、路由语义、日志和故障 |
+| `desktop` | 字体匹配和混排、原生 Sway/i3 配置，以及显示布局选择 |
+| `configuration` | 独立合成 laptop 的能力组合、凭据绑定、服务与会话、持久化所有权和系统求值；临时 Git 仓库中的备份推送 |
+| `vm-network` | systemd 下的网络切换、失败与重启恢复，持续双栈流量、DNS、Tailscale、容器和日志隔离 |
+| `vm-backup` | 实际窗口触发、独立仓库、中断和有界关机、重启恢复、gVisor 通知与补发 |
+| `vm-desktop` | 三会话登录、注销、锁屏、钱包、壁纸、输入法与显示状态，以及加密启动和重启后的恢复 |
+| `vm-applications` | 三会话中的真实应用启动、中文输入与退出提醒；Sway 完成共享的 DevContainer 和 Vaultwarden 全流程 |
+| `e2e` | 上述四个 `vm-*` 结果的聚合 |
+
+例如，身份脚本的修改先运行：
 
 ```sh
-nix build --no-link .#checks.x86_64-linux.unit .#checks.x86_64-linux.network .#checks.x86_64-linux.configuration
+nix build --no-link .#checks.x86_64-linux.identity
 ```
 
-开发时可先运行较快的单元场景或单个集成入口：
+需要更快反馈时，可在开发环境运行对应的 Python 场景：
 
 ```sh
-nix develop --command python3 -m unittest discover -s tests/unit -t . -v
+nix develop --command python3 -m unittest tests.unit.test_backup -v
 nix develop --command python3 -m tests.integration.backup -v
-nix develop --command python3 -m tests.integration.secrets -v
+```
+
+这些入口执行同一份测试，不要求本地命令和 Nix 检查都重复运行。SSH 自动注册与会话生命周期之间的集成由桌面 VM 负责；字体匹配和实际 Kitty 渲染各有独立边界。
+
+## 完整验收与计时
+
+完整验收包含所选 host 的系统构建、五个领域检查、OCI 缓存集成以及四组 VM。Home Manager 是系统构建的依赖，不单独构建。
+
+```sh
+host=laptop2
+nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
+nix build --no-link .#checks.x86_64-linux.backup .#checks.x86_64-linux.identity \
+  .#checks.x86_64-linux.network .#checks.x86_64-linux.desktop .#checks.x86_64-linux.configuration
 nix develop --command python3 -m tests.integration.cache
 ```
 
-缓存检查通过临时 OCI registry 和 oranc 验证可再分发路径筛选、直接签名发布，以及在受限依赖已准备好的情况下恢复公共输出。客户端运行生产安装器生成持久配置，保留原有设置并支持重复安装，然后通过普通 Nix 命令恢复和验证签名产物。小型真实 Nix derivation 同时覆盖依赖准备、实际执行、本地复用、远端恢复和对应的事件计时，详见[缓存指南](cache.md)与[CI 指南](ci.md)。桌面变更另运行 `nix build --no-link .#checks.x86_64-linux.desktop`。
-
-验证范围按实际改动选择既有入口：声明式桌面配置和字体使用 `configuration`、`desktop` 及生产系统/Home Manager 构建；登录界面、会话生命周期和壁纸调度使用完整 `vm-desktop`。应用启动、隔离或开发容器行为涉及 `vm-applications`；依赖升级和跨子系统验收使用 `e2e`。
-
-## CI
-
-升级门禁是独立的 Nix 检查，可由 CI 在候选工作副本中调用：
+本机具备 x86_64 Linux KVM 和所需 Nix system features 时，先准备 VM 环境，再执行测试：
 
 ```sh
-nix flake update nixpkgs home-manager plasma-manager
-nix build --no-link --no-update-lock-file .#checks.x86_64-linux.e2e
+nix build --no-link .#checks.x86_64-linux.vm-network.driver \
+  .#checks.x86_64-linux.vm-desktop.driver .#checks.x86_64-linux.vm-applications.driver \
+  .#checks.x86_64-linux.vm-backup.driver
+nix build --no-link --print-build-logs .#checks.x86_64-linux.e2e
 ```
 
-候选配置通过检查后再提交、合并。完整系统构建使用正式 secrets 默认路径和绑定，构建不解密 SOPS；行为场景使用独立的合成凭据。工作流定期更新指定输入，验收后提交锁文件、重新构建正式 revision，并通过 PR 将相同提交快进合并。触发方式、更新清单和首次启用步骤见 [CI 指南](ci.md)。其他分支的手动运行只负责验收。
+`.driver` 包含测试脚本、客体系统和依赖，构建它不会启动 VM。构建 `vm-*` 结果才执行场景；直接构建 `e2e` 也会先准备缺失依赖。已经存在的成功 derivation 可以复用，应区分本轮执行和缓存命中。四组都实际运行成功的 VM 阶段耗时，才是完整重新执行的基线。
 
-运行节点需要 x86_64 Linux、KVM 和相应的 Nix 构建器系统特性。应用 VM 依次启动，每台配置 6 GiB 内存和 2 个 vCPU。
+CI 的资源分配、阶段计时和失败记录见[工作流说明](ci.md)。OCI 集成使用真实 Nix 构建与临时 registry，验证签名发布、许可筛选、恢复内容及事件计时；不调用真实 GHCR 凭据。
 
-应用场景使用生产 Home Manager、桌面、应用和 Docker 模块。合成用户通过 SDDM 登录 Sway、i3 和 Plasma，在默认 1920×1080 分辨率下完成以下基础操作：
+## VM 场景的分工
 
-| 应用 | 可观察的验收结果 |
-| --- | --- |
-| Kitty、Rofi | 两个 WM 的 Super+D 选择 Kitty，使用拼音输入中文并执行命令写出文件；Super+Shift+D 执行命令；Plasma 中同样验证 Kitty 中文输入 |
-| Firefox | 打开声明式默认 profile，加载本地网页，在页面输入框中使用拼音输入中文；电源菜单显示 Firefox 注销提醒 |
-| VS Code Dev Containers | 由已配置的扩展进入容器工作区，在编辑器中使用拼音输入中文并保存；在内置终端中执行中文命令并检查结果；电源菜单显示 VS Code 注销提醒 |
-| Bitwarden Desktop | 使用本地 HTTPS Vaultwarden 和合成账户登录，在密码库搜索框中使用拼音输入中文；密码库运行期间，电源菜单提示退出 Bitwarden |
+应用 VM 在 SDDM 登录后的真实会话中运行。三个桌面均验证 Firefox 页面与拼音输入、Kitty，以及 VS Code 编辑器和终端、Bitwarden 界面的中文输入。两个 WM 另外通过各自快捷键操作 Rofi。Sway 执行完整 DevContainer 工作区和自托管 Vaultwarden 登录、搜索；其他桌面使用本地工作区和登录界面输入框。输入经过 VM 键盘与 Fcitx，不用直接写入控件代替中文输入验证。
 
-`tests/fixtures/applications/` 提供本地站点和开发容器，VS Code Server 来自 `vscode.vscodeServer`。中文输入通过 VM 键盘和 Fcitx5 完成。桌面与应用场景共用 `tests/vm/gui.py`，同一 VM 的键鼠输入、截图及 monitor 操作串行执行；窗口等待和图像转换受截止时间限制。活动维持线程先结束，再关闭 VM；正常关机最多等待 120 秒，超时则释放该测试 VM 并报告失败，收尾错误与原始错误一并保留。测试输出保留按应用、会话命名的日志、截图和结果。
+备份 VM 用一个代表仓库执行完整维护、canary 和恢复；三个仓库仍覆盖独立状态、策略及失败隔离。进程集成检查负责 Restic 数据和锁的行为，VM 负责 systemd、启动、关机与通知环境。网络 VM 观察实际流量和服务状态，覆盖激活失败、重启退避和回滚。
 
-`.github/workflows/ci.yml` 在 `master` push、定期更新或手动触发时调用 `scripts/ci.sh`。工具检查后，构建受限依赖、生产系统、Home Manager、开发 shell、非 VM 检查及全部 VM driver。VM 分为 network + desktop、applications + backup 两批，每批最多两个并行测试，最后构建完整 `e2e` 汇总。没有锁文件变化的自动更新不运行昂贵检查；镜像及 action 版本由 workflow 自身固定。
+桌面和应用场景共用原生驱动支持代码 `tests/vm/gui.py`。窗口等待、输入、截图和退出有截止时间，收尾错误与原始失败一起报告。测试保留按会话和应用命名的结果、日志和截图。
 
-构建 VM 的 `.driver` 只准备运行环境，构建 `vm-*` 结果才会执行测试。Actions summary 单独统计软件和依赖准备、VM 阶段墙钟时间及每个 VM 构建器的实际执行时间，并区分远端缓存恢复与本地复用。相同哈希的成功结果继续复用；只有四组 VM 都在本轮执行成功时，才能把该次 VM 阶段耗时作为完整重新执行的测量值。资源分配、swap、故障记录和最终 revision 的复验流程见 [CI 指南](ci.md)。
+本机没有 KVM 时使用已准备的远端执行器，入口和兼容说明见 [VM 工具适配](../tools/vm-test-mcp/README.md)。项目测试定义仍是原生 NixOS VM tests。
 
-该脚本为 Docker 内的嵌套构建设置 `sandbox = false`；本地开发直接使用各项检查与主机 daemon 的设置。
+## 验证边界
 
-## VM 与设备验收
+静态检查、进程集成和 VM 通过，不能代替物理显示器、GPU、无线硬件、真实钱包与服务商的验收。物理启动及恢复约定由具体 host 记录；桌面未决问题见[桌面指南](desktop.md#未决问题)。
 
-本机具备 KVM 时，可直接构建对应的 `checks.x86_64-linux.vm-*`。远端使用已准备的 vm-test-mcp，客户端来自锁定的 `vm-test-tools` 输入：
-
-```sh
-nix develop .#vm --command vm-test-submit --help
-```
-
-项目检查不依赖执行器协议；本地与 CI 消费相同的 Nix 测试定义，传输和资源管理由所选执行工具负责。
-
-网络 VM 在目标端记录本机及 exit-node 客户端的实际出口，持续覆盖 direct/代理 × TCP/UDP × IPv4/IPv6；从默认 IPv4 启动，验证 HTTPS、运行时启用/关闭 IPv6，以及重启后回到声明式默认值。主机、普通 Docker/Compose 和出口客户端显式指定外部 DNS 地址的 TCP/UDP 查询均走共享解析。私网、Tailnet 和默认/自建 Docker bridge 访问宿主服务，公网访问按发布前的宿主端口判断；UDP 通配监听验证回复源地址。HTTP/SOCKS 与 SSH ProxyCommand 使用实际 mixed 入口，KDE Connect 使用合成设备发现、配对和传输文件。Tailscale 场景从已有 `shields-up=true` 的身份应用声明，然后验证客户端真实出口 HTTP 和 DNS。通知使用真实 Apprise API、Bark 和 runsc，由独立节点模拟官方 TLS 服务，记录合成推送。
-
-缓存网络场景使用合成签名产物和 TLS registry，通过生产 oranc 服务读取 narinfo 与真实 NAR；宿主、默认 Docker bridge 和 Compose bridge 的下载内容必须一致。该场景随普通容器网络生命周期执行，覆盖 Docker 重启和主机重启后的访问；Mullvad 重连后的完整 IPv4/IPv6 出口检查持续覆盖显式 MTU 的实际效果。
-
-备份 VM 使用受控时间验证首次等待、超期、真实失败及成功后的健康状态，覆盖窗口调度、持锁中断、后端不可用时有界关机以及重启后锁恢复。网络 VM 验证完整 DNS 正文和 debug 日志进入独立命名空间，系统记录、轮转和跨重启历史分别保留。桌面 VM 通过 SDDM 登录、正常注销再登录，检查网络托盘、KWallet、Safe Eyes 及用户设置的恢复；模拟无线设备用于声明式与本机连接的验证。Sway 通过 wdisplays 的原生 Apply 动作保存单屏和双屏配置，再比较拔屏、重新登录和重启后的实际启用输出、位置、分辨率与缩放。应用 VM 保存 Kitty 初始提示符以及 Kitty/Firefox 的拼音候选截图，并验证中文提交结果。
-
-设备验收覆盖真实 SOPS 解密、AP 认证、外接屏幕/合盖、Secure Boot、正常注销/锁屏，以及云端权限和资料恢复。
-
-电源菜单场景通过实际 Rofi 键盘操作选择动作，以真实 QEMU 进程和合成 systemd 备份服务覆盖其他用户的虚拟机、排队任务和执行中任务，随后完成原生会话退出及系统电源操作。应用 VM 在真实 Firejail/Nix/Electron 启动链上验证提醒。锁屏覆盖空闲、手动以及旋转屏幕或多输出布局，通过键盘输入合成用户密码解锁并保存画面。竖屏菜单的文字识别按显示方向转正，截图产物保留 QEMU 的原始画面。PipeWire 的检查跨越注销和重新登录，读取 boot 内的 coredump 记录。
-
-加密启动场景将合成测试系统迁入 VM 专属空磁盘，使用合成口令安装带 Breeze 的启动代次，经图形控制台输入 LUKS 口令后登录 SDDM/Sway。图形解锁截图属于测试产物；实际 i915 显示和 Secure Boot 签名链仍在 laptop2 验收。
-
-壁纸场景使用本地 HTTPS 图片源，通过受控响应延迟、请求记录和实际背景像素，验证先恢复本地图片、到期下载、成功后的新图切换、无新图或离线时保留画面，以及本地轮换、配置重载、注销和重启后的状态恢复。测试调整合成用户的持久下载时间，经过生产 timer 与服务执行到期任务。KWallet 使用合成 Secret Service 条目的存取和重启后读取来验收解锁。
-
-GPG 身份场景通过生产发布器和用户注册服务连接本机 SSH 服务，覆盖缺少一个子密钥时其余身份可用、补齐后的自动启用、发布新代次后新旧身份共存、确认连接后的手动停用，以及重新登录和重启后的连接与 Git 验签。本机额外身份使用原生注册，验证其持续可用；声明身份由生产注册逻辑启用。真实智能卡的插拔、PIN 与签名在设备上验收。
-
-桌面 VM 保留 SDDM 登录界面和实际 Kitty 字体样张。Kitty 样张覆盖中英网格、编程连字、文字/emoji 表示及肤色、ZWJ、国旗、键帽组合；`desktop` 的 Fontconfig/Pango 检查负责字体选择和通用文本度量，不能替代终端自身的显示验证。
-
-音频、双电池、真实外屏 DPI 与触控板手感在 laptop2 验收：播放媒体、进行浏览器通话并切换麦克风/耳机；检查虚拟机客体音频；逐块外屏保存、拔插并重新登录；确认轻触点击、双指滚动和打字抑制。VM 可验证服务和配置生命周期，不能替代这些硬件行为。
+失败后保留原因和必要证据，先判断是配置、场景还是执行环境的问题，再决定重跑范围。目录移动或文档调整不增加只验证名称和布局的测试。

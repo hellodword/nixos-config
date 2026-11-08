@@ -141,7 +141,7 @@ let
     let
       state = "/var/lib/site-backup-${target}";
     in
-    "${pkgs.python3}/bin/python3 ${../../scripts/backup/runner.py} ${operation} --policy ${targetPolicies.${target}} --source ${lib.escapeShellArg cfg.source} --state ${state} --restic ${lib.getExe pkgs.restic}"
+    "${pkgs.python3}/bin/python3 ${../../scripts/backup}/runner.py ${operation} --policy ${targetPolicies.${target}} --source ${lib.escapeShellArg cfg.source} --state ${state} --restic ${lib.getExe pkgs.restic}"
     + " --run-state /run/${nameFor target operation}/result.json";
   mkService =
     target: settings: operation:

@@ -7,7 +7,8 @@ from pathlib import Path
 import tempfile
 import time
 
-from runner import OPERATIONS, atomic_json, attempt, automatic_decision, read_record, scope
+from state import OPERATIONS, atomic_json, attempt, read_record, scope
+from schedule import automatic_decision
 
 
 def status(root, targets, policy, source, now):

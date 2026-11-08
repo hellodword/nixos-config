@@ -1,102 +1,206 @@
-name: Verify, update and cache
+name: Verify and cache
 
 on:
   push:
     branches: [master]
-  schedule:
-    - cron: '37 19 * * *'
   workflow_dispatch:
+  workflow_call:
     inputs:
-      operation:
-        description: Check the selected revision, or update tracked inputs on master
-        type: choice
-        default: check
-        options: [check, update]
+      candidate-artifact:
+        type: string
+        default: ''
+      candidate-sha:
+        type: string
+        default: ''
+    secrets:
+      NIX_CACHE_SIGNING_KEY:
+        required: true
 
 permissions:
   contents: read
 
-# One active build/publisher; a new pending run replaces the older pending run.
+# One verifier/publisher at a time. GitHub retains only the newest pending run.
 concurrency:
-  group: nixos-verify-update-cache
+  group: nixos-verify
   cancel-in-progress: false
 
 jobs:
-  check:
+  verify:
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        host: [laptop2]
     runs-on: ubuntu-24.04
     timeout-minutes: 330
-    # The union needed by the merge and publication steps. Credentials are
-    # supplied only to those steps and never persisted by checkout.
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
       packages: write
     env:
-      # Nix 2.34.9; the official image also supplies the initial /nix store.
+      HOST: ${{ matrix.host }}
       NIX_IMAGE: docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
-      - name: Select operation
-        id: mode
+      - uses: actions/download-artifact@v8
+        if: inputs.candidate-artifact != '' && inputs.candidate-artifact != null
+        with:
+          name: ${{ inputs.candidate-artifact }}
+          path: ${{ runner.temp }}/candidate
+      - name: Check out the candidate commit
+        if: inputs.candidate-artifact != '' && inputs.candidate-artifact != null
         env:
-          EVENT: ${{ github.event_name }}
-          OPERATION: ${{ inputs.operation }}
+          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
         run: |
-          update=false
-          if [[ $GITHUB_REF == refs/heads/master && ( $EVENT == schedule || $OPERATION == update ) ]]; then
-            update=true
-          fi
-          echo "update=$update" >> "$GITHUB_OUTPUT"
-      - name: Prepare disk, swap, KVM and shared Nix store
+          git fetch "$RUNNER_TEMP/candidate/candidate.bundle" HEAD
+          test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE_SHA"
+          git checkout --detach "$CANDIDATE_SHA"
+      - name: Prepare disk, swap, KVM and Nix store
         run: |
-          python3 -m scripts.ci.report run --state "$RUNNER_TEMP/nixos-ci" --phase runner -- \
-            bash scripts/ci/runner.sh prepare
-      - name: Update tracked inputs without committing
-        id: update
-        if: steps.mode.outputs.update == 'true'
+          state="$RUNNER_TEMP/nixos-ci"
+          mkdir -p "$state" "$RUNNER_TEMP/nixos-build"
+          date -u +%FT%TZ > "$state/started"
+          df -h / /mnt
+          # Fixed SDK allowlist; preserve Docker, Git, gh, runner Node and KVM.
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+            /usr/local/.ghcup /usr/share/swift /usr/local/share/boost
+          sudo fallocate -l 8G "$state/swap"
+          sudo chmod 600 "$state/swap"
+          sudo mkswap "$state/swap"
+          sudo swapon "$state/swap"
+          free -h
+          sudo modprobe kvm
+          test -c /dev/kvm
+          sudo chmod 666 /dev/kvm
+          docker volume create nixos-ci-store
+          # gawk sizes its pipe table from nofile; near-unlimited defaults can
+          # allocate tens of GiB. Bound both limits for all container processes.
+          docker run --detach --name nixos-ci --device /dev/kvm \
+            --ulimit nofile=65536:65536 \
+            --volume nixos-ci-store:/nix \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$state:/ci" \
+            --volume "$RUNNER_TEMP/nixos-build:/build" \
+            --workdir /workspace --env TMPDIR=/build --env NIX_USER_CONF_FILES=/ci/nix.conf \
+            --env 'NIX_CONFIG=experimental-features = nix-command flakes' \
+            "$NIX_IMAGE" sleep infinity
+          docker exec nixos-ci git config --global --add safe.directory /workspace
+          container_pid=$(docker inspect --format '{{.State.Pid}}' nixos-ci)
+          python3 .github/ci/report.py monitor --state "$state" --container-pid "$container_pid" \
+            > "$state/monitor.log" 2>&1 &
+      - name: Start the cache proxy and prepare tools
         run: |
-          bash scripts/ci/runner.sh exec update
-          changed=false
-          if ! git diff --quiet -- flake.lock; then changed=true; fi
-          echo "changed=$changed" >> "$GITHUB_OUTPUT"
-      - name: Tooling, static checks, OCI integration and build plan
-        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
-        run: bash scripts/ci/runner.sh exec check
+          docker exec nixos-ci bash -euo pipefail -c '
+            cpus=$(nproc)
+            jobs=$((cpus < 2 ? cpus : 2))
+            cat > /ci/nix-base.conf <<CONFIG
+          sandbox = false
+          accept-flake-config = false
+          system-features = nixos-test benchmark big-parallel kvm
+          max-jobs = $jobs
+          cores = $((cpus / jobs))
+          CONFIG
+            cat /ci/nix-base.conf > /ci/nix.conf
+            bash scripts/nix-cache.sh print --public-only >> /ci/nix.conf
+            oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths .#oranc)
+            printf "%s\n" "$oranc_root/bin/oranc" > /ci/oranc
+            listen=$(nix eval --raw --file nix/cache-config.nix ci.listen)
+            "$oranc_root/bin/oranc" server --listen "$listen" > /ci/oranc.log 2>&1 < /dev/null &
+            proxy_pid=$!
+            for ((attempt=0; attempt<50; attempt++)); do
+              if (exec 3<>"/dev/tcp/${listen%:*}/${listen##*:}") 2>/dev/null; then break; fi
+              kill -0 "$proxy_pid"
+              sleep 0.1
+            done
+            cache_uri=$(nix eval --raw --file nix/cache-config.nix ci.uri)
+            if nix store info --store "$cache_uri"; then
+              cat /ci/nix-base.conf > /ci/nix.conf
+              bash scripts/nix-cache.sh print --ci >> /ci/nix.conf
+            else
+              echo "Project cache unavailable; using public caches and local builds."
+            fi
+            nix develop --no-update-lock-file --command bash -c "command -v python3" > /ci/python
+          '
+      - name: Static checks and OCI integration
+        run: |
+          docker exec nixos-ci nix develop --no-update-lock-file --command bash -euo pipefail -c '
+            actionlint .github/workflows/*.yml
+            shellcheck scripts/nix-cache.sh
+            shellcheck -s bash scripts/desktop/screenshot.sh
+            find modules home profiles hosts lib nix tests tools -type f -name "*.nix" -print0 | xargs -0 nixfmt --check
+            nixfmt --check flake.nix
+            python3 -m tests.integration.cache
+          '
+      - name: Evaluate the build inventory
+        run: |
+          docker exec --env HOST nixos-ci bash -euo pipefail -c '
+            nix eval --no-update-lock-file --json --impure --expr \
+              '\''import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; }'\'' > /ci/policy.json
+          '
       - name: Build systems, non-VM checks and all VM drivers
-        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
-        run: bash scripts/ci/runner.sh exec dependencies
+        run: |
+          docker exec nixos-ci bash -euo pipefail -c '
+            "$(cat /ci/python)" .github/ci/build.py private --state /ci
+            "$(cat /ci/python)" .github/ci/build.py dependencies --state /ci
+          '
       - name: Run network and desktop VM tests
-        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
-        run: bash scripts/ci/runner.sh exec vm-network-desktop
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-desktop --state /ci'
       - name: Run application and backup VM tests
-        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
-        run: bash scripts/ci/runner.sh exec vm-applications-backup
-      - name: Assemble the complete E2E result and cache inventory
-        if: steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true'
-        run: bash scripts/ci/runner.sh exec aggregate
-      - name: Commit the accepted lockfile
-        if: steps.update.outputs.changed == 'true'
-        run: python3 scripts/ci/update.py commit --state "$RUNNER_TEMP/nixos-ci"
-      - name: Build the final committed configuration
-        if: steps.update.outputs.changed == 'true'
-        run: bash scripts/ci/runner.sh exec final
-      - name: Create PR and fast-forward the verified revision
-        if: steps.update.outputs.changed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/ci/update.py merge --state "$RUNNER_TEMP/nixos-ci"
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-applications-backup --state /ci'
+      - name: Assemble VM results and select cache paths
+        run: |
+          docker exec nixos-ci bash -euo pipefail -c '
+            "$(cat /ci/python)" .github/ci/build.py aggregate --state /ci
+            "$(cat /ci/python)" .github/ci/cache.py select --state /ci
+          '
       - name: Publish signed redistributable paths
-        if: github.ref == 'refs/heads/master' && (steps.mode.outputs.update != 'true' || steps.update.outputs.changed == 'true')
+        if: github.ref == 'refs/heads/master'
         env:
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}
           ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
         run: |
-          bash scripts/ci/runner.sh publish
-          echo 'Signed cache publication completed.' >> "$GITHUB_STEP_SUMMARY"
-      - name: Report timings and resources, release runner storage
+          docker exec --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
+            bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py publish --state /ci'
+          echo "Signed cache publication completed for $HOST." >> "$GITHUB_STEP_SUMMARY"
+      - name: Report timings and resources
         if: always()
-        run: bash scripts/ci/runner.sh finish
+        run: |
+          state="$RUNNER_TEMP/nixos-ci"
+          mkdir -p "$state"
+          touch "$state/monitor.stop"
+          if container_pid=$(docker inspect --format '{{.State.Pid}}' nixos-ci); then
+            python3 .github/ci/report.py sample --state "$state" --container-pid "$container_pid" || true
+            docker inspect --format '{{json .State}}' nixos-ci
+          fi
+          if [[ -f $state/started ]]; then
+            sudo journalctl -k --since "$(cat "$state/started")" --utc --no-pager -o short-iso \
+              --grep='(?i)out of memory|killed process|oom' 2>&1 | tee "$state/oom-kernel.log" > /dev/null || true
+            sudo journalctl -u systemd-oomd --since "$(cat "$state/started")" --utc --no-pager -o short-iso \
+              2>&1 | tee "$state/oom-userspace.log" > /dev/null || true
+          fi
+          python3 .github/ci/report.py summary --state "$state" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: diagnostics-${{ matrix.host }}-${{ github.run_attempt }}
+          retention-days: 7
+          path: |
+            ${{ runner.temp }}/nixos-ci/timings.jsonl
+            ${{ runner.temp }}/nixos-ci/resources.jsonl
+            ${{ runner.temp }}/nixos-ci/oom-*.log
+            ${{ runner.temp }}/nixos-ci/monitor.log
+            ${{ runner.temp }}/nixos-ci/oranc.log
+      - name: Release runner storage
+        if: always()
+        run: |
+          docker rm --force nixos-ci || true
+          docker volume rm nixos-ci-store || true
+          swap="$RUNNER_TEMP/nixos-ci/swap"
+          if [[ -f $swap ]]; then
+            if swapon --show=NAME --noheadings --raw | grep -Fxq "$swap"; then sudo swapoff "$swap"; fi
+            sudo rm -- "$swap"
+          fi
+          df -h / /mnt

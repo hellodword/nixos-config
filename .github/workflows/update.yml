@@ -1,0 +1,96 @@
+name: Update flake inputs
+
+on:
+  schedule:
+    - cron: '37 19 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nixos-update
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    outputs:
+      changed: ${{ steps.candidate.outputs.changed }}
+      sha: ${{ steps.candidate.outputs.sha }}
+      artifact: ${{ steps.candidate.outputs.artifact }}
+    env:
+      NIX_IMAGE: docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Update tracked inputs
+        run: |
+          docker run --rm --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace \
+            --env 'NIX_CONFIG=experimental-features = nix-command flakes' \
+            "$NIX_IMAGE" bash -euo pipefail -c '
+              git config --global --add safe.directory /workspace
+              nix flake update \
+                catppuccin-fcitx5 nixos-hardware plasma-manager sing-box-geosite nixpkgs \
+                reproducible-violentmonkey arkenfox-userjs home-manager nix-index-database sing-box-geoip
+            '
+      - name: Commit a local candidate
+        id: candidate
+        run: |
+          if git diff --quiet -- flake.lock; then
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          else
+            python3 .github/ci/update.py prepare --state "$RUNNER_TEMP/candidate"
+            {
+              echo 'changed=true'
+              echo "sha=$(git rev-parse HEAD)"
+              echo 'artifact=candidate-${{ github.run_attempt }}'
+            } >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v7
+        if: steps.candidate.outputs.changed == 'true'
+        with:
+          name: ${{ steps.candidate.outputs.artifact }}
+          path: ${{ runner.temp }}/candidate/
+          retention-days: 7
+          if-no-files-found: error
+  verify:
+    needs: prepare
+    if: needs.prepare.outputs.changed == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/ci.yml
+    with:
+      candidate-artifact: ${{ needs.prepare.outputs.artifact }}
+      candidate-sha: ${{ needs.prepare.outputs.sha }}
+    secrets:
+      NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+  merge:
+    needs: [prepare, verify]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.prepare.outputs.artifact }}
+          path: ${{ runner.temp }}/candidate
+      - name: Publish the verified candidate and merge its PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          git fetch "$RUNNER_TEMP/candidate/candidate.bundle" HEAD
+          test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE_SHA"
+          git checkout --detach "$CANDIDATE_SHA"
+          python3 .github/ci/update.py merge --state "$RUNNER_TEMP/candidate"

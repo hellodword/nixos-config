@@ -21,7 +21,6 @@ in
     users.mutableUsers = false;
     users.users.${userName} = {
       isNormalUser = true;
-      uid = 1000;
       extraGroups = [ "wheel" ];
     };
     sops = {

@@ -1,18 +1,18 @@
 # 主机凭据
 
-`hosts/laptop2/secrets.nix` 绑定本机账户、身份、Wi-Fi、备份目的地和通知通道。通用模块只接收运行时文件路径。SOPS 使用 `/persist/var/lib/sops-nix/keys.txt` 中的 age 身份，字段由 sops-nix 直接提取。
+`hosts/<主机>/secrets.nix` 选择凭据目录、用户、备份目标和 Wi-Fi 连接，`lib/credentials.nix` 负责共享字段绑定。通用模块只接收运行时文件路径。SOPS 使用持久根下 `var/lib/sops-nix/keys.txt` 中的 age 身份，字段由 sops-nix 直接提取。
 
 | 密文 | 内容 | 消费者 |
 | --- | --- | --- |
 | `system.sops.yaml` | 登录密码 hash、Tailscale auth key、Wi-Fi 环境文件、Bark device token、额外通知通道；可选的个人资料 | 用户创建、Tailscale、NetworkManager、通知服务 |
-| `backup.sops.yaml` | Restic 密码，以及 Scaleway、R2、B2 各自的仓库地址和环境文件 | 各仓库独立 Restic 作业 |
+| `backup.sops.yaml` | Restic 密码，以及各目标的仓库地址和环境文件 | 各仓库独立 Restic 作业 |
 | `identity.sops.yaml` | OpenPGP 公钥证书、命名子密钥、SSH hosts 与 Git 身份 | SSH、Git |
 
 多行配置使用 YAML 的 `|` 字符串，例如 `repositories/r2/environment` 对应一个完整环境文件。完整身份文档由 root 读取，再发布对应用户可读的 SSH/Git 配置和公钥文件，权限为 `0400`；其余凭据默认由 root 持有，登录密码 hash 在创建用户前提供。
 
 ## 新用户填写
 
-公开示例在 `data/secrets/{system,backup,identity}.example.yaml`，全部为合成值或空字段。创建自己的 age 身份，将公钥写入 `.sops.yaml` 的 `age` 接收者，私钥放在配置指定的 SOPS key 路径并设为 `0600`。再将三个示例复制到私密临时目录填写，使用 `sops encrypt --filename-override hosts/laptop2/secrets/system.sops.yaml` 等命令生成对应密文。仓库只保存加密后的结果。
+公开示例在 `data/secrets/{system,backup,identity}.example.yaml`，全部为合成值或空字段。创建自己的 age 身份，将公钥写入 `.sops.yaml` 的 `age` 接收者，并为新主机添加匹配规则；私钥放在配置指定的 SOPS key 路径，设为 `0600`。再将三个示例复制到私密临时目录填写，使用 `sops encrypt --filename-override hosts/<主机>/secrets/system.sops.yaml` 等命令生成对应密文。命令中的 `<主机>` 换成实际主机名，仓库只保存加密后的结果。
 
 | 字段 | 填写方式 |
 | --- | --- |
@@ -29,7 +29,7 @@
 | `ssh/hosts`、`git/identity` | 原生 SSH/Git 配置，多行字符串；未使用时可留空 |
 | `retained` | 可选的个人资料；保存原有内容，没有启用服务的副作用 |
 
-新用户需要同时调整主机用户名和备份目标。SSH 用途直接在身份文档中增加，无需修改 Nix 绑定。新安装的磁盘和启动配置需要单独设计；现有 laptop2 沿用当前布局。
+新用户需要同时调整主机用户名和备份目标。SSH 用途直接在身份文档中增加，无需修改 Nix 绑定。新安装的磁盘和启动配置需要单独设计，见[新增主机](maintenance.md#增加主机)。
 
 ## GPG、SSH 与 Git 身份
 
@@ -48,10 +48,11 @@ SSH 选择 `[A]` 子密钥，Git 签名选择 `[S]` 子密钥。系统从证书�
 SSH 使用 GPG 子密钥完成签名：秘密部分保存在本机 GPG 中或智能卡上，`.pub` 文件负责选择对应身份。`~/.gnupg` 持久化并纳入备份。首次接入或更新公钥证书时，在自己的用户会话中审阅并导入：
 
 ```sh
-gpg --show-keys --with-subkey-fingerprint --with-keygrip /run/site-identity/ubuntu/current/public.asc
-gpg --import /run/site-identity/ubuntu/current/public.asc
+identity="/run/site-identity/$(id -un)/current"
+gpg --show-keys --with-subkey-fingerprint --with-keygrip "$identity/public.asc"
+gpg --import "$identity/public.asc"
 gpg --list-secret-keys --with-subkey-fingerprint --with-keygrip
-jq . /run/site-identity/ubuntu/current/manifest.json
+jq . "$identity/manifest.json"
 ```
 
 智能卡身份通过 `gpg --card-status` 建立本机引用。声明的子密钥缺少本机 GPG 密钥或智能卡引用时，注册服务逐项记录用途、指纹和原因，继续启用其余可用身份，并由桌面健康通知提示失败状态。补齐资料后自动重试；也可立即重试并核对 SSH 提供的身份：
@@ -86,7 +87,7 @@ git verify-commit HEAD
 
 SSID 和密码都只需写入 `system.sops.yaml` 的 `wifi/environment`。公开的 Nix 声明通过变量名引用它们。`home`、`work` 是 NetworkManager 中显示的连接别名，可以自行改名，与真实 SSID 无关。
 
-先按 `hosts/laptop2/secrets.nix` 现有 profile 的变量名填写密文。下面的 `WIFI_HOME_*`、`WIFI_WORK_*` 是两组示例变量；完整例子也在 `data/secrets/system.example.yaml` 中：
+先按主机 `secrets.nix` 中的连接 profile 变量名填写密文。下面的 `WIFI_HOME_*`、`WIFI_WORK_*` 是两组示例变量；完整例子也在 `data/secrets/system.example.yaml` 中：
 
 ```yaml
 wifi:

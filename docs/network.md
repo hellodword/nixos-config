@@ -31,7 +31,7 @@ flowchart TD
 
 ## 私网开发访问与公网入站
 
-laptop2 启用独立的 `site.network.localAccess.enable`。同一策略用于宿主服务和 Docker 发布端口：
+laptop profile 启用独立的 `site.network.localAccess.enable`。同一策略用于宿主服务和 Docker 发布端口：
 
 | 来源或目的 | 行为 |
 | --- | --- |
@@ -67,7 +67,7 @@ OpenSSH 仅通过此 ProxyCommand 建立连接，代理不可用时连接失败�
 
 ## 地址族与运行时切换
 
-laptop2 通过 `site.network.ipv6.enable = false` 默认使用 IPv4。需要 IPv6 时，可在本次启动期间启用；其他主机可通过同一选项声明自己的默认值。
+laptop profile 通过 `site.network.ipv6.enable = false` 默认使用 IPv4。需要 IPv6 时，可在本次启动期间启用；其他主机可通过同一选项声明自己的默认值。
 
 ```sh
 sudo network-ipv6 status
@@ -106,7 +106,7 @@ sudo network-ipv6 off
 | Tailscale 单独启用，或搭配 DNS / 显式 sing-box | Tailscale 原生连接走物理网络 | Tailscale 原生路由 | 原生转发；DNS 启用时使用共享解析策略，显式代理仍由应用选择 |
 | DNS + sing-box + Lockdown + Tailscale | `mullvad-exclude` 启动守护进程，走物理网络 | Tailnet 路由表优先于透明接管，数据进入 `tailscale0` | 与本机普通应用共用透明分流和 Lockdown |
 
-laptop2 声明为出口节点，启用原生转发及 SNAT，实际可用的地址族遵循上述主机模式。`shields-up=false` 通过 `tailscale set` 应用到当前身份，允许对端连接和出口转发。管理端批准该节点作为出口后，其他节点选择它并启用 Tailscale DNS，即可使用出口策略；另外公告 `10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`，供获授权的 Tailnet 节点访问 laptop2 可达的私网。路由仍需管理端批准及访问规则允许；本机保持 `accept-routes=false`。
+主机决定是否公告出口节点和子网路由、是否接受远端路由。启用出口节点时，需要原生转发和 SNAT，并由管理端批准；实际可用的地址族遵循上述主机模式。`shields-up=false` 允许对端连接和出口转发。子网路由也需要管理端批准及访问规则允许；[laptop2 的选择](../hosts/laptop2/README.md)可作为现有实例。
 
 ```mermaid
 flowchart TD
@@ -146,7 +146,8 @@ tailscale ping <peer>
 journalctl -u tailscaled -u site-tailscale-routes -b
 
 # 在另一个客户端选择已获管理端批准的出口节点
-sudo tailscale set --exit-node=laptop2 --accept-dns=true
+exit_node=laptop2  # 换成已批准的出口节点
+sudo tailscale set --exit-node="$exit_node" --accept-dns=true
 ```
 
 ## Docker 与 Compose
@@ -155,7 +156,7 @@ sudo tailscale set --exit-node=laptop2 --accept-dns=true
 
 启用 `localAccess` 时，默认和自建 bridge 的容器可通过宿主网关访问所有监听的 TCP/UDP 服务，例如 `http://172.17.0.1:8765/`；网关可用 `docker network inspect` 查看。服务需监听网关地址或通配地址。公网访问 Docker 发布端口遵循上方的统一声明；通知专用网络继续使用独立限制。
 
-laptop2 将 Docker 默认网桥固定为 `172.17.0.1/16`，宿主的 oranc 缓存代理监听 `172.17.0.1:37515`。宿主、默认 bridge 和普通自建 bridge 共用这个地址，容器通过一次性 Nix 客户端配置接入。代理启动排在 Docker 之后，沿用现有的服务加固和 `localAccess`，没有额外的全局端口放行。具体设置见[缓存指南](cache.md)。
+[laptop2 的主机配置](../hosts/laptop2/default.nix)将 Docker 默认网桥固定为 `172.17.0.1/16`，宿主的 oranc 缓存代理监听 `172.17.0.1:37515`。宿主、默认 bridge 和普通自建 bridge 共用这个地址，容器通过一次性 Nix 客户端配置接入。代理启动排在 Docker 之后，沿用现有的服务加固和 `localAccess`，没有额外的全局端口放行。具体设置见[缓存指南](cache.md)。
 
 `site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。启用 IPv6 时，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
 
@@ -285,7 +286,7 @@ OpenVPN 的 `tls.server_name` 使用 `verify-x509-name` 语义，默认精确匹
 `system=true` 使用 sing-box 的接口作用域路由。Lockdown 下，endpoint 连接服务器的外层流量绑定已观察到的物理出口。普通应用仍按共享分流路径运行；显式绑定接口的应用需要由管理员授权进入 Mullvad 排除组，再降回普通用户：
 
 ```sh
-sudo mullvad-exclude setpriv --reuid=ubuntu --regid=users --init-groups \
+sudo mullvad-exclude setpriv --reuid="$(id -un)" --regid="$(id -gn)" --init-groups \
   curl --interface foo --max-time 30 https://example.com/
 ```
 
@@ -363,7 +364,8 @@ laptop 的域名与 IP 数据来自 [lyc8503/sing-box-rules](https://github.com/
 ```sh
 nix flake update sing-box-geosite sing-box-geoip
 nix build --no-link .#checks.x86_64-linux.network .#checks.x86_64-linux.configuration
-nix build --no-link .#nixosConfigurations.laptop2.config.site.network.generatedPolicy
+host=laptop2
+nix build --no-link ".#nixosConfigurations.$host.config.site.network.generatedPolicy"
 ```
 
 更新锁文件并构建系统后，新默认列表进入系统代次。本机片段继续按同名替换和文件顺序生效。主题及工具也分别通过 `nix flake update catppuccin-fcitx5`、`nix flake update vm-test-tools`、`nix flake update oranc` 更新；这些输入均由项目消费锁定的源码。

@@ -1,4 +1,8 @@
-{ pkgs, laptop }:
+{
+  pkgs,
+  laptop,
+  userName,
+}:
 let
   inherit (pkgs) lib;
   defaults = {
@@ -12,10 +16,10 @@ let
     cli = true;
     tailscale = true;
     storage = {
-      root = "/persist";
-      backupSource = "/persist";
-      ageKey = "/persist/var/lib/sops-nix/keys.txt";
-      device = "/dev/mapper/crypt0";
+      root = "/fixture-state";
+      backupSource = "/fixture-state";
+      ageKey = "/fixture-state/var/lib/sops-nix/keys.txt";
+      device = "/dev/disk/by-label/fixture-state";
     };
     sessions = [
       "i3"
@@ -36,7 +40,7 @@ let
         root = "/state";
         backupSource = "/state";
         ageKey = "/state/var/lib/sops-nix/keys.txt";
-        device = "/dev/mapper/crypt0";
+        device = "/dev/disk/by-label/fixture-state";
       };
     };
     network-off = {
@@ -136,18 +140,18 @@ let
       config = (laptop.extendModules { modules = [ (spec.module or { }) ]; }).config;
       actual = {
         dns = config.systemd.services ? site-dns;
-        tailscale = config.services.tailscale.enable;
+        tailscale = config.systemd.services ? tailscaled;
         storage = {
           root = config.site.storage.persistRoot;
           backupSource = config.site.backup.source;
           ageKey = config.sops.age.keyFile;
           device = config.fileSystems.${config.site.storage.persistRoot}.device;
         };
-        mullvad = config.services.mullvad-vpn.enable;
+        mullvad = config.systemd.services ? mullvad-daemon;
         proxy = (config.systemd.services.sing-box.serviceConfig or { }) ? ExecStart;
         backup = config.systemd.services ? site-backup-b2-backup;
         cache = config.systemd.services ? oranc;
-        displayManager = config.services.displayManager.sddm.enable;
+        displayManager = config.systemd.services ? display-manager;
         browser = config.programs.chromium.enable;
         cli = config.programs.nix-index.enable;
         sessions =
@@ -203,7 +207,9 @@ pkgs.runCommand "configuration-scenarios.json"
     cd work
     git config user.name Fixture
     git config user.email fixture@example.invalid
-    git config alias.backup ${lib.escapeShellArg laptop.config.home-manager.users.ubuntu.programs.git.settings.alias.backup}
+    git config alias.backup ${
+      lib.escapeShellArg laptop.config.home-manager.users.${userName}.programs.git.settings.alias.backup
+    }
     git remote add origin "$NIX_BUILD_TOP/upstream"
     git backup project
     for revision in first second; do

@@ -1125,6 +1125,17 @@ in
     client.succeed("echo " + provider_text + " > /run/provider.json; network-policy apply")
     assert dns_pids == client.succeed("systemctl show site-dns site-dns-race-cn site-dns-race-global -p MainPID")
     healthy()
+    # A user apply also recovers an unchanged policy from failed or backoff state.
+    client.succeed("systemctl stop site-network-underlay")
+    for state, restart in (("failed", "no"), ("activating", "on-failure")):
+        override = "[Service]\nExecStartPre=/run/current-system/sw/bin/false\nRestart=" + restart + "\nRestartSec=1h\n"
+        client.succeed("mkdir -p /run/systemd/system/sing-box.service.d; printf %s " + shlex.quote(override) + " > /run/systemd/system/sing-box.service.d/recovery-fixture.conf; systemctl daemon-reload")
+        client.fail("systemctl restart sing-box")
+        client.wait_until_succeeds("test $(systemctl show sing-box -p ActiveState --value) = " + state)
+        client.succeed("rm /run/systemd/system/sing-box.service.d/recovery-fixture.conf; systemctl daemon-reload; network-policy apply")
+        assert dns_pids == client.succeed("systemctl show site-dns site-dns-race-cn site-dns-race-global -p MainPID")
+        healthy()
+    client.succeed("systemctl start site-network-underlay")
     generation = client.succeed("readlink /run/site-network-policy/current")
     credential = client.succeed("sha256sum /run/site-network-policy/current/provider.json")
     provider["outbounds"][0]["tag"] = "rollback-candidate"

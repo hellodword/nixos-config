@@ -56,6 +56,7 @@
           y = 1080;
         }
       ];
+      home-manager.users.desktop.home.stateVersion = "22.11";
       users.users.desktop = {
         isNormalUser = true;
         uid = 1000;
@@ -131,7 +132,6 @@
     };
   };
   testScript = ''
-    import base64
     import json
     import runpy
     import shlex
@@ -141,6 +141,8 @@
     import traceback
     from datetime import timedelta
     from pathlib import Path
+
+    emit_frame = runpy.run_path("${../../tools/vm-test-mcp/failure_artifacts.py}")["emit_frame"]
 
     key_delay = timedelta(milliseconds=150)
     gui = runpy.run_path("${./gui.py}")
@@ -180,10 +182,10 @@
                 machine.sleep(0.2)
             user(machine, "fcitx5-remote -c")
 
-    def exercise_application(machine, application):
+    def exercise_application(machine, application, full=False):
         root = "/home/desktop/application-workspace"
         exit_file = root + "/artifacts/" + application + ".exit"
-        command = "application-e2e " + application + "; result=$?; printf '%s' \"$result\" > " + exit_file
+        command = "application-e2e " + application + (" --full" if full else "") + "; result=$?; printf '%s' \"$result\" > " + exit_file
         user(machine, "systemd-run --user --collect --unit=application-" + application + " sh -c " + shlex.quote(command))
         deadline = time.monotonic() + 600
         handled = None
@@ -268,7 +270,7 @@
             user(machine, "fcitx5-remote -c; mkdir -p ~/application-workspace/artifacts")
             user(machine, "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 SetConfig sv fcitx://config/addon/classicui 'a{sv}' 2 Theme s catppuccin-mocha-pink DarkTheme s catppuccin-mocha-pink")
             user(machine, "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 Save")
-            user(machine, "busctl --user status org.freedesktop.secrets")
+            machine.wait_until_succeeds(user_command("busctl --user status org.freedesktop.secrets"), timeout=60)
             with tempfile.TemporaryDirectory() as directory:
                 frame = Path(directory) / "resolution.png"
                 machine.screenshot(str(frame))
@@ -276,12 +278,13 @@
             # GUI automation is active use. Keep the session awake while the
             # desktop lifecycle suite separately exercises the one-minute lock.
             machine.keep_awake()
-            user(machine, "docker load -i /etc/application-fixtures/container.tar.gz", timeout=300)
+            if session == "sway":
+                user(machine, "docker load -i /etc/application-fixtures/container.tar.gz", timeout=300)
             for name, action in (
                 ("rofi-kitty", lambda: exercise_launchers(machine, session)),
                 ("firefox", lambda: exercise_application(machine, "firefox")),
-                ("vscode-devcontainer", lambda: exercise_application(machine, "vscode")),
-                ("bitwarden", lambda: exercise_application(machine, "bitwarden")),
+                ("vscode", lambda: exercise_application(machine, "vscode", full=session == "sway")),
+                ("bitwarden", lambda: exercise_application(machine, "bitwarden", full=session == "sway")),
             ):
                 try:
                     with subtest(session + ": " + name):
@@ -293,15 +296,9 @@
                     print(machine.execute("journalctl -b -u nginx -u vaultwarden -n 40 --no-pager")[1])
                     print(machine.execute("journalctl _UID=1000 -n 50 --no-pager")[1])
                     print(machine.execute("tail -n 50 /home/desktop/application-workspace/artifacts/*.log /home/desktop/application-workspace/artifacts/*-failure.txt")[1])
-                    application = "vscode" if name == "vscode-devcontainer" else name
+                    application = name
                     frame_path = "/home/desktop/application-workspace/artifacts/" + application + "-failure.png"
-                    status, frame = machine.execute("test -f " + frame_path + " && base64 -w0 " + frame_path)
-                    if status != 0:
-                        with tempfile.TemporaryDirectory() as directory:
-                            path = Path(directory) / "failure.png"
-                            machine.screenshot(str(path))
-                            frame = base64.b64encode(path.read_bytes()).decode()
-                    print("APPLICATION_FRAME_" + machine.name + "_" + name + "=" + frame.strip())
+                    emit_frame(machine, "APPLICATION_FRAME_" + machine.name + "_" + name, frame_path)
                     break
                 finally:
                     machine.execute("pkill -u 1000 -x rofi")

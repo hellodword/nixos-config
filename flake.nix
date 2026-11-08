@@ -63,28 +63,19 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
-      mkLaptop =
-        extraModules:
+      mkHost =
+        host: userName:
         nixpkgs.lib.nixosSystem {
           modules = [
             ./modules
-            ./hosts/laptop2
-          ]
-          ++ extraModules;
-          specialArgs = {
-            inherit inputs;
-            userName = "ubuntu";
-          };
+            host
+          ];
+          specialArgs = { inherit inputs userName; };
         };
-      synthetic = mkLaptop [ ./tests/fixtures/host-credentials.nix ];
-      laptop = mkLaptop [ ];
-      vmTools = import (inputs.vm-test-tools + /nix/vm-test-mcp.nix) {
-        inherit pkgs nixpkgs;
-        lib = pkgs.lib;
-      };
+      synthetic = mkHost ./tests/fixtures/laptop.nix "fixture";
     in
     {
-      nixosConfigurations.laptop2 = laptop;
+      nixosConfigurations.laptop2 = mkHost ./hosts/laptop2 "ubuntu";
       nixosModules.default = import ./modules;
       packages.${system} = import ./nix/packages.nix { inherit pkgs inputs; };
       devShells.${system} = {
@@ -120,18 +111,14 @@
         };
         vm = pkgs.mkShell {
           packages = [
-            (vmTools.package.overrideAttrs (_: {
-              subPackages = [ "cmd/vm-test-submit" ];
-              postBuild = "";
-              postInstall = "";
-            }))
+            (import ./tools/vm-test-mcp/client.nix { inherit pkgs inputs; })
           ];
         };
       };
       checks.${system} = import ./nix/checks.nix {
         inherit pkgs inputs;
         laptop = synthetic;
-        production = laptop;
+        userName = "fixture";
       };
     };
 }

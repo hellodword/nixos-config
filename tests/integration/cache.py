@@ -14,9 +14,14 @@ import tempfile
 from unittest.mock import patch
 
 from tests.support import ROOT
-from scripts.ci.cache import publish, select_paths
-from scripts.ci.build import run_build, valid_paths
-from scripts.ci.report import read_records, render
+from tests.support import load_source
+
+cache = load_source(".github/ci/cache.py")
+build = load_source(".github/ci/build.py")
+report = load_source(".github/ci/report.py")
+publish, select_paths = cache.publish, cache.select_paths
+run_build, valid_paths = build.run_build, build.valid_paths
+read_records, render = report.read_records, report.render
 
 
 def run(args, **kwargs):
@@ -65,7 +70,7 @@ def main():
         work = Path(temporary)
         # Unique names make deletion below specific to this invocation's output.
         fixture = '''let
-          pkgs = (builtins.getFlake (toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux;
+          pkgs = (builtins.getFlake ("git+file://" + toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux;
           prefix = PREFIX;
           child = pkgs.writeText "${prefix}-child" "synthetic public content";
           source = pkgs.writeText "${prefix}-source" "synthetic restricted content";

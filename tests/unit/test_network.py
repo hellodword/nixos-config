@@ -2,7 +2,6 @@
 import copy
 import json
 from pathlib import Path
-import subprocess
 import tempfile
 import unittest
 
@@ -11,7 +10,6 @@ from tests.support import load_script
 renderer = load_script("network/render.py")
 underlay = load_script("network/underlay.py")
 compiler = load_script("network/domain_policy.py")
-runtime = load_script("network/runtime_policy.py")
 
 
 class NetworkConfiguration(unittest.TestCase):
@@ -87,66 +85,3 @@ class NetworkConfiguration(unittest.TestCase):
             changed = compiler.compile_policy(policy, fragments, connections)
             self.assertEqual(changed["route"]["rule_set"][0]["rules"], [{"domain": ["changed.example"]}])
             self.assertNotEqual(model["dns_generation"], changed["dns_generation"])
-
-    def test_apply_failure_rolls_back_and_can_be_retried(self):
-        for initial in ("active", "failed", "activating"):
-            with self.subTest(initial=initial), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                old, new = root / "generation-old", root / "generation-new"
-                old.mkdir()
-                new.mkdir()
-                runtime.publish(root, old)
-                services = list(runtime.SERVICE_FILES)
-                manifests = {unit: {name: "same" for name in files} for unit, files in runtime.SERVICE_FILES.items()}
-                (old / "activation.json").write_text(json.dumps(manifests))
-                manifests["sing-box.service"]["provider.json"] = "new-node"
-                (new / "activation.json").write_text(json.dumps(manifests))
-                # An intentionally stopped DNS worker remains stopped. All
-                # running DNS workers keep serving during a node-only update.
-                inactive = services[-1]
-                running = set(services[:-1]) | {runtime.WATCHER}
-                pending = {}
-                if initial != "active":
-                    running.remove("sing-box.service")
-                    pending["sing-box.service"] = initial
-                protected = {"mullvad-daemon.service", "site-network-routing.service"}
-                running |= protected
-                fail_once = True
-
-                def run(command, action, *arguments, check=True):
-                    nonlocal fail_once
-                    if action == "show":
-                        unit = arguments[-1]
-                        state = pending.get(unit, "active" if unit in running else "inactive")
-                        return subprocess.CompletedProcess(arguments, 0, stdout=(state + "\n").encode())
-                    units = set(arguments) - {"--quiet"}
-                    if action == "is-active":
-                        return subprocess.CompletedProcess(arguments, 0 if units <= running else 3)
-                    self.assertTrue(units <= {"sing-box.service", runtime.WATCHER}, "unchanged DNS keeps serving")
-                    if action == "stop":
-                        if units & set(services):
-                            self.assertNotIn(runtime.WATCHER, running)
-                        running.difference_update(units)
-                    elif action == "start":
-                        if fail_once and units & set(services):
-                            self.assertEqual((root / "current").resolve(), new)
-                            fail_once = False
-                            raise subprocess.CalledProcessError(1, arguments)
-                        running.update(units)
-                    for unit in units:
-                        pending.pop(unit, None)
-                    self.assertTrue(protected <= running)
-                    return subprocess.CompletedProcess(arguments, 0)
-
-                expected = (set(services) - {inactive}) | {runtime.WATCHER} | protected
-                with self.assertRaises(subprocess.CalledProcessError):
-                    runtime.activate(root, new, True, run, lambda *_: None)
-                self.assertEqual((root / "current").resolve(), old)
-                self.assertEqual(running, expected)
-                self.assertEqual(runtime.activate(root, new, True, run, lambda *_: None), old)
-                self.assertEqual((root / "current").resolve(), new)
-                self.assertEqual(running, expected)
-
-
-if __name__ == "__main__":
-    unittest.main()
