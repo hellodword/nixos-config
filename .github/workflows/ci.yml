@@ -405,3 +405,4 @@ jobs:
             ${{ runner.temp }}/nixos-ci/oom-*.log
             ${{ runner.temp }}/nixos-ci/monitor.log
             ${{ runner.temp }}/nixos-ci/oranc.log
+            ${{ runner.temp }}/nixos-ci/vm/

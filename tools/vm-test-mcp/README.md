@@ -11,11 +11,6 @@ nix develop .#vm --command vm-test-submit --help
 
 当前客户端传输 derivation 和输入闭包，远端通过自己的 store 与缓存准备构建结果。本地已经构建 driver，不代表远端能直接复用这些产物；远端首次准备依赖的时间应与 VM 场景执行时间分别记录。
 
-客户端来源由 `flake.lock` 的 `vm-test-tools` 固定；它不参与每日更新。需要升级时运行 `nix flake update vm-test-tools`，核对服务端与客户端的版本/构建身份，并用现有 VM 场景验证兼容性。
+客户端直接使用 `agents-misc` 暴露的 package，其版本和上游依赖由 `flake.lock` 固定。需要升级时运行 `nix flake update agents-misc`，核对服务端与客户端的版本/构建身份，并用现有 VM 场景验证兼容性。
 
-| 文件 | 兼容原因 | 移除条件 |
-| --- | --- | --- |
-| [client.nix](client.nix) | 锁定的上游只提供整包表达式；这里只安装 submit 客户端，但仍继承上游整包检查 | 上游提供独立客户端输出后直接引用 |
-| [failure_artifacts.py](failure_artifacts.py) | 当前执行器只登记成功构建的输出根，失败时截图无法作为普通产物取回；用日志传输合成截图 | 上游能够收集失败截图后删除辅助函数及场景调用 |
-
-测试中的 QMP、OCR、键盘输入、活动维持和关机使用[原生驱动封装](../../tests/vm/gui.py)，与这里的执行器兼容处理分开维护。
+测试中的 QMP、OCR、键盘输入、活动维持和关机使用[原生驱动封装](../../tests/vm/gui.py)。截图和诊断写入原生测试输出目录，由执行器收集；结果中分别检查断言、资源释放和证据收集状态。

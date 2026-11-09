@@ -236,7 +236,6 @@ in
     import traceback
     from pathlib import Path
 
-    emit_frame = runpy.run_path("${../../tools/vm-test-mcp/failure_artifacts.py}")["emit_frame"]
 
     def user_command(command):
         prefix = "runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
@@ -245,9 +244,6 @@ in
         return prefix + "systemd-run --user --quiet --wait --pipe --collect --property=RuntimeMaxSec=60s sh -c " + shlex.quote(command)
 
     def user(machine, command, fail=False):
-        # These commands represent an active desktop user. Backend execution
-        # alone does not reset the compositor's real one-minute idle timer.
-        machine.send_key("ctrl")
         return (machine.fail if fail else machine.succeed)(user_command(command))
 
     def identity_fixture(machine, operation):
@@ -289,36 +285,44 @@ in
         return visible(machine, pattern, rotation=90 if machine.name == "i3" else 0, **kwargs)
 
     def unlock(machine, session, screenshot=None):
-        locker = {"sway": "swaylock", "i3": "i3lock", "KDE": "kscreenlocker_greet"}[session]
-        if machine.execute(process(locker))[0] == 0:
-            if session == "KDE":
-                machine.send_key("ctrl")
-                visible(machine, "Switch User")
-                # Breeze hides the password controls after ten idle seconds.
-                # OCR can outlast that interval; wake them again and let the
-                # authentication prompt regain focus before typing.
-                machine.send_key("ctrl", delay=timedelta(milliseconds=150))
-                machine.sleep(1)
-            else:
-                machine.sleep(1)
-            # Capture after the native lock surface has had time to paint,
-            # immediately before entering the password, not on process spawn.
-            if screenshot:
-                machine.screenshot(screenshot)
-            # QEMU holds each key for 100 ms. Let the clear chord release
-            # before entering the password through the greeter's keyboard.
-            machine.send_key("ctrl-u", delay=timedelta(milliseconds=150))
-            machine.send_chars("synthetic-fixture-only", delay=timedelta(milliseconds=150))
-            machine.send_key("ret")
-            machine.wait_until_fails(process(locker), timeout=30)
+        with machine.input_lock:
+            locker = {"sway": "swaylock", "i3": "i3lock", "KDE": "kscreenlocker_greet"}[session]
+            if machine.execute(process(locker))[0] == 0:
+                if session == "KDE":
+                    # The locker process starts before its surface can receive
+                    # input. Wait for the clock, then reveal the password form.
+                    visible(machine, r"\d{1,2}:\d{2}", timeout=30, region=(0.2, 0.02, 0.6, 0.36))
+                    machine.send_key("ctrl")
+                    visible(machine, "Switch User", timeout=30, region=(0.2, 0.25, 0.6, 0.7))
+                    # Breeze hides the password controls after ten idle seconds.
+                    # OCR can outlast that interval; wake them again and let the
+                    # authentication prompt regain focus before typing.
+                    machine.send_key("ctrl", delay=timedelta(milliseconds=150))
+                    machine.sleep(1)
+                else:
+                    machine.sleep(1)
+                # Capture after the native lock surface has had time to paint,
+                # immediately before entering the password, not on process spawn.
+                if screenshot:
+                    machine.screenshot(screenshot)
+                # QEMU holds each key for 100 ms. Let the clear chord release
+                # before entering the password through the greeter's keyboard.
+                machine.send_key("ctrl-u", delay=timedelta(milliseconds=150))
+                machine.send_chars("synthetic-fixture-only", delay=timedelta(milliseconds=150))
+                machine.send_key("ret")
+                machine.wait_until_fails(process(locker), timeout=30)
 
     def stop_session(machine, compositor, menu=False):
+        machine.stop_activity()
         # Finish the synthetic terminal workload before asking the desktop to
         # log out, so Kitty's running-command confirmation needs no response.
         machine.execute(user_command("systemctl --user stop desktop-fixture.service"), timeout=30)
         if compositor == "plasmashell":
-            # Session autostarts include services outside the plasma-* names.
-            # Finish their startup transaction before requesting its shutdown.
+            # The session activates Akonadi after the workspace target. Wait
+            # for that startup before testing logout from a settled session.
+            machine.wait_until_succeeds(user_command(
+                "systemctl --user is-active akonadi_control.service"
+            ), timeout=90)
             machine.wait_until_succeeds(user_command(
                 "test -z \"$(systemctl --user list-jobs --no-legend --plain)\""
             ), timeout=90)
@@ -387,7 +391,7 @@ in
         machine.crash()
         machine.start()
         # Enter the passphrase through the graphical console's keyboard.
-        visible(machine, r"(?i)passphrase|password|unlock", timeout=180, keep_active=False)
+        visible(machine, r"(?i)passphrase|password|unlock", timeout=180)
         machine.screenshot("boot-plymouth-breeze-unlock")
         machine.send_chars("synthetic-disk-passphrase", delay=timedelta(milliseconds=150))
         machine.send_key("ret")
@@ -405,6 +409,7 @@ in
         if session == "KDE":
             machine.wait_until_succeeds(user_command("systemctl --user is-active plasma-plasmashell.service"), timeout=60)
             machine.wait_until_fails(process("ksplashqml"), timeout=90)
+        machine.keep_awake()
     layout_query = '[.[] | select(.active) | {key: .name, value: {active, scale, rect, current_mode, transform}}] | from_entries'
 
     def display_layout(machine):
@@ -504,7 +509,7 @@ in
                                   ("calendar", clocks[0] + 20, r"(?i)Mo.*Tu.*We"),
                                   ("shanghai", clocks[-1] - 20, r"Asia/Shanghai")):
                 machine.move_pointer(x, 12, width, height)
-                visible(machine, text, timeout=20, keep_active=False, region=(0, 0, 1, 0.4))
+                visible(machine, text, timeout=20, region=(0, 0, 1, 0.4))
                 machine.screenshot("desktop-tooltip-" + name)
             machine.move_pointer(width // 2, height // 2, width, height)
         user(machine, "swaymsg output " + output["name"] + " mode " + str(original["width"]) + "x" + str(original["height"]))
@@ -599,9 +604,10 @@ in
             # not a pre-rendered CJK string or a D-Bus name alone.
             user(machine, "systemd-run --user --collect --unit=ime-fixture sh -c 'QT_QPA_PLATFORM=wayland kdialog --title Native-input-check --inputbox \"Input method check\" > /run/user/1000/ime-result'")
             visible(machine, "Input method check", region=(0.3, 0.25, 0.4, 0.5))
-            user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
-            machine.send_chars("nihao ")
-            machine.send_key("ret")
+            with machine.input_lock:
+                user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
+                machine.send_chars("nihao ")
+                machine.send_key("ret")
             machine.wait_until_succeeds(user_command("test -s /run/user/1000/ime-result"), timeout=30)
             entered = user(machine, "cat /run/user/1000/ime-result").strip()
             assert entered == "你好", entered
@@ -674,7 +680,10 @@ in
             user(machine, "desktop-shot screen save; test -s ~/Pictures/$(ls -t ~/Pictures | head -n1)")
         # Each session's one-minute timeout must invoke a working PAM lock.
         if session == "sway":
-            hover_status(machine)
+            with machine.pause_activity():
+                hover_status(machine)
+        machine.stop_activity()
+        if session == "sway":
             click_eye(machine, "2d3436", "ecf0f1")
             machine.sleep(65)
             machine.fail(process("swaylock"))
@@ -692,6 +701,7 @@ in
             machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
             machine.wait_until_succeeds(process(locker), timeout=30)
             unlock(machine, session, screenshot="desktop-" + session + "-manual-lock")
+        machine.keep_awake()
         # Exercise D-Bus activation after the WM's notifier has stopped, not
         # merely the explicit startup path. Plasma must own its native name.
         notifier = {"sway": "mako", "i3": "dunst", "KDE": "plasmashell"}[session]
@@ -715,12 +725,13 @@ in
                 visible(machine, r"(?i)Resolution|Scale", timeout=30)
                 display_pid = user(machine, "systemctl --user show wdisplays.service --property=MainPID --value").strip()
                 user(machine, "swaymsg '[pid=" + display_pid + "] focus'")
-                # Alt+P focuses Position; Page Up moves it ten pixels right.
-                # Ctrl+Enter activates the window's Apply button.
-                for key in ("alt-p", "pgup", "tab"):
-                    machine.send_key(key, delay=timedelta(milliseconds=150))
-                visible(machine, r"Apply Changes", timeout=30)
-                machine.send_key("ctrl-ret", delay=timedelta(milliseconds=150))
+                with machine.input_lock:
+                    # Alt+P focuses Position; Page Up moves it ten pixels right.
+                    # Ctrl+Enter activates the window's Apply button.
+                    for key in ("alt-p", "pgup", "tab"):
+                        machine.send_key(key, delay=timedelta(milliseconds=150))
+                    visible(machine, r"Apply Changes", timeout=30)
+                    machine.send_key("ctrl-ret", delay=timedelta(milliseconds=150))
                 machine.wait_until_succeeds(user_command("grep -F -- " + shlex.quote(expected) + " ~/.config/kanshi/config"), timeout=30)
                 user(machine, "systemctl --user stop wdisplays.service")
                 return display_layout(machine)
@@ -809,9 +820,10 @@ in
                 assert re.search(r"^" + re.escape(i3_output) + r" connected[^\n]* left ", outputs, re.MULTILINE), outputs
             # Use the same native lock after restoring a multi-output or
             # rotated layout, then authenticate through its actual PAM UI.
-            machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
-            machine.wait_until_succeeds(process(locker), timeout=30)
-            unlock(machine, session, screenshot="desktop-" + session + "-layout-lock")
+            with machine.pause_activity():
+                machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
+                machine.wait_until_succeeds(process(locker), timeout=30)
+                unlock(machine, session, screenshot="desktop-" + session + "-layout-lock")
             stop_session(machine, compositor)
         if session == "KDE":
             stop_session(machine, compositor)
@@ -857,19 +869,26 @@ in
             traceback.print_exc()
             failures.append((session, str(error)))
             try:
-                emit_frame(machine, "DESKTOP_FRAME_" + session + "_PNG")
-                print(machine.execute("journalctl -b -u home-manager-desktop.service -n 80 --no-pager")[1])
-                print(machine.execute("journalctl _UID=1000 -n 60 --no-pager")[1])
-                if session == "KDE":
-                    print(machine.execute("journalctl -u site-identity.service -u sshd.service -n 80 --no-pager")[1])
-                    print(machine.execute(user_command("systemctl --user status site-gpg-ssh-identities.service site-gpg-ssh-identities.path; journalctl --user -u site-gpg-ssh-identities.service -n 80 --no-pager"))[1])
-                print(machine.execute("tail -n 80 /run/user/1000/safeeyes/safeeyes.log")[1])
-                print(machine.execute(user_command("systemctl --user show-environment | grep -E '^(DISPLAY|WAYLAND_DISPLAY|SWAYSOCK|I3SOCK|XDG_SESSION_ID|XDG_SESSION_TYPE)='"))[1])
-                if session == "i3":
-                    print(machine.execute("pid=$(pgrep -u 1000 -x xss-lock); tr '\\0' '\\n' < /proc/$pid/environ | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_SESSION_ID|XDG_SESSION_TYPE)='")[1])
+                machine.screenshot("desktop-" + session + "-failure")
+                # A failure at the disk-unlock screen has no guest shell yet.
+                # Its framebuffer and serial log remain available to the driver.
+                if machine.connected:
+                    print(machine.execute("journalctl -b -u home-manager-desktop.service -n 80 --no-pager")[1])
+                    print(machine.execute("journalctl _UID=1000 -n 60 --no-pager")[1])
+                    if session == "KDE":
+                        print(machine.execute("journalctl -u site-identity.service -u sshd.service -n 80 --no-pager")[1])
+                        print(machine.execute(user_command("systemctl --user status site-gpg-ssh-identities.service site-gpg-ssh-identities.path; journalctl --user -u site-gpg-ssh-identities.service -n 80 --no-pager"))[1])
+                    print(machine.execute("tail -n 80 /run/user/1000/safeeyes/safeeyes.log")[1])
+                    print(machine.execute(user_command("systemctl --user show-environment | grep -E '^(DISPLAY|WAYLAND_DISPLAY|SWAYSOCK|I3SOCK|XDG_SESSION_ID|XDG_SESSION_TYPE)='"))[1])
+                    if session == "i3":
+                        print(machine.execute("pid=$(pgrep -u 1000 -x xss-lock); tr '\\0' '\\n' < /proc/$pid/environ | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_SESSION_ID|XDG_SESSION_TYPE)='")[1])
             except Exception as diagnostic_error:
                 print("Could not collect desktop diagnostics:", diagnostic_error)
         finally:
+            try:
+                machine.stop_activity()
+            except Exception as error:
+                failures.append((session, "activity: " + str(error)))
             try:
                 machine.shutdown()
             except Exception as error:

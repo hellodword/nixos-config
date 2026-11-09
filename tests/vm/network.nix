@@ -1208,7 +1208,18 @@ in
         exit_dns()
     client.succeed("systemctl stop continuous")
     peer.succeed("systemctl stop exit-continuous")
-    observations = [json.loads(line) for line in target.succeed("cat /run/observations.jsonl").splitlines()]
+    target.succeed("flock --shared /run/observations.jsonl cp /run/observations.jsonl /run/observations-final.jsonl")
+    target.copy_from_machine("/run/observations-final.jsonl", "network")
+    from pathlib import Path
+    observation_file = Path(target.out_dir) / "network/observations-final.jsonl"
+    observations = []
+    with observation_file.open() as stream:
+        for number, line in enumerate(stream, 1):
+            try:
+                observations.append(json.loads(line))
+            except json.JSONDecodeError as error:
+                excerpt = line[max(0, error.pos - 80):error.pos + 80]
+                raise AssertionError(f"{observation_file}:{number}: column {error.colno}: {error.msg}; near {excerpt!r}") from error
     continuous = [row for row in observations if row["data"].startswith("/continuous/")]
     expected = {("direct", "4"): "192.168.1.10", ("direct", "6"): "2001:db8:10::10",
                 ("proxy", "4"): "192.168.1.20", ("proxy", "6"): "2001:db8:10::20"}

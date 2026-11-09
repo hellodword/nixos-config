@@ -133,6 +133,7 @@
   };
   testScript = ''
     import json
+    import re
     import runpy
     import shlex
     import tempfile
@@ -142,7 +143,6 @@
     from datetime import timedelta
     from pathlib import Path
 
-    emit_frame = runpy.run_path("${../../tools/vm-test-mcp/failure_artifacts.py}")["emit_frame"]
 
     key_delay = timedelta(milliseconds=150)
     gui = runpy.run_path("${./gui.py}")
@@ -216,8 +216,9 @@
         if session != "KDE":
             with machine.input_lock:
                 machine.send_key("meta_l-d", delay=key_delay)
-                visible(machine, r"\bdrun\b", region=power_menu["REGION"])
+                power_menu["ready"](machine, visible, "drun")
                 machine.send_chars("kitty", delay=key_delay)
+                power_menu["ready"](machine, visible, "drun", typed="kitty", unique=True)
                 machine.send_key("ret", delay=key_delay)
         else:
             user(machine, "systemd-run --user --collect --unit=kitty-e2e kitty")
@@ -238,8 +239,10 @@
         if session != "KDE":
             with machine.input_lock:
                 machine.send_key("meta_l-shift-d", delay=key_delay)
-                visible(machine, r"\brun\b", region=power_menu["REGION"])
-                command = "kitty --title Rofi-command sh -c 'printf launched > ~/application-workspace/rofi-command.txt; sleep 2'"
+                power_menu["ready"](machine, visible, "run")
+                user(machine, "printf '%s\\n' 'printf launched > ~/application-workspace/rofi-command.txt; sleep 2' > /tmp/rofi-launch")
+                # Keep the whole command visible in Rofi's input row.
+                command = "kitty --title Rofi-command sh /tmp/rofi-launch"
                 # Keep the clipboard owner alive until Rofi consumes the command.
                 try:
                     user(machine, "systemd-run --user --collect --unit=rofi-command-clipboard --property=Type=forking desktop-copy " + shlex.quote(command))
@@ -247,7 +250,7 @@
                     machine.wait_until_succeeds(
                         user_command('test "$(' + clipboard + ')" = ' + shlex.quote(command)), timeout=10)
                     machine.send_key("ctrl-v", delay=key_delay)
-                    visible(machine, r"sleep\s+2", region=power_menu["REGION"])
+                    visible(machine, r"run:?\s+" + re.escape(command), region=power_menu["REGION"])
                     machine.send_key("ctrl-ret", delay=key_delay)
                     machine.wait_until_succeeds("grep -Fx launched /home/desktop/application-workspace/rofi-command.txt", timeout=30)
                 finally:
@@ -295,9 +298,7 @@
                     print(machine.execute("journalctl -b -u nginx -u vaultwarden -n 40 --no-pager")[1])
                     print(machine.execute("journalctl _UID=1000 -n 50 --no-pager")[1])
                     print(machine.execute("tail -n 50 /home/desktop/application-workspace/artifacts/*.log /home/desktop/application-workspace/artifacts/*-failure.txt")[1])
-                    application = name
-                    frame_path = "/home/desktop/application-workspace/artifacts/" + application + "-failure.png"
-                    emit_frame(machine, "APPLICATION_FRAME_" + machine.name + "_" + name, frame_path)
+                    machine.screenshot(machine.name + "-" + name + "-failure")
                     break
                 finally:
                     machine.execute("pkill -u 1000 -x rofi")
@@ -305,7 +306,7 @@
             failures.append((session, "session", str(error)))
             traceback.print_exc()
             try:
-                emit_frame(machine, "APPLICATION_FRAME_" + machine.name + "_session")
+                machine.screenshot(machine.name + "-session-failure")
                 print(machine.execute("journalctl -b -u display-manager -n 60 --no-pager")[1])
             except Exception as diagnostic_error:
                 print("Could not collect session diagnostics:", diagnostic_error)

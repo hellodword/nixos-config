@@ -1,6 +1,7 @@
 """Synthetic DNS/Hysteria2/observer fixtures for the kernel test."""
 import argparse
 import contextlib
+import fcntl
 import ipaddress
 import json
 from pathlib import Path
@@ -15,13 +16,14 @@ import uuid
 from .dns_fixture import Resolver, encrypted_server
 from .network_fixture import TCPServer, TCPServer6, UDPServer, dns_server, serve
 
-record_lock = threading.Lock()
-
-
 def record(kind, peer, data):
-    with record_lock, Path("/run/observations.jsonl").open("a") as handle:
+    with Path("/run/observations.jsonl").open("a") as handle:
+        # The final snapshot takes a shared lock on this same file. Each
+        # writer opens its own descriptor, so this also serializes threads.
+        fcntl.flock(handle, fcntl.LOCK_EX)
         handle.write(json.dumps({"kind": kind, "peer": str(ipaddress.ip_address(peer)),
                                  "data": data.decode(errors="replace"), "time": time.monotonic()}) + "\n")
+        handle.flush()
 
 
 def continuous(host, policy, protocol, instance):

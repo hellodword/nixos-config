@@ -3,7 +3,9 @@
 
 import argparse
 import json
+import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -24,6 +26,22 @@ def valid_paths(paths):
     return set(paths) - set(result.stdout.splitlines())
 
 
+def collect_vm_evidence(entries, state, phase, pass_name):
+    """Native VM builders put diagnostics in $out even when assertions fail."""
+    for entry in entries:
+        if not entry.get("vm"):
+            continue
+        destination = state / "vm" / pass_name / entry["name"]
+        for output in entry["outputs"]:
+            source = Path(output)
+            if source.is_dir():
+                shutil.copytree(source, destination / source.name, symlinks=True, dirs_exist_ok=True)
+        if destination.exists():
+            record(state, {"kind": "vm-evidence", "pass": pass_name, "phase": phase,
+                           "name": entry["name"], "path": str(destination.relative_to(state))})
+            print(f"{entry['name']} evidence: {destination}", flush=True)
+
+
 def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
     """Keep ordinary Nix logs; consume its separate JSON stream while it runs."""
     if not entries:
@@ -34,6 +52,11 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
     active, activities = {}, []
     started, start = utc_now(), time.monotonic()
     command = ["nix", "build", "--no-link", "--print-build-logs", "--keep-going"]
+    build_directory = None
+    collection_error = None
+    if any(entry.get("vm") for entry in entries):
+        build_directory = Path(tempfile.mkdtemp(prefix=phase + "-", dir=os.environ.get("TMPDIR")))
+        command += ["--keep-failed", "--option", "build-dir", str(build_directory)]
     if jobs is not None:
         command += ["--max-jobs", str(jobs)]
     command += [entry["drv"] + "^*" for entry in entries]
@@ -74,6 +97,19 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait()
+                if build_directory is not None:
+                    # The build process has ended. Copy only the declared VM
+                    # outputs; QEMU disks and temporary builds stay in this
+                    # phase's directory until collection succeeds.
+                    try:
+                        collect_vm_evidence(entries, state, phase, pass_name)
+                    except Exception as error:
+                        collection_error = error
+                        record(state, {"kind": "evidence-error", "phase": phase, "error": str(error),
+                                       "buildDirectory": str(build_directory)})
+                        print(f"VM evidence collection failed; retained {build_directory}: {error}", flush=True)
+                    else:
+                        shutil.rmtree(build_directory)
 
     end = time.monotonic()
     realized = valid_paths(paths)
@@ -99,7 +135,12 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
         record(state, result)
     if returncode:
         reason = batch.get("signal", f"exit {returncode}")
-        raise RuntimeError(f"{pass_name}/{phase}: nix build failed ({reason}); resource evidence is collected at runner finish")
+        error = RuntimeError(f"{pass_name}/{phase}: nix build failed ({reason}); see the diagnostics artifact")
+        if collection_error:
+            error.add_note("Collecting VM evidence: " + str(collection_error))
+        raise error
+    if collection_error:
+        raise collection_error
 
 
 def main():

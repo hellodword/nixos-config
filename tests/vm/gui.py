@@ -2,6 +2,9 @@
 
 import os
 import json
+import csv
+import io
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 import re
@@ -40,9 +43,11 @@ class Desktop:
         return self.monitor("send_monitor_command", command, timeout=timeout)
 
     def send_key(self, *args, **kwargs):
+        kwargs.setdefault("delay", timedelta(milliseconds=150))
         return self.monitor("send_key", *args, **kwargs)
 
     def send_chars(self, *args, **kwargs):
+        kwargs.setdefault("delay", timedelta(milliseconds=150))
         return self.monitor("send_chars", *args, **kwargs)
 
     def click(self, x, y, width, height):
@@ -92,6 +97,9 @@ class Desktop:
                                check=True, timeout=remaining(deadline))
 
     def keep_awake(self):
+        if self.ticker is not None:
+            return
+        self.finished.clear()
         def activity():
             try:
                 while not self.finished.wait(15):
@@ -115,10 +123,25 @@ class Desktop:
         if self.activity_error:
             raise RuntimeError("desktop activity input failed") from self.activity_error
 
+    @contextmanager
+    def pause_activity(self):
+        running = self.ticker is not None
+        self.stop_activity()
+        try:
+            yield
+        finally:
+            if running:
+                self.keep_awake()
+
     def shutdown(self):
         if not self.machine.booted:
             return
         try:
+            if not self.machine.connected:
+                # An initrd failure has no running shell to receive poweroff.
+                self.send_monitor_command("quit")
+                self.machine.wait_for_shutdown(timeout=timedelta(seconds=10))
+                return
             shell = self.machine.shell
             previous = shell.gettimeout()
             shell.settimeout(10)
@@ -142,6 +165,7 @@ class Desktop:
             raise
 
     def reboot(self):
+        self.stop_activity()
         # Request a real reboot from the guest; a graphical greeter may handle
         # Ctrl+Alt+Delete as an interface shortcut rather than rebooting.
         self.machine.succeed("systemctl reboot --no-block", timeout=timedelta(seconds=10))
@@ -166,26 +190,63 @@ def wait_for_session(machine, session, user_command):
     machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
 
 
-def visible(machine, pattern, timeout=60, keep_active=True, rotation=0, region=None):
-    # Bound image processing so a visibility check cannot consume the
-    # desktop's entire idle interval. Idle locking is exercised separately.
+def ocr_lines(tsv, scale=2):
+    """Keep word positions in crop pixels and join words on the same baseline."""
+    words = []
+    for row in csv.DictReader(io.StringIO(tsv), delimiter="\t", quoting=csv.QUOTE_NONE):
+        if row["level"] != "5" or not row["text"].strip():
+            continue
+        words.append({"text": row["text"].strip(), "confidence": float(row["conf"]),
+                      **{key: int(row[key]) / scale for key in ("left", "top", "width", "height")}})
+    lines = []
+    for word in sorted(words, key=lambda item: (item["top"], item["left"])):
+        center = word["top"] + word["height"] / 2
+        line = next((line for line in lines
+                     if abs(center - line["center"]) < max(word["height"], line["height"]) / 2), None)
+        if line is None:
+            line = {"center": center, "height": word["height"], "words": []}
+            lines.append(line)
+        line["words"].append(word)
+    for line in lines:
+        line["words"].sort(key=lambda item: item["left"])
+        line["text"] = " ".join(word["text"] for word in line["words"])
+    return lines
+
+
+def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sparse", fallback_layout=None, consecutive=1, check=None):
+    """Observe fresh frames without sending input. Retain the decisive frame."""
+    page_modes = {"line": "7", "block": "6", "sparse": "11"}
     with machine.nested("waiting for visible text: " + pattern), tempfile.TemporaryDirectory() as directory:
-        deadline = time.monotonic() + timeout
+        started = time.monotonic()
+        deadline = started + timeout
         frame = Path(directory) / "frame.png"
         raw = Path(directory) / "frame.ppm"
         cropped = Path(directory) / "region.ppm"
         prepared = Path(directory) / "text.ppm"
-        observations = []
-        started = time.monotonic()
+        details = {"pattern": pattern, "region": region, "rotation": rotation,
+                   "layout": layout, "fallbackLayout": fallback_layout,
+                   "consecutive": consecutive, "passes": []}
+        evidence = Path(machine.out_dir) / ("ocr-" + machine.name + "-" + str(time.monotonic_ns()))
+
+        def retain(status):
+            details.update(status=status, seconds=time.monotonic() - started)
+            evidence.mkdir(parents=True, exist_ok=True)
+            (evidence / "ocr.json").write_text(json.dumps(details, indent=2))
+            if frame.exists():
+                shutil.copyfile(frame, evidence / "frame.png")
+            if cropped.exists():
+                with (evidence / "region.png").open("wb") as stream:
+                    subprocess.run(["pnmtopng", str(cropped)], stdout=stream,
+                                   stderr=subprocess.PIPE, timeout=10, check=True)
+            print("OCR evidence:", evidence)
+
+        streak = 0
         try:
-            while True:
-                if keep_active:
-                    machine.send_key("ctrl")
+            while time.monotonic() < deadline:
                 machine.screenshot(str(frame), timeout=remaining(deadline))
-                # The driver's ImageMagick build handles PNM; netpbm
-                # provides the PNG decoder used for retained screenshots.
                 with raw.open("wb") as stream:
-                    subprocess.run(["pngtopnm", str(frame)], stdout=stream, stderr=subprocess.PIPE, check=True, timeout=remaining(deadline))
+                    subprocess.run(["pngtopnm", str(frame)], stdout=stream, stderr=subprocess.PIPE,
+                                   check=True, timeout=remaining(deadline))
                 transform = ["-rotate", str(rotation)] if rotation else []
                 if region is not None:
                     width, height = struct.unpack(">II", frame.read_bytes()[16:24])
@@ -196,78 +257,59 @@ def visible(machine, pattern, timeout=60, keep_active=True, rotation=0, region=N
                     transform += ["-crop", f"{w}x{h}+{x}+{y}", "+repage"]
                 subprocess.run(["magick", str(raw), *transform, str(cropped)],
                                check=True, capture_output=True, timeout=remaining(deadline))
-                observed = []
-                # Normalize dark desktops first: a failed OCR pass can consume
-                # the entire wait for a short-lived tooltip.
-                brightness = float(subprocess.check_output(
-                    ["magick", str(cropped), "-colorspace", "Gray", "-format", "%[fx:mean]", "info:"],
-                    text=True, timeout=remaining(deadline),
-                ))
-                contrasts = [("grayscale", []), ("inverted", ["-negate"])]
-                if brightness < 0.5:
-                    contrasts.reverse()
-                # Native-size text is usually sufficient. Enlarge only the
-                # selected region when its first OCR pass needs more pixels.
-                passes = [(label, contrast, scale) for scale in ("100%", "200%")
-                          for label, contrast in contrasts]
-                # Low-contrast greeter labels need a binary image when
-                # grayscale text blends into the background.
-                passes += [("threshold", ["-threshold", "50%"], scale)
-                           for scale in ("200%", "300%")]
-                for label, contrast, scale in passes:
+                matched = False
+                # Two passes at most, then capture a fresh frame. Enlarging the
+                # crop helps small labels while preserving the native desktop.
+                for contrast, options, mode in (("grayscale", [], layout),
+                                                ("threshold", ["-threshold", "60%"], fallback_layout or layout)):
                     if time.monotonic() >= deadline:
                         break
-                    if keep_active:
-                        machine.send_key("ctrl")
-                    subprocess.run(
-                        ["magick", str(cropped), "-resize", scale, "-colorspace", "Gray", *contrast, str(prepared)],
-                        check=True, capture_output=True, timeout=remaining(deadline),
-                    )
-                    # Sparse text handles menus; automatic page layout also
-                    # finds notification text enclosed by a window border.
-                    for page_mode in ("11", "3"):
-                        if time.monotonic() >= deadline:
-                            break
-                        ocr_start = time.monotonic()
-                        try:
-                            result = subprocess.run(
-                                ["tesseract", str(prepared), "stdout", "--oem", "1", "--psm", page_mode],
-                                check=True, capture_output=True, text=True,
-                                timeout=remaining(deadline),
-                                env={**os.environ, "OMP_THREAD_LIMIT": "1"},
-                            ).stdout
-                        except subprocess.TimeoutExpired:
-                            result = "OCR timed out for " + label + "/" + page_mode
-                            observations.append({"contrast": label, "scale": scale, "psm": page_mode,
-                                                 "seconds": time.monotonic() - ocr_start, "timeout": True})
-                            observed.append(result)
-                            continue
-                        observations.append({"contrast": label, "scale": scale, "psm": page_mode,
-                                             "seconds": time.monotonic() - ocr_start, "text": result})
-                        observed.append(result)
-                        if re.search(pattern, result):
-                            return
-                assert time.monotonic() < deadline, (pattern, observed)
-                time.sleep(min(1, max(0, deadline - time.monotonic())))
+                    subprocess.run(["magick", str(cropped), "-resize", "200%", "-colorspace", "Gray",
+                                    *options, str(prepared)],
+                                   check=True, capture_output=True, timeout=remaining(deadline))
+                    ocr_start = time.monotonic()
+                    budget = min(8, remaining(deadline))
+                    page_mode = page_modes[mode]
+                    observation = {"frameSeconds": ocr_start - started, "contrast": contrast, "psm": page_mode}
+                    details["passes"].append(observation)
+                    try:
+                        result = subprocess.run(
+                            ["tesseract", str(prepared), "stdout", "--oem", "1", "--psm", page_mode, "tsv"],
+                            check=True, capture_output=True, text=True, timeout=budget,
+                            env={**os.environ, "OMP_THREAD_LIMIT": "1"},
+                        )
+                    except subprocess.TimeoutExpired:
+                        observation.update(seconds=time.monotonic() - ocr_start,
+                                           status="deadline" if time.monotonic() >= deadline else "engine-timeout")
+                        break
+                    lines = ocr_lines(result.stdout)
+                    text = " ".join(line["text"] for line in lines)
+                    matched = bool(check(lines) if check else re.search(pattern, text))
+                    observation.update(seconds=time.monotonic() - ocr_start, status="matched" if matched else "unmatched",
+                                       text=text, lines=lines)
+                    if matched:
+                        break
+                streak = streak + 1 if matched else 0
+                if streak >= consecutive:
+                    retain("matched")
+                    return lines
+                time.sleep(min(0.3, max(0, deadline - time.monotonic())))
+            raise TimeoutError(f"Visible text deadline ({timeout}s): {pattern}")
         except Exception as error:
-            if isinstance(error, subprocess.SubprocessError):
-                print("Image processing failed:", getattr(error, "stderr", None))
-            details = {"pattern": pattern, "region": region, "rotation": rotation,
-                       "seconds": time.monotonic() - started, "passes": observations}
-            print("OCR observations:", json.dumps(details))
+            details["error"] = str(error)
+            if isinstance(error, subprocess.CalledProcessError):
+                details.update(returncode=error.returncode, stderr=str(error.stderr))
+                status = "command-error"
+            elif isinstance(error, (TimeoutError, subprocess.TimeoutExpired)):
+                status = "deadline" if time.monotonic() >= deadline else "command-timeout"
+            else:
+                status = "error"
             try:
-                evidence = Path(machine.out_dir) / ("ocr-" + machine.name + "-" + str(time.monotonic_ns()))
-                evidence.mkdir(parents=True)
-                (evidence / "ocr.json").write_text(json.dumps(details, indent=2))
-                if frame.exists():
-                    shutil.copyfile(frame, evidence / "frame.png")
-                if cropped.exists():
-                    with (evidence / "region.png").open("wb") as stream:
-                        subprocess.run(["pnmtopng", str(cropped)], stdout=stream,
-                                       stderr=subprocess.PIPE, timeout=10, check=True)
-                print("OCR evidence:", evidence)
+                retain(status)
             except Exception as collection_error:
                 error.add_note("Collecting OCR evidence: " + str(collection_error))
+            if status == "deadline":
+                raise TimeoutError(f"Visible text deadline ({timeout}s): {pattern}") from error
             raise
 
 
@@ -287,7 +329,8 @@ def login(machine):
     # The selected account stays legible across greeter sizes; the password
     # placeholder is small and low contrast in Breeze.
     visible(machine, r"(?i)\bdesktop\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7))
-    delay = timedelta(milliseconds=150)
-    machine.send_key("ctrl-u", delay=delay)
-    machine.send_chars("synthetic-fixture-only", delay=delay)
-    machine.send_key("ret", delay=delay)
+    with machine.input_lock:
+        delay = timedelta(milliseconds=150)
+        machine.send_key("ctrl-u", delay=delay)
+        machine.send_chars("synthetic-fixture-only", delay=delay)
+        machine.send_key("ret", delay=delay)

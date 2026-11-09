@@ -50,10 +50,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     oranc.url = "github:linyinfeng/oranc";
-    vm-test-tools = {
-      url = "github:hellodword/agents-misc";
-      flake = false;
-    };
+    agents-misc.url = "github:hellodword/agents-misc";
   };
   outputs =
     { self, nixpkgs, ... }@inputs:
@@ -108,7 +105,7 @@
         };
         vm = pkgs.mkShell {
           packages = [
-            (import ./tools/vm-test-mcp/client.nix { inherit pkgs inputs; })
+            inputs.agents-misc.packages.${system}.vm-test-submit
           ];
         };
       };

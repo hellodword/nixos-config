@@ -4,6 +4,34 @@ import shlex
 
 
 def notification_smoke(machine, upstream, python):
+    try:
+        exercise_notifications(machine, upstream, python)
+    except Exception as error:
+        # This request uses the fixture's public device key, from the same
+        # container as Apprise. Bark's response includes the APNs/TLS error.
+        probe = """
+import requests
+response = requests.post('http://bark:8080/push', timeout=25,
+                         json={'device_key': 'local', 'body': 'diagnostic'})
+print(response.status_code, response.text)
+"""
+        captures = [
+            (machine, "bark-response", f"docker exec site-apprise {python} -c {shlex.quote(probe)}"),
+            (machine, "services", "journalctl -b -u haproxy -u docker-site-bark -u docker-site-apprise --no-pager -o short-precise"),
+            (upstream, "simulator", "journalctl -b -u notification-fixture --no-pager -o short-precise"),
+        ]
+        for guest, name, command in captures:
+            try:
+                path = "/tmp/notification-" + name + ".log"
+                status, _ = guest.execute("(" + command + ") > " + path + " 2>&1", timeout=40)
+                guest.copy_from_machine(path, "notifications")
+                print(f"Notification diagnostics: {name}, exit {status}, {guest.out_dir}/notifications")
+            except Exception as diagnostic_error:
+                error.add_note(f"Collecting notification {name}: {diagnostic_error}")
+        raise
+
+
+def exercise_notifications(machine, upstream, python):
     upstream.wait_for_unit("notification-fixture.service")
     machine.wait_for_unit("haproxy.service")
     machine.wait_for_unit("docker-site-apprise.service")

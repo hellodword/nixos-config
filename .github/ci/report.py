@@ -148,6 +148,16 @@ def render(state):
             lines += ["", f"**{pass_name}:** VM stage wall time {duration(seconds)}; "
                       f"{len(fresh)}/{len(expected)} freshly executed successfully ({completeness})."]
     samples = read_records(state / "resources.jsonl")
+    evidence = [event for event in events if event["kind"] == "vm-evidence"]
+    if evidence:
+        lines += ["", "### VM evidence", "", "Paths below are inside the diagnostics artifact.", "",
+                  "| Revision | Group | Test | Evidence |", "| --- | --- | --- | --- |"]
+        for event in evidence:
+            lines.append(f"| {event['pass']} | {event['phase']} | {event['name']} | `{event['path']}` |")
+    for event in events:
+        if event["kind"] == "evidence-error":
+            lines += ["", f"Evidence collection failed for {event['phase']}: {event['error']}. "
+                      f"Runner build directory retained at `{event['buildDirectory']}`."]
     lines += ["", "### Runner resources", ""]
     if samples:
         gib = 1024 ** 3

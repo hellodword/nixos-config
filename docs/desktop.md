@@ -52,12 +52,6 @@ busctl --user get-property org.freedesktop.secrets "$wallet_path" \
 
 `Locked` 为 `false` 表示默认钱包已经解锁。`ReadAlias` 返回 `/` 时尚未设定默认钱包，可在 KWallet Manager 中创建或选择 `kdewallet`。PAM 初始化服务完成后会退出；判断解锁状态使用 Secret Service 的 collection 属性或实际应用读取。KWallet Manager 的 Open 操作会打开管理视图；[兼容接口的 `isOpen`](https://github.com/KDE/kwallet/blob/v6.31.0/src/runtime/kwalletd/kwalletd.cpp) 查询该接口已登记的访问句柄。
 
-### 未决问题
-
-**KWallet 偶发读回失败。**
-
-真机曾出现钱包条目偶发无法读回；i3 VM 也在重新登录后出现读回退出码 1，触发条件尚未确定。复现时记录桌面会话、应用、登录方式、Secret Service 的锁状态和相关 journal，避免记录条目内容。桌面 VM 保留存取与重新登录场景，单次通过不足以关闭这个问题。
-
 ## 随机壁纸
 
 Sway 和 i3 复用 `~/Pictures/wallpaper` 中的 JPEG、PNG、WebP、BMP 图片；原有非 Bing 图片同样参与随机选择。显示环境就绪后立即恢复上次壁纸，没有可用记录时从本地图库选择。会话内每 30 分钟换一张，有多张图片时避开上一张。所有显示器使用同一张图片，按 fill 裁切填满；Plasma 在系统设置中管理壁纸。

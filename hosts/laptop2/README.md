@@ -18,8 +18,6 @@
 | --- | --- |
 | B2 | 无有效付款方式，控制台 Class B/C 各有不可编辑的 2,500 次日上限，目标为免费使用。公共 PAYG 政策不能代替这个账户的硬上限；额度含义见 [Caps & Alerts](https://www.backblaze.com/docs/en/cloud-storage-data-caps-and-alerts)。 |
 | R2 Standard | 以免费额度为主，可接受少量付费。存储和请求分别计费，调整频率或恢复范围前核对 [R2 定价](https://developers.cloudflare.com/r2/pricing/)。 |
-| Scaleway | 付费账户，是否使用 One Zone 仍待控制台确认。成本需结合实际存储类别和下载量，见[存储定价](https://www.scaleway.com/en/pricing/storage/)。 |
+| Scaleway | 付费账户，费用见[存储定价](https://www.scaleway.com/en/pricing/storage/)。 |
 
 当时盘点的 5 个 index、146 个 snapshots、370 个 packs，给一次新缓存检查约 151 次索引/快照读取的基础量；再加元数据 pack、选中分片的数据 pack 与控制请求。1/12 分片平均约 31 个 pack，按 pack ID 分组，实际大小和数量可不均。无重试模型按约 550 次 B 请求量级预留余量，不能视为硬上限。仓库增长后，用各操作前后的控制台增量重新校准；观测步骤见[备份预算核对](../../docs/backup.md#受控启用)。
-
-B2 的总存储量与下载日上限仍需本机账户确认。`Today: $0.00 (7 KB)` 只表示当天用量，不能据此判断下载额度足够。下载预算需结合 pack 字节数、检查分片与维护重打包计算；手动额外操作会消费同一账户额度。

@@ -1,6 +1,7 @@
 """Local TLS official-service simulator; all requests use synthetic credentials."""
 import argparse
 import json
+import logging
 from pathlib import Path
 import socketserver
 import ssl
@@ -59,13 +60,24 @@ class Handler(socketserver.StreamRequestHandler):
                     headers[key.lower()] = value.strip()
                 status, content = reply(request[1], self.rfile.read(int(headers.get("content-length", "0"))), self.client_address[0])
                 self.wfile.write(f"HTTP/1.1 {status} Result\r\nContent-Type: application/json\r\nContent-Length: {len(content)}\r\nConnection: close\r\n\r\n".encode() + content)
-        except (OSError, ValueError):
-            pass
+        except Exception:
+            logging.exception("Notification request failed: peer=%s protocol=%s",
+                              self.client_address, self.request.selected_alpn_protocol())
 
 
 class Server(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
+
+    def get_request(self):
+        connection, address = super().get_request()
+        connection.settimeout(30)
+        try:
+            return self.tls.wrap_socket(connection, server_side=True), address
+        except OSError:
+            logging.exception("Notification TLS handshake failed: peer=%s", address)
+            connection.close()
+            raise
 
 
 if __name__ == "__main__":
@@ -78,5 +90,5 @@ if __name__ == "__main__":
     context.load_cert_chain(args.cert, args.key)
     context.set_alpn_protocols(["h2", "http/1.1"])
     with Server((args.address, 443), Handler) as server:
-        server.socket = context.wrap_socket(server.socket, server_side=True)
+        server.tls = context
         server.serve_forever()
