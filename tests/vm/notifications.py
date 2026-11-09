@@ -36,17 +36,26 @@ def exercise_notifications(machine, upstream, python):
     machine.wait_for_unit("haproxy.service")
     machine.wait_for_unit("docker-site-apprise.service")
     machine.wait_for_unit("docker-site-bark.service")
-    # Readiness is the first real delivery through the ordinary user's socket.
-    machine.wait_until_succeeds("su -s /bin/sh sender -c 'bark 中文正文'", timeout=180)
-    for arguments in ("'标题' '中文正文'", "'工作' '标题' '中文正文'", "'工作' '标题' '中文正文' 'glass'"):
-        result = json.loads(machine.succeed("su -s /bin/sh sender -c " + shlex.quote("bark " + arguments)))
+    cases = (
+        (["中文正文：单参数"], "中文正文：单参数", "bark", "bark", "1107"),
+        (["标题", "中文正文：双参数"], "中文正文：双参数", "标题", "标题", "1107"),
+        (["工作", "标题", "中文正文：三参数"], "中文正文：三参数", "标题", "工作", "1107"),
+        (["工作", "标题", "中文正文：四参数", "glass"], "中文正文：四参数", "标题", "工作", "glass.caf"),
+    )
+    for index, (arguments, body, title, group, sound) in enumerate(cases):
+        command = "su -s /bin/sh sender -c " + shlex.quote(shlex.join(["bark", *arguments]))
+        # Readiness is the first real delivery through the ordinary user's socket.
+        output = machine.wait_until_succeeds(command, timeout=180) if index == 0 else machine.succeed(command)
+        result = json.loads(output)
         assert result["channels"][0]["delivered"], result
-    events = [json.loads(line) for line in upstream.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
-    assert len(events) == 4, events
-    payload = events[-1]["body"]["aps"]
-    assert payload["alert"]["body"] == "中文正文", payload
-    assert payload["alert"]["title"] == "标题", payload
-    assert payload["thread-id"] == "工作" and payload["sound"] == "glass.caf", payload
+        events = [json.loads(line) for line in upstream.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
+        delivered = [event for event in events if event["status"] == 200
+                     and event["body"].get("aps", {}).get("alert", {}).get("body") == body]
+        assert delivered, (body, events)
+        for event in delivered:
+            payload = event["body"]["aps"]
+            assert (payload["alert"]["title"], payload["alert"]["body"]) == (title, body), payload
+            assert payload["thread-id"] == group and payload["sound"] == sound, payload
     machine.succeed("su -s /bin/sh sender -c 'site-notify send --channel wecom --title 测试 企业微信'")
     # Retry only a bounded number of times and preserve the nonzero delivery result.
     upstream.succeed("echo 3 > /run/notification-fixture/failures")

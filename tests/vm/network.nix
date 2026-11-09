@@ -617,6 +617,7 @@ in
     from collections import Counter
     import json
     import shlex
+    import time
 
     exit_active = False
     containers_active = False
@@ -826,18 +827,41 @@ in
     local_access()
     # Real KDE Connect devices discover each other using LAN broadcast/mDNS,
     # then establish an authenticated connection without public port ranges.
-    for machine in (client, target):
-        machine.succeed("systemctl start kdeconnect-fixture.service")
     kde_bus = '$(cat /run/kdeconnect-fixture/bus-address)'
-    def kde(machine, command):
-        return machine.succeed('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" ' + command)
-    for machine in (client, target):
-        machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli --my-id | grep .', timeout=30)
-    client_device = kde(client, "kdeconnect-cli --my-id").strip()
-    target_device = kde(target, "kdeconnect-cli --my-id").strip()
+    def kde(machine, command, timeout=30):
+        return machine.succeed('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" ' + command, timeout=timeout)
+
+    def kde_reachable(machine, device):
+        status, output = machine.execute(
+            f'busctl --address="{kde_bus}" --timeout=2s get-property org.kde.kdeconnect '
+            f'/modules/kdeconnect/devices/{device} org.kde.kdeconnect.device isReachable', timeout=5)
+        return status == 0 and output.strip() == "b true"
+
     try:
-        for machine, device in ((client, target_device), (target, client_device)):
-            machine.wait_until_succeeds('env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli -l --id-only | grep -Fx ' + device, timeout=45)
+        for machine in (client, target):
+            machine.succeed("systemctl start kdeconnect-fixture.service")
+            machine.wait_until_succeeds(
+                'test -s /run/kdeconnect-fixture/bus-address && '
+                'env DBUS_SESSION_BUS_ADDRESS="' + kde_bus + '" kdeconnect-cli --my-id | grep .', timeout=30)
+            machine.wait_until_succeeds(
+                "journalctl -b -u kdeconnect-fixture --no-pager -o cat | grep -Fx 'LanLinkProvider started'", timeout=30)
+        client_device = kde(client, "kdeconnect-cli --my-id").strip()
+        target_device = kde(target, "kdeconnect-cli --my-id").strip()
+        peers = ((client, target_device), (target, client_device))
+        discovery_started = time.monotonic()
+        refreshes = 0
+        while time.monotonic() - discovery_started < 45:
+            reachable = [kde_reachable(machine, device) for machine, device in peers]
+            if all(reachable):
+                break
+            elapsed = time.monotonic() - discovery_started
+            if refreshes < 2 and elapsed >= 15 * (refreshes + 1):
+                print(f"KDE Connect discovery refresh from client at {elapsed:.1f}s; reachable={reachable}")
+                kde(client, "kdeconnect-cli --refresh", timeout=5)
+                refreshes += 1
+            time.sleep(1)
+        else:
+            raise AssertionError("KDE Connect peers did not become mutually reachable within 45 seconds")
         kde(client, "kdeconnect-cli --pair -d " + target_device)
         device_path = "/modules/kdeconnect/devices/" + client_device
         target.wait_until_succeeds(f'busctl --address="{kde_bus}" call org.kde.kdeconnect {device_path} org.kde.kdeconnect.device isPairRequestedByPeer | grep true', timeout=30)
@@ -848,12 +872,15 @@ in
         client.succeed("printf 'LAN discovery and transfer' > /run/kdeconnect-transfer.txt")
         kde(client, "kdeconnect-cli --share /run/kdeconnect-transfer.txt -d " + target_device)
         target.wait_until_succeeds("find /run/kdeconnect-fixture -name kdeconnect-transfer.txt -exec grep -lFx 'LAN discovery and transfer' {} + | grep .", timeout=30)
-    except Exception:
+    except Exception as error:
         for machine in (client, target):
             for command in (f'busctl --address="{kde_bus}" tree org.kde.kdeconnect',
                             f'env DBUS_SESSION_BUS_ADDRESS="{kde_bus}" kdeconnect-cli -l',
                             "journalctl -u kdeconnect-fixture --no-pager -n 200"):
-                print(machine.name, command, machine.execute(command, timeout=10)[1])
+                try:
+                    print(machine.name, command, machine.execute(command, timeout=10)[1])
+                except Exception as diagnostic_error:
+                    error.add_note(f"Collecting KDE Connect diagnostics on {machine.name}: {diagnostic_error}")
         raise
     explicit_proxy(client, "127.0.0.1")
     explicit_proxy(target, "192.168.1.10")

@@ -123,6 +123,10 @@ in
         minimumIntervalSeconds.check = lib.mkIf (name == "first") 0;
       });
     };
+    # The scenario starts calendar timers after preparing data and repositories.
+    systemd.timers = lib.genAttrs (map (name: "site-backup-${name}-automatic") targets) (_: {
+      wantedBy = lib.mkForce [ ];
+    });
   };
   testScript = builtins.readFile ./notifications.py + ''
     from datetime import timedelta
@@ -132,7 +136,6 @@ in
     upstream.wait_for_unit("restic-rest-server.service")
     machine.start()
     machine.wait_for_unit("multi-user.target")
-    machine.succeed("systemctl stop 'site-backup-*-automatic.timer'")
     notification_smoke(machine, upstream, "${notificationPackages.python}/bin/python3")
     machine.succeed("mkdir -p /persist/data/Cache; echo important > /persist/data/document; echo disposable > /persist/data/Cache/blob; systemd-tmpfiles --create")
     for target in ("first", "second", "third"):
@@ -226,7 +229,7 @@ in
     upstream.succeed("test -n \"$(find /var/lib/restic/first/locks -type f -print -quit)\"")
     machine.start()
     machine.wait_for_unit("multi-user.target")
-    machine.succeed("systemctl stop 'site-backup-*-automatic.timer'; date -s '2027-03-16 13:40:00 UTC'")
+    machine.succeed("date -s '2027-03-16 13:40:00 UTC'")
     assert record("first", "backup-result")["result"] == "interrupted"
     assert record("first", "backup-success") == evening
     assert health()["first"]["backup"]["state"] == "fresh"
