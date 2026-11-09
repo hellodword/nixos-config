@@ -1,11 +1,14 @@
-# 本地通知
+# 通知
 
-`site.notifications` 提供完整 Apprise API 和 Bark 后端。普通用户通过本地 Unix socket 发送，通道地址与密钥来自 SOPS；官方 API 由宿主 HAProxy 按固定 SNI 转发，TLS 在应用与官方服务之间建立。
+`site.notifications` 通过 Apprise 将消息发送到 Bark 等通道。本机命令使用 Unix socket，容器和局域网服务使用 HTTP 入口。通道地址与密钥来自 SOPS；官方 API 由宿主 HAProxy 按固定 SNI 转发，TLS 在应用与官方服务之间建立。
 
 ```mermaid
 flowchart LR
-  C["bark / site-notify / Restic"] --> U["Unix socket · 发送权限"]
-  U --> A["Apprise API · gVisor"]
+  C["bark / site-notify / Restic"] --> U["Unix socket"]
+  D["容器 / 局域网服务"] --> H["HTTP"]
+  U --> P["HAProxy · 发送入口"]
+  H --> P
+  P --> A["Apprise API · gVisor"]
   A --> B["Bark · gVisor"]
   A --> R["HAProxy · 官方 SNI"]
   B --> R
@@ -25,13 +28,22 @@ site-notify send --channel bark --channel wecom --title '结果' '中文正文'
 
 `bark` 的一至四个参数分别为 `BODY`、`TITLE BODY`、`GROUP TITLE BODY`、`GROUP TITLE BODY SOUND`；两参数形式同时以标题作为 group。sound 使用 Bark 支持的声音名称。`site-notify` 输出每个通道的投递结果，全部成功返回 0，投递失败返回 1，参数错误返回 2。
 
-HTTP 入口为 `/run/site-notifications/send.sock`，只允许 `site-notifications` 组和 root。`POST /notify/local` 接收原生 Apprise JSON：
+`bark`、`site-notify` 和备份通知使用 `/run/site-notifications/send.sock`，由 root 和 `site-notifications` 组访问。
 
-```json
-{"title":"标题","body":"内容","tag":"bark","format":"text","template":{"group":"工作","sound":"glass"}}
+网络入口默认监听 `0.0.0.0:19990`，可通过 `site.notifications.listenAddress` 和 `site.notifications.port` 调整。HTTP 免认证，能连接该入口的客户端即可发送，包括本机进程；网络访问范围遵循[私网访问策略](network.md#私网开发访问与公网入站)。
+
+两个入口均以 `POST /notify/local` 接收原生 Apprise JSON。局域网客户端使用宿主的实际地址，例如：
+
+```sh
+curl --noproxy '*' --fail-with-body \
+  'http://192.168.1.10:19990/notify/local' \
+  -H 'Content-Type: application/json' \
+  --data '{"title":"标题","body":"内容","tag":"bark","format":"text","template":{"group":"工作","sound":"glass"}}'
 ```
 
-凭据和目的地在固定配置中，调用方只提供正文、标题、已配置的 tag 和 group/sound。选择多个通道时逐个投递，某个通道失败不影响其余通道。客户端在超时或失败后有限重试，没有持久发送队列；响应丢失时重试可能产生重复通知。
+容器内将 URL 换为所属网桥的宿主网关地址；默认 Docker bridge 通常使用 `http://172.17.0.1:19990/notify/local`，自建 bridge 的网关可通过 `docker network inspect` 查看。
+
+凭据和目的地在固定配置中，调用方只提供正文、标题、已配置的 tag 和 group/sound。`site-notify` 选择多个通道时逐个投递，某个通道失败不影响其余通道；它在超时或失败后有限重试，没有持久发送队列，响应丢失时重试可能产生重复通知。
 
 Restic 的 backup、check、restore-test、maintenance 各自记录成功、失败或中断结果；因时间窗口、供电、成功间隔或本地锁而跳过时不发送通知。消息包含主机、目标别名、操作和结果。
 
@@ -63,9 +75,9 @@ Bark 自带的 APNs 签名实现由上游包提供；个人 device token 只挂�
 
 两个容器在 gVisor 中以非 root 用户运行，文件写入、内存和 CPU 均受限。调整资源或挂载范围时修改[通知模块](../modules/services/notifications.nix)。
 
-HAProxy 只转发允许的官方域名和端口，不解密 TLS。它把受限容器的出站连接变成宿主普通连接，让既有 DNS、分流和 Lockdown 统一决定出口；容器本身无需获得任意互联网连接能力。
+HAProxy 的出站 TLS 转发只连接允许的官方域名和端口，不解密 TLS。它把受限容器的出站连接变成宿主普通连接，让既有 DNS、分流和 Lockdown 统一决定出口；容器本身无需获得任意互联网连接能力。
 
-内部 Docker bridge 默认使用 `172.31.255.0/29`。如与现有网络重叠，在主机设置 `site.notifications.networkPrefix`。仅允许 API 到 Bark 的固定端口，以及各自到宿主 TLS 转发入口；官方地址使用静态 hosts，容器 DNS 不向外解析。宿主普通进程只能通过发送 socket 访问 API。官方连接由 HAProxy 新建，适用宿主的 DNS、sing-box 与 Lockdown；本地桥接通信使用明确的路由和连接标记。
+内部 Docker bridge 默认使用 `172.31.255.0/29`。如与现有网络重叠，在主机设置 `site.notifications.networkPrefix`。仅允许 API 到 Bark 的固定端口，以及各自到宿主 TLS 转发入口；官方地址使用静态 hosts，容器 DNS 不向外解析。客户端通过 HAProxy 的发送入口访问 API。官方连接由 HAProxy 新建，适用宿主的 DNS、sing-box 与 Lockdown；本地桥接通信使用明确的路由和连接标记。
 
 通知容器与 HAProxy 随网络服务停止，并随 Docker 重启恢复。通知网络由配置管理，即使暂时没有容器连接也会保留。通用的清理、日志轮转和 daemon 重启行为见 [Docker 维护](maintenance.md#docker-维护)。
 

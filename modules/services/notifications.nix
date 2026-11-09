@@ -74,6 +74,16 @@ in
 {
   options.site.notifications = {
     enable = lib.mkEnableOption "local Apprise API and Bark notifications under gVisor";
+    listenAddress = lib.mkOption {
+      type = lib.types.str;
+      default = "0.0.0.0";
+      description = "Local address for the HTTP notification sending endpoint.";
+    };
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 19990;
+      description = "TCP port for the HTTP notification sending endpoint.";
+    };
     barkDeviceTokenFile = lib.mkOption {
       type = lib.types.str;
       description = "Root-readable runtime file containing the Bark APNs device token.";
@@ -271,6 +281,7 @@ in
           hold valid 30s
         frontend notification_send
           bind /run/site-notifications/send.sock group site-notifications mode 660
+          bind ${cfg.listenAddress}:${toString cfg.port}
           mode http
           option http-buffer-request
           http-request deny deny_status 404 unless { method POST } { path -m str /notify/local }
