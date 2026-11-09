@@ -74,7 +74,7 @@ let
   '';
   image =
     name: uid: command: env:
-    pkgs.dockerTools.streamLayeredImage {
+    pkgs.dockerTools.buildLayeredImage {
       inherit name;
       tag = "local";
       contents = [ roots ];

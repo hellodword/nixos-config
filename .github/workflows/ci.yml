@@ -351,7 +351,7 @@ jobs:
       - name: Run network and backup VM tests
         id: network-backup
         if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-backup --jobs 2 --state /ci'
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-backup --jobs 1 --state /ci'
       - name: Run desktop VM tests
         id: desktop
         if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}

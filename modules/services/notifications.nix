@@ -139,7 +139,7 @@ in
       containers = {
         site-apprise = lib.recursiveUpdate commonContainer {
           image = "site-apprise:local";
-          imageStream = images.apiImage;
+          imageFile = images.apiImage;
           volumes = commonContainer.volumes ++ [ "/run/site-notification-secrets/api:/run/credentials:ro" ];
           extraOptions = commonContainer.extraOptions ++ [
             "--ip=${apiAddress}"
@@ -150,7 +150,7 @@ in
         };
         site-bark = lib.recursiveUpdate commonContainer {
           image = "site-bark:local";
-          imageStream = images.barkImage;
+          imageFile = images.barkImage;
           volumes = commonContainer.volumes ++ [ "/run/site-notification-secrets/bark:/run/credentials:ro" ];
           extraOptions = commonContainer.extraOptions ++ [
             "--ip=${barkAddress}"

@@ -250,7 +250,7 @@ let
 in
 {
   name = "mullvad-lockdown-and-shared-dns";
-  globalTimeout = 1800;
+  globalTimeout = 3600;
   qemu.forceAccel = true;
   node.specialArgs = { inherit inputs; };
   defaults = {

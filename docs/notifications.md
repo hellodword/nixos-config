@@ -81,7 +81,9 @@ HAProxy 的出站 TLS 转发只连接允许的官方域名和端口，不解密 
 
 通知容器与 HAProxy 随网络服务停止，并随 Docker 重启恢复。通知网络由配置管理，即使暂时没有容器连接也会保留。通用的清理、日志轮转和 daemon 重启行为见 [Docker 维护](maintenance.md#docker-维护)。
 
-证书包变化会更新通知镜像和对应服务。Apprise 与 Apprise API 单独维护，不参与每日 flake 输入更新；升级时修改 [nix/notifications.nix](../nix/notifications.nix) 中的版本和源码 hash，再验证通知行为：
+通知镜像在 Nix 构建时生成归档，随系统和 VM 依赖复用二进制缓存。容器启动时加载归档，Docker 复用已有镜像层。证书包变化会更新镜像和对应服务。
+
+Apprise 与 Apprise API 单独维护，不参与每日 flake 输入更新；升级时修改 [nix/notifications.nix](../nix/notifications.nix) 中的版本和源码 hash，再验证通知行为：
 
 ```sh
 nix build --no-link .#checks.x86_64-linux.vm-backup

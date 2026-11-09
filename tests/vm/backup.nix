@@ -233,18 +233,34 @@ in
     assert record("first", "backup-result")["result"] == "interrupted"
     assert record("first", "backup-success") == evening
     assert health()["first"]["backup"]["state"] == "fresh"
-    machine.succeed("rm /persist/data/inflight; systemctl start site-backup-first-backup")
-    # A leftover shared backup lock permits another backup. The next exclusive
-    # check exercises exit-11 recovery and removes that dead owner's lock.
-    machine.succeed("systemctl start site-backup-first-check")
-    assert record("first", "check-result")["result"] == "success"
-    upstream.succeed("test -z \"$(find /var/lib/restic/first/locks -type f -print -quit)\"")
-    restore("first", "/restore-after-reboot")
-    latest = record("first", "backup-result")["id"]
-    # Boot-time delivery and job completion both use the same latest-result queue.
-    machine.wait_until_succeeds("test $(jq -r .id /var/lib/site-backup-first/backup-notification.json) = " + latest + " && jq -e '.deliveredChannels | index(\"bark\") != null' /var/lib/site-backup-first/backup-notification.json", timeout=180)
+    try:
+        machine.wait_until_succeeds("su -s /bin/sh sender -c 'bark 重启后就绪'", timeout=180)
+        machine.succeed("rm /persist/data/inflight; systemctl start site-backup-first-backup")
+        # A leftover shared backup lock permits another backup. The next exclusive
+        # check exercises exit-11 recovery and removes that dead owner's lock.
+        machine.succeed("systemctl start site-backup-first-check")
+        assert record("first", "check-result")["result"] == "success"
+        upstream.succeed("test -z \"$(find /var/lib/restic/first/locks -type f -print -quit)\"")
+        restore("first", "/restore-after-reboot")
+        latest = record("first", "backup-result")["id"]
+        notification_checks = [
+            "test $(jq -r .id /var/lib/site-backup-first/backup-notification.json) = " + latest,
+            "jq -e '.deliveredChannels | index(\"bark\") != null' /var/lib/site-backup-first/backup-notification.json",
+        ]
+        for target in ("first", "second", "third"):
+            notification_checks.append(f"test -z \"$(find /var/lib/site-backup-{target} -name '*-pending.json' -print -quit)\"")
+        # One deadline covers the five-minute retry timer, its scheduling accuracy
+        # and the bounded delivery attempts for the latest persisted results.
+        machine.wait_until_succeeds(" && ".join(notification_checks), timeout=480)
+    except Exception as error:
+        capture_notification_diagnostics(error, [
+            (machine, "backup-state", r"find /var/lib/site-backup-* -maxdepth 1 -type f \( -name '*-pending.json' -o -name '*-notification.json' \) -exec jq -c '{file: input_filename, state: .}' {} +"),
+            (machine, "backup-timers", "systemctl list-timers --all 'site-backup-*-notify.timer' --no-pager"),
+            (machine, "services", "journalctl -b -u 'site-backup-*-notify.service' -u haproxy -u docker-site-bark -u docker-site-apprise --no-pager -o short-precise"),
+            (upstream, "simulator", "journalctl -b -u notification-fixture --no-pager -o short-precise"),
+        ])
+        raise
     for target in ("first", "second", "third"):
-        machine.wait_until_succeeds(f"test -z \"$(find /var/lib/site-backup-{target} -name '*-pending.json' -print -quit)\"", timeout=180)
         machine.succeed(f"test $(stat -c %a /var/lib/site-backup-{target}) = 700")
     notifications = [json.loads(line) for line in upstream.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
     bodies = [str(event["body"]) for event in notifications]
