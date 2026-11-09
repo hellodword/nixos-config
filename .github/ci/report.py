@@ -155,9 +155,10 @@ def render(state):
         for event in evidence:
             lines.append(f"| {event['pass']} | {event['phase']} | {event['name']} | `{event['path']}` |")
     for event in events:
+        if event["kind"] == "evidence-missing":
+            lines += ["", f"VM output unavailable for {event['pass']}/{event['name']}: `{event['output']}`."]
         if event["kind"] == "evidence-error":
-            lines += ["", f"Evidence collection failed for {event['phase']}: {event['error']}. "
-                      f"Runner build directory retained at `{event['buildDirectory']}`."]
+            lines += ["", f"Evidence collection failed for {event['phase']}: {event['error']}."]
     lines += ["", "### Runner resources", ""]
     if samples:
         gib = 1024 ** 3

@@ -62,6 +62,8 @@ sudo systemctl restart nix-daemon.service
 
 [cache-policy.nix](../nix/cache-policy.nix) 定义构建根与再分发限制。[发布脚本](../.github/ci/cache.py)沿构建依赖图选取已经实现的 derivation 输出，再收集这些产物的运行时引用。求值直接写入 store 的文件也会随运行时引用纳入。部分构建或 VM 失败时，其余已完成的可再分发路径仍可发布，供下轮使用。发布时机见 [CI 执行顺序](ci.md#主机与执行顺序)。
 
+默认开发环境及其依赖随 CI 发布到项目缓存。配置缓存后，本地和 CI 的 `nix develop` 可复用其中的工具，包括 VM 提交客户端。缓存匹配相同的 store path，flake 求值仍在当前机器进行。
+
 公开范围包括可再分发的自定义包、配置产物及成功的 Nix VM 测试结果。输入相同的检查可以恢复已有成功结果，如何区分复用与本轮执行见[验证指南](validation.md#完整验收与计时)。
 
 软件许可证的 `redistributable` 元数据用于筛选直接软件包。有再分发限制的软件、下载源及复制这些内容的 bundle 不发布；普通系统包装脚本、符号链接和元数据可以保留对它们的引用。`unfreeRedistributable` 与禁止再分发的许可分别处理。

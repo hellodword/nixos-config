@@ -3,7 +3,6 @@
 
 import argparse
 import json
-import os
 from pathlib import Path
 import shutil
 import signal
@@ -36,6 +35,13 @@ def collect_vm_evidence(entries, state, phase, pass_name):
             source = Path(output)
             if source.is_dir():
                 shutil.copytree(source, destination / source.name, symlinks=True, dirs_exist_ok=True)
+            elif source.exists():
+                destination.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, destination / source.name, follow_symlinks=False)
+            else:
+                record(state, {"kind": "evidence-missing", "pass": pass_name, "phase": phase,
+                               "name": entry["name"], "output": output})
+                print(f"{entry['name']} evidence output unavailable: {output}", flush=True)
         if destination.exists():
             record(state, {"kind": "vm-evidence", "pass": pass_name, "phase": phase,
                            "name": entry["name"], "path": str(destination.relative_to(state))})
@@ -52,11 +58,11 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
     active, activities = {}, []
     started, start = utc_now(), time.monotonic()
     command = ["nix", "build", "--no-link", "--print-build-logs", "--keep-going"]
-    build_directory = None
+    has_vm = any(entry.get("vm") for entry in entries)
     collection_error = None
-    if any(entry.get("vm") for entry in entries):
-        build_directory = Path(tempfile.mkdtemp(prefix=phase + "-", dir=os.environ.get("TMPDIR")))
-        command += ["--keep-failed", "--option", "build-dir", str(build_directory)]
+    if has_vm:
+        # Nix manages build directories and access for its build users.
+        command += ["--keep-failed"]
     if jobs is not None:
         command += ["--max-jobs", str(jobs)]
     command += [entry["drv"] + "^*" for entry in entries]
@@ -97,19 +103,16 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait()
-                if build_directory is not None:
-                    # The build process has ended. Copy only the declared VM
-                    # outputs; QEMU disks and temporary builds stay in this
-                    # phase's directory until collection succeeds.
+                if has_vm:
+                    # Collect declared outputs after Nix exits, including
+                    # diagnostics written by a failed VM builder.
                     try:
                         collect_vm_evidence(entries, state, phase, pass_name)
                     except Exception as error:
                         collection_error = error
-                        record(state, {"kind": "evidence-error", "phase": phase, "error": str(error),
-                                       "buildDirectory": str(build_directory)})
-                        print(f"VM evidence collection failed; retained {build_directory}: {error}", flush=True)
-                    else:
-                        shutil.rmtree(build_directory)
+                        record(state, {"kind": "evidence-error", "pass": pass_name,
+                                       "phase": phase, "error": str(error)})
+                        print(f"VM evidence collection failed: {error}", flush=True)
 
     end = time.monotonic()
     realized = valid_paths(paths)

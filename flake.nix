@@ -101,10 +101,6 @@
             actionlint
             self.packages.${system}.oranc
             distribution
-          ];
-        };
-        vm = pkgs.mkShell {
-          packages = [
             inputs.agents-misc.packages.${system}.vm-test-submit
           ];
         };

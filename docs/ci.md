@@ -26,7 +26,7 @@
 | 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
 | 缓存与工具 | 确认项目缓存可匿名读取，准备开发工具；发布任务核对签名身份和写入权限 |
 | 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存集成 |
-| 求值与构建 | 求值进程退出后，构建受限依赖、所选系统、领域检查和全部 VM driver |
+| 求值与构建 | 求值进程退出后，构建受限依赖、所选系统、开发环境、领域检查和全部 VM driver |
 | 第一次发布 | 发布已经完成且可再分发的路径；构建失败也保留成功产物 |
 | VM 第一组 | network 与 backup 并行 |
 | VM 第二组 | desktop 单独运行 |
@@ -35,7 +35,7 @@
 
 同一个 host 的步骤共享 runner、容器和 Nix store。不同 host 使用独立 runner，通过 GHCR 复用相同依赖和测试结果。各项检查的范围见[验证指南](validation.md)。
 
-oranc 启动前通过 GitHub Actions cache 复用运行依赖，master 在准备完成后立即保存，因此后续测试失败也能保留这份缓存。未命中或读取失败时照常构建；超过[工作流](../.github/workflows/ci.yml)中的容量上限时跳过保存，写入失败也不影响后续验证。运行 summary 中的 Oranc bootstrap cache 显示命中、大小和跳过原因，保存结果见对应步骤日志。
+GitHub Actions bootstrap cache 保存 oranc 的运行闭包，用于尽快启动代理。代理就绪后，开发环境和项目构建通过[GHCR 缓存](cache.md#发布范围)复用依赖。master 在 oranc 准备完成后立即保存 bootstrap cache，因此后续测试失败也能保留它。未命中或读取失败时照常构建；超过[工作流](../.github/workflows/ci.yml)中的容量上限时跳过保存，写入失败也不影响后续验证。运行 summary 中的 Oranc bootstrap cache 显示命中、大小和跳过原因，保存结果见对应步骤日志。
 
 新的提交不会中断正在运行的验证；等待中的验证只保留最新一项，因此连续 push 的每个中间提交不一定都会执行。更新与验证使用独立的并发组，避免调用方占用验证需要的组。排队规则见 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
@@ -70,7 +70,7 @@ GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证
 | `oranc.log`、`monitor.log` | 排查缓存代理及资源采集故障 |
 | `vm/<pass>/<check>/` | VM 日志、截图与 OCR 记录，网络观察快照、通知诊断及应用工作流产物；具体目录见 summary 的 VM evidence |
 
-VM 构建保留失败现场。构建进程结束后，工作流收集每项测试的输出，成功收集才释放本阶段的临时构建目录。收集失败会在 summary 中标明原目录和原因；测试失败与产物收集失败分别记录。
+构建目录及权限由 Nix 管理。VM 构建使用 `--keep-failed` 保留失败现场，原目录位置见构建日志，在 runner 生命周期结束时释放。构建进程结束后，工作流将已写出的测试输出收集到诊断 artifact；输出缺失和收集错误在 summary 中单独列出，构建结果照常记录。
 
 SIGKILL 本身不能证明 OOM，需要结合资源记录与内核日志。构建活动结束也不等于构建成功；未结束的活动只记录到命令退出为止。VM 耗时的比较方式见[完整验收与计时](validation.md#完整验收与计时)。
 

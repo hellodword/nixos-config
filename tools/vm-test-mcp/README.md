@@ -1,10 +1,10 @@
 # 可选远端 VM 执行
 
-本机无 KVM 时，可以用已准备的 vm-test-mcp 执行原生 `checks.x86_64-linux.vm-*`。常规构建和 GitHub Actions 不需要这个客户端。
+本机无 KVM 时，可以用已准备的 vm-test-mcp 执行原生 `checks.x86_64-linux.vm-*`。默认开发环境提供提交客户端。
 
 ```sh
-nix develop .#vm --command vm-test-submit --version
-nix develop .#vm --command vm-test-submit --help
+nix develop --command vm-test-submit --version
+nix develop --command vm-test-submit --help
 ```
 
 使用执行器分配的 upload ID、传输 URL 和独立请求 ID 提交测试。客户端在本地求值并准备输入；记录最终任务 ID，完成后检查执行结果、证据和资源释放状态。详细协议与环境准备由[上游项目](https://github.com/hellodword/agents-misc/tree/master/tools/vm-test-mcp)负责。
