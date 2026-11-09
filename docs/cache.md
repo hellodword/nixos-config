@@ -10,7 +10,7 @@
 
 ## 项目 OCI 缓存
 
-[oranc](https://github.com/linyinfeng/oranc) 将声明的 GHCR package 提供为标准 Nix binary cache。它不参与每日更新，单独升级使用 `nix flake update oranc`，验证方式见[本地验证](#本地验证)。
+[oranc](https://github.com/linyinfeng/oranc) 将声明的 GHCR package 提供为标准 Nix binary cache。它与自身的构建依赖一起独立锁定，不参与每日更新。单独升级使用 `nix flake update oranc`，验证方式见[本地验证](#本地验证)。
 
 package 的创建、Public 和 Actions Write 设置见 [CI 首次启用](ci.md#首次启用)。CI 在使用项目缓存前直接 GET `nix-cache-info`；不要用 `nix store info` 探测尚未初始化的缓存，当前固定版本的 oranc 在该路径上可能尝试创建索引，导致匿名请求出现 500。初始化只写入索引，不发布软件闭包，也不修改 package 的可见性。
 

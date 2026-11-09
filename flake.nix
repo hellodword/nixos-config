@@ -49,10 +49,7 @@
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    oranc = {
-      url = "github:linyinfeng/oranc";
-      flake = false;
-    };
+    oranc.url = "github:linyinfeng/oranc";
     vm-test-tools = {
       url = "github:hellodword/agents-misc";
       flake = false;
