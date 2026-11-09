@@ -69,6 +69,7 @@ def listening(command, port, log=None):
 
 
 def main():
+    publication_settings = cache.load_cache_settings()
     with tempfile.TemporaryDirectory(prefix="cache-integration-") as temporary:
         work = Path(temporary)
         # Unique names make deletion below specific to this invocation's output.
@@ -133,7 +134,7 @@ def main():
                 expected_names += ["root", "runtimeInput"]
             assert set(paths) == {fixture[name]["path"] for name in expected_names}
             return publish(paths, f"127.0.0.1:{registry_port}", "synthetic/cache-test", state=state,
-                           public_settings=public_settings, project_cache=uri, phase=phase, excluded_paths=excluded,
+                           **publication_settings, phase=phase, excluded_paths=excluded,
                            no_ssl=True, immutable=not os.access("/nix/var/nix/db", os.W_OK))
         # Each registry is empty; isolate Nix narinfo knowledge from earlier runs.
         os.environ["XDG_CACHE_HOME"] = str(work / "nix-client-cache")
@@ -148,7 +149,7 @@ def main():
         with upstream_secret.open("rb") as stream:
             upstream_public = run(["nix", "key", "convert-secret-to-public"], stdin=stream).decode().strip()
         public_uri = (work / "public-cache").as_uri()
-        public_settings = {"substituters": [public_uri], "trusted-public-keys": [upstream_public]}
+        publication_settings["public_settings"] = {"substituters": [public_uri], "trusted-public-keys": [upstream_public]}
         run(["nix", "store", "sign", "--key-file", str(upstream_secret), fixture["publicLocal"]["path"]])
         # Signing the destination cache leaves publicRemote unsigned locally.
         run(["nix", "copy", "--to", public_uri + "?secret-key=" + str(upstream_secret), *public_roots])
@@ -165,6 +166,7 @@ def main():
             run(["oranc", "push", "--registry", f"127.0.0.1:{registry_port}",
                  "--repository", "synthetic/cache-test", "--no-ssl", "initialize", "--priority", "41"])
             uri = f"http://127.0.0.1:{proxy_port}/127.0.0.1:{registry_port}/synthetic/cache-test"
+            publication_settings["project_cache"] = uri
             with urlopen(uri + "/nix-cache-info", timeout=10) as response:
                 assert b"StoreDir: /nix/store" in response.read()
             os.environ["ORANC_SIGNING_KEY"] = secret.read_text().strip()
@@ -239,7 +241,8 @@ def main():
             verify("auto", public_roots, upstream_public)
             assert all(Path(path).read_bytes() == content for path, content in expected.items())
         print(render(state))
-    print(json.dumps({"result": "passed", "scenarios": ["redistribution selection including embedded payloads",
+    print(json.dumps({"result": "passed", "scenarios": ["production cache configuration loading",
+          "redistribution selection including embedded payloads",
           "realized outputs and runtime references", "partial build publication and incremental checkpoints",
           "local public signatures and remote public/project deduplication", "signature and content verification",
           "persistent native Nix client configuration", "multi-cache restore with prepared private dependency",

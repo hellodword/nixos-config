@@ -335,6 +335,7 @@ jobs:
             "$(cat /ci/python)" .github/ci/build.py dependencies --state /ci
           '
       - name: Publish completed dependency paths
+        id: publish-dependencies
         if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.inventory.outcome == 'success' && steps.build.outcome != 'skipped' }}
         env:
           ORANC_USERNAME: ${{ github.actor }}
@@ -349,21 +350,21 @@ jobs:
           BASH
       - name: Run network and backup VM tests
         id: network-backup
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-backup --jobs 2 --state /ci'
       - name: Run desktop VM tests
         id: desktop
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-desktop --state /ci'
       - name: Run application VM tests
         id: applications
-        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-applications --state /ci'
       - name: Assemble VM results
         if: ${{ !cancelled() && steps.network-backup.outcome == 'success' && steps.desktop.outcome == 'success' && steps.applications.outcome == 'success' }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py aggregate --state /ci'
       - name: Publish newly completed paths
-        if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.build.outcome == 'success' }}
+        if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.publish-dependencies.outcome == 'success' }}
         env:
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}

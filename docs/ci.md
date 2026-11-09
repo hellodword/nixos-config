@@ -25,7 +25,7 @@
 | --- | --- |
 | 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
 | 缓存与工具 | 确认项目缓存可匿名读取，准备开发工具；发布任务核对签名身份和写入权限 |
-| 静态检查与集成 | 工作流、Shell、Nix 格式检查及 OCI 缓存集成 |
+| 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存集成 |
 | 求值与构建 | 求值进程退出后，构建受限依赖、所选系统、领域检查和全部 VM driver |
 | 第一次发布 | 发布已经完成且可再分发的路径；构建失败也保留成功产物 |
 | VM 第一组 | network 与 backup 并行 |
@@ -39,7 +39,9 @@ oranc 启动前通过 GitHub Actions cache 复用运行依赖，master 在准备
 
 新的提交不会中断正在运行的验证；等待中的验证只保留最新一项，因此连续 push 的每个中间提交不一定都会执行。更新与验证使用独立的并发组，避免调用方占用验证需要的组。排队规则见 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
-GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证任务失败。依赖准备成功后，某组 VM 失败仍继续执行其余组。缓存可在全部验证完成前发布，其存在不代表验收通过或已经部署。自动更新直接调用验证工作流，因为 [GITHUB_TOKEN 引发的 push](https://docs.github.com/en/actions/concepts/security/github_token)不会再次触发 push 工作流。
+master push 和自动更新在构建、首次缓存发布均成功后进入 VM 验证。首次发布失败时，收集诊断并结束任务；进入 VM 后，某组失败仍继续其余组，并在收尾发布已完成的新产物。手动验证非 master ref 时，构建成功后直接进入 VM。
+
+GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证任务失败。缓存可在全部验证完成前发布，其存在不代表验收通过或已经部署。自动更新直接调用验证工作流，因为 [GITHUB_TOKEN 引发的 push](https://docs.github.com/en/actions/concepts/security/github_token)不会再次触发 push 工作流。
 
 ## 首次启用
 

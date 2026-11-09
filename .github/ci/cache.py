@@ -24,6 +24,21 @@ def output(command, **kwargs):
     return subprocess.check_output(command, text=True, **kwargs).strip()
 
 
+def load_cache_settings():
+    caches = json.loads(output([
+        "nix", "eval", "--json", "--file", str(ROOT / "nix/cache-config.nix"),
+        "--apply", "c: { inherit (c) publicSettings ci; }",
+    ]))
+    defaults = json.loads(output(["nix", "config", "show", "--json"]))
+    return {
+        "public_settings": {
+            key: list(dict.fromkeys(defaults[key]["defaultValue"] + caches["publicSettings"][key]))
+            for key in ("substituters", "trusted-public-keys")
+        },
+        "project_cache": caches["ci"]["uri"],
+    }
+
+
 def store_root(path):
     return "/".join(path.split("/")[:4])
 
@@ -160,14 +175,11 @@ def main():
         public = output(["nix", "key", "convert-secret-to-public"], input=os.environ["ORANC_SIGNING_KEY"])
         if public != identity["publicKey"]:
             raise RuntimeError("NIX_CACHE_SIGNING_KEY does not match nix/cache-identity.json")
-        caches = json.loads(output(["nix", "eval", "--json", "--file", str(ROOT / "nix/cache-config.nix")]))
-        defaults = json.loads(output(["nix", "config", "show", "--json"]))
-        public_settings = {key: list(dict.fromkeys(defaults[key]["defaultValue"] + caches["publicSettings"][key]))
-                           for key in ("substituters", "trusted-public-keys")}
+        settings = load_cache_settings()
         paths = json.loads((args.state / "publish-paths.json").read_text())
         excluded = json.loads((args.state / "excluded-paths.json").read_text())
         published = publish(paths, "ghcr.io", identity["repository"], state=args.state,
-                            public_settings=public_settings, project_cache=caches["ci"]["uri"],
+                            **settings,
                             phase=args.phase, excluded_paths=excluded,
                             oranc=(args.state / "oranc").read_text().strip())
         print(json.dumps({"newPaths": len(published), "selectedPaths": len(paths)}))
