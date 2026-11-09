@@ -345,7 +345,7 @@ jobs:
             docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
             bash -euo pipefail <<'BASH'
           "$(cat /ci/python)" .github/ci/cache.py select --state /ci
-          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci
+          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci --phase publish-dependencies
           BASH
       - name: Run network and backup VM tests
         id: network-backup
@@ -373,7 +373,7 @@ jobs:
             docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
             bash -euo pipefail <<'BASH'
           "$(cat /ci/python)" .github/ci/cache.py select --state /ci
-          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci
+          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci --phase publish-results
           BASH
       - name: Report timings and resources
         if: always()
@@ -399,6 +399,7 @@ jobs:
           retention-days: 7
           path: |
             ${{ runner.temp }}/nixos-ci/timings.jsonl
+            ${{ runner.temp }}/nixos-ci/publication-paths.jsonl
             ${{ runner.temp }}/nixos-ci/resources.jsonl
             ${{ runner.temp }}/nixos-ci/oom-*.log
             ${{ runner.temp }}/nixos-ci/monitor.log

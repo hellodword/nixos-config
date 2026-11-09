@@ -89,6 +89,27 @@ def render(state):
                   "| Phase | Exit status | Wall time |", "| --- | --- | --- |"]
         for event in phases:
             lines.append(f"| {event['phase']} | {event['returncode']} | {duration(event['seconds'])} |")
+    publications = [event for event in events if event["kind"] == "publication"]
+    if publications:
+        lines += ["", "### Cache publication", "",
+                  "Project hits include this run's successful upload receipts. NAR sizes are uncompressed.", "",
+                  "| Phase | Candidates | Excluded | Public hits | Project hits | Pending | NAR GiB | Queries | Uploads | Result |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for event in publications:
+            queries = [e for e in events if e["kind"] == "cache-query" and e["phase"] == event["phase"]]
+            uploads = [e for e in events if e["kind"] == "cache-upload" and e["phase"] == event["phase"]]
+            completed = sum(e["paths"] for e in uploads if e["returncode"] == 0)
+            status = ("failed" if any(e["returncode"] for e in uploads) else
+                      "complete" if completed == event["pending"] else "incomplete")
+            lines.append(f"| {event['phase']} | {event['candidates']} | {event['excluded']} | {event['public']} | "
+                         f"{event['project']} | {event['pending']} | {event['narBytes'] / 1024 ** 3:.3f} | "
+                         f"{duration(sum(e['seconds'] for e in queries))} | "
+                         f"{duration(sum(e['seconds'] for e in uploads))} | {status} |")
+    query_errors = [event for event in events if event["kind"] == "cache-query" and event["returncode"]]
+    if query_errors:
+        lines += ["", "Cache queries continued after these errors; details are in `timings.jsonl`:", ""]
+        for event in query_errors:
+            lines.append(f"- {event['phase']}: `{event['cache']}` (exit {event['returncode']}).")
     builds = [event for event in events if event["kind"] == "build"]
     if builds:
         lines += ["", "### Nix build groups", "", "Group wall times include dependency work and cache transfers.",

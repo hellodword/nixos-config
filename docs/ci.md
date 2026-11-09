@@ -62,7 +62,8 @@ GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证
 
 | 记录 | 用途 |
 | --- | --- |
-| summary、`timings.jsonl` | 查看各阶段墙钟时间及耗时依赖，区分实际执行与缓存复用 |
+| summary、`timings.jsonl` | 查看各阶段墙钟时间及耗时依赖，区分实际执行与缓存复用；查看发布数量、缓存命中、待上传体积、查询和上传耗时及错误 |
+| `publication-paths.jsonl` | 核对每次发布选中的路径、再分发排除项、公共及项目缓存命中，以及待上传路径的 NAR 大小 |
 | `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘与 OOM 记录判断资源瓶颈 |
 | `oranc.log`、`monitor.log` | 排查缓存代理及资源采集故障 |
 
