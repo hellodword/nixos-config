@@ -47,6 +47,11 @@ in
         directory = "/var/cache/nix";
         mode = "1777";
       }
+      "/var/cache/fwupd"
+      {
+        directory = "/root/.cache/nix";
+        mode = "0700";
+      }
       {
         directory = "/var/log/journal";
         group = "systemd-journal";
@@ -95,6 +100,7 @@ in
         group = "sing-box";
         mode = "0700";
       }
+      "/var/lib/vm-test-nix-executor"
     ]
     ++ lib.concatLists (
       lib.mapAttrsToList (name: _: [
@@ -120,6 +126,7 @@ in
         ".docker"
         ".codex"
         ".agents-viewer"
+        ".cache/nix"
         ".cache/nix-index"
         "Desktop"
         "Documents"
