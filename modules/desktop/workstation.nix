@@ -244,6 +244,20 @@ in
         [Wayland]
         InputMethod=${config.i18n.inputMethod.package}/share/applications/org.fcitx.Fcitx5.desktop
       '';
+      "xdg/plasma-workspace/shutdown/site-background.sh" = lib.mkIf cfg.plasma.enable {
+        mode = "0755";
+        source = pkgs.writeShellScript "site-background-shutdown" ''
+          set -eu
+          # Plasma runs this after applications accept logout, before stopping
+          # graphical-session.target with job mode "fail". Quiesce the trigger
+          # before cancelling its outstanding oneshot start job.
+          ${pkgs.systemd}/bin/systemctl --user stop desktop-health.timer
+          ${pkgs.systemd}/bin/systemctl --user stop desktop-health.service
+          ${lib.optionalString networkRulesEnabled ''
+            ${pkgs.systemd}/bin/systemctl --user stop site-network-rules-notify.service
+          ''}
+        '';
+      };
     };
     systemd.user.tmpfiles.rules = [
       "C %h/.config/gtk-2.0/gtkrc 0600 - - - ${config.environment.etc."gtk-2.0/gtkrc".source}"
@@ -271,8 +285,11 @@ in
       };
       desktop-health = {
         partOf = [ "graphical-session.target" ];
+        after = [ "graphical-session.target" ];
+        unitConfig.Requisite = "graphical-session.target";
         serviceConfig = {
           Type = "oneshot";
+          TimeoutStopSec = "5s";
           ExecStart = pkgs.writeShellScript "desktop-health" ''
             export PATH=${
               lib.makeBinPath [
@@ -289,9 +306,12 @@ in
       site-network-rules-notify = lib.mkIf networkRulesEnabled {
         description = "Review downloaded network rules";
         partOf = [ "graphical-session.target" ];
+        after = [ "graphical-session.target" ];
+        unitConfig.Requisite = "graphical-session.target";
         serviceConfig = {
           Type = "exec";
           KillSignal = "SIGINT";
+          TimeoutStopSec = "5s";
           ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/desktop/network_rules.py} --notify-send ${pkgs.libnotify}/bin/notify-send --rofi ${userHome.programs.rofi.finalPackage}/bin/rofi --systemctl ${pkgs.systemd}/bin/systemctl";
         };
       };

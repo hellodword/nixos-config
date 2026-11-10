@@ -11,11 +11,14 @@ let
     lib.optional cfg.sway.enable "site-sway.target" ++ lib.optional cfg.i3.enable "site-i3.target";
   service = action: {
     description = "${action} desktop wallpaper";
-    partOf = targets;
+    partOf = targets ++ [ "graphical-session.target" ];
     after = targets ++ [
       "graphical-session.target"
       "systemd-tmpfiles-setup.service"
     ];
+    unitConfig = lib.optionalAttrs (action != "apply") {
+      Requisite = "graphical-session.target";
+    };
     serviceConfig = {
       Type = "oneshot";
       ExecStart = "${wallpaper}/bin/site-wallpaper ${action}";
@@ -67,14 +70,16 @@ in
     systemd.user.timers = {
       site-wallpaper = {
         wantedBy = targets;
-        partOf = targets;
+        partOf = targets ++ [ "graphical-session.target" ];
         timerConfig = {
           OnActiveSec = "30min";
           OnUnitActiveSec = "30min";
         };
       };
       "site-wallpaper-fetch@" = {
-        partOf = targets;
+        partOf = targets ++ [ "graphical-session.target" ];
+        after = [ "graphical-session.target" ];
+        unitConfig.Requisite = "graphical-session.target";
         timerConfig = {
           OnCalendar = "@%i";
           Unit = "site-wallpaper-fetch.service";

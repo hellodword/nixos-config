@@ -78,6 +78,7 @@ in
       };
     };
     imports = [
+      (import ./background.nix { scenario = "backup"; })
       inputs.impermanence.nixosModules.impermanence
       ../../profiles/laptop/persistence.nix
       ../../modules/services/containers.nix
@@ -123,10 +124,6 @@ in
         minimumIntervalSeconds.check = lib.mkIf (name == "first") 0;
       });
     };
-    # The scenario starts calendar timers after preparing data and repositories.
-    systemd.timers = lib.genAttrs (map (name: "site-backup-${name}-automatic") targets) (_: {
-      wantedBy = lib.mkForce [ ];
-    });
   };
   testScript = builtins.readFile ./notifications.py + ''
     from datetime import timedelta

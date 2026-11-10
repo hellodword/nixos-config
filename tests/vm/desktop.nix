@@ -39,6 +39,7 @@ in
   node.specialArgs = { inherit inputs; };
   defaults = {
     imports = [
+      (import ./background.nix { scenario = "desktop"; })
       inputs.impermanence.nixosModules.impermanence
       ../../modules/core/storage.nix
       ../../profiles/laptop/persistence.nix
@@ -122,6 +123,13 @@ in
     };
     systemd.user.services.site-wallpaper-fetch.serviceConfig.ExecStart =
       lib.mkForce "${wallpaper}/bin/site-wallpaper fetch --feed-url https://wallpaper.test.nix:8449/feed.json";
+    systemd.user.services.desktop-health.serviceConfig.ExecStartPre =
+      pkgs.writeShellScript "health-start-gate" ''
+        if [ -p "$XDG_RUNTIME_DIR/vm-health-gate" ]; then
+          touch "$XDG_RUNTIME_DIR/vm-health-started"
+          read -r release < "$XDG_RUNTIME_DIR/vm-health-gate"
+        fi
+      '';
     services.safeeyes.enable = true;
     hardware.graphics.enable = true;
     services.displayManager.sddm.settings.Users.MaximumUid = 1000;
@@ -312,7 +320,7 @@ in
                 machine.send_key("ret")
                 machine.wait_until_fails(process(locker), timeout=30)
 
-    def stop_session(machine, compositor, menu=False):
+    def stop_session(machine, compositor, menu=False, health_busy=False):
         machine.stop_activity()
         # Finish the synthetic terminal workload before asking the desktop to
         # log out, so Kitty's running-command confirmation needs no response.
@@ -323,9 +331,13 @@ in
             machine.wait_until_succeeds(user_command(
                 "systemctl --user is-active akonadi_control.service"
             ), timeout=90)
+        if health_busy:
+            user(machine, "mkfifo /run/user/1000/vm-health-gate; "
+                 "systemctl --user --no-block restart desktop-health.service")
             machine.wait_until_succeeds(user_command(
-                "test -z \"$(systemctl --user list-jobs --no-legend --plain)\""
-            ), timeout=90)
+                "test -f /run/user/1000/vm-health-started && "
+                "test \"$(systemctl --user show desktop-health.service -p SubState --value)\" = start-pre"
+            ), timeout=30)
         command = {"sway": "swaymsg exit", "i3": "i3-msg exit",
                    "plasmashell": "busctl --user call org.kde.Shutdown /Shutdown org.kde.Shutdown logout"}[compositor]
         # Return to the greeter through the session's own logout entrypoint.
@@ -352,9 +364,15 @@ in
         except Exception:
             for command in ("loginctl list-sessions", "ps -u 1000 -o pid,ppid,comm",
                             user_command("systemctl --user status 'site-session-watch@*.service' graphical-session.target"),
-                            "journalctl _UID=1000 -n 80 --no-pager"):
+                            user_command("systemctl --user list-jobs --no-pager; "
+                                         "systemctl --user list-timers --all 'desktop-health*' 'site-wallpaper*' --no-pager; "
+                                         "systemctl --user show desktop-health.service site-wallpaper-fetch.service "
+                                         "-p Id -p ActiveState -p SubState -p Result -p Job"),
+                            "journalctl _UID=1000 -n 120 --no-pager -o short-precise"):
                 print(command, machine.execute(command)[1])
             raise
+        finally:
+            machine.execute("rm -f /run/user/1000/vm-health-gate /run/user/1000/vm-health-started")
 
     def power_workloads(machine):
         # A real paused VM process belongs to another user. System power actions
@@ -780,8 +798,9 @@ in
             saved_wallpaper = wallpaper_visible(machine, session)
             saved_fetch = wallpaper_fetch_state(machine)
             requests = machine.succeed("cat /run/wallpaper-requests")
-        stop_session(machine, compositor, menu=True)
+        stop_session(machine, compositor, menu=True, health_busy=True)
         login_session(machine, session, compositor)
+        user(machine, "systemctl --user start desktop-health.service")
         if session == "sway":
             assert_display_layout(machine, saved_single)
         elif session == "i3":
@@ -789,6 +808,28 @@ in
         elif session == "KDE":
             identity_ready(machine)
         if session in ("sway", "i3"):
+            assert wallpaper_visible(machine, session) == saved_wallpaper
+            assert wallpaper_fetch_state(machine) == saved_fetch
+            assert machine.succeed("cat /run/wallpaper-requests") == requests
+        if session == "sway":
+            # The server acknowledges the request while the real downloader
+            # waits for its response. Log out through Sway during that transfer.
+            machine.succeed("touch /run/wallpaper-hold")
+            try:
+                wallpaper_due(machine)
+                request_count = len(requests.splitlines())
+                machine.wait_until_succeeds(
+                    f"test $(wc -l < /run/wallpaper-requests) -gt {request_count}", timeout=20)
+                downloading = wallpaper_fetch_state(machine)
+                assert downloading["result"] == "running", downloading
+                stop_session(machine, compositor)
+                saved_fetch = json.loads(machine.succeed("cat /home/desktop/.local/state/site-wallpaper/fetch.json"))
+                assert saved_fetch["result"] == "interrupted", saved_fetch
+                assert saved_fetch["lastAttempt"] == downloading["lastAttempt"], saved_fetch
+                requests = machine.succeed("cat /run/wallpaper-requests")
+            finally:
+                machine.execute("rm -f /run/wallpaper-hold")
+            login_session(machine, session, compositor)
             assert wallpaper_visible(machine, session) == saved_wallpaper
             assert wallpaper_fetch_state(machine) == saved_fetch
             assert machine.succeed("cat /run/wallpaper-requests") == requests

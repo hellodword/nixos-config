@@ -20,6 +20,7 @@
     in
     {
       imports = [
+        (import ./background.nix { scenario = "applications"; })
         inputs.impermanence.nixosModules.impermanence
         ../../modules/core/storage.nix
         ../../profiles/laptop/persistence.nix

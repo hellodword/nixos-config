@@ -264,6 +264,7 @@ in
   qemu.forceAccel = true;
   node.specialArgs = { inherit inputs; };
   defaults = {
+    imports = [ (import ./background.nix { scenario = "network"; }) ];
     virtualisation.memorySize = 1536;
     virtualisation.cores = 2;
     networking.useDHCP = false;
