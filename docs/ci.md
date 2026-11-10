@@ -6,7 +6,7 @@
 
 | 入口 | 行为 |
 | --- | --- |
-| push 到 `master` | 验证该提交，在构建后和验证收尾时发布可用的签名缓存 |
+| push 到 `master` | 验证该提交，构建期间增量发布签名缓存，在阶段结束时等待发布完成 |
 | 手动运行 Verify and cache | 默认验证所选 ref；只有 master 发布缓存 |
 | 在 master 手动勾选 `initialize-cache` | 只创建缓存索引，供首次设置 package；不执行系统构建和 VM |
 | 定时运行，或在 master 手动运行 Update flake inputs | 更新指定输入；无变化则结束，有变化则准备候选提交并调用验证工作流 |
@@ -26,12 +26,12 @@
 | 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
 | 缓存与工具 | 确认项目缓存可匿名读取，准备开发工具；发布任务核对签名身份和写入权限 |
 | 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存集成 |
-| 求值与构建 | 求值进程退出后，构建受限依赖、所选系统、开发环境、领域检查和全部 VM driver |
-| 第一次发布 | 发布已经完成且可再分发的路径；构建失败也保留成功产物 |
+| 求值与构建 | 准备构建及发布清单，构建受限依赖、所选系统、开发环境、领域检查和全部 VM driver；后台上传成功产物 |
+| 依赖发布收尾 | 补齐已有产物和运行时引用，上传大对象并等待队列完成；构建失败也保留成功产物 |
 | VM 第一组 | network 与 backup 依次运行 |
 | VM 第二组 | desktop 单独运行 |
 | VM 第三组 | applications 单独运行 |
-| 汇总与第二次发布 | 四组 VM 全部通过才生成聚合结果；发布本轮新增的可再分发路径 |
+| 汇总与发布收尾 | 四组 VM 全部通过才生成聚合结果；完成剩余产物的发布并结束上传进程 |
 
 同一个 host 的步骤共享 runner、容器和 Nix store。不同 host 使用独立 runner，通过 GHCR 复用相同依赖和测试结果。各项检查的范围见[验证指南](validation.md)。
 
@@ -39,7 +39,7 @@ GitHub Actions bootstrap cache 保存 oranc 的运行闭包，用于尽快启动
 
 新的提交不会中断正在运行的验证；等待中的验证只保留最新一项，因此连续 push 的每个中间提交不一定都会执行。更新与验证使用独立的并发组，避免调用方占用验证需要的组。排队规则见 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
 
-master push 和自动更新在构建、首次缓存发布均成功后进入 VM 验证。首次发布失败时，收集诊断并结束任务；进入 VM 后，某组失败仍继续其余组，并在收尾发布已完成的新产物。手动验证非 master ref 时，构建成功后直接进入 VM。
+master push 和自动更新在构建、依赖缓存发布均成功后进入 VM 验证。后台上传失败会在当前构建阶段结束后的发布检查点报告，随后收集诊断；进入 VM 后，某组失败仍继续其余组，并在收尾发布已完成的新产物。手动验证非 master ref 时，构建成功后直接进入 VM。取消任务时有界停止上传进程，已经发布的缓存保留在 GHCR。
 
 GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证任务失败。缓存可在全部验证完成前发布，其存在不代表验收通过或已经部署。自动更新直接调用验证工作流，因为 [GITHUB_TOKEN 引发的 push](https://docs.github.com/en/actions/concepts/security/github_token)不会再次触发 push 工作流。
 
@@ -64,13 +64,16 @@ GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证
 
 | 记录 | 用途 |
 | --- | --- |
-| summary、`timings.jsonl` | 查看各阶段墙钟时间及耗时依赖，区分实际执行与缓存复用；查看发布数量、缓存命中、待上传体积、查询和上传耗时及错误 |
+| summary、`timings.jsonl` | 查看各阶段墙钟时间及耗时依赖，区分实际执行与缓存复用；查看后台查询、上传数量与体积，以及发布检查点的等待时间和结果 |
 | `publication-paths.jsonl` | 核对每次发布选中的路径、再分发排除项、公共及项目缓存命中，以及待上传路径的 NAR 大小 |
+| `publisher.log`、`cache/status.json`、`published-paths.json` | 定位上传进程错误，核对退出状态和本轮成功发布的路径 |
 | `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘与 OOM 记录判断资源瓶颈 |
 | `oranc.log`、`monitor.log` | 排查缓存代理及资源采集故障 |
 | `vm/<pass>/<check>/` | VM 日志、截图与 OCR 记录，网络观察快照、通知诊断及应用工作流产物；具体目录见 summary 的 VM evidence |
 
 构建目录及权限由 Nix 管理。VM 构建使用 `--keep-failed` 保留失败现场，原目录位置见构建日志，在 runner 生命周期结束时释放。构建进程结束后，工作流将已写出的测试输出收集到诊断 artifact；输出缺失和收集错误在 summary 中单独列出，构建结果照常记录。
+
+后台缓存查询和上传与构建重叠，发布检查点的等待时间反映阶段结束后的剩余工作。比较运行效率时看任务总墙钟时间和检查点等待时间，后台耗时不与构建耗时相加。
 
 SIGKILL 本身不能证明 OOM，需要结合资源记录与内核日志。构建活动结束也不等于构建成功；未结束的活动只记录到命令退出为止。VM 耗时的比较方式见[完整验收与计时](validation.md#完整验收与计时)。
 

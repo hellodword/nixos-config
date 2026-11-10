@@ -3,6 +3,7 @@
 
 import argparse
 from datetime import datetime, timezone
+import fcntl
 import json
 from pathlib import Path
 import shutil
@@ -18,7 +19,10 @@ def utc_now():
 def record(state, event, filename="timings.jsonl"):
     state.mkdir(parents=True, exist_ok=True)
     with (state / filename).open("a") as stream:
+        # Builds and the cache publisher append from separate processes.
+        fcntl.flock(stream, fcntl.LOCK_EX)
         stream.write(json.dumps(event) + "\n")
+        stream.flush()
 
 
 def cgroup_path(pid):
@@ -89,22 +93,34 @@ def render(state):
                   "| Phase | Exit status | Wall time |", "| --- | --- | --- |"]
         for event in phases:
             lines.append(f"| {event['phase']} | {event['returncode']} | {duration(event['seconds'])} |")
-    publications = [event for event in events if event["kind"] == "publication"]
-    if publications:
+    cache_events = [event for event in events if event["kind"] in
+                    ("publication", "cache-query", "cache-upload", "cache-checkpoint", "cache-error")]
+    if cache_events:
         lines += ["", "### Cache publication", "",
-                  "Project hits include this run's successful upload receipts. NAR sizes are uncompressed.", "",
-                  "| Phase | Candidates | Excluded | Public hits | Project hits | Pending | NAR GiB | Queries | Uploads | Result |",
-                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
-        for event in publications:
-            queries = [e for e in events if e["kind"] == "cache-query" and e["phase"] == event["phase"]]
-            uploads = [e for e in events if e["kind"] == "cache-upload" and e["phase"] == event["phase"]]
-            completed = sum(e["paths"] for e in uploads if e["returncode"] == 0)
-            status = ("failed" if any(e["returncode"] for e in uploads) else
-                      "complete" if completed == event["pending"] else "incomplete")
-            lines.append(f"| {event['phase']} | {event['candidates']} | {event['excluded']} | {event['public']} | "
-                         f"{event['project']} | {event['pending']} | {event['narBytes'] / 1024 ** 3:.3f} | "
+                  "Background queries and uploads overlap builds. Checkpoint wait is wall time after a build phase; "
+                  "these durations are not additive. NAR sizes are uncompressed.", "",
+                  "| Phase | Candidates | Excluded | Public hits | Project hits | Uploaded | NAR GiB | Queries | Uploads | Checkpoint wait | Result |",
+                  "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for phase in dict.fromkeys(event["phase"] for event in cache_events):
+            selected = [e for e in cache_events if e["phase"] == phase]
+            publications = [e for e in selected if e["kind"] == "publication"]
+            queries = [e for e in selected if e["kind"] == "cache-query"]
+            uploads = [e for e in selected if e["kind"] == "cache-upload"]
+            checkpoints = [e for e in selected if e["kind"] == "cache-checkpoint"]
+            totals = {key: sum(e[key] for e in publications) for key in ("candidates", "excluded", "public", "project")}
+            successful = [e for e in uploads if e["returncode"] == 0]
+            status = ("failed" if any(e["returncode"] for e in uploads + checkpoints)
+                      or any(e["kind"] == "cache-error" for e in selected)
+                      else "complete" if checkpoints else "background")
+            wait = sum(e["seconds"] for e in checkpoints) if checkpoints else None
+            lines.append(f"| {phase} | {totals['candidates']} | {totals['excluded']} | {totals['public']} | "
+                         f"{totals['project']} | {sum(e['paths'] for e in successful)} | "
+                         f"{sum(e['narBytes'] for e in successful) / 1024 ** 3:.3f} | "
                          f"{duration(sum(e['seconds'] for e in queries))} | "
-                         f"{duration(sum(e['seconds'] for e in uploads))} | {status} |")
+                         f"{duration(sum(e['seconds'] for e in uploads))} | {duration(wait)} | {status} |")
+        for event in cache_events:
+            if event["kind"] == "cache-error":
+                lines += ["", f"Publisher failure in {event['phase']}: {event['error']}. See publisher.log."]
     query_errors = [event for event in events if event["kind"] == "cache-query" and event["returncode"]]
     if query_errors:
         lines += ["", "Cache queries continued after these errors; details are in `timings.jsonl`:", ""]

@@ -58,6 +58,9 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
     active, activities = {}, []
     started, start = utc_now(), time.monotonic()
     command = ["nix", "build", "--no-link", "--print-build-logs", "--keep-going"]
+    hook = state / "cache" / "post-build-hook"
+    if hook.exists():
+        command += ["--option", "post-build-hook", str(hook.resolve())]
     has_vm = any(entry.get("vm") for entry in entries)
     collection_error = None
     if has_vm:

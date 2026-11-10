@@ -2,6 +2,8 @@
 """Publish project outputs and restore a closure shared with a public Nix cache."""
 
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 import shutil
@@ -11,6 +13,7 @@ import sys
 import time
 from pathlib import Path
 import tempfile
+import threading
 from unittest.mock import patch
 from urllib.request import urlopen
 
@@ -20,7 +23,6 @@ from tests.support import load_source
 cache = load_source(".github/ci/cache.py")
 build = load_source(".github/ci/build.py")
 report = load_source(".github/ci/report.py")
-publish, select_paths = cache.publish, cache.select_paths
 run_build, valid_paths = build.run_build, build.valid_paths
 read_records, render = report.read_records, report.render
 
@@ -57,7 +59,7 @@ def listening(command, port, log=None):
                 if time.monotonic() >= deadline:
                     raise TimeoutError("cache service did not become ready")
                 time.sleep(0.1)
-        yield
+        yield process
     finally:
         if process.poll() is None:
             process.terminate()
@@ -68,15 +70,61 @@ def listening(command, port, log=None):
                 process.wait(timeout=5)
 
 
+@contextmanager
+def build_gate():
+    entered, release = threading.Event(), threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            entered.set()
+            self.send_response(200 if release.wait(240) else 504)
+            self.end_headers()
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/continue", entered, release
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+@contextmanager
+def publishing(state, inventory, *, secret, **settings):
+    with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+        cache.start_publisher(state, inventory, **settings, large_nar_bytes=4096)
+    try:
+        yield
+    except BaseException:
+        print((state / "publisher.log").read_text(), file=sys.stderr)
+        raise
+    finally:
+        cache.stop_publisher(state)
+
+
+def checkpoint(state, phase, *, finish=False):
+    run([sys.executable, str(ROOT / ".github/ci/cache.py"), "checkpoint", "--state", str(state),
+         "--phase", phase, *(["--finish"] if finish else [])])
+
+
 def main():
     publication_settings = cache.load_cache_settings()
-    with tempfile.TemporaryDirectory(prefix="cache-integration-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="cache-integration-") as temporary, \
+         build_gate() as (gate_url, entered, release):
         work = Path(temporary)
         # Unique names make deletion below specific to this invocation's output.
         fixture = '''let
           pkgs = (builtins.getFlake ("git+file://" + toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux;
           prefix = PREFIX;
           child = pkgs.writeText "${prefix}-child" "synthetic project content";
+          large = pkgs.writeText "${prefix}-large" (builtins.concatStringsSep "" (builtins.genList (_: "data") 2048));
+          late = pkgs.writeText "${prefix}-late" "new result after registry interruption";
           publicLocal = pkgs.writeText "${prefix}-public-local" "known public signature";
           publicRemote = pkgs.writeText "${prefix}-public-remote" "remote public signature";
           buildInput = builtins.toFile "${prefix}-build-input" "build input";
@@ -84,17 +132,21 @@ def main():
           source = pkgs.writeText "${prefix}-source" "synthetic restricted content";
           restricted = pkgs.runCommand "${prefix}-restricted" {} "cp ${source} $out";
           bundle = pkgs.runCommand "${prefix}-bundle" {} "cp ${restricted} $out";
-          driver = pkgs.writeText "${prefix}-driver" "ready";
+          driver = pkgs.runCommand "${prefix}-driver" {} ''
+            test -s ${child}
+            ${pkgs.curl}/bin/curl --fail --max-time 240 GATE_URL
+            printf ready > $out
+          '';
           failure = pkgs.runCommand "${prefix}-failed" {} "exit 17";
           root = pkgs.runCommand "${prefix}-result" {} ''
             test "$(cat ${driver})" = ready
             test "$(cat ${buildInput})" = 'build input'
-            printf '%s' '${child}; ${publicLocal}; ${publicRemote}; ${runtimeInput}; prepared: ${bundle}' > $out
+            printf '%s' '${child}; ${large}; ${publicLocal}; ${publicRemote}; ${runtimeInput}; prepared: ${bundle}' > $out
           '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
-          { inherit child publicLocal publicRemote source restricted bundle driver root failure; }
+          { inherit child large late publicLocal publicRemote source restricted bundle driver root failure; }
           // { buildInput.path = buildInput; runtimeInput.path = runtimeInput; }
-        '''.replace("PREFIX", json.dumps(work.name))
+        '''.replace("PREFIX", json.dumps(work.name)).replace("GATE_URL", json.dumps(gate_url))
         fixture = json.loads(run(["nix", "eval", "--impure", "--json", "--expr", fixture], cwd=ROOT))
 
         def entry(name, **kwargs):
@@ -102,40 +154,23 @@ def main():
 
         state = work / "metrics"
         test = entry("root", vm=True)
-        dependency_names = ("bundle", "driver", "child", "publicLocal", "publicRemote")
+        dependency_names = ("bundle", "driver", "child", "large", "publicLocal", "publicRemote")
         dependencies = [entry(name) for name in dependency_names]
-        # A failed peer build must leave successfully realized dependencies
-        # available for the first cache checkpoint.
-        try:
-            run_build([*dependencies, entry("failure")], state=state, phase="dependencies")
-        except RuntimeError:
-            assert valid_paths([fixture[name]["path"] for name in dependency_names]) == {
-                fixture[name]["path"] for name in dependency_names}
-        else:
-            raise AssertionError("synthetic failing build unexpectedly succeeded")
-        assert valid_paths([fixture["root"]["path"]]) == set(), "preparation must leave execution for the test stage"
-        policy = {"roots": [fixture["root"]["drv"]],
+        policy = {"roots": [fixture[name]["drv"] for name in ("root", "late")],
                   "excludedPaths": [fixture[name]["path"] for name in ("source", "restricted")],
                   "excludedDerivations": [fixture["restricted"]["drv"]],
                   "bundles": [fixture["bundle"]["drv"]],
                   "builds": {"dependencies": dependencies, "vm-fixture": [test]}}
+        state.mkdir()
         (state / "policy.json").write_text(json.dumps(policy))
-        roots = [fixture[name]["path"] for name in ("root", "child")]
+        inventory = cache.prepare_inventory(policy)
+        assert {fixture[name]["path"] for name in ("source", "restricted", "bundle")} <= set(inventory["excluded"])
+        # Keep the temporary registry exercise focused on synthetic products.
+        inventory["outputs"] = [path for path in inventory["outputs"] if f"-{work.name}-" in path]
+        inventory["derivations"] = [Path(value["drv"]).name for value in fixture.values() if "drv" in value]
+        roots = [fixture[name]["path"] for name in ("root", "child", "large")]
         public_roots = [fixture[name]["path"] for name in ("publicLocal", "publicRemote")]
-
-        def checkpoint(phase):
-            selected, excluded = select_paths(policy)
-            assert {fixture[name]["path"] for name in ("source", "restricted", "bundle")} <= set(excluded)
-            # Send the selected synthetic products; upstream toolchain copies
-            # add no coverage to this local registry exercise.
-            paths = [path for path in selected if f"-{work.name}-" in path]
-            expected_names = ["child", "driver", "publicLocal", "publicRemote"]
-            if valid_paths([fixture["root"]["path"]]):
-                expected_names += ["root", "runtimeInput"]
-            assert set(paths) == {fixture[name]["path"] for name in expected_names}
-            return publish(paths, f"127.0.0.1:{registry_port}", "synthetic/cache-test", state=state,
-                           **publication_settings, phase=phase, excluded_paths=excluded,
-                           no_ssl=True, immutable=not os.access("/nix/var/nix/db", os.W_OK))
+        run(["nix", "build", "--no-link", *[fixture[name]["drv"] + "^out" for name in ("publicLocal", "publicRemote")]])
         # Each registry is empty; isolate Nix narinfo knowledge from earlier runs.
         os.environ["XDG_CACHE_HOME"] = str(work / "nix-client-cache")
         secret = work / "test.secret"
@@ -161,7 +196,7 @@ def main():
             "storage": {"filesystem": {"rootdirectory": str(work / "registry")}},
             "http": {"addr": f"127.0.0.1:{registry_port}"},
         }))
-        with listening(["registry", "serve", str(configuration)], registry_port), \
+        with listening(["registry", "serve", str(configuration)], registry_port) as registry_process, \
              listening(["oranc", "server", "--no-ssl", "--listen", f"127.0.0.1:{proxy_port}"], proxy_port):
             run(["oranc", "push", "--registry", f"127.0.0.1:{registry_port}",
                  "--repository", "synthetic/cache-test", "--no-ssl", "initialize", "--priority", "41"])
@@ -169,24 +204,64 @@ def main():
             publication_settings["project_cache"] = uri
             with urlopen(uri + "/nix-cache-info", timeout=10) as response:
                 assert b"StoreDir: /nix/store" in response.read()
-            os.environ["ORANC_SIGNING_KEY"] = secret.read_text().strip()
-            first = checkpoint("dependencies")
-            assert set(first) == {fixture[name]["path"] for name in ("child", "driver")}
-            verify(uri, first, public)
-            run_build([test], state=state, phase="vm-fixture")
-            run_build([test], state=state, phase="vm-fixture", pass_name="committed")
-            targets = [event for event in read_records(state / "timings.jsonl") if event.get("vm")]
-            assert targets[0]["source"] == "built" and targets[0]["success"] and targets[0]["buildSeconds"] > 0
-            assert targets[1]["source"] == "local" and targets[1]["success"] and targets[1]["buildSeconds"] is None
-            assert set(checkpoint("results")) == {fixture[name]["path"] for name in ("root", "runtimeInput")}
-            # A new run has no receipts. The project cache now supplies the
-            # signatures for paths that earlier queries found absent.
-            (state / "published-paths.json").unlink()
-            assert checkpoint("remote-reuse") == []
-            publications = [event for event in read_records(state / "timings.jsonl") if event["kind"] == "publication"]
-            assert all(event["public"] == 2 for event in publications)
-            assert publications[-1]["project"] == 4
-            del os.environ["ORANC_SIGNING_KEY"]
+            publisher_settings = dict(public_key=public, registry=f"127.0.0.1:{registry_port}",
+                                      repository="synthetic/cache-test", no_ssl=True, **publication_settings)
+            with publishing(state, inventory, secret=secret, **publisher_settings):
+                run_build([entry("large")], state=state, phase="preparation")
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(run_build, [*dependencies, entry("failure")],
+                                         state=state, phase="dependencies", jobs=1)
+                    try:
+                        assert entered.wait(180), "the dependent build did not reach its gate"
+                        deadline = time.monotonic() + 120
+                        receipt = state / "published-paths.json"
+                        while not receipt.exists() or fixture["child"]["path"] not in json.loads(receipt.read_text()):
+                            status = json.loads((state / "cache/status.json").read_text())
+                            assert status["result"] == "running", status
+                            assert time.monotonic() < deadline, "completed dependency was not published during the build"
+                            time.sleep(0.2)
+                        verify(uri, [fixture["child"]["path"]], public)
+                        assert not future.done(), "publication must complete while the dependent build is still running"
+                        assert fixture["large"]["path"] not in json.loads(receipt.read_text())
+                    finally:
+                        release.set()
+                    # A failed peer leaves completed dependencies for the checkpoint.
+                    try:
+                        future.result()
+                    except RuntimeError:
+                        assert valid_paths([fixture[name]["path"] for name in dependency_names]) == {
+                            fixture[name]["path"] for name in dependency_names}
+                    else:
+                        raise AssertionError("synthetic failing build unexpectedly succeeded")
+                assert valid_paths([fixture["root"]["path"]]) == set()
+                checkpoint(state, "dependencies")
+                first = set(json.loads(receipt.read_text()))
+                assert first == {fixture[name]["path"] for name in ("child", "large", "driver")}
+                verify(uri, first, public)
+                run_build([test], state=state, phase="vm-fixture")
+                run_build([test], state=state, phase="vm-fixture", pass_name="committed")
+                targets = [event for event in read_records(state / "timings.jsonl") if event.get("vm")]
+                assert targets[0]["source"] == "built" and targets[0]["success"] and targets[0]["buildSeconds"] > 0
+                assert targets[1]["source"] == "local" and targets[1]["success"] and targets[1]["buildSeconds"] is None
+                checkpoint(state, "results", finish=True)
+                assert set(json.loads(receipt.read_text())) - first == {
+                    fixture[name]["path"] for name in ("root", "runtimeInput")}
+                events = read_records(state / "timings.jsonl")
+                publications = [event for event in events if event["kind"] == "publication"]
+                assert sum(event["excluded"] for event in publications) == 3
+                assert sum(event["public"] for event in publications) == 2
+                assert any(event["kind"] == "cache-upload" and event["group"] == "large"
+                           and event["phase"] == "dependencies" for event in events)
+            # A fresh run discovers remote signatures without previous receipts.
+            remote_state = work / "remote"
+            with publishing(remote_state, inventory, secret=secret, **publisher_settings):
+                checkpoint(remote_state, "remote-reuse")
+                publications = [event for event in read_records(remote_state / "timings.jsonl")
+                                if event["kind"] == "publication"]
+                assert sum(event["public"] for event in publications) == 2
+                assert sum(event["project"] for event in publications) == 5
+                assert not (remote_state / "published-paths.json").exists()
+            assert json.loads((remote_state / "cache/status.json").read_text())["result"] == "stopped"
             verify(uri, [*roots, fixture["runtimeInput"]["path"]], public)
             # Evaluation keeps source inputs live; remove the build outputs to
             # exercise restoration from both caches.
@@ -240,10 +315,28 @@ def main():
             verify("auto", roots, public)
             verify("auto", public_roots, upstream_public)
             assert all(Path(path).read_bytes() == content for path, content in expected.items())
+            # A registry interruption must reach the same checkpoint used by CI.
+            failure_state = work / "publication-failure"
+            with publishing(failure_state, inventory, secret=secret, **publisher_settings):
+                checkpoint(failure_state, "ready")
+                registry_process.terminate()
+                registry_process.wait(timeout=10)
+                run_build([entry("late")], state=failure_state, phase="new-output")
+                try:
+                    checkpoint(failure_state, "unavailable-registry", finish=True)
+                except subprocess.CalledProcessError:
+                    status = json.loads((failure_state / "cache/status.json").read_text())
+                    assert status["result"] == "failure", status
+                    assert any(event["kind"] == "cache-upload" and event["returncode"] != 0
+                               for event in read_records(failure_state / "timings.jsonl"))
+                else:
+                    raise AssertionError("publication succeeded with an unavailable registry")
         print(render(state))
     print(json.dumps({"result": "passed", "scenarios": ["production cache configuration loading",
           "redistribution selection including embedded payloads",
+          "native post-build hook and concurrent publication", "deferred large output publication",
           "realized outputs and runtime references", "partial build publication and incremental checkpoints",
+          "registry failure propagation and publisher shutdown",
           "local public signatures and remote public/project deduplication", "signature and content verification",
           "persistent native Nix client configuration", "multi-cache restore with prepared private dependency",
           "dependency preparation, fresh execution, local reuse and cache restore timing"]}))

@@ -327,6 +327,16 @@ jobs:
             nix eval --no-update-lock-file --json --impure --expr \
               '\''import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; }'\'' > /ci/policy.json
           '
+      - name: Start incremental cache publication
+        id: publisher
+        if: github.ref == 'refs/heads/master'
+        env:
+          ORANC_USERNAME: ${{ github.actor }}
+          ORANC_PASSWORD: ${{ github.token }}
+          ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+        run: |
+          docker exec --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
+            bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py start --state /ci'
       - name: Build systems, non-VM checks and all VM drivers
         id: build
         run: |
@@ -334,20 +344,12 @@ jobs:
             "$(cat /ci/python)" .github/ci/build.py private --state /ci
             "$(cat /ci/python)" .github/ci/build.py dependencies --state /ci
           '
-      - name: Publish completed dependency paths
+      - name: Complete dependency cache publication
         id: publish-dependencies
-        if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.inventory.outcome == 'success' && steps.build.outcome != 'skipped' }}
-        env:
-          ORANC_USERNAME: ${{ github.actor }}
-          ORANC_PASSWORD: ${{ github.token }}
-          ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+        if: ${{ !cancelled() && steps.publisher.outcome == 'success' && steps.build.outcome != 'skipped' }}
         run: |
-          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase publish-dependencies -- \
-            docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
-            bash -euo pipefail <<'BASH'
-          "$(cat /ci/python)" .github/ci/cache.py select --state /ci
-          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci --phase publish-dependencies
-          BASH
+          docker exec nixos-ci bash -euo pipefail -c \
+            '"$(cat /ci/python)" .github/ci/cache.py checkpoint --state /ci --phase publish-dependencies'
       - name: Run network and backup VM tests
         id: network-backup
         if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
@@ -363,19 +365,14 @@ jobs:
       - name: Assemble VM results
         if: ${{ !cancelled() && steps.network-backup.outcome == 'success' && steps.desktop.outcome == 'success' && steps.applications.outcome == 'success' }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py aggregate --state /ci'
-      - name: Publish newly completed paths
+      - name: Complete result cache publication
         if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.publish-dependencies.outcome == 'success' }}
-        env:
-          ORANC_USERNAME: ${{ github.actor }}
-          ORANC_PASSWORD: ${{ github.token }}
-          ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
         run: |
-          python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase publish-results -- \
-            docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
-            bash -euo pipefail <<'BASH'
-          "$(cat /ci/python)" .github/ci/cache.py select --state /ci
-          "$(cat /ci/python)" .github/ci/cache.py publish --state /ci --phase publish-results
-          BASH
+          docker exec nixos-ci bash -euo pipefail -c \
+            '"$(cat /ci/python)" .github/ci/cache.py checkpoint --state /ci --phase publish-results --finish'
+      - name: Stop the cache publisher
+        if: ${{ always() && steps.publisher.outcome != 'skipped' && steps.publisher.outcome != '' }}
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py stop --state /ci'
       - name: Report timings and resources
         if: always()
         run: |
@@ -401,6 +398,9 @@ jobs:
           path: |
             ${{ runner.temp }}/nixos-ci/timings.jsonl
             ${{ runner.temp }}/nixos-ci/publication-paths.jsonl
+            ${{ runner.temp }}/nixos-ci/published-paths.json
+            ${{ runner.temp }}/nixos-ci/publisher.log
+            ${{ runner.temp }}/nixos-ci/cache/status.json
             ${{ runner.temp }}/nixos-ci/resources.jsonl
             ${{ runner.temp }}/nixos-ci/oom-*.log
             ${{ runner.temp }}/nixos-ci/monitor.log
