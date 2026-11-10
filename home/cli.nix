@@ -269,6 +269,10 @@ in
         AddKeysToAgent = "no";
         StrictHostKeyChecking = "ask";
       };
+      settings.kitty = {
+        header = ''Match exec "test \"$TERM\" = xterm-kitty"'';
+        SetEnv.TERM = "xterm-256color";
+      };
     };
     programs.gpg = {
       enable = true;
