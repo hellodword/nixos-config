@@ -32,7 +32,30 @@ in
     extraConfigFile = secret "notification-channels";
     users = [ userName ];
   };
+  site.files = lib.mkIf config.site.files.enable {
+    adminPasswordFile = secret "files-admin-password";
+    guestPasswordFile = secret "files-guest-password";
+    certificateConfigFile = secret "files-certificate-config";
+  };
   sops.secrets = {
+    # Whole-document extraction preserves arrays for the root-only signing command.
+    files-certificate-config = lib.mkIf config.site.files.enable (yaml "system" "");
+    files-admin-password = lib.mkIf config.site.files.enable (
+      (yaml "system" "files/adminPassword")
+      // {
+        restartUnits = [
+          "site-files-accounts.service"
+        ];
+      }
+    );
+    files-guest-password = lib.mkIf config.site.files.enable (
+      (yaml "system" "files/guestPassword")
+      // {
+        restartUnits = [
+          "site-files-accounts.service"
+        ];
+      }
+    );
     "${userName}-password" = (yaml "system" "login/passwordHash") // {
       neededForUsers = true;
     };

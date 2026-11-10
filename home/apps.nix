@@ -130,7 +130,6 @@ in
       [
         ffmpeg-full
         sqlite
-        rclone
         kdePackages.kdeconnect-kde
       ]
     );

@@ -1,10 +1,10 @@
 # 主机凭据
 
-`hosts/<主机>/secrets.nix` 选择凭据目录、用户、备份目标和 Wi-Fi 连接，`lib/credentials.nix` 负责共享字段绑定。通用模块只接收运行时文件路径。SOPS 使用持久根下 `var/lib/sops-nix/keys.txt` 中的 age 身份，字段由 sops-nix 直接提取。
+`hosts/<主机>/secrets.nix` 选择凭据目录、用户、备份目标和 Wi-Fi 连接，`lib/credentials.nix` 负责共享字段绑定。通用模块只接收运行时文件路径。SOPS 使用持久根下 `var/lib/sops-nix/keys.txt` 中的 age 身份解密，运行时文件由 sops-nix 管理。
 
 | 密文 | 内容 | 消费者 |
 | --- | --- | --- |
-| `system.sops.yaml` | 登录密码 hash、Tailscale auth key、Wi-Fi 环境文件、Bark device token、额外通知通道；可选的个人资料 | 用户创建、Tailscale、NetworkManager、通知服务 |
+| `system.sops.yaml` | 登录密码 hash、Tailscale auth key、Wi-Fi 环境文件、Bark device token、额外通知通道、文件服务账号与证书地址；可选的个人资料 | 用户创建、Tailscale、NetworkManager、通知与文件服务 |
 | `backup.sops.yaml` | Restic 密码，以及各目标的仓库地址和环境文件 | 各仓库独立 Restic 作业 |
 | `identity.sops.yaml` | OpenPGP 公钥证书、命名子密钥、SSH hosts 与 Git 身份 | SSH、Git |
 
@@ -21,6 +21,8 @@
 | `wifi/environment` | systemd EnvironmentFile 格式，保存 SSID 和密码；示例使用单引号处理空格 |
 | `notifications/barkDeviceToken` | Bark 客户端的 APNs device token，区别于服务端生成的 device key |
 | `notifications/channels` | 原生 Apprise YAML 字符串，示例包含三个带 tag 的通道；仅使用 Bark 时填 `urls: []`，通道说明见[通知](notifications.md) |
+| `files/adminPassword`、`files/guestPassword` | 两个独立的长随机密码，供 HTTPS 与 SMB 使用；启用与证书签发见[文件服务](files.md) |
+| `files/certificateNames` | 实际访问的域名与 IP 数组；按[文件服务](files.md#首次配置)填写并手动签发 |
 | `password`、`repositories/*/url` | Restic 仓库密码和对象存储控制台给出的 S3 endpoint、bucket、仓库前缀；恢复既有仓库必须使用原密码 |
 | `repositories/*/environment` | 对应提供方的 S3 access key/secret；限定到该备份 bucket 所需权限 |
 | `gpg/publicKeys` | 包含所选子密钥的完整 OpenPGP 公钥证书，可填写多个 ASCII armor 公钥块 |

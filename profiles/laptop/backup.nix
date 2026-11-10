@@ -118,6 +118,7 @@ in
       "etc/NetworkManager/system-connections"
       "var/lib/NetworkManager/secret_key"
       "var/lib/tailscale/tailscaled.state"
+      "var/lib/site-files"
       "usr/local/etc/sing-box"
       "usr/local/etc/network-policy"
       "${home}/.android/adbkey"

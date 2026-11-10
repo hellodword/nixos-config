@@ -1,5 +1,7 @@
 {
   config,
+  lib,
+  userName,
   ...
 }:
 {
@@ -26,6 +28,10 @@
     productivity.enable = true;
     notifications.enable = true;
     containers.enable = true;
+    files = {
+      enable = lib.mkDefault true;
+      user = userName;
+    };
   };
   boot.supportedFilesystems = [
     "ntfs"

@@ -12,6 +12,7 @@
 | 查看备份状态、控制成本、恢复资料 | [备份](docs/backup.md) |
 | 管理加密凭据与 SSH/GPG 身份 | [凭据](docs/secrets.md) |
 | 使用桌面和排查登录、钱包问题 | [桌面](docs/desktop.md) |
+| 分享文件、连接 WebDAV/SMB、签发证书 | [文件服务](docs/files.md) |
 | 配置通知与排查投递 | [通知](docs/notifications.md) |
 | 理解模块、脚本和状态之间的关系 | [架构](docs/architecture.md) |
 | 选择并运行检查 | [验证](docs/validation.md) |

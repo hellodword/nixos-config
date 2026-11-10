@@ -10,6 +10,7 @@
     ./services/notifications.nix
     ./services/backup.nix
     ./services/containers.nix
+    ./services/files.nix
     ./services/virtualbox.nix
     ./services/android.nix
     ./desktop/productivity.nix

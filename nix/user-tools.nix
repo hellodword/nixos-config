@@ -33,28 +33,4 @@ in
   (pythonTool "coderadio" ../scripts/cli/radio.py "coderadio" [ pkgs.ffmpeg-full ])
   (pythonTool "suno-radio" ../scripts/cli/radio.py "suno-radio" [ pkgs.ffmpeg-full ])
   (pythonTool "docker-pull-my-images" ../scripts/cli/docker_pull.py "" [ pkgs.docker ])
-  (pkgs.writeShellApplication {
-    name = "httpserver";
-    runtimeInputs = [
-      pkgs.docker
-      pkgs.coreutils
-    ];
-    text = ''
-      if (( $# > 1 )); then
-        echo 'Usage: httpserver [file-or-directory]' >&2
-        exit 2
-      fi
-      source=$(realpath -- "''${1:-.}")
-      target=/w
-      if [[ -f "$source" ]]; then
-        target="/w/$(basename -- "$source")"
-      elif [[ ! -d "$source" ]]; then
-        echo 'The source must be a file or directory' >&2
-        exit 2
-      fi
-      exec docker run --rm --runtime runsc --user "$(id -u):$(id -g)" \
-        --volume "$source:$target:ro" --workdir /w --publish 8000:8000 \
-        --interactive --tty python:3 python -m http.server 8000
-    '';
-  })
 ]

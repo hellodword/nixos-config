@@ -42,6 +42,7 @@ in
     directories = [
       "/var/lib/systemd"
       "/var/lib/nixos"
+      "/var/lib/site-files"
       {
         directory = "/var/cache/nix";
         mode = "1777";
