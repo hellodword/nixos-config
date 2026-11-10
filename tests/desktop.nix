@@ -15,6 +15,8 @@ let
       ../scripts/desktop/layout.py
       ./integration/__init__.py
       ./integration/desktop.py
+      ./integration/rule_notifications.py
+      ../scripts/desktop/network_rules.py
     ];
   };
   fixtures = pkgs.writeText "desktop-test-settings.json" (
@@ -27,7 +29,8 @@ in
 pkgs.runCommand "desktop-configuration-and-fonts"
   {
     nativeBuildInputs = with pkgs; [
-      python3
+      (python3.withPackages (p: [ p.dbus-next ]))
+      libnotify
       fontconfig
       pango.bin
       dbus
@@ -46,6 +49,8 @@ pkgs.runCommand "desktop-configuration-and-fonts"
     cp -r ${source}/. .
     python3 -m unittest tests.unit.test_display_layout -v
     mkdir -p $out
+    dbus-run-session --config-file ${pkgs.dbus}/share/dbus-1/session.conf -- \
+      python3 -m tests.integration.rule_notifications
     dbus-run-session --config-file ${pkgs.dbus}/share/dbus-1/session.conf -- \
       python3 -m tests.integration.desktop --settings ${fixtures} --output $out
   ''

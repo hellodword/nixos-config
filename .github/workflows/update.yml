@@ -38,19 +38,10 @@ jobs:
                 catppuccin-fcitx5 nixos-hardware plasma-manager sing-box-geosite nixpkgs \
                 reproducible-violentmonkey arkenfox-userjs home-manager nix-index-database sing-box-geoip
             '
-      - name: Commit a local candidate
+      - name: Prepare an update candidate
         id: candidate
         run: |
-          if git diff --quiet -- flake.lock; then
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-          else
-            python3 .github/ci/update.py prepare --state "$RUNNER_TEMP/candidate"
-            {
-              echo 'changed=true'
-              echo "sha=$(git rev-parse HEAD)"
-              echo 'artifact=candidate-${{ github.run_attempt }}'
-            } >> "$GITHUB_OUTPUT"
-          fi
+          python3 .github/ci/update.py prepare --state "$RUNNER_TEMP/candidate"
       - uses: actions/upload-artifact@v7
         if: steps.candidate.outputs.changed == 'true'
         with:

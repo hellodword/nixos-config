@@ -279,10 +279,24 @@ in
               ]
             }
             export SITE_BACKUP_ENABLED=${if config.site.backup.enable or false then "1" else "0"}
+            export SITE_NETWORK_RULES_ENABLED=${
+              if config.site.network.dns.enable || config.site.network.singBox.enable then "1" else "0"
+            }
             exec ${pkgs.python3}/bin/python3 ${../../scripts/desktop/health.py}
           '';
         };
       };
+      site-network-rules-notify =
+        lib.mkIf (config.site.network.dns.enable || config.site.network.singBox.enable)
+          {
+            description = "Review downloaded network rules";
+            partOf = [ "graphical-session.target" ];
+            serviceConfig = {
+              Type = "exec";
+              KillSignal = "SIGINT";
+              ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/desktop/network_rules.py} --notify-send ${pkgs.libnotify}/bin/notify-send --rofi ${userHome.programs.rofi.finalPackage}/bin/rofi --systemctl ${pkgs.systemd}/bin/systemctl";
+            };
+          };
       sway-session-watch = lib.mkIf cfg.sway.enable (watcher "sway" "${pkgs.sway}/bin/swaymsg");
       i3-session-watch = lib.mkIf cfg.i3.enable (watcher "i3" "${pkgs.i3}/bin/i3-msg");
       waybar = lib.mkIf cfg.sway.enable (

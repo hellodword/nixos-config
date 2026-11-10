@@ -319,6 +319,7 @@ jobs:
             find modules home profiles hosts lib nix tests tools -type f -name "*.nix" -print0 | xargs -0 nixfmt --check
             nixfmt --check flake.nix
             python3 -m tests.integration.cache
+            python3 -m tests.integration.updates
           '
       - name: Evaluate the build inventory
         id: inventory

@@ -5,6 +5,16 @@ let
   caches = import ../../nix/cache-config.nix;
   oranc = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.oranc;
   cachePayload = pkgs.writeText "network-cache-payload" "shared host cache content\n";
+  initialRules = pkgs.runCommand "initial-domain-rules.srs" { } ''
+    ${pkgs.sing-box}/bin/sing-box rule-set compile ${
+      pkgs.writeText "initial-domain-rules.json" (
+        builtins.toJSON {
+          version = 3;
+          rules = [ { domain = "initial.policy.example"; } ];
+        }
+      )
+    } -o $out
+  '';
   cacheURI = "http://${caches.local.listen}/cache.test.nix:5000/synthetic/network-cache";
   kdeconnect = pkgs.kdePackages.kdeconnect-kde;
   discoveryNode = {
@@ -367,6 +377,23 @@ in
           };
         };
         routeFragments = {
+          "35-remote.json" = {
+            rule_set = [
+              {
+                type = "remote";
+                tag = "downloaded-domains";
+                format = "binary";
+                url = "http://192.168.1.20:18089/domains.srs";
+                initial_path = "${initialRules}";
+              }
+            ];
+            rules = [
+              {
+                rule_set = "downloaded-domains";
+                outbound = "direct";
+              }
+            ];
+          };
           "20-private.json".rules = [
             {
               domain_suffix = [
@@ -421,6 +448,14 @@ in
         2
       ];
       networking.firewall.enable = false;
+      systemd.services.rule-source = {
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          RuntimeDirectory = "rule-source";
+          ExecStartPre = "${pkgs.coreutils}/bin/cp ${initialRules} /run/rule-source/domains.srs";
+          ExecStart = "${python}/bin/python3 -m http.server 18089 --bind 0.0.0.0 --directory /run/rule-source";
+        };
+      };
       boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
       # The peer underlay is an IPv4 NAT segment. Tailnet carries both families.
       networking.interfaces.eth2 = {
@@ -1021,6 +1056,37 @@ in
     direct_ready()
     tailnet()
     client.succeed("network-policy check")
+    def publish_rules(domains):
+        source = json.dumps({"version": 3, "rules": [{"domain": domains}]})
+        upstream.succeed("printf '%s' " + shlex.quote(source) + " > /run/rule-source/domains.json; "
+                         + "${pkgs.sing-box}/bin/sing-box rule-set compile /run/rule-source/domains.json -o /run/rule-source/domains.srs")
+    def rules_status():
+        return json.loads(user("network-policy rules-status"))
+    initial_rules = rules_status()["active"]
+    user("dig +short initial.policy.example A | grep -Fx 198.18.0.30")
+    publish_rules(["initial.policy.example", "updated.policy.example"])
+    policy_pids = client.succeed("systemctl show site-dns sing-box -p MainPID")
+    client.succeed("systemctl start site-network-rules-update")
+    pending_rules = rules_status()["pending"]
+    assert pending_rules and rules_status()["active"] == initial_rules
+    assert client.succeed("systemctl show site-dns sing-box -p MainPID") == policy_pids
+    user("dig +short updated.policy.example A | grep -Fx 198.19.0.30")
+    assert http("updated.policy.example") in {"192.168.1.20", "2001:db8:10::20"}
+    # A malformed download retains both the usable rules and the validated candidate.
+    upstream.succeed("printf invalid-srs > /run/rule-source/domains.srs")
+    client.fail("systemctl start site-network-rules-update")
+    assert rules_status()["pending"] == pending_rules
+    client.succeed("systemctl start site-network-rules-apply@" + pending_rules["id"])
+    healthy()
+    assert rules_status()["active"] == pending_rules and rules_status()["pending"] is None
+    user("dig +short updated.policy.example A | grep -Fx 198.18.0.30")
+    assert http("updated.policy.example") in {"192.168.1.10", "2001:db8:10::10"}
+    publish_rules(["initial.policy.example", "updated.policy.example", "pending.policy.example"])
+    client.succeed("systemctl start site-network-rules-update")
+    persisted_pending = rules_status()["pending"]
+    checked = rules_status()["checked"]
+    client.succeed("systemctl start site-network-rules-schedule")
+    assert rules_status()["checked"] == checked
     generation = client.succeed("readlink /run/site-network-policy/current")
     client.succeed("install -d -m700 /var/lib/network-policy/route.d; printf '%s' '{\"rules\":[{\"rule_set\":\"missing\",\"outbound\":\"direct\"}]}' > /var/lib/network-policy/route.d/05-local.json")
     client.fail("network-policy apply")
@@ -1230,6 +1296,10 @@ in
         client.succeed("network-ipv6 status")
         container_local(client)
         user("dig +short persisted.policy.example A | grep -Fx 198.18.0.30")
+        assert rules_status()["active"] == pending_rules
+        assert rules_status()["pending"] == persisted_pending
+        user("dig +short updated.policy.example A | grep -Fx 198.18.0.30")
+        user("dig +short pending.policy.example A | grep -Fx 198.19.0.30")
         assert http("persisted.policy.example") in {"192.168.1.10", "2001:db8:10::10"}
         peer.succeed("dig +short persisted.policy.example A | grep -Fx 198.18.0.30")
         exit_dns()

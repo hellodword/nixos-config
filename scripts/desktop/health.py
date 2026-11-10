@@ -32,6 +32,17 @@ if args.status or args.waybar:
         print(text)
     sys.exit(0)
 current = {}
+if os.environ.get("SITE_NETWORK_RULES_ENABLED") == "1":
+    current["rulesSession"] = os.environ.get("XDG_SESSION_ID")
+    try:
+        pending_rules = json.loads(Path("/run/site-network-rules/status.json").read_text()).get("pending")
+        current["rules"] = pending_rules["id"] if pending_rules else None
+    except (FileNotFoundError, ValueError, KeyError):
+        current["rules"] = None
+    if (current["rules"] != previous.get("rules") or
+            current["rules"] and current["rulesSession"] != previous.get("rulesSession")):
+        subprocess.run(["systemctl", "--user", "--no-block", "restart" if current["rules"] else "stop",
+                        "site-network-rules-notify.service"], check=False)
 levels = []
 for battery in Path("/sys/class/power_supply").glob("*"):
     try:

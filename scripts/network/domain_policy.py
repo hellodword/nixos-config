@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import rules as rule_updates
 
 
 DOMAIN_FIELDS = {"domain", "domain_suffix", "domain_keyword", "domain_regex"}
@@ -91,8 +92,20 @@ def condition(rule, location, sets, headless=False):
     return result
 
 
-def rule_set_document(definition, location, config):
+def remote_rule_sets(config, directory=None):
+    shared, _ = fragments(config, "routeFragments", directory)
+    definitions = {definition["tag"]: definition for name in sorted(shared)
+                   for definition in shared[name].get("rule_set", [])}
+    return [definition for definition in definitions.values() if definition.get("type") == "remote"]
+
+
+def rule_set_document(definition, location, config, rule_paths=None):
     kind = definition.get("type", "inline")
+    if kind == "remote":
+        key = rule_updates.remote_source(definition)
+        definition = {"type": "local", "tag": definition["tag"], "format": definition["format"],
+                      "path": str((rule_paths or {}).get(key, definition["initial_path"]))}
+        kind = "local"
     if kind == "inline" and set(definition) <= {"type", "tag", "rules"}:
         document = {"rules": definition.get("rules")}
     elif kind == "local" and set(definition) <= {"type", "tag", "format", "path"}:
@@ -113,13 +126,13 @@ def rule_set_document(definition, location, config):
         if document.get("version") not in {1, 2, 3, 4}:
             raise ValueError(f"{location}: unsupported source rule_set version")
     else:
-        raise ValueError(f"{location}: use an inline or local rule_set")
+        raise ValueError(f"{location}: use an inline, local or shared remote rule_set")
     if not isinstance(document.get("rules"), list):
         raise ValueError(f"{location}: rule_set requires a rules array")
     return document
 
 
-def compile_policy(config, directory=None, connection_directory=None, include_connections=True):
+def compile_policy(config, directory=None, connection_directory=None, include_connections=True, rule_paths=None):
     shared, sources = fragments(config, "routeFragments", directory)
     files, rules, definitions = [], [], {}
     final, final_source = "proxy", "implicit final"
@@ -138,7 +151,7 @@ def compile_policy(config, directory=None, connection_directory=None, include_co
         raise ValueError(f"{final_source}: expected a bound outbound: {', '.join(sorted(OUTBOUNDS))}")
     sets, set_sources = {}, {}
     for tag, (definition, location) in definitions.items():
-        document = rule_set_document(definition, location, config)
+        document = rule_set_document(definition, location, config, rule_paths)
         sets[tag] = [condition(rule, f"{location}/rules/{i}", {}, headless=True)
                      for i, rule in enumerate(document["rules"])]
         set_sources[tag] = location
@@ -191,6 +204,8 @@ def compile_policy(config, directory=None, connection_directory=None, include_co
                 raise ValueError(f"{name}: duplicate rule_set tag {tag}")
             if is_shared:
                 connection_sets[tag] = {"type": "inline", "tag": tag, "rules": sets[tag]}
+            elif definition.get("type") == "remote":
+                connection_sets[tag] = copy.deepcopy(definition)
             else:
                 document = rule_set_document(definition, f"{name}/rule_set/{tag}", config)
                 connection_sets[tag] = {"type": "inline", "tag": tag, "rules": document["rules"]}

@@ -249,7 +249,7 @@ site.network.routeFragments."05-local.json".rules = [
 | `95-tailnet-ip.json` | 启用 Tailscale 时，Tailnet IP → `tailnet` |
 | `96-private-ip.json` | 私网 IP → `direct` |
 | `97-direct-ip.json` | 已声明的 `directNetworks` → `direct` |
-| `98-geoip.json` | 已声明的本地 GeoIP 规则集 → `direct` |
+| `98-geoip.json` | 已声明的 GeoIP 规则集 → `direct` |
 
 因此 `05-local.json` 可以覆盖私有域分类，`50-local.json` 位于私有域之后、订阅列表之前。重叠域名依据规则顺序选择；更长的后缀应按需要放到更早的规则中。`network-policy check` 输出实际文件顺序、来源和 `文件名/rules/索引`，索引从 0 开始。
 
@@ -326,7 +326,9 @@ sudo mullvad-exclude setpriv --reuid="$(id -un)" --regid="$(id -gn)" --init-grou
 }
 ```
 
-规则集支持 `inline` 和 `local`；本地文件使用绝对路径，格式为 `source` JSONC 或 `binary` SRS。source 文件采用 sing-box 的 `{"version":3,"rules":[...]}` 格式。应用时读取一次并固化为 inline 内容，DNS 与代理使用相同快照；后续文件修改通过 `network-policy apply` 生效。适合把本机规则集保存在 `/persist/usr/local/etc/network-policy/route.d/rulesets/` 下，与片段一同持久化、备份。
+规则集支持 `inline`、`local` 和 `remote`。本地文件使用绝对路径，格式为 `source` JSONC 或 `binary` SRS。source 文件采用 sing-box 的 `{"version":3,"rules":[...]}` 格式。应用时读取一次并固化为 inline 内容，DNS 与代理使用相同快照；后续文件修改通过 `network-policy apply` 生效。适合把本机规则集保存在 `/persist/usr/local/etc/network-policy/route.d/rulesets/` 下，与片段一同持久化、备份。
+
+共享 `remote` 定义包含 `tag`、`format`、HTTP(S) `url` 和绝对路径 `initial_path`，下载、确认与应用流程见[规则来源与更新](#规则来源与更新)。连接片段中的 `remote` 使用 sing-box 原生配置和更新机制。
 
 共享部分包含能在 DNS 查询阶段判断的域名条件。连接部分使用 sing-box 原生 `rules`、`rule_set` 和 `final`，由原生校验器检查格式；本地规则集可包含 IP 条件，同样在应用时固化其内容。`blockedNetworks` 属于系统阻断，`directNetworks` 和 GeoIP 是上述可排序的连接片段。
 
@@ -360,16 +362,22 @@ sudo mullvad-exclude setpriv --reuid="$(id -un)" --regid="$(id -gn)" --init-grou
 
 ## 规则来源与更新
 
-laptop 的域名与 IP 数据来自 [lyc8503/sing-box-rules](https://github.com/lyc8503/sing-box-rules)，规则选择由 [laptop 网络配置](../profiles/laptop/network.nix)决定。更新对应输入并检查生成结果：
+laptop profile 从 [lyc8503/sing-box-rules](https://github.com/lyc8503/sing-box-rules)下载规则。GeoSite 同时决定 DNS 分类和连接路由，由共享策略流程统一应用；GeoIP 由 sing-box 的[远程规则集](https://sing-box.sagernet.org/configuration/rule-set/)自动更新。两者通过现有代理下载。
+
+GeoSite 在上次成功检查满 24 小时后下载，失败后每小时重试。下载和校验成功后保存为待应用版本，当前 DNS 和连接路由继续使用已应用版本。桌面通知可打开 Rofi 确认框，默认选择“稍后”；选择“立即应用”并完成系统认证后，DNS 与代理服务一起切换，现有连接可能需要重连。应用失败会恢复上一版。Sway/Plasma 可点击通知，i3 的 Dunst 使用中键点击；同一待应用版本每次登录提醒一次。
+
+已应用版本、待应用版本与检查时间保存在 `/var/lib/site-network-rules`，跨注销、重启保留。更换系统代次时优先使用同一来源的已应用规则，待应用版本继续等待确认。GeoIP 每 24 小时由 sing-box 更新，使用 `/var/lib/sing-box/cache.db` 持久缓存，更新时直接调整匹配内容。
 
 ```sh
-nix flake update sing-box-geosite sing-box-geoip
-nix build --no-link .#checks.x86_64-linux.network .#checks.x86_64-linux.configuration
-host=laptop2  # 换成要构建的主机
-nix build --no-link ".#nixosConfigurations.$host.config.site.network.generatedPolicy"
+network-policy rules-status
+sudo systemctl start site-network-rules-update.service  # 立即下载并校验
+sudo network-policy apply-rules                        # 应用待确认版本
+journalctl -u site-network-rules-update -u site-network-rules-schedule -b
 ```
 
-部署后，新默认列表进入系统代次；本机片段继续按同名替换和文件顺序生效。其他输入的升级见[更新与验证](maintenance.md#更新与验证)。
+`rules-status` 显示共享规则的已应用、待应用版本及最近检查结果。下载或校验失败时，两份有效版本均保留；详细错误见服务 journal 和其指出的受限日志。手动下载不受自动检查间隔限制。
+
+flake 中的 GeoSite、GeoIP 输入提供首次启动可用的初始快照。日常更新由运行中的服务完成；[自动更新工作流](ci.md#入口和候选提交)让初始快照随其他输入升级进入系统代次。本机片段继续按同名替换和文件顺序生效。
 
 ## DNS 响应与缓存
 

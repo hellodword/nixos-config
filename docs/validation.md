@@ -8,10 +8,10 @@
 | --- | --- |
 | `backup` | 文件选取、持久状态、调度、通知；真实 Restic 备份和恢复、独立策略、中断、锁与损坏检测 |
 | `identity` | 公钥推导、已有身份自动注册、SSH 签名、Git 验签，以及换钥期间新旧身份共存 |
-| `network` | 配置组合、出口选择；真实 DNS/DoT/DoH 与代理进程、路由语义、日志和故障 |
-| `desktop` | 字体匹配和混排、原生 Sway/i3 配置，以及显示布局选择 |
+| `network` | 配置组合、出口选择；真实 DNS/DoT/DoH 与代理进程、远程规则更新及离线缓存、日志和故障 |
+| `desktop` | 字体匹配和混排、原生 Sway/i3 配置、显示布局选择，以及网络规则通知的确认流程 |
 | `configuration` | 独立合成 laptop 的能力组合、凭据绑定、服务与会话、持久化所有权和系统求值；临时 Git 仓库中的备份推送 |
-| `vm-network` | systemd 下的网络切换、失败与重启恢复，持续双栈流量、DNS、Tailscale、容器和日志隔离 |
+| `vm-network` | systemd 下的网络切换、规则下载与确认应用、失败与重启恢复，持续双栈流量、DNS、Tailscale、容器和日志隔离 |
 | `vm-backup` | 实际窗口触发、独立仓库、中断和有界关机、重启恢复、gVisor 通知与补发 |
 | `vm-desktop` | 三会话登录、注销、锁屏、钱包、壁纸、输入法与显示状态，以及加密启动和重启后的恢复 |
 | `vm-applications` | 三会话中的真实应用启动、中文输入与退出提醒；Sway 完成共享的 DevContainer 和 Vaultwarden 全流程 |
@@ -34,7 +34,7 @@ nix develop --command python3 -m tests.integration.backup -v
 
 ## 完整验收与计时
 
-完整验收包含所选 host 的系统构建、五个领域检查、OCI 缓存集成以及四组 VM。Home Manager 是系统构建的依赖，不单独构建。
+完整验收包含所选 host 的系统构建、五个领域检查、OCI 缓存与更新候选集成，以及四组 VM。Home Manager 是系统构建的依赖，不单独构建。
 
 ```sh
 host=laptop2  # 换成要验证的主机
@@ -42,6 +42,7 @@ nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 nix build --no-link .#checks.x86_64-linux.backup .#checks.x86_64-linux.identity \
   .#checks.x86_64-linux.network .#checks.x86_64-linux.desktop .#checks.x86_64-linux.configuration
 nix develop --command python3 -m tests.integration.cache
+nix develop --command python3 -m tests.integration.updates
 ```
 
 本机具备 x86_64 Linux KVM 和所需 Nix system features 时，先准备 VM 环境，再执行测试：

@@ -9,9 +9,11 @@
 | push 到 `master` | 验证该提交，构建期间增量发布签名缓存，在阶段结束时等待发布完成 |
 | 手动运行 Verify and cache | 默认验证所选 ref；只有 master 发布缓存 |
 | 在 master 手动勾选 `initialize-cache` | 只创建缓存索引，供首次设置 package；不执行系统构建和 VM |
-| 定时运行，或在 master 手动运行 Update flake inputs | 更新指定输入；无变化则结束，有变化则准备候选提交并调用验证工作流 |
+| 定时运行，或在 master 手动运行 Update flake inputs | 更新指定输入；需要候选时创建提交并调用验证工作流 |
 
 更新时间与输入列表见[更新工作流](../.github/workflows/update.yml)。本地更新及按需升级见[主机维护](maintenance.md#更新与验证)。
+
+GeoSite、GeoIP 的初始快照随其他输入更新。只有这两个输入的版本变化时，本轮结束；包含其他输入或规则来源声明变化时，将全部变化放入同一候选。运行中规则的更新与确认见[网络规则](network.md#规则来源与更新)。
 
 更新任务先创建候选提交并交给验证任务。构建针对最终提交，系统的 `configurationRevision` 与验收 SHA 一致；失败候选不推送。
 

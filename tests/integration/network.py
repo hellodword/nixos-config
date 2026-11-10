@@ -2,6 +2,8 @@
 """Real resolver races through the shipped proxy, with observable egress paths."""
 import argparse
 import contextlib
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
 import socket
@@ -11,7 +13,7 @@ import time
 import urllib.request
 
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port
-from tests.fixtures.network_fixture import http_server, socks_server, socks_http
+from tests.fixtures.network_fixture import http_server, socks_server, socks_http, serve
 
 
 from tests.support import load_script
@@ -43,6 +45,46 @@ def proxy_process(executable, root, log, port):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+def remote_ip_rules(executable, root):
+    """Native rule updates change egress in place and survive offline restart."""
+    root.mkdir()
+    published = root / "published"
+    published.mkdir()
+    initial = root / "initial.srs"
+    def compile_to(path, cidr):
+        source = root / "rules.json"
+        source.write_text(json.dumps({"version": 3, "rules": [{"ip_cidr": cidr}]}))
+        subprocess.run([executable, "rule-set", "compile", str(source), "-o", str(path)], check=True)
+    compile_to(initial, "127.0.0.1/32")
+    (published / "ips.srs").write_bytes(initial.read_bytes())
+    server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=published))
+    download_port = server.server_address[1]
+    mixed = free_port()
+    with http_server() as origin, socks_server([download_port], origin) as (proxy, calls), \
+            (root / "sing-box.log").open("w") as log:
+        policy = {"connectionFragments": {"10-ips.json": {
+            "rules": [{"rule_set": "remote-ips", "outbound": "direct"}],
+            "rule_set": [{"type": "remote", "tag": "remote-ips", "format": "binary",
+                          "url": f"http://127.0.0.1:{download_port}/ips.srs", "initial_path": str(initial),
+                          "update_interval": "1s", "http_client": {"detour": "proxy"}}]}}}
+        config = {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": mixed}],
+                  "outbounds": [{"type": "direct", "tag": "direct"},
+                                {"type": "socks", "tag": "proxy", "server": "127.0.0.1", "server_port": proxy}],
+                  "route": assembler.domain_policy.compile_policy(policy)["connection_route"],
+                  "experimental": {"cache_file": {"enabled": True, "path": str(root / "cache.db")}}}
+        (root / "network.json").write_text(json.dumps(config))
+        with serve(server), proxy_process(executable, root, log, mixed):
+            assert socks_http(mixed, "127.0.0.1", origin) == "direct"
+            compile_to(published / "ips.srs", "192.0.2.0/24")
+            deadline = time.monotonic() + 15
+            while socks_http(mixed, "127.0.0.1", origin) != "proxy":
+                assert time.monotonic() < deadline, (root / "sing-box.log").read_text()
+                time.sleep(0.1)
+            assert ("127.0.0.1", download_port) in calls
+        with proxy_process(executable, root, log, mixed):
+            assert socks_http(mixed, "127.0.0.1", origin) == "proxy"
 
 
 def main():
@@ -285,7 +327,8 @@ def main():
                     raise AssertionError("standalone blocked route reached origin")
                 assert ("remote.example", origin) in calls
                 assertions += 4
-            print(json.dumps({"passed": assertions, "scope": "DNS + explicit proxy and standalone proxy, real egress and process failure"}))
+            remote_ip_rules(args.sing_box, root / "remote-rules")
+            print(json.dumps({"passed": assertions, "scope": "DNS + proxy egress, remote rule updates and offline cache"}))
 
 
 if __name__ == "__main__":

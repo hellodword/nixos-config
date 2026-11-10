@@ -34,7 +34,7 @@ def processes(args, config, root, fragments=None, ipv4_only=False):
     source.write_text(json.dumps(config))
     runtime.prepare(SimpleNamespace(policy=source, fragments=fragments or root / "route.d", dnsdist=args.dnsdist,
                     sing_box=None, provider=None, base=None, action="check", connections=None, bootstrap=False,
-                    ipv4_only=ipv4_only, group=grp.getgrgid(os.getgid()).gr_name), root)
+                    ipv4_only=ipv4_only, rules_directory=None, group=grp.getgrgid(os.getgid()).gr_name), root)
     check = subprocess.run([args.dnsdist, "--check-config", "-C", str(root / "dnsdist.conf")], capture_output=True, text=True)
     assert check.returncode == 0, check.stdout + check.stderr
     with contextlib.ExitStack() as stack:

@@ -18,10 +18,11 @@ in
       "70-geosite-global.json" = {
         rule_set = [
           {
-            type = "local";
+            type = "remote";
             tag = "geosite-global";
             format = "binary";
-            path = ruleFile inputs.sing-box-geosite "geosite-geolocation-!cn.srs";
+            url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-geolocation-!cn.srs";
+            initial_path = ruleFile inputs.sing-box-geosite "geosite-geolocation-!cn.srs";
           }
         ];
         rules = [
@@ -35,10 +36,11 @@ in
       "80-geosite-cn.json" = {
         rule_set = [
           {
-            type = "local";
+            type = "remote";
             tag = "geosite-cn";
             format = "binary";
-            path = ruleFile inputs.sing-box-geosite "geosite-cn.srs";
+            url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-cn.srs";
+            initial_path = ruleFile inputs.sing-box-geosite "geosite-cn.srs";
           }
         ];
         rules = [
@@ -53,9 +55,12 @@ in
     ipRuleSets = [
       {
         tag = "geoip-cn";
-        type = "local";
+        type = "remote";
         format = "binary";
-        path = ruleFile inputs.sing-box-geoip "geoip-cn.srs";
+        url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cn.srs";
+        initial_path = ruleFile inputs.sing-box-geoip "geoip-cn.srs";
+        update_interval = "24h";
+        http_client.detour = "proxy";
       }
     ];
   };

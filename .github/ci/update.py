@@ -2,6 +2,7 @@
 """Prepare a local update candidate, then publish its verified revision through GitHub."""
 
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
@@ -16,11 +17,46 @@ def run(command, **kwargs):
     return subprocess.check_output(command, text=True, **kwargs).strip()
 
 
+def needs_candidate(before, after):
+    """Rule snapshots accompany other updates; their source declarations still matter."""
+    normalized = copy.deepcopy(after)
+    for name in ("sing-box-geosite", "sing-box-geoip"):
+        old_node = before["nodes"][before["root"]]["inputs"].get(name)
+        new_node = after["nodes"][after["root"]]["inputs"].get(name)
+        if not isinstance(old_node, str) or old_node != new_node:
+            continue
+        old_lock = before["nodes"][old_node].get("locked", {})
+        new_lock = normalized["nodes"][new_node].get("locked", {})
+        for field in ("rev", "narHash", "lastModified", "revCount"):
+            if field in old_lock:
+                new_lock[field] = old_lock[field]
+            else:
+                new_lock.pop(field, None)
+    return normalized != before
+
+
+def outputs(**values):
+    if path := os.environ.get("GITHUB_OUTPUT"):
+        with Path(path).open("a") as stream:
+            for name, value in values.items():
+                stream.write(f"{name}={value}\n")
+
+
 def prepare(state):
-    state.mkdir(parents=True, exist_ok=True)
     changed = run(["git", "diff", "--name-only", "HEAD"]).splitlines()
+    if not changed:
+        outputs(changed="false")
+        print("Tracked inputs are current.")
+        return
     if changed != ["flake.lock"]:
         raise RuntimeError(f"Expected only the checked lockfile to change, got {changed}")
+    before = json.loads(run(["git", "show", "HEAD:flake.lock"]))
+    after = json.loads(Path("flake.lock").read_text())
+    if not needs_candidate(before, after):
+        outputs(changed="false")
+        print("Only rule snapshot revisions changed; runtime rule updates continue independently.")
+        return
+    state.mkdir(parents=True, exist_ok=True)
     base = run(["git", "rev-parse", "HEAD"])
     subprocess.run(["git", "add", "--", "flake.lock"], check=True)
     subprocess.run(["git", "-c", "user.name=github-actions[bot]",
@@ -31,6 +67,7 @@ def prepare(state):
               "branch": f"automation/flake-update-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"}
     (state / "update.json").write_text(json.dumps(record) + "\n")
     subprocess.run(["git", "bundle", "create", str(state / "candidate.bundle"), "HEAD", "^" + base], check=True)
+    outputs(changed="true", sha=head, artifact=f"candidate-{os.environ['GITHUB_RUN_ATTEMPT']}")
     print(f"Local candidate {head}; validation precedes publication.")
 
 

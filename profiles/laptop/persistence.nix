@@ -79,6 +79,10 @@ in
         mode = "0700";
       }
       {
+        directory = "/var/lib/site-network-rules";
+        mode = "0700";
+      }
+      {
         directory = "/var/lib/tailscale";
         mode = "0700";
       }

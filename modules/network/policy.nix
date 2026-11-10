@@ -69,6 +69,7 @@ let
     ''}
   '';
   runtimeRoot = "/run/site-network-policy";
+  rulesState = "/var/lib/site-network-rules";
   consumers =
     lib.optionals cfg.dns.enable [
       "site-dns.service"
@@ -91,15 +92,18 @@ let
     ${lib.optionalString cfg.dns.enable "--dnsdist ${pkgs.dnsdist}/bin/dnsdist"} \
     ${lib.optionalString cfg.singBox.enable "--base ${base} --provider ${lib.escapeShellArg cfg.providerFile} --sing-box ${pkgs.sing-box}/bin/sing-box"} \
     ${lib.optionalString config.services.tailscale.enable "--tailscale"} \
-    ${lib.optionalString cfg.lockdown.enable "--watch-underlay --wireguard-key /var/lib/site-network/gateway.key --wireguard-peer /var/lib/site-network/client.pub"}
+    ${lib.optionalString cfg.lockdown.enable "--watch-underlay --wireguard-key /var/lib/site-network/gateway.key --wireguard-peer /var/lib/site-network/client.pub"} \
+    --curl ${pkgs.curl}/bin/curl ${lib.optionalString cfg.singBox.enable "--download-proxy socks5h://127.0.0.1:10800"}
   '';
   prepareCommand = pkgs.writeShellScript "prepare-network-policy" ''
     set -eu
     stage="$1"
     bootstrap=()
     family=()
+    rules=()
     if [ "$3" = ipv4 ]; then family=(--ipv4-only); fi
     if [ "$2" = bootstrap ]; then bootstrap=(--bootstrap); fi
+    if [ -n "$4" ]; then rules=(--rules-directory "$4"); fi
     exec ${pkgs.systemd}/bin/systemd-run --quiet --wait --pipe --collect \
       --service-type=exec \
       --property=RootDirectory=${runtimeRoot}/sandbox \
@@ -111,6 +115,7 @@ let
               "/nix/store"
               "/etc/passwd"
               "/etc/group"
+              "-${rulesState}"
             ]
             ++ cfg.policyReadOnlyPaths
             ++ lib.optional (cfg.runtimeRouteDirectory != null) "-${cfg.runtimeRouteDirectory}"
@@ -132,7 +137,7 @@ let
       --property=ProtectControlGroups=yes --property=LockPersonality=yes \
       --property=SystemCallArchitectures=native --property=TimeoutStartSec=5min \
       --setenv=PATH=${lib.makeBinPath [ pkgs.hujsonfmt ]} \
-      ${pkgs.python3}/bin/python3 ${scripts}/runtime_policy.py prepare --stage "$stage" "''${bootstrap[@]}" "''${family[@]}" ${flags}
+      ${pkgs.python3}/bin/python3 ${scripts}/runtime_policy.py prepare --stage "$stage" "''${bootstrap[@]}" "''${family[@]}" "''${rules[@]}" ${flags}
   '';
   runtimeCommand = pkgs.writeShellScript "network-policy-command" ''
     set -eu
@@ -149,10 +154,29 @@ let
       )
     }:$PATH
     ${lib.optionalString cfg.lockdown.enable "export MULLVAD_RPC_SOCKET_PATH=/run/site-network-control/mullvad.sock"}
-    ${pkgs.coreutils}/bin/install -d -m 0750 -g site-network-policy ${runtimeRoot}
-    ${pkgs.coreutils}/bin/install -d -m 0755 ${runtimeRoot}/sandbox
+    if [ "''${1:-}" != rules-status ]; then
+      ${pkgs.coreutils}/bin/install -d -m 0750 -g site-network-policy ${runtimeRoot}
+      ${pkgs.coreutils}/bin/install -d -m 0755 ${runtimeRoot}/sandbox
+    fi
     exec ${pkgs.python3}/bin/python3 ${scripts}/runtime_policy.py "$@" --prepare-command ${prepareCommand} ${flags}
   '';
+  ruleUpdater = arguments: {
+    description = "Download and validate shared domain rules";
+    after = consumers ++ [
+      "site-network-policy.service"
+      "network-online.target"
+    ];
+    requires = [ "site-network-policy.service" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = "${runtimeCommand} update-rules${arguments}";
+      StateDirectory = "site-network-rules";
+      StateDirectoryMode = "0700";
+      UMask = "0077";
+      TimeoutStartSec = "20min";
+    };
+  };
 
 in
 {
@@ -340,6 +364,25 @@ in
         RuntimeDirectoryPreserve = "yes";
         Group = "site-network-policy";
         UMask = "0027";
+      };
+    };
+    systemd.services.site-network-rules-update = ruleUpdater "";
+    systemd.services.site-network-rules-schedule = ruleUpdater " --if-due";
+    systemd.timers.site-network-rules-schedule = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "5min";
+        OnUnitInactiveSec = "1h";
+      };
+    };
+    systemd.services."site-network-rules-apply@" = {
+      description = "Apply confirmed shared domain rules";
+      requires = [ "site-network-policy.service" ];
+      after = [ "site-network-policy.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${runtimeCommand} apply-rules --generation %i";
+        TimeoutStartSec = "10min";
       };
     };
     environment.systemPackages = [

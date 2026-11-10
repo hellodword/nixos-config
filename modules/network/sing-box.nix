@@ -50,7 +50,7 @@ in
     ipRuleSets = lib.mkOption {
       type = lib.types.listOf json.type;
       default = [ ];
-      description = "Local rule sets in the ordered 98-geoip.json connection fragment.";
+      description = "Native sing-box rule sets in the ordered 98-geoip.json connection fragment.";
     };
   };
   config = lib.mkIf cfg.singBox.enable {
@@ -58,10 +58,6 @@ in
       {
         assertion = !lib.hasPrefix "/nix/store/" cfg.providerFile;
         message = "Proxy credentials must be loaded at runtime.";
-      }
-      {
-        assertion = lib.all (r: r.type or "" == "local") cfg.ipRuleSets;
-        message = "Routing lists must be pinned local build inputs.";
       }
     ];
     users.users.sing-box = {
