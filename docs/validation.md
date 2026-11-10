@@ -1,6 +1,27 @@
 # 开发与验证
 
-使用 `flake.lock` 中的依赖和合成测试资料。按改动触及的行为选择检查；一个领域的修改通常不需要重跑全部桌面。检查定义集中在 [nix/checks.nix](../nix/checks.nix)。
+验证分为配置求值、产物构建和行为测试，使用 `flake.lock` 中的依赖和合成测试资料。检查定义集中在 [nix/checks.nix](../nix/checks.nix)。
+
+## 配置求值
+
+修改 Nix 模块、系统组合、flake 输出或锁定输入后，先在仓库根目录执行：
+
+```sh
+nix flake check --no-build --no-update-lock-file
+```
+
+求值检查已声明的系统、软件包、开发环境和检查定义，包括各组 VM 的配置。通过后，按改动影响选择产物构建和行为测试。共享模块的影响范围沿实际使用者确定，涵盖导入它的系统与测试组合。
+
+上述改动交付前必须完成最终工作树的求值。求值后若继续修改相关配置，重新执行这一步；验证记录分别说明配置求值、产物构建和行为场景的结果。
+
+修改 CI 构建或发布清单的生成逻辑时，还需执行工作流使用的[清单求值入口](../nix/ci.nix)：
+
+```sh
+host=laptop2  # 换成要验证的主机
+HOST="$host" nix eval --no-update-lock-file --json --impure \
+  --expr 'import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; }' \
+  > /dev/null
+```
 
 ## 检查入口
 
@@ -34,7 +55,7 @@ nix develop --command python3 -m tests.integration.backup -v
 
 ## 完整验收与计时
 
-完整验收包含所选 host 的系统构建、五个领域检查、OCI 缓存与更新候选集成，以及四组 VM。Home Manager 是系统构建的依赖，不单独构建。
+配置求值通过后，完整验收继续执行所选 host 的系统构建、五个领域检查、OCI 缓存与更新候选集成，以及四组 VM。Home Manager 是系统构建的依赖，不单独构建。
 
 ```sh
 host=laptop2  # 换成要验证的主机

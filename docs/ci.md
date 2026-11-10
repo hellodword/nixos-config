@@ -28,14 +28,15 @@ GeoSite、GeoIP 的初始快照随其他输入更新。只有这两个输入的�
 | 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
 | 缓存与工具 | 确认项目缓存可匿名读取，准备开发工具；发布任务核对签名身份和写入权限 |
 | 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存集成 |
-| 求值与构建 | 准备构建及发布清单，构建受限依赖、所选系统、开发环境、领域检查和全部 VM driver；后台上传成功产物 |
+| 清单求值 | 求值所选系统、开发环境、检查与 VM driver，生成构建及发布清单 |
+| 依赖构建 | 构建受限依赖、所选系统、开发环境、领域检查和全部 VM driver；后台上传成功产物 |
 | 依赖发布收尾 | 补齐已有产物和运行时引用，上传大对象并等待队列完成；构建失败也保留成功产物 |
 | VM 第一组 | network 与 backup 依次运行 |
 | VM 第二组 | desktop 单独运行 |
 | VM 第三组 | applications 单独运行 |
 | 汇总与发布收尾 | 四组 VM 全部通过才生成聚合结果；完成剩余产物的发布并结束上传进程 |
 
-同一个 host 的步骤共享 runner、容器和 Nix store。不同 host 使用独立 runner，通过 GHCR 复用相同依赖和测试结果。各项检查的范围见[验证指南](validation.md)。
+同一个 host 的步骤共享 runner、容器和 Nix store。不同 host 使用独立 runner，通过 GHCR 复用相同依赖和测试结果。本地求值要求、清单复核命令与检查范围见[验证指南](validation.md)。
 
 GitHub Actions bootstrap cache 保存 oranc 的运行闭包，用于尽快启动代理。代理就绪后，开发环境和项目构建通过[GHCR 缓存](cache.md#发布范围)复用依赖。master 在 oranc 准备完成后立即保存 bootstrap cache，因此后续测试失败也能保留它。未命中或读取失败时照常构建；超过[工作流](../.github/workflows/ci.yml)中的容量上限时跳过保存，写入失败也不影响后续验证。运行 summary 中的 Oranc bootstrap cache 显示命中、大小和跳过原因，保存结果见对应步骤日志。
 
