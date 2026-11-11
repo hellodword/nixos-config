@@ -7,10 +7,45 @@ from pathlib import Path
 import domain_policy
 
 
-def assemble(base, policy, transports=(), model=None, ipv4_only=False):
+def fakeip_rules(route, exclusions, ipv4_only):
+    """Use the shared first-match policy to select synthetic or real answers."""
+    real = {"action": "route", "server": "dns-policy"}
+    rules = [
+        {"query_type": ["A", "AAAA", "HTTPS", "SVCB"], "invert": True, **real},
+        {"domain_suffix": ["lan", "local", "localhost", "home.arpa", "ts.net", "tailscale.com", "tailscale.io"], **real},
+    ]
+    if not isinstance(exclusions, dict) or set(exclusions) - {"domain", "domain_suffix"}:
+        raise ValueError("FakeIP exclusions require domain and domain_suffix arrays")
+    if any(not isinstance(values, list) for values in exclusions.values()):
+        raise ValueError("FakeIP exclusions require domain and domain_suffix arrays")
+    names = {key: values for key, values in exclusions.items() if values}
+    if names:
+        rules.append(domain_policy.condition(names, "FakeIP exclusions", {}) | real)
+
+    def public_answers(match):
+        empty = {"query_type": ["HTTPS", "SVCB"] + (["AAAA"] if ipv4_only else [])}
+        if match:
+            empty = {"type": "logical", "mode": "and", "rules": [match, empty]}
+        return [empty | {"action": "predefined", "rcode": "NOERROR"},
+                match | {"action": "route", "server": "dns-fakeip"}]
+
+    for rule in route["rules"]:
+        match = {key: value for key, value in rule.items() if key not in {"action", "outbound"}}
+        if rule.get("outbound") in {"direct", "proxy"}:
+            rules.extend(public_answers(match))
+        else:
+            rules.append(match | real)
+    if route["final"] in {"direct", "proxy"}:
+        rules.extend(public_answers({}))
+    return rules
+
+
+def assemble(base, policy, transports=(), model=None, ipv4_only=False, fakeip_exclusions=None):
     base = copy.deepcopy(base)
     defaults = base.pop("_connectionFragments", {})
     model = model or domain_policy.compile_policy(policy | {"connectionFragments": defaults | policy.get("connectionFragments", {})})
+    if base.pop("_fakeIP", False):
+        base["dns"]["rules"] = fakeip_rules(model["route"], fakeip_exclusions or {}, ipv4_only)
     tunnels = []
     for transport in transports:
         inbound = {"type": "direct", "tag": transport["tag"], "listen": "127.0.0.1",

@@ -179,14 +179,19 @@ def socks_server(dns_port, http_port, address="127.0.0.1", port=0):
                     pass
 
 
-def socks_http(port, domain, destination):
+def socks_http(port, domain, destination, payload=None):
     with socket.create_connection(("127.0.0.1", port), timeout=4) as sock:
         sock.settimeout(4)
         sock.sendall(b"\x05\x01\x00")
         if read_exact(sock, 2) != b"\x05\x00":
             raise OSError("SOCKS authentication rejected")
-        host = domain.encode("ascii")
-        sock.sendall(b"\x05\x01\x00\x03" + bytes([len(host)]) + host + struct.pack("!H", destination))
+        try:
+            address = ipaddress.ip_address(domain)
+            host = bytes([1 if address.version == 4 else 4]) + address.packed
+        except ValueError:
+            name = domain.encode("ascii")
+            host = b"\x03" + bytes([len(name)]) + name
+        sock.sendall(b"\x05\x01\x00" + host + struct.pack("!H", destination))
         reply = read_exact(sock, 4)
         if reply[1]:
             raise OSError("SOCKS connection rejected")
@@ -194,7 +199,7 @@ def socks_http(port, domain, destination):
         if size is None:
             size = read_exact(sock, 1)[0]
         read_exact(sock, size + 2)
-        sock.sendall(f"GET / HTTP/1.0\r\nHost: {domain}\r\n\r\n".encode())
+        sock.sendall(payload if payload is not None else f"GET / HTTP/1.0\r\nHost: {domain}\r\n\r\n".encode())
         data = b""
         while block := sock.recv(8192):
             data += block

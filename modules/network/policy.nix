@@ -39,23 +39,23 @@ let
     }
   );
   base = json.generate "network-transport.json" (
-    (import ../../lib/network-policy.nix { inherit lib; } {
-      inherit (cfg) directNetworks blockedNetworks ipRuleSets;
-      dns = cfg.dns.enable;
-      lockdown = cfg.lockdown.enable;
-      tailscale = config.services.tailscale.enable;
-      dnsPort = effective.frontPort or 5300;
-      bootstrapPort = effective.bootstrapPort or 5301;
-    })
-    // lib.optionalAttrs cfg.clash.enable {
-      experimental = {
-        cache_file = {
-          enabled = true;
-          path = "cache.db";
-        };
-        clash_api.external_controller = "127.0.0.1:${toString cfg.clash.port}";
-      };
-    }
+    lib.recursiveUpdate
+      (import ../../lib/network-policy.nix { inherit lib; } {
+        inherit (cfg) directNetworks blockedNetworks ipRuleSets;
+        dns = cfg.dns.enable;
+        fakeIP = cfg.dns.fakeIP.enable;
+        lockdown = cfg.lockdown.enable;
+        tailscale = config.services.tailscale.enable;
+        dnsPort = effective.frontPort or 5300;
+        bootstrapPort = effective.bootstrapPort or 5301;
+      })
+      (
+        lib.optionalAttrs cfg.clash.enable {
+          experimental = {
+            clash_api.external_controller = "127.0.0.1:${toString cfg.clash.port}";
+          };
+        }
+      )
   );
   bundle = pkgs.runCommand "network-policy" { nativeBuildInputs = [ pkgs.hujsonfmt ]; } ''
     mkdir -p $out
@@ -90,6 +90,11 @@ let
       ) "--connections ${lib.escapeShellArg cfg.runtimeConnectionDirectory}"
     } \
     ${lib.optionalString cfg.dns.enable "--dnsdist ${pkgs.dnsdist}/bin/dnsdist"} \
+    ${
+      lib.optionalString (
+        cfg.dns.fakeIP.enable && cfg.dns.fakeIP.excludeFile != null
+      ) "--fakeip-exclude ${lib.escapeShellArg cfg.dns.fakeIP.excludeFile}"
+    } \
     ${lib.optionalString cfg.singBox.enable "--base ${base} --provider ${lib.escapeShellArg cfg.providerFile} --sing-box ${pkgs.sing-box}/bin/sing-box"} \
     ${lib.optionalString config.services.tailscale.enable "--tailscale"} \
     ${lib.optionalString cfg.lockdown.enable "--watch-underlay --wireguard-key /var/lib/site-network/gateway.key --wireguard-peer /var/lib/site-network/client.pub"} \
@@ -121,6 +126,9 @@ let
             ++ lib.optional (cfg.runtimeRouteDirectory != null) "-${cfg.runtimeRouteDirectory}"
             ++ lib.optional (cfg.runtimeConnectionDirectory != null) "-${cfg.runtimeConnectionDirectory}"
             ++ lib.optional cfg.singBox.enable "-${cfg.providerFile}"
+            ++ lib.optional (
+              cfg.dns.fakeIP.enable && cfg.dns.fakeIP.excludeFile != null
+            ) cfg.dns.fakeIP.excludeFile
             ++ lib.optionals cfg.lockdown.enable [
               "/var/lib/site-network/gateway.key"
               "/var/lib/site-network/client.pub"

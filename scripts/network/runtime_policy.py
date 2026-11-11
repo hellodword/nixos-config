@@ -57,7 +57,8 @@ def prepare(args, stage):
             listeners[f"site-dns-race-{group}.service"] = [
                 (address, port) for address in race["listen-addrs"] for port in race["listen-ports"]]
     if args.sing_box:
-        network = assembler.assemble(json.loads(args.base.read_text()), policy, transports, model, args.ipv4_only)
+        exclusions = domain_policy.read_json(args.fakeip_exclude, policy.get("jsoncTool", "hujsonfmt")) if args.fakeip_exclude else {}
+        network = assembler.assemble(base, policy, transports, model, args.ipv4_only, exclusions)
         (stage / "network.json").write_text(json.dumps(network) + "\n")
         listeners["sing-box.service"] = [(inbound["listen"], inbound["listen_port"])
                                          for inbound in network["inbounds"] if inbound.get("network") != "udp"]
@@ -235,6 +236,7 @@ def main():
     parser.add_argument("--fragments", type=Path)
     parser.add_argument("--base", type=Path)
     parser.add_argument("--connections", type=Path)
+    parser.add_argument("--fakeip-exclude", type=Path)
     parser.add_argument("--stage", type=Path)
     parser.add_argument("--bootstrap", action="store_true")
     parser.add_argument("--prepare-command", required=False)

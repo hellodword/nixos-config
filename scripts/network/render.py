@@ -63,7 +63,11 @@ def address_family(config):
     for node in config["outbounds"] + config.get("endpoints", []):
         if node.get("type") in {"selector", "urltest"} or node.get("tag") in {"local", "transparent"}:
             continue
-        value = node.get("domain_resolver", resolver)
+        default = resolver
+        if node.get("tag") not in {"direct", "private", "tailnet"} and any(
+                server["tag"] == "dns-bootstrap" for server in config["dns"]["servers"]):
+            default = resolver | {"server": "dns-bootstrap"}
+        value = node.get("domain_resolver", default)
         value = {"server": value} if isinstance(value, str) else dict(value)
         value.setdefault("strategy", "prefer_ipv4")
         if only4:
@@ -92,11 +96,14 @@ def address_family(config):
                     *node.get("pull_filters", []),
                 ]
         rules = config["route"]["rules"]
-        # Resolve before route decisions so proxy protocols receive an IPv4
-        # destination even when the caller supplied a hostname over SOCKS.
+        # FakeIP resolves after sniff and DNS hijacking, before policy routing.
+        # Other modes resolve here so proxy protocols receive IPv4 destinations.
+        fakeip = any(server["type"] == "fakeip" for server in config["dns"]["servers"])
+        resolve = [] if fakeip else [
+            {"action": "resolve", "strategy": "ipv4_only"}]
         config["route"]["rules"] = [
             {"ip_version": 6, "action": "reject", "method": "default"},
-            {"action": "resolve", "strategy": "ipv4_only"},
+            *resolve,
             *rules,
         ]
         for rule in rules:

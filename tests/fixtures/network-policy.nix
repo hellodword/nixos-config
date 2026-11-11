@@ -7,6 +7,10 @@ in
     lockdown = false;
     mixedPort = 18080;
   };
+  fakeip = policy {
+    fakeIP = true;
+    mixedPort = 18080;
+  };
   standalone = policy {
     dns = false;
     lockdown = false;

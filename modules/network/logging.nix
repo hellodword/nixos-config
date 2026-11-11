@@ -43,6 +43,8 @@ in
     environment.etc."systemd/journald@network.conf".source = journalConfig;
     systemd.services =
       lib.genAttrs journalUnits (_: {
+        # Keep the journal stream open until each service finishes shutting down.
+        after = [ "systemd-journald@network.service" ];
         serviceConfig.LogNamespace = "network";
       })
       // {

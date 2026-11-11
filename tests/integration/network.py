@@ -5,6 +5,7 @@ import contextlib
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
+import ipaddress
 from pathlib import Path
 import socket
 import subprocess
@@ -302,6 +303,75 @@ def main():
                     else:
                         assert socks_http(mixed, "::1", origin) == "direct"
                     assertions += 5
+
+        # Two domains resolve to the same origin but retain different egress
+        # when clients send only an address, including after a process restart.
+        fake_policy = policy | {"connectionFragments": {
+            "30-fakeip.json": {"rules": [
+                {"domain": "foo.direct.test", "outbound": "first"},
+                {"domain": "bar.direct.test", "outbound": "second"},
+                {"domain": "ip.direct.test", "ip_cidr": "127.0.0.1/32", "outbound": "second"},
+            ]}}}
+        fake_base = templates["fakeip"]
+        fake_model = assembler.domain_policy.compile_policy(fake_policy | {
+            "connectionFragments": fake_base["_connectionFragments"] | fake_policy["connectionFragments"]})
+        fake_dns = free_port()
+        for server in fake_base["dns"]["servers"]:
+            if server["type"] == "tcp":
+                server["server_port"] = front if server["tag"] == "dns-policy" else bootstrap
+        for inbound in fake_base["inbounds"]:
+            inbound["listen_port"] = mixed
+        fake_base["inbounds"].append({"type": "direct", "tag": "test-dns", "listen": "127.0.0.1",
+                                     "listen_port": fake_dns, "override_address": "1.1.1.1", "override_port": 53})
+        exclude = root / "fakeip-exclude.jsonc"
+        exclude.write_text('// Applications that need real addresses\n{"domain":["real.direct.test"],"domain_suffix":[]}')
+        saved = {}
+        with socks_server(global_ports, origin) as (first, first_calls), socks_server([], origin) as (second, second_calls):
+            provider.write_text(json.dumps({"outbounds": [node | {"tag": tag, "server_port": port}
+                for tag, port in (("first", first), ("second", second))]}))
+            for only4 in (False, True, False):
+                directory = root / "fakeip-dns"
+                compiler.compile_policy(fake_policy, directory, fake_model, only4)
+                template.write_text(json.dumps(assembler.assemble(fake_base, fake_policy,
+                    json.loads((directory / "transports.json").read_text()), fake_model, only4,
+                    assembler.domain_policy.read_json(exclude))))
+                renderer.render(template, provider, output, args.sing_box)
+                with proxy_process(args.sing_box, root, log, mixed), dns_test.processes(args, fake_policy, directory, ipv4_only=only4):
+                    for name, calls in (("foo.direct.test", first_calls), ("bar.direct.test", second_calls),
+                                        ("ip.direct.test", second_calls)):
+                        address = dns_test.marker(dns_test.query(fake_dns, name))
+                        assert ipaddress.ip_address(address) in ipaddress.ip_network("198.18.0.0/15"), address
+                        assert address == saved.setdefault(name, address), "FakeIP changed across restart"
+                        first_calls.clear()
+                        second_calls.clear()
+                        assert socks_http(mixed, address, origin, payload=b"opaque payload") == "proxy"
+                        assert ("127.0.0.1", origin) in calls, (name, first_calls, second_calls)
+                        assert sum(port == origin for _, port in first_calls + second_calls) == 1
+                    assert saved["foo.direct.test"] != saved["bar.direct.test"]
+                    first_calls.clear()
+                    assert socks_http(mixed, saved["foo.direct.test"], origin,
+                        payload=b"GET / HTTP/1.0\r\nHost: bar.direct.test\r\n\r\n") == "proxy"
+                    assert ("127.0.0.1", origin) in first_calls, "sniff replaced the restored domain"
+                    answer = dns_test.query(fake_dns, "foo.direct.test", "AAAA")
+                    assert answer.rcode() == 0 and bool(answer.answer) != only4
+                    if not only4:
+                        address6 = dns_test.marker(answer)
+                        assert ipaddress.ip_address(address6) in ipaddress.ip_network("2001:2::/48")
+                        assert address6 == saved.setdefault("ipv6", address6)
+                        assert socks_http(mixed, address6, origin, payload=b"opaque payload") == "proxy"
+                    for kind in ("HTTPS", "SVCB"):
+                        answer = dns_test.query(fake_dns, "foo.direct.test", kind)
+                        assert answer.rcode() == 0 and not answer.answer
+                        answer = dns_test.query(fake_dns, "real.direct.test", kind)
+                        assert answer.rcode() == 0 and answer.answer
+                    for kind in ("TXT", "MX"):
+                        answer = dns_test.query(fake_dns, "records.direct.test", kind)
+                        assert answer.rcode() == 0 and answer.answer
+                    assert dns_test.marker(dns_test.query(fake_dns, "real.direct.test")) == "127.0.0.1"
+                    assert dns_test.marker(dns_test.query(fake_dns, "controlplane.tailscale.com")) == "127.0.0.1"
+                    assert dns_test.query(fake_dns, "private.home.arpa").rcode() == 3
+                    assert dns_test.query(fake_dns, "blocked.test").rcode() == 3
+                    assertions += 20
 
         # Run the standalone configuration after all DNS workers have exited.
         # Its local resolver uses the OS hosts/resolver configuration.

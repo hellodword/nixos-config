@@ -26,6 +26,19 @@ in
 {
   options.site.network.dns = {
     enable = lib.mkEnableOption "domain-aware encrypted DNS";
+    fakeIP = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = cfg.dns.enable && cfg.singBox.enable && cfg.lockdown.enable;
+        defaultText = lib.literalExpression "dns.enable && singBox.enable && lockdown.enable";
+        description = "Preserve public destination domains through native sing-box FakeIP DNS.";
+      };
+      excludeFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        description = "Runtime JSONC file with domain and domain_suffix arrays whose DNS answers use real addresses.";
+      };
+    };
     ingressIPv4 = lib.mkOption {
       type = lib.types.str;
       default = "169.254.53.53";
@@ -40,6 +53,12 @@ in
     };
   };
   config = lib.mkIf cfg.dns.enable {
+    assertions = [
+      {
+        assertion = !cfg.dns.fakeIP.enable || (cfg.singBox.enable && cfg.lockdown.enable);
+        message = "site.network.dns.fakeIP requires DNS, sing-box and Lockdown together.";
+      }
+    ];
     networking.interfaces.lo.ipv4.addresses = [
       {
         address = resolver4;

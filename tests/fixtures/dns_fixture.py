@@ -64,7 +64,8 @@ class Resolver:
         else:
             qtype = query.question[0].rdtype
             text = {1: self.ipv4, 28: self.ipv6, 15: f"10 mail.{name}",
-                    16: '"' + self.group + '"', 65: f"1 . alpn=\"h2\" ipv4hint={self.ipv4}"}.get(qtype)
+                    16: '"' + self.group + '"', 64: f"1 . alpn=\"h2\" ipv4hint={self.ipv4}",
+                    65: f"1 . alpn=\"h2\" ipv4hint={self.ipv4}"}.get(qtype)
             if first == "large" and qtype == 16:
                 text = " ".join('"' + "x" * 200 + '"' for _ in range(200))
             if text is not None:

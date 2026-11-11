@@ -62,8 +62,8 @@ def main():
     args = parser.parse_args()
     if args.mode == "continuous":
         instance = f"{args.origin}-{uuid.uuid4().hex}"
-        for host, policy in (("198.18.0.30", "direct"), ("2001:db8:1::30", "direct"),
-                             ("198.19.0.30", "proxy"), ("2001:db8:2::30", "proxy")):
+        for host, policy in (("192.0.2.30", "direct"), ("2001:db8:1::30", "direct"),
+                             ("198.51.100.30", "proxy"), ("2001:db8:2::30", "proxy")):
             for protocol in ("tcp", "udp"):
                 threading.Thread(target=continuous, args=(host, policy, protocol, instance), daemon=True).start()
         signal.pause()
@@ -71,11 +71,11 @@ def main():
     with contextlib.ExitStack() as stack:
         if args.mode == "dns":
             # Hysteria server's own resolver, reachable only inside the fixture.
-            stack.enter_context(dns_server("198.19.0.30", "2001:db8:2::30", "127.0.0.1", 15353))
+            stack.enter_context(dns_server("198.51.100.30", "2001:db8:2::30", "127.0.0.1", 15353))
             for group, base in (("cn", 24001), ("global", 24003)):
                 for branch, protocol in enumerate(("tls", "https")):
                     resolver = Resolver(group, branch)
-                    resolver.ipv4 = "198.18.0.30" if group == "cn" else "198.19.0.30"
+                    resolver.ipv4 = "192.0.2.30" if group == "cn" else "198.51.100.30"
                     resolver.ipv6 = "2001:db8:1::30" if group == "cn" else "2001:db8:2::30"
                     stack.enter_context(encrypted_server(resolver, protocol, args.key, args.cert,
                                         hostname="dns.test.nix", address="0.0.0.0", port=base + branch))
@@ -110,7 +110,7 @@ def main():
                 def server_bind(self):
                     self.socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
                     super().server_bind()
-            hosts = ("0.0.0.0", "::") if args.mode == "host" else ("198.18.0.30", "198.19.0.30", "2001:db8:1::30", "2001:db8:2::30")
+            hosts = ("0.0.0.0", "::") if args.mode == "host" else ("192.0.2.30", "198.51.100.30", "2001:db8:1::30", "2001:db8:2::30")
             for host in hosts:
                 stack.enter_context(serve((TCPServer6 if ":" in host else TCPServer)((host, 18080), HTTP)))
                 stack.enter_context(serve((UDP6 if ":" in host else UDPServer)((host, 18081), UDP)))

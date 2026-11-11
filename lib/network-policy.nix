@@ -2,6 +2,7 @@
 {
   lockdown ? false,
   dns ? true,
+  fakeIP ? false,
   dnsPort ? 5300,
   bootstrapPort ? 5301,
   mixedPort ? 10800,
@@ -40,7 +41,13 @@
             server_port = bootstrapPort;
             detour = "local";
           }
-        ];
+        ]
+        ++ lib.optional fakeIP {
+          type = "fakeip";
+          tag = "dns-fakeip";
+          inet4_range = "198.18.0.0/15";
+          inet6_range = "2001:2::/48";
+        };
     final = "dns-policy";
     # The selected resolver owns caching. Keep only domain/IP associations.
     disable_cache = true;
@@ -132,7 +139,7 @@
     # Lockdown is enabled. Detecting the Mullvad tunnel here would create a loop.
     auto_detect_interface = !lockdown;
     default_domain_resolver = {
-      server = if dns then "dns-bootstrap" else "dns-policy";
+      server = if dns && !fakeIP then "dns-bootstrap" else "dns-policy";
       strategy = "prefer_ipv4";
     };
     rule_set = [ ];
@@ -145,14 +152,24 @@
         method = "drop";
       }
       ++ [
-        {
-          action = "sniff";
-          sniffer = [
-            "http"
-            "tls"
-            "dns"
-          ];
-        }
+        (
+          {
+            action = "sniff";
+            sniffer = [
+              "http"
+              "tls"
+              "dns"
+            ];
+          }
+          // lib.optionalAttrs fakeIP {
+            # FakeIP has already restored an FQDN here. Sniff only real IPs,
+            # before resolve populates the destination address list.
+            ip_cidr = [
+              "0.0.0.0/0"
+              "::/0"
+            ];
+          }
+        )
         {
           port = 53;
           action = "hijack-dns";
@@ -162,11 +179,17 @@
           action = "hijack-dns";
         }
       ]
+      ++ lib.optional fakeIP {
+        action = "resolve";
+        server = "dns-policy";
+        strategy = "prefer_ipv4";
+      }
       ++ lib.optional (blockedNetworks != [ ]) {
         ip_cidr = blockedNetworks;
         action = "reject";
       };
   };
+  _fakeIP = fakeIP;
   _connectionFragments = {
     "96-private-ip.json".rules = [
       {
@@ -212,5 +235,6 @@
   experimental.cache_file = {
     enabled = true;
     path = "cache.db";
+    store_fakeip = fakeIP;
   };
 }

@@ -7,14 +7,14 @@
 | true | false | false | 系统 DNS 分流；CN/GLOBAL 通过物理网络访问各自的加密上游 |
 | false | true | false | 10800 的 HTTP/SOCKS 显式代理，使用现有系统解析器 |
 | true | true | false | 系统 DNS + 显式代理；CN 和节点 bootstrap 直接解析，GLOBAL DNS 经代理 |
-| true | true | true | DNS + 整机透明分流 + Mullvad Lockdown |
+| true | true | true | FakeIP DNS + 整机透明分流 + Mullvad Lockdown |
 | false | false | false | 使用主机原有网络与解析配置 |
 
 开关位于 `site.network`。Lockdown 依赖 DNS 与 sing-box。sing-box 启用时始终监听 `0.0.0.0:10800`，供 HTTP/SOCKS 显式代理使用；双栈时另有 `[::1]:10800`。本机可用 `127.0.0.1:10800`，其他设备使用宿主对应网络的 IPv4 地址并遵守入站策略。显式代理和透明接管使用同一套分流规则。DNS-only 配置只需要域名规则和上游；代理模式另需要节点文件。
 
 能力组合由 NixOS 配置选择。切换涉及 Lockdown 的组合时，构建新的启动代次并重启，使防火墙、策略路由和服务一起进入目标状态。日常域名规则与代理节点通过下述 `network-policy apply` 更新。
 
-三项同时启用时，应用使用系统网络和 DNS。Mullvad 负责整机接管及 Lockdown，sing-box 的本地 WireGuard endpoint 接收隧道内的 TCP/UDP 并进行分流。dnsproxy 只访问 loopback 的 dnsdist 过滤入口，真实上游连接由 dnsdist 交给 sing-box 的固定目的地入口；sing-box 以排除身份创建物理出口连接，避免再次被 Mullvad 接管。
+三项同时启用时，应用使用系统网络和 DNS。Mullvad 负责整机接管及 Lockdown，sing-box 的用户态 WireGuard endpoint 接收隧道内的 TCP/UDP，恢复 FakeIP 对应的域名并进行分流。dnsproxy 只访问 loopback 的 dnsdist 过滤入口，真实上游连接由 dnsdist 交给 sing-box 的固定目的地入口；sing-box 以排除身份创建物理出口连接，避免再次被 Mullvad 接管。
 
 ```mermaid
 flowchart TD
@@ -23,11 +23,49 @@ flowchart TD
   WG --> SB[sing-box 分流]
   SB -->|direct| Physical[物理出口]
   SB -->|proxy| Remote[代理节点]
-  SB -->|DNS| DD[dnsdist 分类与组缓存]
+  SB -->|公共 A/AAAA| Fake[FakeIP 地址映射]
+  SB -->|真实目标解析及其他 DNS 查询| DD[dnsdist 分类与组缓存]
   DD --> Race[dnsproxy 组内并发]
   Race --> Filter[dnsdist 响应过滤与 TLS 认证]
   Filter -->|固定目的地隧道| SB
 ```
+
+## FakeIP 与域名分流
+
+完整组合默认启用 `site.network.dns.fakeIP.enable`，也可显式关闭。公共 direct、proxy 域名的 A/AAAA 查询返回合成地址，连接到达 sing-box 后恢复原域名，再由 `dns-policy` 按共享规则选择 CN/GLOBAL 解析真实目标。随后按文件顺序执行域名、IP/CIDR 和 GeoIP 规则；IP 条件匹配真实地址。节点自身的域名使用独立的 `dns-bootstrap`，避免节点解析依赖尚未建立的代理。
+
+因此，即使两个域名解析到同一个真实 IP，应用连接各自的 FakeIP 时仍能使用不同出口，TCP 和 UDP 都适用。HTTP/TLS 嗅探仅处理仍以真实 IP 为目标的连接。应用自带 DoH、硬编码 IP 或已缓存的真实地址仍依靠 IP 规则、DNS 关联和可见的协议元数据分流。
+
+IPv4 地址池为 `198.18.0.0/15`，IPv6 为 `2001:2::/48`。映射由 sing-box 保存在 `/var/lib/sing-box/cache.db`；laptop profile 持久化该目录，正常服务重启和正常系统重启后保留映射。注销不会停止这一系统服务。策略应用与地址族切换复用该文件。首次启用使用新的启动代次并重启。局域网实际使用这些保留网段时，应先解决地址冲突再启用。
+
+| 查询 | 公共 FakeIP 域名 | 使用真实解析的域名 |
+| --- | --- | --- |
+| A / AAAA | 合成地址；IPv4 模式的 AAAA 为 NOERROR 空回答 | 共享 DNS 策略的结果 |
+| HTTPS / SVCB | NOERROR 空回答，客户端使用 A/AAAA 建立连接 | 转发真实记录 |
+| TXT、MX、SRV 等 | 转发到共享 DNS 策略 | 转发到共享 DNS 策略 |
+
+HTTPS/SVCB 空回答使连接继续使用域名映射，也意味着客户端无法通过这些记录发现 ECH 配置和服务绑定参数。`private`、`tailnet`、`reject` 分类仍由共享 DNS 策略处理。常见本地域名、MagicDNS，以及 Tailscale 官方控制与 DERP 域名保留真实解析结果。
+
+需要原生连接或被排除应用访问的其他域名，可用 `site.network.dns.fakeIP.excludeFile` 指向运行时 JSONC 文件，例如持久目录中的 `fakeip-exclude.jsonc` 或 SOPS 解密路径：
+
+```jsonc
+{
+  "domain": ["service.example.org"],
+  "domain_suffix": ["internal.example.org"],
+}
+```
+
+`domain` 匹配完整名称，`domain_suffix` 匹配名称及子域；沿用下文共享域名规则的名称格式。文件路径用 Nix 字符串声明，内容在运行时读取，可包含私有名称。编辑后执行 `sudo network-policy check`、`sudo network-policy apply`。这些例外只选择真实 DNS 回答，连接仍遵守路由规则与 Lockdown。
+
+### 异常退出后的恢复
+
+当前 sing-box 的持久化缺陷可能在强杀、断电后使映射丢失。客户端缓存的旧 DNS 答案可能无法连接；若旧 FakeIP 被重新分配给其他域名，还可能按该域名选择出口，包括 direct。此时 Lockdown 的防火墙仍启用，但旧地址与原分流规则的对应关系需要通过重新解析恢复。上游已有[存储一致性修复](https://github.com/SagerNet/sing-box/commit/b6dc339ebf61f63528d33064dd03112936a67a13)，本项目随常规依赖升级跟进。
+
+出现这类异常时：
+
+1. 执行 `sudo network-lockdown disconnect`，停止 sing-box 并保持 Lockdown。
+2. 完全退出受影响的应用，清理相关客户端的 DNS 缓存；使用本机 DNS 的局域网或出口节点客户端也需重新解析。
+3. 执行 `sudo network-lockdown connect`、`sudo network-lockdown status`，再打开应用建立新连接。
 
 ## 私网开发访问与公网入站
 
@@ -77,7 +115,7 @@ sudo network-ipv6 off
 
 `on` 临时启用双栈，`off` 临时关闭 IPv6；重启回到声明式默认值。`status` 显示启动默认值、临时覆盖、当前模式和各层实际状态。
 
-双栈模式下，glibc 的地址排序表以及 sing-box 的本地目标与节点解析优先 IPv4。`prefer_ipv4` 保留 AAAA 回答，不决定应用的连接顺序：例如 curl 的 [Happy Eyeballs](https://curl.se/libcurl/c/CURLOPT_HAPPY_EYEBALLS_TIMEOUT_MS.html) 会优先尝试可用的 IPv6 地址。应用已选择的字面量 IPv6 地址会按该地址转发，远端节点需要具备 IPv6 出口。代理协议将域名交给远端解析时，远端独立选择地址族。
+双栈模式下，glibc 的地址排序表以及 sing-box 的本地目标与节点解析优先 IPv4。应用选择的 FakeIP 地址族与真实出口地址族独立：IPv6 FakeIP 同样可以恢复域名后通过 IPv4 连接。真实字面量 IPv6 地址按该地址转发，远端节点需要具备 IPv6 出口。关闭 FakeIP 时，`prefer_ipv4` 不决定应用的连接顺序；代理协议把域名交给远端解析时，远端独立选择地址族。
 
 `off` 将本机及经本机转发的出口切为 IPv4：接口与 loopback 关闭 IPv6，inet/bridge 转发入口丢弃 IPv6；dnsdist 对 AAAA 返回 NOERROR 空回答，DNS listeners、bootstrap 和加密上游使用 IPv4，重启解析进程以清空缓存。sing-box 将域名目标先解析为 IPv4，再交给 direct 或代理，并拒绝字面量 IPv6 目标；节点拨号也只解析 IPv4。仅有 IPv6 地址的节点在此模式下不可达。Mullvad 使用仅含 IPv4 的本地 WireGuard peer；Tailscale 的控制、DERP、打洞和 P2P 使用 IPv4，其他节点仍可通过本机使用 IPv4 出口。
 
@@ -89,7 +127,7 @@ sudo network-ipv6 off
 
 失败信息保留具体阶段、命令及服务退出原因；`network-ipv6 status` 显示最近失败摘要和受限日志路径。原始输出在 `/run/site-network-policy/last-error.log`，结构化摘要在 `last-error.json`。恢复阻断或重启观察器时的附加错误与最初失败一起保存。
 
-只有 DNS、DNS＋sing-box、完整 Lockdown 三种组合均使用相同入口。上游需要至少一个 IPv4 地址；仅有 IPv6 上游的分组无法生成 IPv4 配置。IPv4 模式的 AAAA 回答在 DNS 日志中标记为 `listener/ipv4-only`。
+只有 DNS、DNS＋sing-box、完整 Lockdown 三种组合均使用相同入口。上游需要至少一个 IPv4 地址；仅有 IPv6 上游的分组无法生成 IPv4 配置。dnsdist 在 IPv4 模式下处理的 AAAA 回答标记为 `listener/ipv4-only`；公共 FakeIP 的空回答由 sing-box 直接返回。
 
 ## 明文 DNS 接管
 
@@ -127,7 +165,7 @@ flowchart TD
 
 出口节点收到的互联网流量经过内核转发，Tailscale 原生 SNAT 使用本地隧道地址进入 sing-box。连接返回时由 conntrack 恢复目标节点地址。公网转发使用 Mullvad 的隧道放行与故障阻断规则；访问本机的 Tailnet 连接、Tailscale 的底层传输及启用 `localAccess` 后的 IPv4 私网访问使用原生网络。代理节点不可达时，direct 仍可使用，proxy 保持阻断；分流服务或本地隧道不可用时，出口上网受阻，Tailnet 通信仍可使用。
 
-Tailscale 默认将出口客户端的公共 DNS 查询通过 PeerAPI 交给出口节点的系统解析器，本项目再交给 dnsdist；MagicDNS 保留原生处理。客户端需启用 `accept-dns`，管理端另行指定的 “Use with exit node” nameserver 会改变默认路径。使用应用自带 DoH 时，其连接按普通应用流量处理。[出口节点 DNS 行为](https://tailscale.com/docs/reference/dns-in-tailscale)
+Tailscale 默认将出口客户端的公共 DNS 查询通过 PeerAPI 交给出口节点的系统解析器，与本机应用共用 FakeIP 和共享 DNS 策略；MagicDNS 保留原生处理。客户端需启用 `accept-dns`，管理端另行指定的 “Use with exit node” nameserver 会改变默认路径。使用应用自带 DoH 时，其连接按普通应用流量处理。[出口节点 DNS 行为](https://tailscale.com/docs/reference/dns-in-tailscale)
 
 `tailscale netcheck` 自身会创建诊断 socket。要观察 Lockdown 中守护进程使用的物理出口，用 `sudo mullvad-exclude tailscale netcheck`；`tailscale ping` 通过守护进程检测实际对端路径。
 
@@ -350,7 +388,7 @@ sudo mullvad-exclude setpriv --reuid="$(id -un)" --regid="$(id -gn)" --init-grou
 
 `proxy` selector 提供 `auto` 和具体节点，选择保存在 `/var/lib/sing-box/cache.db`，重启后恢复。API 的模式只作为原生 `clash_mode` 条件使用；需要按模式切换路由时，在 `connection.d` 中声明相应规则并自行选择顺序。UI 可连接本机 API，系统只提供原生控制接口。
 
-| 动作/出口 | DNS 绑定 | 连接路由 |
+| 动作/出口 | 真实 DNS 解析绑定 | 连接路由 |
 | --- | --- | --- |
 | `route` → `direct` | CN 组 | 物理出口 |
 | `route` → `proxy` | GLOBAL 组 | 代理节点 |
@@ -406,11 +444,11 @@ Mullvad DNS 使用 `default` 模式，从本地自定义隧道取得网关地址
 
 本地 peer 密钥及 Mullvad 设置持久化于 `/var/lib/site-network`，规则生成物位于 `/run/site-network-policy`。恢复时使用持久源文件和官方 CLI；升级 Mullvad 同时复核持久格式、路由及启动/断开场景。
 
-透明入口处理 TCP/UDP，外部 ICMP 明确阻断；本地隧道地址响应 Mullvad 连通性检查。UDP 按目标地址和端口独立映射，同一 socket 访问不同目标时分别选择策略。域名分流依赖 DNS 关联或 HTTP/TLS 元数据，共享 IP、不透明 UDP、ECH 和应用自带 DoH 需要按实际流量确认。DHCP/多网卡漫游、休眠、真实网络的 NAT 条件，以及容器和 Waydroid 的转发路径在设备上验收；自动化场景见[验证指南](validation.md)。
+透明入口处理 TCP/UDP，外部 ICMP 明确阻断；本地隧道地址响应 Mullvad 连通性检查。UDP 按目标地址和端口独立映射，同一 socket 访问不同目标时分别选择策略。FakeIP 连接使用恢复后的域名选择出口。DHCP/多网卡漫游、休眠、真实网络的 NAT 条件，以及容器和 Waydroid 的转发路径在设备上验收；自动化场景见[验证指南](validation.md)。
 
 ## 日志与保留
 
-DNS 事件由 dnsdist 原生 dnstap 经本地 UNIX socket 交给 DNS Collector，写入 `network` 命名空间的 `site-dns-events` journal。`site-dns`、两个 `site-dns-race-*` 和 `sing-box` 共用这个独立 journal。每个事件保留原始 DNS payload；解码后可以查看 RCODE、flags、问题和 AN/NS/AR 各区的名称、类型、TTL 与数据。命名空间的单行限额为 512 KiB，容纳大响应的结构化字段和完整报文编码。
+DNS 事件由 dnsdist 原生 dnstap 经本地 UNIX socket 交给 DNS Collector，写入 `network` 命名空间的 `site-dns-events` journal。FakeIP 分配和恢复记录在 sing-box 日志中；公共 A/AAAA 的真实解析通常在连接建立时进入 dnsdist。`site-dns`、两个 `site-dns-race-*` 和 `sing-box` 共用这个独立 journal。每个 dnsdist 事件保留原始 DNS payload；解码后可以查看 RCODE、flags、问题和 AN/NS/AR 各区的名称、类型、TTL 与数据。命名空间的单行限额为 512 KiB，容纳大响应的结构化字段和完整报文编码。
 
 | 标记 | 信息 |
 | --- | --- |
