@@ -25,7 +25,7 @@ import time
 import uuid
 
 
-from state import OPERATIONS, atomic_json, read_record, scope, success_path, attempt, record_result, safe_error
+from state import OPERATIONS, atomic_json, read_record, success_path, attempt, record_result, safe_error
 from schedule import automatic_decision, window_at, recent
 STOP_AT = None
 
@@ -265,7 +265,7 @@ def run_operation(args, policy, metadata, operation, *, checked=False, reuse_bac
         atomic_json(args.state / f"{operation}-attempt.json", record)
     if operation == "backup" and "window" in metadata:
         counted = read_record(args.state / "backup-window.json")
-        count = counted.get("count", 0) if all(counted.get(k) == metadata[k] for k in ("scope", "window")) else 0
+        count = counted.get("count", 0) if counted.get("window") == metadata["window"] else 0
         atomic_json(args.state / "backup-window.json", metadata | {"count": count + 1})
 
     def command(arguments):
@@ -280,7 +280,7 @@ def run_operation(args, policy, metadata, operation, *, checked=False, reuse_bac
         elif operation == "check":
             parts = policy.get("checkPartitions", 12)
             old = read_record(success_path(args.state, operation))
-            part = old.get("nextPartition", 1) if old.get("partitions") == parts and old.get("scope") == metadata["scope"] else 1
+            part = old.get("nextPartition", 1) if old.get("partitions") == parts else 1
             command(["check", f"--read-data-subset={part}/{parts}"])
             atomic_json(success_path(args.state, operation), metadata | {
                 "time": int(time.time()), "partitions": parts, "checkedPartition": part,
@@ -352,14 +352,13 @@ def execute(args):
             fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             return "repository busy"
-        repository = Path(os.environ["RESTIC_REPOSITORY_FILE"]).read_bytes() if os.environ.get("RESTIC_REPOSITORY_FILE") else os.environ.get("RESTIC_REPOSITORY", "").encode()
-        metadata = scope(args.policy, args.source, repository) | {"host": policy["host"]}
+        metadata = {"host": policy["host"]}
         schedule = policy.get("schedule")
         window = window_at(schedule, time.time(), args.offset_minutes) if schedule else None
         if window:
             metadata["window"] = window["id"]
         if args.operation != "automatic":
-            if not args.force and recent(args.state, args.operation, metadata, policy, time.time()):
+            if not args.force and recent(args.state, args.operation, policy, time.time()):
                 return "recent successful run"
             run_operation(args, policy, metadata, args.operation)
             return
@@ -369,20 +368,20 @@ def execute(args):
             return "outside backup window"
         previous = read_record(success_path(args.state, "backup"))
         completed = False
-        if previous.get("scope") != metadata["scope"] or previous.get("window") != window["id"]:
-            decision = automatic_decision(args.state, "backup", metadata, policy, time.time(), args.offset_minutes)
+        if previous.get("window") != window["id"]:
+            decision = automatic_decision(args.state, "backup", policy, time.time(), args.offset_minutes)
             if decision["nextEligibleAt"] is None or decision["nextEligibleAt"] > time.time():
                 return decision["reason"]
             run_operation(args, policy, metadata, "backup")
             completed = True
         checked = False
-        order = sorted(OPERATIONS[1:], key=lambda op: attempt(args.state, op, metadata).get("started", 0))
+        order = sorted(OPERATIONS[1:], key=lambda op: attempt(args.state, op).get("started", 0))
         for operation in order:
             check_interrupted()
             current = window_at(schedule, time.time(), args.offset_minutes)
             if not current or current["id"] != window["id"] or not current["maintenance"] or not on_ac_power():
                 break
-            decision = automatic_decision(args.state, operation, metadata, policy, time.time(), args.offset_minutes)
+            decision = automatic_decision(args.state, operation, policy, time.time(), args.offset_minutes)
             if decision["nextEligibleAt"] is None or decision["nextEligibleAt"] > time.time():
                 continue
             run_operation(args, policy, metadata, operation, checked=checked, reuse_backup=True)

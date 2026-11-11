@@ -16,11 +16,10 @@ def window_at(schedule, now, offset=0):
     return None
 
 
-def recent(state, operation, metadata, policy, now):
+def recent(state, operation, policy, now):
     previous = read_record(success_path(state, operation))
     interval = policy.get("minimumIntervalSeconds", {}).get(operation, 0)
-    return (previous.get("scope") == metadata["scope"]
-            and isinstance(previous.get("time"), (int, float))
+    return (isinstance(previous.get("time"), (int, float))
             and 0 <= now - previous["time"] < interval)
 
 
@@ -42,7 +41,7 @@ def next_window(schedule, earliest, offset, *, heavy=False):
     return None
 
 
-def automatic_decision(state, operation, metadata, policy, now, offset=0):
+def automatic_decision(state, operation, policy, now, offset=0):
     """Earliest policy-eligible time, without querying the repository or power state."""
     automatic = policy.get("automatic", {})
     if not automatic.get("enable", True):
@@ -53,14 +52,14 @@ def automatic_decision(state, operation, metadata, policy, now, offset=0):
     heavy = operation != "backup"
     constraints = [(int(now), "ready")]
     previous = read_record(success_path(state, operation))
-    if previous.get("scope") == metadata["scope"]:
-        constraints.append((previous.get("time", 0) + policy.get("minimumIntervalSeconds", {}).get(operation, 0), "recent successful run"))
-    last = attempt(state, operation, metadata)
+    if isinstance(previous.get("time"), (int, float)):
+        constraints.append((previous["time"] + policy.get("minimumIntervalSeconds", {}).get(operation, 0), "recent successful run"))
+    last = attempt(state, operation)
     if last.get("result") in ("failure", "interrupted", "running"):
         retry = automatic.get("retryIntervalSeconds", {}).get(operation, 900 if not heavy else 86400)
         constraints.append((last.get("finished", last["started"]) + retry, "retry interval"))
     if heavy:
-        started = max((attempt(state, op, metadata).get("started", 0) for op in OPERATIONS[1:]), default=0)
+        started = max((attempt(state, op).get("started", 0) for op in OPERATIONS[1:]), default=0)
         constraints.append((started + automatic.get("heavySpacingSeconds", 0), "heavy operation spacing"))
     else:
         window = window_at(schedule, now, offset)
@@ -68,10 +67,10 @@ def automatic_decision(state, operation, metadata, policy, now, offset=0):
             counted = read_record(state / "backup-window.json")
             maximum = automatic.get("backupAttemptsPerWindow")
             reason = None
-            if previous.get("scope") == metadata["scope"] and previous.get("window") == window["id"]:
+            if previous.get("window") == window["id"]:
                 reason = "backup already completed in this window"
-            elif (maximum is not None and counted.get("scope") == metadata["scope"]
-                  and counted.get("window") == window["id"] and counted.get("count", 0) >= maximum):
+            elif (maximum is not None and counted.get("window") == window["id"]
+                  and counted.get("count", 0) >= maximum):
                 reason = "backup attempt limit for this window"
             elif (maximum == 1 and last.get("window") == window["id"]):
                 # Existing result records also consume an attempt on upgrade.

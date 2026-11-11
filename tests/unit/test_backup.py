@@ -1,6 +1,8 @@
-"""Backup scope, cost accounting and public recovery status."""
+"""Backup selection, cost accounting and public recovery status."""
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -47,44 +49,53 @@ class SelectionTest(unittest.TestCase):
 
 
 class HealthTest(unittest.TestCase):
-    def test_health_follows_repository_source_policy_and_operation(self):
+    def test_target_health_preserves_history_across_policy_changes(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             policy = root / "policy.json"
             policy.write_text(json.dumps({"roots": [{"path": "data"}], "checkPartitions": 12}))
-            repository = root / "repository"
-            repository.write_text("s3:synthetic\n")
             directory = root / "site-backup-primary"
             directory.mkdir()
             now = 2_000_000
-            metadata = backup.scope(policy, root, repository.read_bytes())
+            metadata = {"repository": "a" * 64, "scope": "b" * 64}
+            backup.atomic_json(directory / "health-scope.json", metadata | {"time": now - 86400})
             for operation, ago in (("backup", 100), ("check", 15 * 86400), ("restore", 200)):
                 (directory / (operation + "-success.json")).write_text(json.dumps(
                     metadata | {"time": now - ago, "checkedPartition": 3, "partitions": 12}))
-            def report(source=root, at=None):
-                return health.status(root, {"primary": repository}, policy, source, now if at is None else at)
+            delivered = metadata | {"id": "checked", "operation": "check", "result": "success",
+                                    "deliveredChannels": ["bark"], "finished": now - 15 * 86400}
+            backup.atomic_json(directory / "check-notification.json", delivered)
+            targets = {"primary": {"policyFile": str(policy)}}
+            def report(at=now):
+                return health.status(root, targets, at)
             initial = report()
             self.assertEqual(initial["fresh"], 1)
             self.assertEqual(initial["repositories"]["primary"], {
                 "backup": {"ageSeconds": 100, "state": "fresh"},
                 "check": {"ageSeconds": 15 * 86400, "state": "stale", "partition": 3, "partitions": 12},
                 "canaryRestore": {"ageSeconds": 200, "state": "fresh"},
-                "maintenance": {"ageSeconds": None, "state": "pending", "dueAt": now + 45 * 86400}, "results": {}})
-            self.assertEqual(report(root / "another-source")["fresh"], 0)
-            repository.write_text("s3:replacement\n")
-            waiting = report()["repositories"]["primary"]
-            self.assertEqual(waiting["backup"], {"ageSeconds": None, "state": "pending", "dueAt": now + 36 * 3600})
-            # Repeated observations keep the original deadline across process restarts.
-            self.assertEqual(report(at=now + 35 * 3600)["repositories"]["primary"]["backup"], waiting["backup"])
-            self.assertEqual(report(at=now + 37 * 3600)["repositories"]["primary"]["backup"]["state"], "stale")
-            failed = backup.scope(policy, root, repository.read_bytes()) | {"operation": "backup", "result": "failure", "finished": now}
+                "maintenance": {"ageSeconds": None, "state": "pending", "dueAt": now + 44 * 86400},
+                "notifications": {"check": delivered}, "results": {}})
+            policy.write_text(json.dumps({"roots": [{"path": "different-data"}], "checkPartitions": 12}))
+            self.assertEqual(report(), initial)
+            self.assertEqual(report(at=now + 44 * 86400 + 1)["repositories"]["primary"]["maintenance"]["state"], "stale")
+            new_target = health.status(root, {"replacement": {"policyFile": str(policy)}}, now)["repositories"]["replacement"]
+            self.assertEqual(new_target["backup"], {"ageSeconds": None, "state": "pending", "dueAt": now + 36 * 3600})
+            failed = {"id": "failed", "operation": "backup", "result": "failure", "finished": now}
             backup.record_result(directory, failed)
             self.assertEqual(report()["repositories"]["primary"]["backup"]["state"], "failed")
-            backup.atomic_json(directory / "backup-success.json", failed | {"time": now + 10})
+            completed = {"id": "completed", "operation": "backup", "result": "success", "finished": now + 10}
+            backup.record_result(directory, completed)
+            backup.atomic_json(directory / "backup-success.json", {"time": now + 10})
             self.assertEqual(report(at=now + 10)["repositories"]["primary"]["backup"]["state"], "fresh")
-            repository.write_text("s3:synthetic\n")
-            policy.write_text(json.dumps({"roots": [{"path": "different-data"}], "checkPartitions": 12}))
-            self.assertEqual(report()["fresh"], 0)
+            manifest = root / "targets.json"
+            manifest.write_text(json.dumps(targets))
+            output = root / "status.json"
+            subprocess.run([sys.executable, health.__file__, "--state-root", str(root),
+                            "--targets", str(manifest), "--output", str(output)], check=True, capture_output=True)
+            published = json.loads(output.read_text())["repositories"]["primary"]
+            self.assertEqual(published["results"]["backup"]["id"], "completed")
+            self.assertEqual(published["notifications"]["check"], delivered)
             (directory / "backup-success.json").write_text("interrupted write")
             self.assertEqual(report()["repositories"]["primary"]["backup"]["state"], "unknown")
 

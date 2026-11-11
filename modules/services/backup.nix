@@ -52,8 +52,7 @@ let
     )
   ) cfg.targets;
   healthTargets = json.generate "backup-health-targets.json" (
-    lib.mapAttrs (name: target: {
-      inherit (target) repositoryFile;
+    lib.mapAttrs (name: _: {
       policyFile = targetPolicies.${name};
     }) cfg.targets
   );
@@ -294,7 +293,7 @@ in
         maintenance = 45 * 86400;
       };
       default = { };
-      description = "Health deadlines from the last success or initial scope observation.";
+      description = "Health deadlines from the last success or the target's first observation.";
     };
     schedule = {
       timeZone = lib.mkOption {
@@ -482,10 +481,7 @@ in
       // {
         site-backup-status = {
           wantedBy = [ "multi-user.target" ];
-          after = [
-            "local-fs.target"
-            "sops-install-secrets.service"
-          ];
+          after = [ "local-fs.target" ];
           # Refresh when several independent jobs complete close together.
           unitConfig.StartLimitIntervalSec = 0;
           serviceConfig = {
@@ -495,7 +491,7 @@ in
             RuntimeDirectoryPreserve = true;
             StateDirectory = map (target: "site-backup-${target}") (builtins.attrNames cfg.targets);
             StateDirectoryMode = "0700";
-            ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/backup}/health.py --targets ${healthTargets} --policy ${policy} --source ${lib.escapeShellArg cfg.source} --output /run/site-backup/status.json";
+            ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/backup}/health.py --targets ${healthTargets} --output /run/site-backup/status.json";
             ProtectSystem = "strict";
             ProtectHome = true;
             NoNewPrivileges = true;

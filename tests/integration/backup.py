@@ -130,12 +130,10 @@ class RepositoryTest(unittest.TestCase):
             policy = root / "policy.json"
             policy.write_text(json.dumps(definition))
             repo = root / "repository"
-            original_scope = backup.scope(policy, source, str(repo).encode())
             definition["automatic"] = {"backupAttemptsPerWindow": 1, "heavySpacingSeconds": 86400,
                                        "retryIntervalSeconds": {"check": 86400}}
             definition["health"] = {"check": 21 * 86400}
             policy.write_text(json.dumps(definition))
-            self.assertEqual(backup.scope(policy, source, str(repo).encode()), original_scope)
             env = os.environ | {"RESTIC_REPOSITORY": str(repo), "RESTIC_PASSWORD": "synthetic", "RESTIC_CACHE_DIR": str(root / "cache")}
             env.pop("RESTIC_REPOSITORY_FILE", None)
             env.pop("RESTIC_PASSWORD_FILE", None)
@@ -181,11 +179,27 @@ class RepositoryTest(unittest.TestCase):
                 at("2027-03-15T13:45:00+00:00", "restore-test")
                 self.assertEqual(at("2027-03-15T13:46:00+00:00", "restore-test"), "recent successful run")
                 at("2027-03-15T13:47:00+00:00", "restore-test", force=True)
+                # Retain records written by the earlier runner when a target's
+                # next configuration includes an additional backup path.
+                for record_path in state.glob("*.json"):
+                    backup.atomic_json(record_path, backup.read_record(record_path) |
+                                       {"repository": "a" * 64, "scope": "b" * 64})
                 manual = backup.read_record(state / "restore-test-attempt.json")
+                failed = backup.read_record(state / "check-attempt.json")
+                evening = backup.read_record(state / "backup-success.json")
+                (source / "added.txt").write_text("included in the next backup")
+                definition["roots"].append({"path": "added.txt", "required": True})
+                policy.write_text(json.dumps(definition))
+                at("2027-03-15T13:48:00+00:00")
+                self.assertEqual(backup.read_record(state / "backup-success.json"), evening)
                 at("2027-03-16T03:00:00+00:00")
                 self.assertGreater(backup.read_record(state / "backup-success.json")["time"], failed["finished"])
                 at("2027-03-16T13:30:00+00:00")
                 self.assertEqual(backup.read_record(state / "restore-test-attempt.json"), manual)
+                self.assertEqual(backup.read_record(state / "check-attempt.json"), failed)
+                report = health.status(root, {"limited": {"policyFile": str(policy)}}, clock[0])
+                self.assertEqual(report["repositories"]["limited"]["automatic"]["maintenance"]["nextEligibleAt"],
+                                 manual["started"] + 86400)
                 # Never-attempted maintenance takes its turn; the previous check
                 # failure cannot starve it. Maintenance performs its own precheck.
                 at("2027-03-16T14:00:00+00:00")
@@ -199,15 +213,16 @@ class RepositoryTest(unittest.TestCase):
                 definition["minimumIntervalSeconds"]["check"] = 14 * 86400
                 definition["automatic"]["heavySpacingSeconds"] = 2 * 86400
                 policy.write_text(json.dumps(definition))
-                self.assertEqual(backup.scope(policy, source, str(repo).encode()), original_scope)
-                location = root / "repository-file"
-                location.write_text(str(repo))
-                report = health.status(root, {"limited": {"repositoryFile": str(location), "policyFile": str(policy)}}, policy, source, clock[0])
+                report = health.status(root, {"limited": {"policyFile": str(policy)}}, clock[0])
                 actual = report["repositories"]["limited"]
                 self.assertEqual(actual["check"]["state"], "fresh")
                 self.assertEqual(actual["check"]["partition"], 1)
                 self.assertEqual(actual["automatic"]["check"]["nextEligibleAt"], int(clock[0] + 14 * 86400))
                 self.assertEqual(backup.read_record(state / "check-success.json"), progress)
+            destination = root / "restored"
+            subprocess.run(["restic", "restore", "latest", "--target", str(destination), "--verify"],
+                           env=env, check=True, capture_output=True)
+            self.assertEqual((destination / "added.txt").read_text(), "included in the next backup")
 
     def test_remote_checks_and_cancellation_preserve_recovery(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -362,28 +377,38 @@ class RepositoryTest(unittest.TestCase):
                 self.assertEqual(backup.read_record(args.state / "backup-success.json"), evening)
                 for operation in ("check", "restore-test", "maintenance"):
                     self.assertEqual(backup.read_record(args.state / f"{operation}-result.json")["result"], "success")
-                # Changing retry policy does not change the data scope.
-                identity = backup.scope(path, source, str(repository).encode())
+                successes = {op: backup.read_record(backup.success_path(args.state, op))
+                             for op in ("check", "restore-test", "maintenance")}
+                (source / "added.txt").write_text("newly selected data")
+                policy["roots"].append({"path": "added.txt", "required": True})
+                path.write_text(json.dumps(policy))
+                at("2026-11-11T13:45:00+00:00")
+                for operation, previous in successes.items():
+                    self.assertEqual(backup.read_record(backup.success_path(args.state, operation)), previous)
+                at("2026-11-16T13:45:00+00:00")
+                checked = backup.read_record(args.state / "check-success.json")
+                self.assertEqual((checked["time"], checked["checkedPartition"]), (clock[0], 2))
+                self.assertEqual(backup.read_record(args.state / "restore-success.json")["time"], clock[0])
+                self.assertEqual(backup.read_record(args.state / "maintenance-success.json"), successes["maintenance"])
                 policy["minimumIntervalSeconds"]["check"] = 0
                 path.write_text(json.dumps(policy))
-                self.assertEqual(backup.scope(path, source, str(repository).encode()), identity)
                 # Once a running check crosses the end, later due phases wait.
                 (args.state / "restore-success.json").unlink()
                 original = backup.run_operation
                 def cross_boundary(*values, **kwargs):
                     result = original(*values, **kwargs)
-                    clock[0] = datetime.fromisoformat("2026-11-09T15:01:00+00:00").timestamp()
+                    clock[0] = datetime.fromisoformat("2026-11-16T15:01:00+00:00").timestamp()
                     return result
                 restored = backup.read_record(args.state / "restore-test-result.json")
                 with patch.object(backup, "run_operation", side_effect=cross_boundary):
-                    at("2026-11-09T14:59:00+00:00")
+                    at("2026-11-16T14:59:00+00:00")
                 self.assertEqual(backup.read_record(args.state / "restore-test-result.json"), restored)
                 # If the monthly preflight check finishes after the window,
                 # leave pruning for the next evening without repeating backup.
                 policy["minimumIntervalSeconds"]["check"] = 7 * 86400
                 path.write_text(json.dumps(policy))
                 clock[0] = datetime.fromisoformat("2026-12-10T03:00:00+00:00").timestamp()
-                metadata = backup.scope(path, source, str(repository).encode()) | {"host": policy["host"]}
+                metadata = {"host": policy["host"]}
                 backup.run_operation(args, policy, metadata, "check")
                 maintained = backup.read_record(args.state / "maintenance-success.json")
                 original_restic = backup.restic
@@ -401,6 +426,7 @@ class RepositoryTest(unittest.TestCase):
             destination = root / "restored"
             subprocess.run(["restic", "restore", "latest", "--target", str(destination), "--verify"], env=env, check=True, capture_output=True)
             self.assertEqual((destination / "canary").read_text(), "recoverable")
+            self.assertEqual((destination / "added.txt").read_text(), "newly selected data")
 
     def test_independent_repositories_restore_and_failed_check_progress(self):
         with tempfile.TemporaryDirectory() as tmp:

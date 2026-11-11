@@ -7,43 +7,42 @@ from pathlib import Path
 import tempfile
 import time
 
-from state import OPERATIONS, atomic_json, attempt, read_record, scope
+from state import OPERATIONS, atomic_json, attempt, read_record
 from schedule import automatic_decision
 
 
-def status(root, targets, policy, source, now):
+def status(root, targets, now):
     result = {}
     for target, settings in targets.items():
-        repository_file = settings["repositoryFile"] if isinstance(settings, dict) else settings
-        policy_file = Path(settings["policyFile"]) if isinstance(settings, dict) else policy
-        definition = {}
+        policy_file = Path(settings["policyFile"])
         try:
             definition = json.loads(policy_file.read_text())
-            expected = scope(policy_file, source, Path(repository_file).read_bytes())
+            if not isinstance(definition, dict):
+                definition = None
         except (OSError, ValueError, TypeError):
-            expected = None
+            definition = None
         operations = {}
         directory = root / ("site-backup-" + target)
-        def matches(record):
-            return expected is not None and all(record.get(k) == v for k, v in expected.items())
-        observation_path = directory / "health-scope.json"
+        observation_path = directory / "health-observed.json"
         observed = read_record(observation_path)
-        if expected is not None and (not observation_path.exists() or (observed and not matches(observed))):
+        if definition is not None and not observation_path.exists():
+            timestamp = read_record(directory / "health-scope.json").get("time")
+            if not isinstance(timestamp, (int, float)) or not 0 <= timestamp <= now:
+                timestamp = int(now)
             directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-            observed = expected | {"time": int(now)}
+            observed = {"time": timestamp}
             atomic_json(observation_path, observed)
         results = {operation: record for operation in ("automatic", "backup", "check", "restore-test", "maintenance")
-                   if (record := read_record(directory / f"{operation}-result.json"))
-                   and (matches(record) or (operation == "automatic" and record.get("result") == "skipped"))}
+                   if (record := read_record(directory / f"{operation}-result.json"))}
         for operation, limit in (("backup", 36 * 3600), ("check", 14 * 86400), ("restore", 14 * 86400), ("maintenance", 45 * 86400)):
             name = "restore-test" if operation == "restore" else operation
-            limit = definition.get("health", {}).get(name, limit)
+            limit = (definition or {}).get("health", {}).get(name, limit)
             success_path = directory / (operation + "-success.json")
             recorded = read_record(success_path)
             timestamp = recorded.get("time")
-            age = int(now - timestamp) if matches(recorded) and isinstance(timestamp, (int, float)) and 0 <= timestamp <= now else None
+            age = int(now - timestamp) if definition is not None and isinstance(timestamp, (int, float)) and 0 <= timestamp <= now else None
             item = {"ageSeconds": age, "state": "unknown" if age is None else "fresh" if age <= limit else "stale"}
-            if matches(observed) and (not success_path.exists() or (recorded and not matches(recorded))):
+            if definition is not None and isinstance(observed.get("time"), (int, float)) and not success_path.exists():
                 deadline = observed["time"] + limit
                 item.update(state="pending" if now <= deadline else "stale", dueAt=deadline)
             if operation == "check" and age is not None:
@@ -52,20 +51,19 @@ def status(root, targets, policy, source, now):
                     item.update(partition=part, partitions=total)
                 else:
                     item = {"ageSeconds": None, "state": "unknown"}
-            last = attempt(directory, name, expected) if expected else {}
-            last = last or results.get(name, {})
+            last = (attempt(directory, name) or results.get(name, {})) if definition is not None else {}
             if last.get("result") == "failure" and (age is None or last.get("finished", 0) >= timestamp):
                 item["state"] = "failed"
             operations["canaryRestore" if operation == "restore" else operation] = item
-        if expected and definition.get("schedule"):
+        if definition and definition.get("schedule"):
             operations["automatic"] = {
-                operation: automatic_decision(directory, operation, expected, definition, now,
+                operation: automatic_decision(directory, operation, definition, now,
                                               definition["schedule"].get("offsetMinutes", 0))
                 | ({"requires": ["AC power", "successful backup in this window"]} if operation != "backup" else {})
                 for operation in OPERATIONS
             }
             operations["attempts"] = {op: record for op in OPERATIONS
-                                      if (record := attempt(directory, op, expected))}
+                                      if (record := attempt(directory, op))}
         deliveries = {}
         for operation in ("backup", "check", "restore-test", "maintenance"):
             recorded = read_record(directory / (operation + "-notification.json"))
@@ -73,11 +71,11 @@ def status(root, targets, policy, source, now):
             if pending:
                 recorded = pending | {"pending": True}
             if recorded:
-                deliveries[operation] = recorded | {"currentScope": matches(recorded)}
+                deliveries[operation] = recorded
         if deliveries:
             operations["notifications"] = deliveries
         current = read_record(directory / "current.json")
-        if matches(current):
+        if current:
             if current.get("result") == "running" and current.get("bootId") != Path("/proc/sys/kernel/random/boot_id").read_text().strip():
                 current = current | {"result": "interrupted"}
             operations["current"] = current
@@ -91,11 +89,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--state-root", type=Path, default=Path("/var/lib"))
     parser.add_argument("--targets", type=Path, required=True)
-    parser.add_argument("--policy", type=Path, required=True)
-    parser.add_argument("--source", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    body = status(args.state_root, json.loads(args.targets.read_text()), args.policy, args.source, time.time())
+    body = status(args.state_root, json.loads(args.targets.read_text()), time.time())
     fd, temporary = tempfile.mkstemp(dir=args.output.parent)
     try:
         with os.fdopen(fd, "w") as stream:

@@ -1,6 +1,5 @@
 """Persistent backup records shared by execution, health and notification delivery."""
 import fcntl
-import hashlib
 import json
 import os
 import re
@@ -44,28 +43,16 @@ def read_record(path):
         return {}
 
 
-def scope(policy, source, repository):
-    repository = repository.strip()
-    if not repository:
-        raise ValueError("repository must be explicitly configured")
-    identity = hashlib.sha256(repository).hexdigest()
-    data = {k: v for k, v in json.loads(policy.read_text()).items()
-            if k not in ("schedule", "minimumIntervalSeconds", "automatic", "health", "recoverStaleLocks")}
-    definition = json.dumps({"policy": data,
-                             "source": os.path.abspath(source), "repository": identity}, sort_keys=True)
-    return {"repository": identity, "scope": hashlib.sha256(definition.encode()).hexdigest()}
-
-
 def success_path(state, operation):
     return state / (("restore" if operation == "restore-test" else operation) + "-success.json")
 
 
-def attempt(state, operation, metadata):
+def attempt(state, operation):
     # Older installations have only result records. A skipped trigger must not
     # overwrite the clock of the last operation that actually started.
     for suffix in ("attempt", "result"):
         record = read_record(state / f"{operation}-{suffix}.json")
-        if record.get("scope") == metadata["scope"] and isinstance(record.get("started"), (int, float)):
+        if isinstance(record.get("started"), (int, float)):
             return record
     return {}
 
