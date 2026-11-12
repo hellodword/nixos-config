@@ -82,17 +82,21 @@ error_log /dev/stderr warn;
 events { worker_connections 128; }
 http {
     access_log off;
+    include /etc/nginx/mime.types;
     default_type application/octet-stream;
     client_body_temp_path /tmp/body;
-    map $uri $disposition { default attachment; ~/$ ""; }
+    # HTML and SVG need an isolated origin; PDF viewers need their native context.
+    map $sent_http_content_type $file_csp {
+        default "sandbox allow-downloads";
+        application/pdf "";
+    }
     server {
         listen unix:/socket/backend.sock;
         server_name _;
         root /share;
         disable_symlinks on;
-        add_header Content-Disposition $disposition;
         add_header X-Content-Type-Options nosniff always;
-        add_header Content-Security-Policy "sandbox allow-downloads" always;
+        add_header Content-Security-Policy $file_csp always;
         location / {
             limit_except GET { deny all; }
             # try_files checks symlinks before the autoindex content handler.

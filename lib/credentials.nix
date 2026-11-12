@@ -34,7 +34,7 @@ in
   };
   site.files = lib.mkIf config.site.files.enable {
     adminPasswordFile = secret "files-admin-password";
-    guestPasswordFile = secret "files-guest-password";
+    userPasswordFile = secret "files-user-password";
     certificateConfigFile = secret "files-certificate-config";
   };
   sops.secrets = {
@@ -48,8 +48,8 @@ in
         ];
       }
     );
-    files-guest-password = lib.mkIf config.site.files.enable (
-      (yaml "system" "files/guestPassword")
+    files-user-password = lib.mkIf config.site.files.enable (
+      (yaml "system" "files/userPassword")
       // {
         restartUnits = [
           "site-files-accounts.service"

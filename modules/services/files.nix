@@ -28,7 +28,7 @@ let
       "dns proxy" = "no";
       "username map" = pkgs.writeText "site-files-smb-users" ''
         site-files-admin = admin
-        site-files-guest = guest
+        site-files-user = user
       '';
       "passdb backend" = "tdbsam:${state}/samba/passdb.tdb";
       "private dir" = "${state}/samba";
@@ -45,15 +45,12 @@ let
       "create mask" = "0660";
       "directory mask" = "2770";
       "inherit permissions" = "yes";
+      "vfs objects" = "streams_xattr";
     };
     files = {
-      path = "/srv/files";
-      "valid users" = "site-files-admin";
-      "read only" = "no";
-    };
-    guest = {
-      path = "/srv/guest";
-      "valid users" = "site-files-admin site-files-guest";
+      # %u is the authenticated Unix account, after the username map.
+      path = "/srv/shares/%u";
+      "valid users" = "site-files-admin site-files-user";
       "read only" = "no";
     };
   };
@@ -65,6 +62,37 @@ let
       removeAttrs sambaSettings [ "global" ]
     ))
   ];
+  browserConfig = pkgs.writeText "site-files-browser.conf" ''
+    [global]
+      i: unix:660:site-files-web:/run/site-files-browser/copyparty.sock
+      http-only
+      no-crt
+      rproxy: 1
+      usernames
+      logout: 720
+      ses-db: ${state}/browser/sessions.db
+      hist: ${state}/browser/history
+      chmod-f: 660
+      chmod-d: 2770
+      xvol
+      no-html
+      no-mime
+      no-readme
+      no-logues
+      no-thumb
+      dav-auth
+      daw
+
+    [/]
+      /srv/files
+      accs:
+        rwmd.: admin
+
+    [/user]
+      /srv/files/user
+      accs:
+        rwmd.: admin, user
+  '';
   webConfig = pkgs.writeText "site-files-nginx.conf" ''
     worker_processes 1;
     pid /run/site-files-web/nginx.pid;
@@ -80,30 +108,19 @@ let
       ssl_certificate /run/credentials/site-files-web.service/certificate;
       ssl_certificate_key /run/credentials/site-files-web.service/key;
       ssl_session_cache shared:files:1m;
-      upstream files_admin { server unix:/run/site-files-dufs-admin/dufs.sock; }
-      upstream files_guest { server unix:/run/site-files-dufs-guest/dufs.sock; }
-      # This selects a backend; each backend validates its own account password.
-      map $remote_user $files_backend { default files_admin; guest files_guest; }
-      # Dufs marks file bodies with Content-Disposition; its UI has no such header.
-      map $upstream_http_content_disposition $download {
-        "" "";
-        ~^inline(.*)$ "attachment$1";
-        default $upstream_http_content_disposition;
-      }
-      map $upstream_http_content_disposition $file_csp { "" ""; default "sandbox"; }
       server {
         listen unix:/run/site-files-web/files.sock ssl;
         server_name _;
         location / {
-          proxy_pass http://$files_backend;
+          proxy_pass http://unix:/run/site-files-browser/copyparty.sock;
           proxy_set_header Host $http_host;
+          proxy_set_header X-Forwarded-Host $http_host;
           proxy_set_header X-Forwarded-Proto https;
+          # Socket bridges retain no client IP; the peer is this local proxy.
+          proxy_set_header X-Forwarded-For 127.0.0.1;
           proxy_request_buffering off;
           proxy_buffering off;
           proxy_read_timeout 300s;
-          proxy_hide_header Content-Disposition;
-          add_header Content-Disposition $download;
-          add_header Content-Security-Policy $file_csp always;
           add_header X-Content-Type-Options nosniff always;
         }
       }
@@ -113,6 +130,9 @@ let
         location / {
           limit_except GET { deny all; }
           proxy_pass http://unix:/run/site-httpserver/socket/backend.sock;
+          # Browser cookies are shared across ports on the same host.
+          proxy_set_header Cookie "";
+          proxy_set_header Authorization "";
           proxy_buffering off;
           proxy_intercept_errors on;
           error_page 502 504 =404 @idle;
@@ -140,32 +160,6 @@ let
     UMask = "0007";
     Restart = "on-failure";
     RestartSec = "5s";
-  };
-  dufs = role: directories: {
-    description = "${role} WebDAV and file browser";
-    wantedBy = [ "multi-user.target" ];
-    requires = [
-      "site-files-directories.service"
-      "site-files-accounts.service"
-    ];
-    after = [
-      "site-files-directories.service"
-      "site-files-accounts.service"
-    ];
-    partOf = [ "site-files-accounts.service" ];
-    serviceConfig = isolated // {
-      User = "site-files-${role}";
-      Group = "site-files-web";
-      SupplementaryGroups = [ "site-files-share" ] ++ lib.optional (role == "admin") "site-files-admin";
-      RuntimeDirectory = "site-files-dufs-${role}";
-      RuntimeDirectoryMode = "0750";
-      # The HTTPS mount keeps this directory across backend restarts.
-      RuntimeDirectoryPreserve = true;
-      BindPaths = directories ++ [ "/run/site-files-dufs-${role}" ];
-      LoadCredential = [ "auth:/run/site-files-auth/${role}.json" ];
-      # Tini forwards SIGTERM so Dufs keeps normal shutdown behavior in a PID namespace.
-      ExecStart = "${pkgs.tini}/bin/tini -e 143 -- ${pkgs.dufs}/bin/dufs /srv/files --config /run/credentials/site-files-dufs-${role}.service/auth --bind /run/site-files-dufs-${role}/dufs.sock --allow-upload --allow-delete --allow-search --allow-archive --allow-hash";
-    };
   };
   ingress = name: backend: destination: {
     description = "File service ${name} connection bridge";
@@ -196,9 +190,9 @@ in
       type = lib.types.str;
       description = "Runtime file containing the admin password.";
     };
-    guestPasswordFile = lib.mkOption {
+    userPasswordFile = lib.mkOption {
       type = lib.types.str;
-      description = "Runtime file containing the guest password.";
+      description = "Runtime file containing the restricted user account password.";
     };
     certificateConfigFile = lib.mkOption {
       type = lib.types.str;
@@ -239,6 +233,8 @@ in
           "/var/lib/sops-nix"
           "${state}/private"
           "${state}/samba"
+          "${state}/accounts"
+          "${state}/browser"
           "/etc/ssh"
           "${home}/.config/sops"
         ];
@@ -255,7 +251,7 @@ in
       {
         assertion = lib.all (p: lib.hasPrefix "/" p && !lib.hasPrefix "/nix/store/" p) [
           cfg.adminPasswordFile
-          cfg.guestPasswordFile
+          cfg.userPasswordFile
           cfg.certificateConfigFile
         ];
         message = "File-service secrets must be runtime files outside the Nix store.";
@@ -278,9 +274,13 @@ in
         isSystemUser = true;
         group = "site-files-admin";
       };
-      site-files-guest = {
+      site-files-user = {
         isSystemUser = true;
         group = "site-files-share";
+      };
+      site-files-browser = {
+        isSystemUser = true;
+        group = "site-files-web";
       };
       site-files-web = {
         isSystemUser = true;
@@ -309,6 +309,9 @@ in
       "d ${state} 0755 root root -"
       "d ${state}/private 0700 root root -"
       "d ${state}/samba 0700 root root -"
+      "d ${state}/accounts 0700 root root -"
+      # Account preparation uses group root to revoke sessions after a password change.
+      "d ${state}/browser 0770 site-files-browser root -"
       "d /run/site-files-root 0755 root root -"
       "d /run/site-httpserver 2750 ${cfg.user} site-files-web -"
       "d /run/site-httpserver/socket 2750 ${cfg.user} site-files-web -"
@@ -319,7 +322,7 @@ in
     };
     systemd.services = {
       site-files-directories = {
-        description = "Create shared file directories";
+        description = "Prepare shared file directories and permissions";
         wantedBy = [ "multi-user.target" ];
         unitConfig.RequiresMountsFor = [ cfg.root ];
         serviceConfig = {
@@ -328,12 +331,8 @@ in
           UMask = "0007";
         };
         script = ''
-          if [ ! -e ${lib.escapeShellArg cfg.root} ]; then
-            ${pkgs.coreutils}/bin/install -d -m 2770 -o site-files-admin -g site-files-admin ${lib.escapeShellArg cfg.root}
-          fi
-          if [ ! -e ${lib.escapeShellArg "${cfg.root}/guest"} ]; then
-            ${pkgs.coreutils}/bin/install -d -m 2770 -o site-files-guest -g site-files-share ${lib.escapeShellArg "${cfg.root}/guest"}
-          fi
+          ${pkgs.coreutils}/bin/install -d -m 2770 -o site-files-admin -g site-files-admin ${lib.escapeShellArg cfg.root}
+          ${pkgs.coreutils}/bin/install -d -m 2770 -o site-files-user -g site-files-share ${lib.escapeShellArg "${cfg.root}/user"}
         '';
       };
       site-files-accounts = {
@@ -341,44 +340,69 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "sops-install-secrets.service" ];
         path = [
-          pkgs.openssl
+          pkgs.copyparty-min
           pkgs.samba
         ];
         serviceConfig = isolated // {
           Type = "oneshot";
           RemainAfterExit = true;
           Restart = "no";
-          RuntimeDirectory = [
-            "site-files-auth"
-            "site-files-smb"
-          ];
+          RuntimeDirectory = "site-files-smb";
           RuntimeDirectoryMode = "0750";
           RuntimeDirectoryPreserve = true;
           BindPaths = [
             "${state}/samba"
-            "/run/site-files-auth"
+            "${state}/accounts"
+            "${state}/browser"
             "/run/site-files-smb"
           ];
           LoadCredential = [
             "admin:${cfg.adminPasswordFile}"
-            "guest:${cfg.guestPasswordFile}"
+            "user:${cfg.userPasswordFile}"
           ];
-          ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/files/accounts.py} ${sambaConfig}";
+          Environment = "XDG_CONFIG_HOME=/tmp";
+          ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/files/accounts.py} ${sambaConfig} ${state}";
         };
       };
-      site-files-dufs-admin = dufs "admin" [ "${cfg.root}:/srv/files" ];
-      site-files-dufs-guest = dufs "guest" [ "${cfg.root}/guest:/srv/files/guest" ];
+      site-files-browser = {
+        description = "Authenticated file browser and WebDAV";
+        wantedBy = [ "multi-user.target" ];
+        requires = [
+          "site-files-directories.service"
+          "site-files-accounts.service"
+        ];
+        after = [
+          "site-files-directories.service"
+          "site-files-accounts.service"
+        ];
+        partOf = [ "site-files-accounts.service" ];
+        serviceConfig = isolated // {
+          User = "site-files-browser";
+          Group = "site-files-web";
+          SupplementaryGroups = [
+            "site-files-admin"
+            "site-files-share"
+          ];
+          # Copyparty creates directories with the shared parent's setgid bit.
+          RestrictSUIDSGID = false;
+          RuntimeDirectory = "site-files-browser";
+          RuntimeDirectoryMode = "0750";
+          RuntimeDirectoryPreserve = true;
+          BindPaths = [
+            "${cfg.root}:/srv/files"
+            "${state}/browser"
+            "/run/site-files-browser"
+          ];
+          LoadCredential = [ "accounts:${state}/accounts/copyparty.conf" ];
+          Environment = "XDG_CONFIG_HOME=${state}/browser";
+          ExecStart = "${pkgs.tini}/bin/tini -e 143 -- ${pkgs.copyparty-min}/bin/copyparty -c ${browserConfig} -c /run/credentials/site-files-browser.service/accounts";
+        };
+      };
       site-files-web = {
         description = "File-service HTTPS endpoints";
         wantedBy = [ "multi-user.target" ];
-        wants = [
-          "site-files-dufs-admin.service"
-          "site-files-dufs-guest.service"
-        ];
-        after = [
-          "site-files-dufs-admin.service"
-          "site-files-dufs-guest.service"
-        ];
+        wants = [ "site-files-browser.service" ];
+        after = [ "site-files-browser.service" ];
         unitConfig.ConditionPathExists = "${state}/server.crt";
         serviceConfig = isolated // {
           User = "site-files-web";
@@ -387,8 +411,7 @@ in
           RuntimeDirectoryMode = "0750";
           BindPaths = [ "/run/site-files-web" ];
           BindReadOnlyPaths = isolated.BindReadOnlyPaths ++ [
-            "/run/site-files-dufs-admin"
-            "/run/site-files-dufs-guest"
+            "/run/site-files-browser"
             "/run/site-httpserver/socket"
           ];
           LoadCredential = [
@@ -424,8 +447,8 @@ in
             "CAP_NET_BIND_SERVICE"
           ];
           BindPaths = [
-            "${cfg.root}:/srv/files"
-            "${cfg.root}/guest:/srv/guest"
+            "${cfg.root}:/srv/shares/site-files-admin"
+            "${cfg.root}/user:/srv/shares/site-files-user"
             "${state}/samba"
             "/run/site-files-smb"
           ];

@@ -2,6 +2,7 @@
 let
   root = pkgs.runCommand "httpserver-root" { } ''
     mkdir -p $out/share $out/socket $out/tmp $out/etc/nginx
+    ln -s ${pkgs.nginx}/conf/mime.types $out/etc/nginx/mime.types
     chmod 1777 $out/tmp
   '';
   image = pkgs.dockerTools.buildLayeredImage {

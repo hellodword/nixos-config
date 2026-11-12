@@ -21,7 +21,7 @@
 | `wifi/environment` | systemd EnvironmentFile 格式，保存 SSID 和密码；示例使用单引号处理空格 |
 | `notifications/barkDeviceToken` | Bark 客户端的 APNs device token，区别于服务端生成的 device key |
 | `notifications/channels` | 原生 Apprise YAML 字符串，示例包含三个带 tag 的通道；仅使用 Bark 时填 `urls: []`，通道说明见[通知](notifications.md) |
-| `files/adminPassword`、`files/guestPassword` | 两个独立的长随机密码，供 HTTPS 与 SMB 使用；启用与证书签发见[文件服务](files.md) |
+| `files/adminPassword`、`files/userPassword` | 两个独立的长随机密码，供 HTTPS 与 SMB 使用；启用与证书签发见[文件服务](files.md) |
 | `files/certificateNames` | 实际访问的域名与 IP 数组；按[文件服务](files.md#首次配置)填写并手动签发 |
 | `password`、`repositories/*/url` | Restic 仓库密码和对象存储控制台给出的 S3 endpoint、bucket、仓库前缀；恢复既有仓库必须使用原密码 |
 | `repositories/*/environment` | 对应提供方的 S3 access key/secret；限定到该备份 bucket 所需权限 |
