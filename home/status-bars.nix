@@ -151,6 +151,11 @@ in
             format.today = "<b><u>{}</u></b>";
           };
         };
+        "clock#la" = {
+          timezone = "America/Los_Angeles";
+          format = "{:%H:%M LA}";
+          tooltip-format = "America/Los_Angeles\n{:%A, %Y-%m-%d %H:%M %Z}";
+        };
         "clock#cn" = {
           timezone = "Asia/Shanghai";
           format = "{:%H:%M CN}";
