@@ -89,28 +89,13 @@ let
           (networkTool "go-dnscollector" dns-collector)
         ]
         ++ lib.optionals (!laptop) [
+          nix
+          netcat-openbsd
           nodejs
           wireguard-tools
           openvpn
           (import ./wrangler.nix { inherit pkgs; })
-          (sandbox {
-            name = "colmena";
-            package = inputs.colmena.packages.${system}.default;
-            runtime = [
-              nix
-              git
-              openssh
-              netcat-openbsd
-            ];
-            network = true;
-            nix = true;
-            ssh = true;
-            readable = [
-              "tmp/vps/metadata.json"
-              "tmp/vps/nodes"
-            ];
-            passEnvironment = [ "NIX_CONFIG" ];
-          })
+          inputs.colmena.packages.${system}.default
         ];
     };
 in

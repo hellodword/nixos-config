@@ -11,14 +11,13 @@ nix develop .#laptop  # 桌面、网络和备份开发及 VM 提交
 nix develop .#vps     # 准备 VPS 材料、构建、Colmena 部署和 Worker 发布
 ```
 
-交互 shell、SOPS 和项目 Python 脚本以当前用户运行。下面的命令由 Bubblewrap 包装，仍使用原生命令名和参数；文件访问范围集中声明在 [dev-shells.nix](../nix/dev-shells.nix)。联网工具共用 host 网络，沿用 DNS、代理和 Lockdown。
+交互 shell、Nix、Colmena、SSH、SOPS 和项目 Python 脚本以当前用户直接运行。Colmena 沿用 host 的 Nix 与 SSH 配置、用户状态和 SSH agent。下面的命令由 Bubblewrap 包装，仍使用原生命令名和参数；文件访问范围集中声明在 [dev-shells.nix](../nix/dev-shells.nix)。联网工具共用 host 网络，沿用 DNS、代理和 Lockdown。
 
 | 工具 | 可访问的工作资料与持久状态 | 网络 |
 | --- | --- | --- |
 | actionlint、其调用的 ShellCheck | 只读项目源码 | 隔离 |
 | sing-box、dnsdist、dnsproxy、go-dnscollector | 只读源码，读写 `tmp/devtools/network/` | host 网络 |
 | oranc | 只读源码，读写 `tmp/devtools/cache/` 和 Nix 数据库，使用 Nix store、daemon 与缓存配置 | host 网络 |
-| Colmena | 只读源码、`tmp/vps/metadata.json` 和 `tmp/vps/nodes/`，使用 Nix；读写 `~/.ssh/`，读取系统 SSH 配置、公钥并使用 SSH agent | host 网络 |
 | Wrangler | 只读当前 Worker 目录，读写项目根 `.wrangler/` 登录状态 | host 网络 |
 
 每个沙箱工具都有 `tmp/.cache/nixos-config-tools/<工具>/`，其中 `cache/` 和 `logs/` 保存缓存与日志，`tmp/` 保存每次运行的临时文件。正常退出即清理本次临时目录；再次调用时，systemd-tmpfiles 清理一天前遗留的临时文件及三十天未使用的缓存、日志。运行中的目录通过文件锁保留。Wrangler 登录状态和部署材料单独保存，由用户清理。
@@ -37,7 +36,7 @@ sing-box check -c config.json
 sing-box run -c config.json
 ```
 
-该目录供网络工具共同读写；`tmp/vps/` 保存另一类部署材料，只向 Colmena 开放所需部分。Wrangler 的登录与发布流程见 [VPS 维护](vps.md#发布证书-worker)。新增工具时复用同一包装器，按其正常功能声明文件、网络和凭据权限。
+该目录供网络工具共同读写。Wrangler 的登录与发布流程见 [VPS 维护](vps.md#发布证书-worker)。需要隔离的工具通过同一包装器声明正常功能所需的文件、网络和凭据权限。
 
 ## 配置求值
 

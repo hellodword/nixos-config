@@ -75,9 +75,11 @@ done
 ssh-add -L
 ```
 
-节点的 `sshServer` 配置目标机的 OpenSSH 服务：`rootAuthorizedKeys` 填写 root 账号接受的公钥，`port` 定义 sshd 监听端口，省略时为 22。维护机 SSH 配置的 `Port` 是实际连接端口；存在端口映射时，两者可以不同。为供应商救援系统另行准备可用的 SSH 别名，例如 `edge-rescue`，按其要求配置密码或公钥认证、端口与代理。
+节点的 `sshServer` 配置目标机的 OpenSSH 服务：`rootAuthorizedKeys` 填写 root 账号接受的公钥，`port` 定义 sshd 监听端口，省略时为 22。维护机 SSH 配置的 `Port` 是实际连接端口；存在端口映射时，两者可以不同。供应商救援系统使用临时地址、端口和登录凭据，在安装时单独设置。
 
-确认节点的磁盘设备和 `uefi`。安装后的系统采用 `eth0` 等顺序网卡名，默认公网接口为 `eth0`；多网卡机器按安装后名称填写 `interface`，它同时用于网络配置和代理转发。救援系统可能采用不同的网卡名。`dhcp: true` 使用供应商 DHCP；静态网络填写 `dhcp: false`、`addresses`、`gateway` 和所需的 `nameservers`。`address` 是代理客户端和其他节点使用的 IPv4 地址。当前实例范围为 x86_64，`swapMiB` 默认 1024。
+确认节点的磁盘设备和 `uefi`。`disk` 填写正常启动环境中的系统盘名称，BIOS 下用于安装 GRUB；救援环境中的写入目标在安装时根据实际磁盘另行选择。例如，正常启动为 `/dev/vda`，救援环境中可能是 `/dev/vdb`。
+
+安装后的系统采用 `eth0` 等顺序网卡名，默认公网接口为 `eth0`；多网卡机器按安装后名称填写 `interface`，它同时用于网络配置和代理转发。救援系统可能采用不同的网卡名。`dhcp: true` 使用供应商 DHCP；静态网络填写 `dhcp: false`、`addresses`、`gateway` 和所需的 `nameservers`。`address` 是代理客户端和其他节点使用的 IPv4 地址。当前实例范围为 x86_64，`swapMiB` 默认 1024。
 
 镜像大小由系统闭包决定，并预留根分区空间；首次启动将根分区和 ext4 文件系统扩展到目标磁盘，再创建 swap 文件。UEFI 镜像为启动区预留 512 MiB，BIOS 使用 GRUB；两者保留五个启动代次。磁盘容量无需写入 inventory，写盘前确认目标盘能容纳生成的镜像。
 
@@ -141,28 +143,119 @@ wrangler login --device --browser=false \
 
 ## 逐台安装与部署
 
-先操作第一台；验证成功后，将 `node` 和 `rescue` 换成第二台，重复本节。每台从供应商控制台进入救援系统后执行：
+先设置 `node=$first`。完成该节点的安装、代理验证和重启后，再设置 `node=$second`，用第二台的救援参数重复本节。下面的命令在 `nix develop .#vps` 的 Bash 中执行。
 
 ```sh
 node=$first
-ssh_host=$(jq -r --arg node "$node" '.nodes[$node].sshHost' tmp/vps/metadata.json)
-rescue=edge-rescue
-disk=$(jq -r --arg node "$node" '.nodes[$node].disk // "/dev/vda"' tmp/vps/metadata.json)
-ssh "$rescue" 'lsblk -o NAME,SIZE,TYPE,MODEL,MOUNTPOINTS'
-stat -Lc '%s bytes %n' "tmp/vps/images/$node/nixos.img"
 ```
 
-写盘会覆盖目标磁盘。保存所需数据，核对 `disk` 与供应商磁盘，确认容量足够且目标分区未挂载，再执行：
+### 救援连接与目标磁盘
+
+从供应商控制台进入当前节点的救援系统，填写它提供的连接参数。以下以有权限写入目标盘的 root 用户为默认值，使用密码或键盘交互认证，密码由 SSH 在终端提示输入。需要代理时，在数组的目标地址之前加入 `-o 'ProxyCommand=…'`，填写维护机可用的完整代理命令。
+
+首次连接时通过供应商控制台核对救援 SSH 指纹；本次记录保存在对应节点的安装目录。命令使用 Linux 救援系统中的 Bash、gzip、GNU coreutils 和 util-linux。
 
 ```sh
-ssh "$rescue" "dd of='$disk' bs=4M conv=fsync status=progress && sync" \
-  < "tmp/vps/images/$node/nixos.img"
+read -r -p '救援地址：' rescue_address
+read -r -p '救援 SSH 端口 [22]：' rescue_port
+rescue_port=${rescue_port:-22}
+read -r -p '救援用户 [root]：' rescue_user
+rescue_user=${rescue_user:-root}
+
+install -d -m 700 tmp/vps/install
+rescue_ssh=(
+  -T -F /dev/null -p "$rescue_port"
+  -o BatchMode=no
+  -o PreferredAuthentications=keyboard-interactive,password
+  -o StrictHostKeyChecking=ask
+  -o GlobalKnownHostsFile=/dev/null
+  -o "UserKnownHostsFile=$PWD/tmp/vps/install/$node.known_hosts"
+  "$rescue_user@$rescue_address"
+)
+
+ssh "${rescue_ssh[@]}" 'bash -se' <<'RESCUE'
+for tool in gzip dd head sha256sum blockdev lsblk swapon sync; do
+  command -v "$tool"
+done
+lsblk -b -o NAME,PATH,SIZE,TYPE,MODEL,MOUNTPOINTS
+swapon --show
+RESCUE
 ```
 
-镜像由维护机流式传输，救援系统只需少量缓冲。写入成功后，将供应商启动方式设为清单中的 BIOS 或 UEFI，退出救援模式并从系统盘重启：
+结合磁盘容量、型号与供应商控制台选择目标整盘，填写救援系统显示的路径，例如 `/dev/vdb`：
 
 ```sh
-ssh "$rescue" reboot
+read -r -p '救援环境中的目标整盘：' rescue_disk
+```
+
+### 压缩、写入与回读
+
+在维护机压缩当前节点已构建的镜像，并显示传输前后的大小。本台部署完成前保留镜像构建链接和安装文件，传输重试时可复用压缩文件。
+
+```sh
+image=$(realpath -e "tmp/vps/images/$node/nixos.img")
+compressed="$PWD/tmp/vps/install/$node.img.gz"
+(
+  set -euo pipefail
+  umask 077
+  trap 'rm -f -- "$compressed.partial"' EXIT
+  gzip -n -6 -c -- "$image" > "$compressed.partial"
+  mv -- "$compressed.partial" "$compressed"
+  ls -lh -- "$image" "$compressed"
+)
+```
+
+**写盘会覆盖目标磁盘。** 保存所需数据并确认恢复方式，核对 `rescue_disk`、容量、挂载及 swap 使用情况，卸载该盘的分区并停用该盘上的 swap 后，执行下面的写入与校验。远端流式解压，内存只需少量缓冲。
+
+```sh
+(
+  set -euo pipefail
+  image_bytes=$(stat -Lc '%s' "$image")
+  local_sum=$(sha256sum -- "$image")
+  local_hash=${local_sum%% *}
+  printf '目标盘：%s\n镜像字节数：%s\n镜像 SHA-256：%s\n' \
+    "$rescue_disk" "$image_bytes" "$local_hash"
+
+  printf -v disk_command 'test -b %q && blockdev --getsize64 %q' \
+    "$rescue_disk" "$rescue_disk"
+  disk_bytes=$(ssh "${rescue_ssh[@]}" "$disk_command")
+  if (( disk_bytes < image_bytes )); then
+    printf '目标盘容量不足：%s bytes\n' "$disk_bytes" >&2
+    exit 1
+  fi
+
+  printf -v write_command \
+    'gzip -dc | dd of=%q bs=4M iflag=fullblock conv=fsync status=progress' \
+    "$rescue_disk"
+  printf -v write_command 'bash -o pipefail -c %q' "$write_command"
+  ssh "${rescue_ssh[@]}" "$write_command" < "$compressed"
+
+  printf -v verify_command 'bash -se -- %q %q' "$rescue_disk" "$image_bytes"
+  remote_sum=$(ssh "${rescue_ssh[@]}" "$verify_command" <<'RESCUE'
+set -o pipefail
+sync
+blockdev --flushbufs "$1"
+head -c "$2" -- "$1" | sha256sum
+RESCUE
+  )
+  remote_hash=${remote_sum%% *}
+  printf '磁盘回读 SHA-256：%s\n' "$remote_hash"
+  if [[ "$local_hash" != "$remote_hash" ]]; then
+    printf '校验失败，保持救援环境。\n' >&2
+    exit 1
+  fi
+  printf '校验通过，可以从系统盘启动。\n'
+)
+```
+
+回读只计算目标盘开头与原始镜像等长的内容，在远端完成哈希计算。解压、写入或回读失败时命令返回错误；保持救援环境，排除原因后重新执行完整的写入与校验。
+
+### 首次启动与部署
+
+校验通过后，将供应商启动方式设为清单中的 BIOS 或 UEFI，退出救援模式并从系统盘重启。可在供应商控制台重启，也可在设置好启动方式后执行：
+
+```sh
+ssh "${rescue_ssh[@]}" reboot
 ```
 
 首次启动在目标机生成 SSH host key，其指纹写入 journal 和控制台。通过供应商控制台核对指纹后，把主机加入维护机的 `known_hosts`。如果控制台无法显示启动输出，可在启动过一次后回到救援系统，只读挂载根分区，用 `ssh-keygen -lf <挂载点>/etc/ssh/ssh_host_ed25519_key.pub` 核对。后续部署、重启和回滚保留该身份。
@@ -170,6 +263,7 @@ ssh "$rescue" reboot
 首次连接使用普通 SSH，在接受提示前比对指纹。重装后若已有记录不匹配，先核对控制台，再用 `ssh-keygen -R '地址'` 清除该条旧记录；非默认端口使用 `ssh-keygen -R '[地址]:端口'`。
 
 ```sh
+ssh_host=$(jq -r --arg node "$node" '.nodes[$node].sshHost' tmp/vps/metadata.json)
 ssh "$ssh_host" 'df -h /; swapon --show; ip -4 address; resolvectl status'
 colmena apply test --impure --on "$node" --parallel 1 --no-substitute
 ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
@@ -211,7 +305,7 @@ ssh "$ssh_host" 'systemctl reboot'
 ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
 ```
 
-第二台使用 `node=$second`，重新读取它的 `sshHost` 并设置救援别名，重复上述过程。两台均上线后，再选择 `path-${first}-${second}-${second}-native-trojan` 等跨节点路径，以两个方向、两种协议完成实际请求。
+第二台使用 `node=$second`，从[救援连接与目标磁盘](#救援连接与目标磁盘)开始，填写该台的临时连接参数并选择目标盘，重复安装与部署。两台均上线后，再选择 `path-${first}-${second}-${second}-native-trojan` 等跨节点路径，以两个方向、两种协议完成实际请求。
 
 `test` 只改变当前运行系统，重启回到原来的启动默认代次；`switch` 同时设置启动默认代次。后续更新先重新准备材料并构建受影响系统，再按相同的 `test`、请求验证、`switch` 顺序部署。连接失效时通过供应商控制台选择旧启动项；系统内回退可用：
 

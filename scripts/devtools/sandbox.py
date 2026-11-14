@@ -90,8 +90,6 @@ def main():
                 if (root / name).exists():
                     args += ["--tmpfs", str(root / name)]
                     masked.append(str(root / name))
-        for name in policy["readable"]:
-            mount(root / name)
         for name in policy["writable"]:
             mount(directory(root / name), writable=True)
         mount(cache, writable=True)
@@ -112,23 +110,6 @@ def main():
         if policy["database"]:
             # oranc opens the live SQLite database and creates temporary files beside it.
             mount("/nix/var/nix/db", writable=True)
-        if policy["ssh"]:
-            # SSH maintains known_hosts with atomic replacements in this directory.
-            (home / ".ssh").mkdir(mode=0o700, exist_ok=True)
-            mount(home / ".ssh", writable=True)
-            for path in Path("/etc/ssh").glob("*.pub"):
-                mount(path)
-            for path in ("/etc/ssh/ssh_config", "/etc/ssh/ssh_known_hosts"):
-                mount(path)
-            mount(f"/run/site-identity/{home.name}/current")
-            socket = os.environ.get("SSH_AUTH_SOCK")
-            if socket:
-                mount(socket)
-                environment["SSH_AUTH_SOCK"] = socket
-            configuration = os.environ.get("SSH_CONFIG_FILE")
-            if configuration:
-                mount(Path(configuration).absolute())
-                environment["SSH_CONFIG_FILE"] = configuration
         if policy["worker"]:
             mount(directory(root / ".wrangler"), home / ".config/.wrangler", writable=True)
             environment.update(WRANGLER_SEND_METRICS="false", WRANGLER_LOG_PATH=str(logs),

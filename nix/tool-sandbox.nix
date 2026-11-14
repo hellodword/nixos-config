@@ -7,9 +7,7 @@
   network ? false,
   project ? true,
   writable ? [ ],
-  readable ? [ ],
   nix ? false,
-  ssh ? false,
   worker ? false,
   database ? false,
   passEnvironment ? [ ],
@@ -31,9 +29,7 @@ let
         network
         project
         writable
-        readable
         nix
-        ssh
         worker
         database
         passEnvironment
