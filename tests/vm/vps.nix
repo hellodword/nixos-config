@@ -59,13 +59,30 @@ let
         "192.0.2.30#dns.test.nix"
         "192.0.2.31#dns.test.nix"
       ];
-      authorizedKeys = [ ssh.snakeOilEd25519PublicKey ];
+      sshHost = "deploy-${name}";
+      sshServer = {
+        rootAuthorizedKeys = [ ssh.snakeOilEd25519PublicKey ];
+        port = if name == "edge" then 2222 else 22022;
+      };
       udpPort = if name == "edge" then 20000 else 20001;
       release = "v1";
       certificateId = "fixture";
       web = lib.optionalAttrs (name == "west") { "app.test.nix" = "http://127.0.0.1:18090"; };
     });
   };
+  sshConfig = pkgs.writeText "vps-maintenance-ssh.conf" (
+    lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (_: node: ''
+        Host ${node.sshHost}
+          HostName ${node.address}
+          Port ${toString node.sshServer.port}
+          User root
+          IdentityFile /root/.ssh/vps-deploy
+          IdentitiesOnly yes
+          ProxyCommand ${pkgs.netcat-openbsd}/bin/nc -x 192.0.2.30:1080 %h %p
+      '') metadata.nodes
+    )
+  );
   fixture = "${pkgs.coreutils}/bin/env PYTHONPATH=${source} ${python}/bin/python3";
   testNetwork = {
     security.pki.certificateFiles = [ tls.ca.cert ];
@@ -346,12 +363,15 @@ in
     controller.wait_for_unit("dnsmasq.service")
     controller.wait_for_open_port(853, addr="192.0.2.30", timeout=30)
     controller.wait_for_open_port(4460, addr="192.0.2.30", timeout=30)
-    controller.succeed("mkdir -m 700 -p /root/.ssh /run/vps; cp -r ${credentials}/. /run/vps/; chmod -R u+w /run/vps; cp ${keys}/ssh /root/.ssh/id_ed25519; chmod 600 /root/.ssh/id_ed25519")
+    controller.wait_for_open_port(1080, addr="192.0.2.30", timeout=30)
+    controller.succeed("mkdir -m 700 -p /root/.ssh /run/vps; cp -r ${credentials}/. /run/vps/; chmod -R u+w /run/vps; install -m 600 ${keys}/ssh /root/.ssh/vps-deploy; install -m 600 ${sshConfig} /root/.ssh/config")
     addresses = {"edge": "192.0.2.10", "west": "192.0.2.11"}
+    ssh_hosts = ${builtins.toJSON (lib.mapAttrs (_: node: node.sshHost) metadata.nodes)}
+    ssh_ports = ${builtins.toJSON (lib.mapAttrs (_: node: node.sshServer.port) metadata.nodes)}
     images = ${builtins.toJSON (lib.mapAttrs (_: image: "${image}/nixos.img") images)}
 
     def remote(machine, command):
-        return f"ssh -o BatchMode=yes -o ConnectTimeout=3 root@{addresses[machine.name]} " + shlex.quote("set -euo pipefail; " + command)
+        return f"ssh -o BatchMode=yes -o ConnectTimeout=3 {ssh_hosts[machine.name]} " + shlex.quote("set -euo pipefail; " + command)
 
     def succeed(machine, command, timeout=60):
         return controller.succeed(remote(machine, command), timeout=timeout)
@@ -359,9 +379,13 @@ in
     def wait_unit(machine, unit):
         controller.wait_until_succeeds(remote(machine, "systemctl is-active " + unit), timeout=120)
 
-    def powercycle(machine):
-        succeed(machine, "systemctl poweroff --no-block")
+    def poweroff(machine):
+        # Return the SSH acknowledgement before shutdown closes its connection.
+        succeed(machine, "systemd-run --unit=vps-test-poweroff --on-active=2s --timer-property=AccuracySec=100ms systemctl poweroff")
         machine.wait_for_shutdown(timeout=datetime.timedelta(seconds=60))
+
+    def powercycle(machine):
+        poweroff(machine)
         machine.start()
         wait_unit(machine, "sshd.service")
 
@@ -373,7 +397,7 @@ in
                             str(machine.state_dir / "root.qcow2"), "10G"], check=True)
             machine.start()
             address = addresses[machine.name]
-            scan = f"ssh-keyscan -t ed25519 {address} > /root/.ssh/{machine.name}.pub"
+            scan = f"ssh-keyscan -p {ssh_ports[machine.name]} -t ed25519 {address} > /root/.ssh/{machine.name}.pub"
             controller.wait_until_succeeds(scan, timeout=120)
             fingerprint = controller.succeed(f"ssh-keygen -lf /root/.ssh/{machine.name}.pub").split()[1]
             machine.wait_for_console_text(re.escape(fingerprint), timeout=30)
@@ -408,7 +432,8 @@ in
                 print(controller.succeed("free -m; df -h / /nix/store; journalctl -b -u nix-daemon -u systemd-oomd --no-pager; dmesg | tail -n 40"))
                 print(controller.execute(remote({"edge": edge, "west": west}[name], "journalctl -b -u site-vps-proxy -u site-vps-certificate -u nginx --no-pager -n 80"))[1])
                 raise RuntimeError(f"{name}: Colmena {goal} exited {status}: {output}")
-    deploy("v1", "switch")
+    with subtest("Colmena deploys through SSH aliases, identities, ports and a SOCKS proxy"):
+        deploy("v1", "switch")
     for machine in (edge, west):
         wait_unit(machine, "site-vps-proxy.service")
         succeed(machine, "test $(stat -c %a /var/lib/site-vps/releases/v1/proxy.json) = 600")
@@ -474,8 +499,7 @@ in
         controller.wait_until_succeeds(f"test $(cat /run/stream-count) -gt {count + 3}")
         controller.succeed("systemctl stop vps-stream.service")
         select_path("path-west-west-us-trojan")
-        succeed(west, "systemctl poweroff --no-block")
-        west.wait_for_shutdown(timeout=datetime.timedelta(seconds=60))
+        poweroff(west)
         controller.fail("curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/")
         selected = json.loads(controller.succeed("curl --fail -sS http://127.0.0.1:19090/proxies/exit-us"))
         assert selected["now"] == "path-west-west-us-trojan", selected
@@ -511,7 +535,6 @@ in
     wait_unit(edge, "site-vps-proxy.service")
     for machine in (edge, west):
         print(succeed(machine, "df -h / /boot; swapon --show"))
-        succeed(machine, "systemctl poweroff --no-block")
-        machine.wait_for_shutdown(timeout=datetime.timedelta(seconds=60))
+        poweroff(machine)
   '';
 }

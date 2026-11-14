@@ -44,9 +44,9 @@ let
       ++ [ ../modules/vps/proxy.nix ]
       ++ map (path: ../. + "/${path}") (node.modules or [ ]);
     deployment = {
-      targetHost = node.address;
-      targetPort = node.sshPort or 22;
-      targetUser = "root";
+      targetHost = node.sshHost;
+      targetUser = null;
+      targetPort = null;
       buildOnTarget = false;
       tags = node.tags or [ ];
       keys = lib.genAttrs [ "proxy.json" "certificate.json" ] (file: {

@@ -16,7 +16,8 @@ def generate(source, keys, output):
     document = yaml.safe_load((source / 'data/secrets/vps.example.yaml').read_text())
     for name, node in document['nodes'].items():
         node.update(serverName=f'{name}.test.nix', interface='eth0', dhcp=(name == 'west'),
-                    addresses=[node['address'] + '/24'], authorizedKeys=[(keys / 'ssh.pub').read_text().strip()])
+                    addresses=[node['address'] + '/24'], sshHost=f'deploy-{name}')
+        node['sshServer']['rootAuthorizedKeys'] = [(keys / 'ssh.pub').read_text().strip()]
     document['workers']['certificates']['url'] = 'https://cert.test.nix:8443'
     document['nodes']['west']['web'] = {'app.test.nix': 'http://127.0.0.1:18090'}
     document['exits'] |= {

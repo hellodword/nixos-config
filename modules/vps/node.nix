@@ -46,8 +46,8 @@ in
     requires = [ "systemd-growfs-root.service" ];
     after = [ "systemd-growfs-root.service" ];
   };
-  users.users.root.openssh.authorizedKeys.keys = node.authorizedKeys;
-  services.openssh.ports = [ (node.sshPort or 22) ];
+  users.users.root.openssh.authorizedKeys.keys = node.sshServer.rootAuthorizedKeys;
+  services.openssh.ports = [ (node.sshServer.port or 22) ];
   systemd.network.networks."10-uplink" = {
     matchConfig.Name = interface;
     networkConfig = {

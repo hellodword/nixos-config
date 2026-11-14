@@ -2,9 +2,11 @@
 
 VPS 使用独立锁定的 `nixpkgs-remote` 和轻量 profile：持久 ext4 根分区、首次启动扩容、磁盘 swap、SSH 公钥登录。BIOS 和 UEFI 由 inventory 的 `uefi` 选择。构建在维护机完成，Colmena 通过 SSH 复制闭包并激活，适合内存较小的 VPS。
 
-VPS 的状态随根磁盘保留。这里采用普通持久系统，便于保留 SSH host key、服务数据、证书和可回滚的凭据。应用使用原生 NixOS 模块；每个节点的 `modules` 数组列出仓库相对路径，为完整系统组合不同服务。网络、磁盘和 SSH 来自同一份基础配置，bootstrap 与完整系统共用。
+VPS 的状态随根磁盘保留。这里采用普通持久系统，便于保留 SSH host key、服务数据、证书和可回滚的凭据。应用使用原生 NixOS 模块；每个节点的 `modules` 数组列出仓库相对路径，为完整系统组合不同服务。网络、磁盘和 SSH 服务端来自同一份基础配置，bootstrap 与完整系统共用。
 
 ## 建立私有 inventory
+
+分批安装时，先在 inventory 中声明本轮准备上线的两台 VPS。仍由 nife 管理的节点继续使用原有 Worker 和订阅；新证书与订阅 Worker 分别选择独立的名称和路由前缀。维护机先切换到保留节点提供的可用出口，确保重装中的 VPS 不承担本轮构建、Cloudflare 登录或 SSH 所需的网络。
 
 从 [inventory 示例](../data/secrets/vps.example.yaml) 开始。示例地址、密钥和密码均需替换。每份订阅用 `openssl rand -hex 32` 生成一把独立的 `key`，以带引号的字符串保存；各节点的证书获取 token 也分别用该命令生成。`secrets` 表保存证书服务和上游出口等配置引用的秘密值。订阅路径使用 `python3 -c 'import uuid; print(uuid.uuid4())'` 生成的随机 UUID。
 
@@ -15,6 +17,16 @@ nix develop .#vps
 ```
 
 该环境提供生成材料、构建和部署所需的工具。SOPS 解密后，由 Python 生成材料；构建用 `nix build`，节点部署用 Colmena，Worker 发布用 Wrangler。各工具的文件与网络权限见[开发环境](validation.md#开发环境)。
+
+下文从仓库根目录执行。先设置本轮节点和订阅名称，与 YAML 中的键一致：
+
+```sh
+first=edge
+second=west
+subscription=primary
+```
+
+首次建立密文：
 
 ```sh
 (
@@ -51,43 +63,157 @@ sudo env SOPS_AGE_KEY_FILE="$key_file" "$(command -v sops)" \
 
 每台 VPS 只收到属于自身的代理服务配置和证书请求凭据，保存于 `/var/lib/site-vps/releases/<代次>/`。客户端只收到被授权的代理路径。age 身份和上游出口凭据不随订阅交付；Porkbun API 凭据只交给证书 Worker。
 
-## 首次安装与日常部署
+## 确认 SSH 与安装参数
 
-先填写节点的 `authorizedKeys`、磁盘设备和 `uefi`。安装后的系统采用 `eth0` 等顺序网卡名，默认公网接口为 `eth0`；多网卡机器按安装后名称填写 `interface`，它同时用于网络配置和代理转发。救援系统可能采用不同的网卡名。`dhcp: true` 使用供应商 DHCP；静态网络填写 `dhcp: false`、`addresses`、`gateway` 和 `nameservers`。`address` 是其他节点和部署端使用的 IPv4 地址。当前实例范围为 x86_64，`swapMiB` 默认 1024。
+节点名用于系统主机名、出口关系和 Colmena 的 `--on` 选择；节点的 `sshHost` 指定维护机连接时使用的 SSH 别名。例如，`edge.sshHost: foo` 对应 `colmena ... --on edge` 经 `foo` 连接。维护机的 `identity.sops.yaml` 中，`ssh.hosts` 管理 `HostName`、`Port`、`User`、`IdentityFile` 和代理；本流程在其中声明 `User root`。填写方式见[身份示例](../data/secrets/identity.example.yaml)，身份发布与激活见[身份管理](secrets.md#gpgssh-与-git-身份)。已有可用定义可直接沿用。
+
+```sh
+for node in "$first" "$second"; do
+  ssh_host=$(jq -r --arg node "$node" '.nodes[$node].sshHost' tmp/vps/metadata.json)
+  ssh -G "$ssh_host" | rg '^(hostname|port|user|identityfile|proxycommand) '
+done
+ssh-add -L
+```
+
+节点的 `sshServer` 配置目标机的 OpenSSH 服务：`rootAuthorizedKeys` 填写 root 账号接受的公钥，`port` 定义 sshd 监听端口，省略时为 22。维护机 SSH 配置的 `Port` 是实际连接端口；存在端口映射时，两者可以不同。为供应商救援系统另行准备可用的 SSH 别名，例如 `edge-rescue`，按其要求配置密码或公钥认证、端口与代理。
+
+确认节点的磁盘设备和 `uefi`。安装后的系统采用 `eth0` 等顺序网卡名，默认公网接口为 `eth0`；多网卡机器按安装后名称填写 `interface`，它同时用于网络配置和代理转发。救援系统可能采用不同的网卡名。`dhcp: true` 使用供应商 DHCP；静态网络填写 `dhcp: false`、`addresses`、`gateway` 和所需的 `nameservers`。`address` 是代理客户端和其他节点使用的 IPv4 地址。当前实例范围为 x86_64，`swapMiB` 默认 1024。
 
 镜像大小由系统闭包决定，并预留根分区空间；首次启动将根分区和 ext4 文件系统扩展到目标磁盘，再创建 swap 文件。UEFI 镜像为启动区预留 512 MiB，BIOS 使用 GRUB；两者保留五个启动代次。磁盘容量无需写入 inventory，写盘前确认目标盘能容纳生成的镜像。
 
-构建仅含系统和 SSH 公钥的 bootstrap 磁盘镜像：
+在供应商控制台为两台 VPS 放行实际 SSH TCP 端口、TCP 443 和 UDP 20000–29999，并确认救援启动和控制台可用。节点间转发的说明见[入口、出口与端口](#入口出口与端口)。
+
+## 构建系统
+
+在维护机先完成两台的 bootstrap 镜像和完整系统构建。镜像仅含基础系统和登录公钥，完整系统的运行凭据在后续部署时下发。
 
 ```sh
-nix build --impure --out-link result '.#vpsBootstrap.edge'
+(
+  set -e
+  install -d -m 700 tmp/vps/images tmp/vps/systems
+  for node in "$first" "$second"; do
+    nix build --impure --out-link "tmp/vps/images/$node" ".#vpsBootstrap.$node"
+    nix build --impure --out-link "tmp/vps/systems/$node" ".#colmenaHive.toplevel.$node"
+  done
+)
 ```
 
-在维护机生成镜像后，可交给供应商导入，或通过 SSH 流式写入救援系统中的目标盘。下面的地址和设备名须替换为实际值。写盘会覆盖目标盘，先保存已有数据，并确认供应商控制台可用。
+## 发布证书 Worker
+
+Wrangler 读取当前 Worker 的发布目录，使用 host 的网络、DNS 和代理。登录状态保存在项目根目录 `.wrangler/`，两个 Worker 共用这份状态；文件访问与缓存位置见[开发环境](validation.md#开发环境)。在仓库根目录登录，浏览器打开终端给出的设备授权地址并输入代码：
 
 ```sh
-rescue=root@<救援地址>
-ssh "$rescue" 'lsblk -d -o NAME,SIZE,MODEL'
-# 确认 /dev/vda 是待安装的系统盘后再写入。
-ssh "$rescue" 'dd of=/dev/vda bs=4M conv=fsync status=progress && sync' < result/nixos.img
+wrangler login --device --browser=false \
+  --scopes account:read \
+  --scopes user:read \
+  --scopes workers_scripts:write \
+  --scopes workers_routes:write \
+  --scopes zone:read
+```
+
+已有项目登录状态时可直接发布。参数见 [Wrangler 登录文档](https://developers.cloudflare.com/workers/wrangler/commands/general/#login)。
+
+```sh
+(
+  cd tmp/vps/workers/certificates
+  wrangler deploy && wrangler secret bulk secrets.json
+)
+```
+
+在新证书 Worker 的 **Settings → Domains & Routes → Add → Route** 中选择 zone，填写 `https://example.com/<certificate-route-uuid>*`。域名需要启用代理的 DNS 记录；路由前缀与 inventory 的 `workers.certificates.url` 对应。控制台操作见 [Cloudflare Routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)。后续发布保留这些路由。
+
+用节点将要使用的请求配置获取证书，确认 token、Porkbun 凭据、证书域名及有效期都可用：
+
+```sh
+(
+  set -e
+  for node in "$first" "$second"; do
+    release=$(jq -r --arg node "$node" '.nodes[$node].release' tmp/vps/metadata.json)
+    python3 scripts/vps/certificate.py \
+      --request "tmp/vps/nodes/$node/$release/certificate.json" \
+      --state "tmp/vps/certificates/$node" \
+      --ca-file /etc/ssl/certs/ca-certificates.crt
+  done
+)
+```
+
+取回的证书与私钥保存在 `tmp/vps/certificates/`，部署材料清理时一并删除。节点后续独立获取和更新证书，见[证书更新](#证书更新)。
+
+## 逐台安装与部署
+
+先操作第一台；验证成功后，将 `node` 和 `rescue` 换成第二台，重复本节。每台从供应商控制台进入救援系统后执行：
+
+```sh
+node=$first
+ssh_host=$(jq -r --arg node "$node" '.nodes[$node].sshHost' tmp/vps/metadata.json)
+rescue=edge-rescue
+disk=$(jq -r --arg node "$node" '.nodes[$node].disk // "/dev/vda"' tmp/vps/metadata.json)
+ssh "$rescue" 'lsblk -o NAME,SIZE,TYPE,MODEL,MOUNTPOINTS'
+stat -Lc '%s bytes %n' "tmp/vps/images/$node/nixos.img"
+```
+
+写盘会覆盖目标磁盘。保存所需数据，核对 `disk` 与供应商磁盘，确认容量足够且目标分区未挂载，再执行：
+
+```sh
+ssh "$rescue" "dd of='$disk' bs=4M conv=fsync status=progress && sync" \
+  < "tmp/vps/images/$node/nixos.img"
+```
+
+镜像由维护机流式传输，救援系统只需少量缓冲。写入成功后，将供应商启动方式设为清单中的 BIOS 或 UEFI，退出救援模式并从系统盘重启：
+
+```sh
 ssh "$rescue" reboot
 ```
 
-镜像由维护机直接传输到磁盘，救援系统只需处理流中的少量缓冲。将供应商启动方式设为清单中的 BIOS 或 UEFI，并从系统盘启动。
-
 首次启动在目标机生成 SSH host key，其指纹写入 journal 和控制台。通过供应商控制台核对指纹后，把主机加入维护机的 `known_hosts`。如果控制台无法显示启动输出，可在启动过一次后回到救援系统，只读挂载根分区，用 `ssh-keygen -lf <挂载点>/etc/ssh/ssh_host_ed25519_key.pub` 核对。后续部署、重启和回滚保留该身份。
 
-准备好下节的证书 Worker，再构建和部署完整系统。命令显式选择节点，按一台一台的顺序操作；维护机先完成构建，再向 VPS 传输闭包。
+首次连接使用普通 SSH，在接受提示前比对指纹。重装后若已有记录不匹配，先核对控制台，再用 `ssh-keygen -R '地址'` 清除该条旧记录；非默认端口使用 `ssh-keygen -R '[地址]:端口'`。
 
 ```sh
-nix build --impure --no-link '.#colmenaHive.toplevel.edge'
-colmena apply test --impure --on edge --parallel 1 --no-substitute
-ssh root@<节点地址> 'systemctl status site-vps-proxy haproxy --no-pager'
-# 确认 SSH 和实际代理请求正常后，保存为启动默认代次。
-colmena apply switch --impure --on edge --parallel 1 --no-substitute
+ssh "$ssh_host" 'df -h /; swapon --show; ip -4 address; resolvectl status'
+colmena apply test --impure --on "$node" --parallel 1 --no-substitute
+ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
 ```
 
-`test` 只改变当前运行系统，重启仍回到原来的启动默认代次。`switch` 同时设置启动默认代次。连接失效时可通过供应商控制台选择旧启动项；系统内回退可用：
+接着验证当前节点自身承载的出口。列出可选路径，`probe_path` 选择本台入口、本台承载的路径；下例对应示例 inventory 的原生出口：
+
+```sh
+provider="tmp/vps/subscriptions/$subscription/linux.json"
+jq -r '.outbounds[].tag' "$provider"
+probe_path="path-${node}-${node}-${node}-native-trojan"
+umask 077
+install -d -m 700 tmp/devtools/network
+jq -e --arg path "$probe_path" '
+  (first(.outbounds[] | select(.tag == $path)) // error("proxy path not found")) as $outbound
+  | {
+      inbounds: [{type: "mixed", listen: "127.0.0.1", listen_port: 11080}],
+      outbounds: [$outbound],
+      route: {final: $path}
+    }
+' "$provider" > tmp/devtools/network/vps-probe.json &&
+sing-box check -c tmp/devtools/network/vps-probe.json &&
+sing-box run -c tmp/devtools/network/vps-probe.json
+```
+
+在另一个终端发出实际请求，确认返回的 `ip` 属于选中的出口：
+
+```sh
+curl --fail --show-error --max-time 20 \
+  --socks5-hostname 127.0.0.1:11080 https://www.cloudflare.com/cdn-cgi/trace
+```
+
+用 Ctrl-C 停下探测。把 `probe_path` 的协议改为 `hysteria2`，重新生成配置并执行同一请求，确认 UDP 入口也可用。随后保存为默认启动代次，并确认重启后的服务：
+
+```sh
+colmena apply switch --impure --on "$node" --parallel 1 --no-substitute
+ssh "$ssh_host" 'systemctl reboot'
+# 等待机器启动后执行。
+ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
+```
+
+第二台使用 `node=$second`，重新读取它的 `sshHost` 并设置救援别名，重复上述过程。两台均上线后，再选择 `path-${first}-${second}-${second}-native-trojan` 等跨节点路径，以两个方向、两种协议完成实际请求。
+
+`test` 只改变当前运行系统，重启回到原来的启动默认代次；`switch` 同时设置启动默认代次。后续更新先重新准备材料并构建受影响系统，再按相同的 `test`、请求验证、`switch` 顺序部署。连接失效时通过供应商控制台选择旧启动项；系统内回退可用：
 
 ```sh
 sudo nix-env -p /nix/var/nix/profiles/system --rollback
@@ -95,6 +221,31 @@ sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch
 ```
 
 旧凭据目录和证书对保留，供旧代次使用。清理旧系统代次后，再删除已确认没有系统引用的旧凭据目录。应用数据和运行凭据还需按各自恢复要求备份；系统重建不能代替数据恢复。
+
+## 发布订阅并切换客户端
+
+两台 VPS 的路径均可用后，发布新订阅 Worker：
+
+```sh
+(
+  cd tmp/vps/workers/subscriptions
+  wrangler deploy
+)
+```
+
+在该 Worker 的 **Settings → Domains & Routes → Add → Route** 中配置另一条 `https://example.com/<subscription-route-uuid>*`。完整订阅 URL 是这个前缀拼接 `subscriptions.<名称>.path`，客户端识别方式见[订阅与分流](#订阅与分流)。在本机验证下载内容与准备的文件一致：
+
+```sh
+read -r -s -p '新订阅的完整 HTTPS 地址：' subscription_url
+printf '\n'
+curl --fail --show-error "${subscription_url}?client=linux" \
+  --output "tmp/vps/subscriptions/$subscription/downloaded-linux.json"
+cmp "tmp/vps/subscriptions/$subscription/linux.json" \
+  "tmp/vps/subscriptions/$subscription/downloaded-linux.json"
+unset subscription_url
+```
+
+完整 URL 可用于官方 sing-box 或 Shadowrocket。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
 
 ## 入口、出口与端口
 
@@ -181,43 +332,7 @@ journalctl -b -u systemd-resolved -u site-vps-proxy
 
 时间同步配置与排查命令见 [chrony NTS](network.md#时间同步)。
 
-## 发布 Worker 与管理证书
-
-Wrangler 读取当前 Worker 的发布目录，使用 host 的网络、DNS 和代理。登录状态保存在项目根目录 `.wrangler/`，权限为 `0700`，已由 Git 忽略。从两个 Worker 子目录运行时共用这份登录状态；Cloudflare 权限由登录时授予的 scopes 决定。缓存、日志和临时构建文件的位置见[开发环境](validation.md#开发环境)。
-
-已有 `~/.local/state/wrangler/` 登录状态时，可在首次使用新入口前复制到尚未创建的项目目录：
-
-```sh
-cp -a ~/.local/state/wrangler .wrangler
-chmod 700 .wrangler
-```
-
-在仓库根目录登录时，沙箱使用空工作目录。按下面的范围授权，然后在浏览器打开终端显示的设备授权地址并输入代码：
-
-```sh
-wrangler login --device --browser=false \
-  --scopes account:read \
-  --scopes user:read \
-  --scopes workers_scripts:write \
-  --scopes workers_routes:write \
-  --scopes zone:read
-```
-
-登录参数见 [Wrangler 文档](https://developers.cloudflare.com/workers/wrangler/commands/general/#login)。在 inventory 中填写各 Worker 名称和证书服务地址，发布在维护机显式执行：
-
-```sh
-(
-  cd tmp/vps/workers/certificates
-  wrangler deploy
-  wrangler secret bulk secrets.json
-)
-(
-  cd tmp/vps/workers/subscriptions
-  wrangler deploy
-)
-```
-
-首次发布后，在 Cloudflare 控制台对应 Worker 的 **Settings → Domains & Routes → Add → Route** 中，选择域名所属 zone 并填写 `https://example.com/<worker-route-uuid>*`；域名需有启用代理的 DNS 记录，详见 [Cloudflare Routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)。两个 Worker 使用各自的路由前缀。后续发布保留控制台中的路由，生成的 Wrangler 配置关闭 workers.dev 和预览地址。
+## 证书更新
 
 `workers.certificates.url` 填写证书 Worker 路由去掉末尾 `*` 的完整 HTTPS 基地址；节点名称会追加在该地址之后，例如 `https://example.com/<certificate-route-uuid>/edge`。
 
@@ -227,10 +342,11 @@ wrangler login --device --browser=false \
 
 ## 清理部署材料
 
-本轮 VPS 部署和 Worker 发布全部完成后，在仓库根目录删除解密派生文件。Wrangler 登录状态独立保留，后续可直接重新准备和发布；需要撤销维护机登录时运行 `wrangler logout`。
+本轮 VPS 部署和 Worker 发布全部完成、手动代理探测停止后，在仓库根目录删除部署材料及探测配置。Wrangler 登录状态独立保留，后续可直接重新准备和发布；需要撤销维护机登录时运行 `wrangler logout`。
 
 ```sh
 rm -r -- tmp/vps
+rm -- tmp/devtools/network/vps-probe.json
 ```
 
 ## 撤销订阅

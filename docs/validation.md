@@ -37,7 +37,7 @@ sing-box check -c config.json
 sing-box run -c config.json
 ```
 
-该目录供网络工具共同读写；`tmp/vps/` 保存另一类部署材料，只向 Colmena 开放所需部分。Wrangler 的登录与发布流程见 [VPS 维护](vps.md#发布-worker-与管理证书)。新增工具时复用同一包装器，按其正常功能声明文件、网络和凭据权限。
+该目录供网络工具共同读写；`tmp/vps/` 保存另一类部署材料，只向 Colmena 开放所需部分。Wrangler 的登录与发布流程见 [VPS 维护](vps.md#发布证书-worker)。新增工具时复用同一包装器，按其正常功能声明文件、网络和凭据权限。
 
 ## 配置求值
 
@@ -78,7 +78,7 @@ nix eval --no-update-lock-file --json --impure \
 | `vm-backup` | 实际窗口触发、独立仓库、中断和有界关机、重启恢复、gVisor 通知与补发 |
 | `vm-desktop` | 三会话登录、注销、锁屏、钱包、壁纸、输入法与显示状态，以及加密启动和重启后的恢复 |
 | `vm-applications` | 三会话中的真实应用启动、中文输入与退出提醒；Sway 完成共享的 DevContainer 和 Vaultwarden 全流程 |
-| `vm-vps` | 实际 bootstrap 镜像的 BIOS/UEFI 启动、512 MiB 客体、DHCP/静态网络、扩容与 swap、真实 SSH、Colmena 凭据下发与 test/switch、跨节点协议转发、多承载出口故障切换、路径选择与连接延续、系统 DoT 与 NTS、用户态隧道出口、重启回滚及 Wrangler 沙箱中的 Worker 打包 |
+| `vm-vps` | 实际 bootstrap 镜像的 BIOS/UEFI 启动、512 MiB 客体、DHCP/静态网络、扩容与 swap、独立于节点名的 SSH 别名、指定身份、非默认端口及 SOCKS 代理下的 Colmena 凭据下发与 test/switch、跨节点协议转发、多承载出口故障切换、路径选择与连接延续、系统 DoT 与 NTS、用户态隧道出口、重启回滚及 Wrangler 沙箱中的 Worker 打包 |
 | `e2e` | 上述 `vm-*` 结果的聚合 |
 
 例如，身份脚本的修改先运行：

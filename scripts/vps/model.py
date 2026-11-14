@@ -55,8 +55,11 @@ class Inventory:
             if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", sni) or sni in snis:
                 raise ValueError("nodes require unique DNS serverName values")
             snis.add(sni)
-            if not node.get("authorizedKeys"):
-                raise ValueError("nodes require SSH authorizedKeys")
+            ssh_host = node["sshHost"]
+            if not isinstance(ssh_host, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", ssh_host):
+                raise ValueError("nodes require a concrete SSH host alias")
+            if not node["sshServer"].get("rootAuthorizedKeys"):
+                raise ValueError("nodes require sshServer.rootAuthorizedKeys")
             if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,15}", node.get("interface", "eth0")):
                 raise ValueError("invalid uplink interface name")
             for path in node.get("modules", []):
@@ -218,7 +221,7 @@ class Inventory:
             result["nodes"][name] = {
                 key: copy.deepcopy(value) for key, value in node.items()
                 if key in {"address", "serverName", "udpSlot", "uefi", "disk", "interface", "dhcp",
-                           "addresses", "gateway", "nameservers", "authorizedKeys", "sshPort",
+                           "addresses", "gateway", "nameservers", "sshHost", "sshServer",
                            "swapMiB", "tags", "modules", "web"}
             } | {"udpPort": self.port(name), "release": digest([self.server(name), cert])[:32],
                  "certificateId": digest(cert["names"])[:16]}
