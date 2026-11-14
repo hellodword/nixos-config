@@ -40,7 +40,7 @@ nix store info --store "$cache_url"
 bash scripts/nix-cache.sh print
 bash scripts/nix-cache.sh install
 nix config show | rg 'substituters|trusted-public-keys|require-sigs'
-nix develop
+nix develop .#laptop
 ```
 
 `install` 将配置写入 `${XDG_CONFIG_HOME:-$HOME/.config}/nix/nixos-config-cache.conf`，并在同目录 `nix.conf` 中加入相对 `include`，保留原有设置。再次运行会更新托管片段，不重复添加 include。之后直接使用原生 Nix 命令。重建容器或更新缓存声明后重新执行安装命令，也可将它接入容器自身已有的初始化流程。
@@ -64,7 +64,7 @@ sudo systemctl restart nix-daemon.service
 
 启动时纳入已经准备好的产物，阶段结束时补齐钩子未覆盖的已有输出，再等待发布完成。部分构建或 VM 失败时，其余已完成的可再分发路径仍可发布，供下轮使用。发布时机见 [CI 执行顺序](ci.md#主机与执行顺序)。
 
-默认开发环境及其依赖随 CI 发布到项目缓存。配置缓存后，本地和 CI 的 `nix develop` 可复用其中的工具，包括 VM 提交客户端。缓存匹配相同的 store path，flake 求值仍在当前机器进行。
+`laptop` 和 `vps` 开发环境分别随对应的 CI 构建发布到项目缓存。配置缓存后，本地和 CI 的 `nix develop` 可复用其中的工具，包括 VM 提交客户端。缓存匹配相同的 store path，flake 求值仍在当前机器进行。
 
 公开范围包括可再分发的自定义包、配置产物及成功的 Nix VM 测试结果。输入相同的检查可以恢复已有成功结果，如何区分复用与本轮执行见[验证指南](validation.md#完整验收与计时)。
 
@@ -116,7 +116,7 @@ gh secret set NIX_CACHE_SIGNING_KEY < "$signing_key"
 
 ```sh
 nix build --no-link .#oranc
-nix develop --command python3 -m tests.integration.cache
+nix develop .#laptop --command python3 -m tests.integration.cache
 ```
 
 集成使用临时 registry 和合成密钥，覆盖范围见[验证指南](validation.md#完整验收与计时)。首次启用和权限变更还需通过真实 Actions 运行确认 GHCR 匿名访问、发布权限及后续缓存命中。

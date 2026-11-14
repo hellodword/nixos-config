@@ -18,7 +18,7 @@ VPS 使用[整份加密 inventory](vps.md#建立私有-inventory)，维护机解
 
 | 字段 | 填写方式 |
 | --- | --- |
-| `login/passwordHash` | 在本地运行 `nix develop --command mkpasswd -m yescrypt`；输入登录密码，保存生成的 hash |
+| `login/passwordHash` | 在本地运行 `nix develop .#laptop --command mkpasswd -m yescrypt`；输入登录密码，保存生成的 hash |
 | `tailscale/authKey` | Tailscale 管理控制台生成的设备注册 key；按设备归属设置有效期与 tags。已有设备身份由持久状态保存 |
 | `wifi/environment` | systemd EnvironmentFile 格式，保存 SSID 和密码；示例使用单引号处理空格 |
 | `notifications/barkDeviceToken` | Bark 客户端的 APNs device token，区别于服务端生成的 device key |

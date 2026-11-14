@@ -11,11 +11,10 @@ VPS 的状态随根磁盘保留。这里采用普通持久系统，便于保留 
 整份 YAML 作为 SOPS 的 binary 输入加密，密文以 YAML 保存到 `secrets/vps.sops.yaml`。节点名称、地址、关系和秘密字段名随正文一起加密。接收者在根目录 `.sops.yaml` 声明，可复用已有 age 身份；离线备份该身份。从仓库根目录准备维护工具：
 
 ```sh
-nix shell --inputs-from . .#vps-python .#wrangler \
-  nixpkgs-remote#sops nixpkgs-remote#openssl colmena --command bash
+nix develop .#vps
 ```
 
-这些工具使用锁定版本。`vps-python` 提供生成材料所需的 Python 和 YAML 支持，`wrangler` 是下文的沙箱入口；构建用 `nix build`，节点部署用 Colmena。仓库的默认开发环境另外提供完整开发和测试工具。
+该环境提供生成材料、构建和部署所需的工具。SOPS 解密后，由 Python 生成材料；构建用 `nix build`，节点部署用 Colmena，Worker 发布用 Wrangler。各工具的文件与网络权限见[开发环境](validation.md#开发环境)。
 
 ```sh
 (
@@ -184,9 +183,14 @@ journalctl -b -u systemd-resolved -u site-vps-proxy
 
 ## 发布 Worker 与管理证书
 
-开发环境中的 `wrangler` 通过 Bubblewrap 运行。发布时只读挂载当前含 `wrangler.json` 的 Worker 目录，临时文件和 `.wrangler` 工作区在沙箱内写入；运行依赖、DNS 和 CA 配置也按需挂载。进程使用独立的用户、PID、挂载、IPC 和终端会话，主目录里的其他文件及 SSH/GPG agent 留在沙箱外。网络共享 host，沿用当前 DNS、代理和 lockdown 策略。
+Wrangler 读取当前 Worker 的发布目录，使用 host 的网络、DNS 和代理。登录状态保存在项目根目录 `.wrangler/`，权限为 `0700`，已由 Git 忽略。从两个 Worker 子目录运行时共用这份登录状态；Cloudflare 权限由登录时授予的 scopes 决定。缓存、日志和临时构建文件的位置见[开发环境](validation.md#开发环境)。
 
-登录状态单独保存在 `~/.local/state/wrangler/`，目录权限为 `0700`。laptop profile 已持久化 `.local/state`，因此注销或重启后可继续使用；其他维护机需按自身存储方式保留该目录。Wrangler 可以读取这份 Cloudflare 凭据和本次 Worker 的发布材料，其远端权限由登录时授予的 scopes 决定。
+已有 `~/.local/state/wrangler/` 登录状态时，可在首次使用新入口前复制到尚未创建的项目目录：
+
+```sh
+cp -a ~/.local/state/wrangler .wrangler
+chmod 700 .wrangler
+```
 
 在仓库根目录登录时，沙箱使用空工作目录。按下面的范围授权，然后在浏览器打开终端显示的设备授权地址并输入代码：
 

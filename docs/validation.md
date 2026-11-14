@@ -2,6 +2,43 @@
 
 验证分为配置求值、产物构建和行为测试，使用 `flake.lock` 中的依赖和合成测试资料。检查定义集中在 [nix/checks.nix](../nix/checks.nix)。
 
+## 开发环境
+
+在持久化的 `~/dev/workspace/` 下使用仓库，按任务选择环境：
+
+```sh
+nix develop .#laptop  # 桌面、网络和备份开发及 VM 提交
+nix develop .#vps     # 准备 VPS 材料、构建、Colmena 部署和 Worker 发布
+```
+
+交互 shell、SOPS 和项目 Python 脚本以当前用户运行。下面的命令由 Bubblewrap 包装，仍使用原生命令名和参数；文件访问范围集中声明在 [dev-shells.nix](../nix/dev-shells.nix)。联网工具共用 host 网络，沿用 DNS、代理和 Lockdown。
+
+| 工具 | 可访问的工作资料与持久状态 | 网络 |
+| --- | --- | --- |
+| actionlint、其调用的 ShellCheck | 只读项目源码 | 隔离 |
+| sing-box、dnsdist、dnsproxy、go-dnscollector | 只读源码，读写 `tmp/devtools/network/` | host 网络 |
+| oranc | 只读源码，读写 `tmp/devtools/cache/` 和 Nix 数据库，使用 Nix store、daemon 与缓存配置 | host 网络 |
+| Colmena | 只读源码、`tmp/vps/metadata.json` 和 `tmp/vps/nodes/`，使用 Nix；读写 `~/.ssh/`，读取系统 SSH 配置、公钥并使用 SSH agent | host 网络 |
+| Wrangler | 只读当前 Worker 目录，读写项目根 `.wrangler/` 登录状态 | host 网络 |
+
+每个沙箱工具都有 `tmp/.cache/nixos-config-tools/<工具>/`，其中 `cache/` 和 `logs/` 保存缓存与日志，`tmp/` 保存每次运行的临时文件。正常退出即清理本次临时目录；再次调用时，systemd-tmpfiles 清理一天前遗留的临时文件及三十天未使用的缓存、日志。运行中的目录通过文件锁保留。Wrangler 登录状态和部署材料单独保存，由用户清理。
+
+开发 shell 将辅助工具的 `XDG_CACHE_HOME` 和 `TMPDIR` 放在同一根目录的 `shell/` 下，Go 与 npm 使用各自子目录。VM 提交客户端的导出缓存也随之保存在磁盘工作区，容量由客户端自身管理。
+
+项目位于持久工作区时，这些目录跨注销、重启保留，磁盘空间由所在文件系统提供。Nix 继续使用已有的持久缓存，daemon 构建使用系统配置的临时目录。工具启动会检查缓存文件系统，避免在 tmpfs 工作区产生大量文件。沙箱保留 host 的 Unix 文件权限；例如 oranc 发布仍需要当前用户具备 Nix 数据库目录的访问权限。
+
+测试代理时，将所需配置放入专用目录，再运行原生命令：
+
+```sh
+install -d -m 700 tmp/devtools/network
+# 将本轮需要的 sing-box 配置保存为 tmp/devtools/network/config.json。
+cd tmp/devtools/network
+sing-box check -c config.json
+sing-box run -c config.json
+```
+
+该目录供网络工具共同读写；`tmp/vps/` 保存另一类部署材料，只向 Colmena 开放所需部分。Wrangler 的登录与发布流程见 [VPS 维护](vps.md#发布-worker-与管理证书)。新增工具时复用同一包装器，按其正常功能声明文件、网络和凭据权限。
+
 ## 配置求值
 
 修改共享 Nix 模块、系统组合或 flake 输出后，先在仓库根目录执行：
@@ -53,8 +90,8 @@ nix build --no-link .#checks.x86_64-linux.identity
 需要更快反馈时，可在开发环境运行对应的 Python 场景：
 
 ```sh
-nix develop --command python3 -m unittest tests.unit.test_backup -v
-nix develop --command python3 -m tests.integration.backup -v
+nix develop .#laptop --command python3 -m unittest tests.unit.test_backup -v
+nix develop .#laptop --command python3 -m tests.integration.backup -v
 ```
 
 这些入口执行同一份测试，不要求本地命令和 Nix 检查都重复运行。SSH 自动注册与会话生命周期之间的集成由桌面 VM 负责；字体匹配和实际 Kitty 渲染各有独立边界。
@@ -68,8 +105,8 @@ host=laptop2  # 换成要验证的主机
 nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 nix build --no-link .#checks.x86_64-linux.backup .#checks.x86_64-linux.identity \
   .#checks.x86_64-linux.network .#checks.x86_64-linux.desktop .#checks.x86_64-linux.configuration .#checks.x86_64-linux.vps
-nix develop --command python3 -m tests.integration.cache
-nix develop --command python3 -m tests.integration.updates
+nix develop .#laptop --command python3 -m tests.integration.cache
+nix develop .#laptop --command python3 -m tests.integration.updates
 ```
 
 只验证 VPS 时，构建 `checks.x86_64-linux.vps` 和 `checks.x86_64-linux.vm-vps.driver`，再执行 `checks.x86_64-linux.vm-vps`。其 bootstrap 镜像和完整系统都使用 `nixpkgs-remote`；测试通过 SSH 操作真实镜像启动的来宾，覆盖部署、重启和回滚。

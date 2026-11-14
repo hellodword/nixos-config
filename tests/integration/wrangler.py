@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def main():
     with tempfile.TemporaryDirectory(prefix="wrangler-test-") as temporary:
         root = Path(temporary)
+        subprocess.run(["git", "init", "--quiet", str(root)], check=True)
         home = root / "home"
         home.mkdir()
         private = home / "private.txt"
@@ -48,7 +49,7 @@ fs.writeFileSync(state, String(count + 1));
                 subprocess.run(["wrangler", "deploy", "--dry-run", "--outdir", ".wrangler/build"],
                                cwd=worker, check=True, timeout=45,
                                env=os.environ | {"HOME": str(home), "CI": "true", "SSH_AUTH_SOCK": agent_path})
-        state = home / ".local/state/wrangler"
+        state = root / ".wrangler"
         assert (state / "sandbox-probe").read_text() == "2"
         assert state.stat().st_mode & 0o777 == 0o700
         assert private.read_text() == "host-only fixture"

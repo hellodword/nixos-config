@@ -70,7 +70,7 @@ SSH、Git/GPG 等基线保存在所选主机的 `secrets/` 目录，激活使用
 
 ```sh
 host=laptop2  # 换成要编辑的主机
-nix develop --command sops edit "hosts/$host/secrets/identity.sops.yaml"
+nix develop .#laptop --command sops edit "hosts/$host/secrets/identity.sops.yaml"
 ```
 
 基线或系统配置变化需要重新构建；解密保持在目标机运行时。身份文档以完整子密钥指纹声明 SSH 用途和 Git 签名，系统推导公钥文件和 Git 配置，用户服务自动启用 GPG 中对应的 SSH 身份。密钥导入、智能卡初始化和旧身份停用由用户操作；自动注册及换钥流程见[身份配置](secrets.md#gpgssh-与-git-身份)。

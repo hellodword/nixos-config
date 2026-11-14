@@ -26,7 +26,7 @@ remote 只更新 `nixpkgs-remote`，laptop 更新自己的包集和桌面相关�
 
 ## 主机与执行顺序
 
-验证矩阵选择范围与主机，当前支持 `x86_64-linux`。laptop 构建所选 host、默认开发环境及桌面和网络检查；remote 构建合成 VPS、bootstrap 镜像及维护工具。两组都验证 laptop sing-box 客户端与 VPS sing-box 服务端的协议兼容性，相同 derivation 可直接复用缓存。新增机器见[增加主机](maintenance.md#增加主机)。
+验证矩阵选择范围与主机，当前支持 `x86_64-linux`。laptop 构建所选 host、`laptop` 开发环境及桌面和网络检查；remote 构建合成 VPS、bootstrap 镜像及 `vps` 维护环境。两组都验证 laptop sing-box 客户端与 VPS sing-box 服务端的协议兼容性，相同 derivation 可直接复用缓存。新增机器见[增加主机](maintenance.md#增加主机)。
 
 | 步骤 | 内容 |
 | --- | --- |

@@ -78,45 +78,7 @@
       colmenaHive = inputs.colmena.lib.makeHive vps.hive;
       vpsBootstrap = builtins.mapAttrs (_: node: node.config.system.build.image) vps.bootstrap;
       packages.${system} = import ./nix/packages.nix { inherit pkgs inputs system; };
-      devShells.${system} = {
-        default = pkgs.mkShell {
-          packages = with pkgs; [
-            (python3.withPackages (p: [
-              p.dnspython
-              p.h2
-              p.pyyaml
-            ]))
-            (import ./nix/route-regex.nix { inherit pkgs; })
-            go
-            openssl
-            dnsdist
-            dnsproxy
-            dns-collector
-            jq
-            hujsonfmt
-            sing-box
-            restic
-            sops
-            age
-            gnupg
-            git
-            openssh
-            mkpasswd
-            nixfmt
-            shellcheck
-            actionlint
-            self.packages.${system}.oranc
-            distribution
-            inputs.agents-misc.packages.${system}.vm-test-submit
-            inputs.colmena.packages.${system}.default
-            nodejs
-            self.packages.${system}.wrangler
-            curl
-            wireguard-tools
-            openvpn
-          ];
-        };
-      };
+      devShells.${system} = import ./nix/dev-shells.nix { inherit inputs system; };
       checks.${system} = import ./nix/checks.nix {
         inherit pkgs inputs;
         laptop = synthetic;

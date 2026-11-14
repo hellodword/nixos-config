@@ -252,6 +252,7 @@ in
       ];
       environment.systemPackages = [
         python
+        pkgs.gitMinimal
         (import ../../nix/wrangler.nix { inherit pkgs; })
         pkgs.curl
         pkgs.nftables

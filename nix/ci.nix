@@ -32,13 +32,14 @@ let
   ++ (
     if remote then
       [
+        flake.devShells.${system}.vps
         flake.packages.${system}.vps-python
         flake.packages.${system}.wrangler
       ]
     else
       [
         host.config.system.build.toplevel
-        flake.devShells.${system}.default
+        flake.devShells.${system}.laptop
       ]
   );
   aggregate = pkgs.linkFarm "${scope}-vm-tests" (

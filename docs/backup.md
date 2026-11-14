@@ -9,7 +9,7 @@
 路径相对 `site.storage.persistRoot`。下面以默认持久根 `/persist` 为例，在目标主机的开发环境中预览实际选择；其他位置需相应替换：
 
 ```sh
-nix develop
+nix develop .#laptop
 sudo "$(command -v python3)" scripts/backup/runner.py plan \
   --policy /etc/backup/policy.json --source /persist --state /var/lib/site-backup-plan
 ```
