@@ -17,7 +17,13 @@ def check(*args):
 
 def refresh(request_file, state, ca_file):
     settings = json.loads(request_file.read_text())
-    request = urllib.request.Request(settings["url"], headers={"Authorization": "Bearer " + settings["token"]})
+    request = urllib.request.Request(
+        settings["url"],
+        headers={
+            "Authorization": "Bearer " + settings["token"],
+            "User-Agent": "site-vps-certificate",
+        },
+    )
     with urllib.request.urlopen(request, timeout=30) as response:
         bundle = json.loads(response.read(1024 * 1024))
     with tempfile.TemporaryDirectory(prefix=".candidate-", dir=state) as temp:
