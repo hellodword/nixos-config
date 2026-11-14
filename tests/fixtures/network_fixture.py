@@ -122,6 +122,7 @@ def socks_server(dns_port, http_port, address="127.0.0.1", port=0):
     calls = []
     connections = []
     dns_ports = [dns_port] if isinstance(dns_port, int) else list(dns_port)
+    http_ports = [http_port] if isinstance(http_port, int) else list(http_port)
     class Handler(socketserver.BaseRequestHandler):
         def handle(self):
             sock = self.request
@@ -147,11 +148,11 @@ def socks_server(dns_port, http_port, address="127.0.0.1", port=0):
                 port = struct.unpack("!H", read_exact(sock, 2))[0]
                 calls.append((host, port))
                 # Fixture cannot make any external connection, even if misconfigured.
-                if port not in [*dns_ports, http_port]:
+                if port not in [*dns_ports, *http_ports]:
                     sock.sendall(b"\x05\x02\x00\x01" + b"\0" * 6)
                     return
                 sock.sendall(b"\x05\x00\x00\x01" + b"\0" * 6)
-                if port == http_port:
+                if port in http_ports:
                     sock.recv(8192)
                     sock.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: 5\r\n\r\nproxy")
                     return

@@ -11,9 +11,24 @@ let
   json = pkgs.formats.json { };
   scripts = ../../scripts/network;
   effective = lib.recursiveUpdate options.site.network.dnsPolicy.default cfg.dnsPolicy;
+  raceGroups = [
+    "cn"
+    "global"
+  ]
+  ++ cfg.purposeGroups;
   policy = json.generate "domain-policy.json" (
     effective
     // {
+      inherit (cfg) purposeGroups;
+      groups =
+        effective.groups
+        // lib.genAttrs cfg.purposeGroups (
+          name:
+          (effective.groups.${name} or effective.groups.global)
+          // {
+            outbound = if cfg.singBox.enable then name else "direct";
+          }
+        );
       routeFragments = cfg.routeFragments;
       connectionFragments = cfg.connectionFragments;
       jsoncTool = "${pkgs.hujsonfmt}/bin/hujsonfmt";
@@ -30,12 +45,9 @@ let
       caStore = effective.caStore or "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
       tunnelGroups =
         if cfg.lockdown.enable then
-          [
-            "cn"
-            "global"
-          ]
+          raceGroups
         else
-          lib.optional cfg.singBox.enable "global";
+          lib.optionals cfg.singBox.enable ([ "global" ] ++ cfg.purposeGroups);
     }
   );
   base = json.generate "network-transport.json" (
@@ -71,11 +83,9 @@ let
   runtimeRoot = "/run/site-network-policy";
   rulesState = "/var/lib/site-network-rules";
   consumers =
-    lib.optionals cfg.dns.enable [
-      "site-dns.service"
-      "site-dns-race-cn.service"
-      "site-dns-race-global.service"
-    ]
+    lib.optionals cfg.dns.enable (
+      [ "site-dns.service" ] ++ map (name: "site-dns-race-${name}.service") raceGroups
+    )
     ++ lib.optional cfg.singBox.enable "sing-box.service";
   flags = ''
     --policy ${policy} --root ${runtimeRoot} --group site-network-policy \
@@ -96,6 +106,11 @@ let
       ) "--fakeip-exclude ${lib.escapeShellArg cfg.dns.fakeIP.excludeFile}"
     } \
     ${lib.optionalString cfg.singBox.enable "--base ${base} --provider ${lib.escapeShellArg cfg.providerFile} --sing-box ${pkgs.sing-box}/bin/sing-box"} \
+    ${
+      lib.optionalString (
+        cfg.purposeGroups != [ ]
+      ) "--selections ${lib.escapeShellArg cfg.selectionsFile}"
+    } \
     ${lib.optionalString config.services.tailscale.enable "--tailscale"} \
     ${lib.optionalString cfg.lockdown.enable "--watch-underlay --wireguard-key /var/lib/site-network/gateway.key --wireguard-peer /var/lib/site-network/client.pub"} \
     --curl ${pkgs.curl}/bin/curl ${lib.optionalString cfg.singBox.enable "--download-proxy socks5h://127.0.0.1:10800"}
@@ -126,6 +141,7 @@ let
             ++ lib.optional (cfg.runtimeRouteDirectory != null) "-${cfg.runtimeRouteDirectory}"
             ++ lib.optional (cfg.runtimeConnectionDirectory != null) "-${cfg.runtimeConnectionDirectory}"
             ++ lib.optional cfg.singBox.enable "-${cfg.providerFile}"
+            ++ lib.optional (cfg.purposeGroups != [ ]) "-${cfg.selectionsFile}"
             ++ lib.optional (
               cfg.dns.fakeIP.enable && cfg.dns.fakeIP.excludeFile != null
             ) cfg.dns.fakeIP.excludeFile
@@ -189,6 +205,16 @@ let
 in
 {
   options.site.network = {
+    purposeGroups = lib.mkOption {
+      type = lib.types.listOf (lib.types.strMatching "[a-z][a-z0-9-]*");
+      default = [ ];
+      description = "Additional provider purposes sharing domain routing and resolver selection.";
+    };
+    selectionsFile = lib.mkOption {
+      type = lib.types.str;
+      default = "/var/lib/site-network/selections.json";
+      description = "Persistent JSON object mapping purposes to authorized physical exits.";
+    };
     ipv6.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -272,6 +298,25 @@ in
     assertions = [
       {
         assertion =
+          cfg.purposeGroups == [ ]
+          || (lib.all (
+            name:
+            !(lib.elem name [
+              "cn"
+              "global"
+              "direct"
+              "private"
+              "tailnet"
+              "local"
+              "auto"
+              "proxy"
+              "transparent"
+            ])
+          ) cfg.purposeGroups);
+        message = "Purpose groups require distinct names outside the built-in routes.";
+      }
+      {
+        assertion =
           cfg.runtimeRouteDirectory == null || !lib.hasPrefix "/nix/store/" cfg.runtimeRouteDirectory;
         message = "Runtime route fragments must use a writable directory outside the Nix store.";
       }
@@ -332,15 +377,17 @@ in
           }
         ];
       };
-      "90-cn.json" = lib.mkDefault {
-        rules = [
-          {
-            domain_suffix = [ "cn" ];
-            action = "route";
-            outbound = "direct";
-          }
-        ];
-      };
+      "90-cn.json" = lib.mkIf (!cfg.purposeRouting.enable) (
+        lib.mkDefault {
+          rules = [
+            {
+              domain_suffix = [ "cn" ];
+              action = "route";
+              outbound = "direct";
+            }
+          ];
+        }
+      );
     };
     site.network.generatedPolicy = bundle;
     site.network.activePolicy = "${runtimeRoot}/current";

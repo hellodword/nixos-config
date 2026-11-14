@@ -2,7 +2,7 @@
 
 ## 配置如何生效
 
-本项目的 NixOS 主机和 CI 自动配置构建缓存，其他开发环境需要[安装客户端配置](#开发容器及其他-nix-客户端)。这些设置持久生效，构建其他 flake 项目时同样使用，无需在每次运行 Nix 时添加参数。
+本项目的 laptop 主机和 CI 自动配置构建缓存，其他开发环境需要[安装客户端配置](#开发容器及其他-nix-客户端)。这些设置持久生效，构建其他 flake 项目时同样使用，无需在每次运行 Nix 时添加参数。VPS 由维护机构建后通过 Colmena 接收完整闭包。
 
 添加或移除公共缓存时，修改 [flake.nix](../flake.nix) 的 `nixConfig`；更换项目缓存仓库或签名身份时，修改 [cache-identity.json](../nix/cache-identity.json)。代理地址和端口在 [cache-config.nix](../nix/cache-config.nix) 中设置。修改后，NixOS 主机重新部署配置，其他客户端重新执行安装命令。
 
@@ -60,7 +60,7 @@ sudo systemctl restart nix-daemon.service
 
 ## 发布范围
 
-[cache-policy.nix](../nix/cache-policy.nix) 定义构建根与再分发限制。[发布脚本](../.github/ci/cache.py)在每轮 CI 开始时计算一次输出清单和排除集合。项目构建通过 `post-build-hook` 将成功产物写入队列，由后台进程增量收集运行时引用并发布；求值直接写入 store 的文件也随引用纳入。
+[CI 清单](../nix/ci.nix)选择当前范围的构建根，[发布策略](../nix/cache-policy.nix)定义再分发限制。remote 仅发布公开合成节点、测试与维护工具；私有 VPS 系统在维护机构建。[发布脚本](../.github/ci/cache.py)在每轮 CI 开始时计算一次输出清单和排除集合。项目构建通过 `post-build-hook` 将成功产物写入队列，由后台进程增量收集运行时引用并发布；求值直接写入 store 的文件也随引用纳入。
 
 启动时纳入已经准备好的产物，阶段结束时补齐钩子未覆盖的已有输出，再等待发布完成。部分构建或 VM 失败时，其余已完成的可再分发路径仍可发布，供下轮使用。发布时机见 [CI 执行顺序](ci.md#主机与执行顺序)。
 

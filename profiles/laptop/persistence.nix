@@ -44,6 +44,12 @@ in
       "/var/lib/nixos"
       "/var/lib/site-files"
       {
+        directory = "/var/lib/chrony";
+        user = "chrony";
+        group = "chrony";
+        mode = "0750";
+      }
+      {
         directory = "/var/cache/nix";
         mode = "1777";
       }

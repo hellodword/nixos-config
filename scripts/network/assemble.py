@@ -31,11 +31,11 @@ def fakeip_rules(route, exclusions, ipv4_only):
 
     for rule in route["rules"]:
         match = {key: value for key, value in rule.items() if key not in {"action", "outbound"}}
-        if rule.get("outbound") in {"direct", "proxy"}:
+        if rule.get("action") == "route" and rule.get("outbound") not in {"private", "tailnet"}:
             rules.extend(public_answers(match))
         else:
             rules.append(match | real)
-    if route["final"] in {"direct", "proxy"}:
+    if route["final"] not in {"private", "tailnet"}:
         rules.extend(public_answers({}))
     return rules
 
@@ -59,6 +59,7 @@ def assemble(base, policy, transports=(), model=None, ipv4_only=False, fakeip_ex
     base["route"]["rules"] = tunnels + base["route"]["rules"] + route["rules"]
     base["route"]["rule_set"] = route["rule_set"]
     base["route"]["final"] = route["final"]
+    base["_purposeGroups"] = policy.get("purposeGroups", [])
     if ipv4_only:
         base["_ipv4Only"] = True
         base["inbounds"] = [inbound for inbound in base["inbounds"] if ":" not in inbound.get("listen", "")]

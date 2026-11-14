@@ -5,12 +5,20 @@ on:
     branches: [master]
   workflow_dispatch:
     inputs:
+      scope:
+        description: Products to verify
+        type: choice
+        options: [all, laptop, remote]
+        default: all
       initialize-cache:
         description: Create the cache package only; then configure Public and Actions Write in Package settings
         type: boolean
         default: false
   workflow_call:
     inputs:
+      scope:
+        type: string
+        default: all
       candidate-artifact:
         type: string
         default: ''
@@ -87,7 +95,12 @@ jobs:
       max-parallel: 1
       fail-fast: false
       matrix:
-        host: [laptop2]
+        include: >-
+          ${{ fromJSON(
+            inputs.scope == 'remote' && '[{"scope":"remote","host":""}]' ||
+            inputs.scope == 'laptop' && '[{"scope":"laptop","host":"laptop2"}]' ||
+            '[{"scope":"laptop","host":"laptop2"},{"scope":"remote","host":""}]'
+          ) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 330
     permissions:
@@ -95,6 +108,7 @@ jobs:
       packages: write
     env:
       HOST: ${{ matrix.host }}
+      SCOPE: ${{ matrix.scope }}
       # Bound the uncompressed bootstrap archive, independently of repository quota.
       ORANC_CACHE_MAX_BYTES: '536870912'
     steps:
@@ -260,7 +274,7 @@ jobs:
       - name: Start the cache proxy and prepare tools
         run: |
           python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase tools -- \
-            docker exec -i nixos-ci bash -euo pipefail <<'BASH'
+            docker exec -i --env SCOPE nixos-ci bash -euo pipefail <<'BASH'
           listen=$(nix eval --raw --file nix/cache-config.nix ci.listen)
           "$(cat /ci/oranc)" server --listen "$listen" > /ci/oranc.log 2>&1 < /dev/null &
           proxy_pid=$!
@@ -269,8 +283,10 @@ jobs:
             kill -0 "$proxy_pid"
             sleep 0.1
           done
+          if [[ "$SCOPE" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
+          export NIXPKGS_INPUT="$nixpkgs_input"
           python_root=$(nix build --no-update-lock-file --no-link --print-out-paths --impure --expr \
-            '(builtins.getFlake ("git+file://" + toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux.python3')
+            '(builtins.getFlake ("git+file://" + toString ./.)).inputs.${builtins.getEnv "NIXPKGS_INPUT"}.legacyPackages.x86_64-linux.python3')
           cache_uri=$(nix eval --raw --file nix/cache-config.nix ci.uri)
           # A plain GET cannot turn a missing cache into an implicit PUT.
           "$python_root/bin/python3" - "$cache_uri" <<'PY'
@@ -288,7 +304,9 @@ jobs:
           PY
           cat /ci/nix-base.conf > /ci/nix.conf
           bash scripts/nix-cache.sh print --ci >> /ci/nix.conf
-          nix develop --no-update-lock-file --command bash -c 'command -v python3' > /ci/python
+          nix build --no-update-lock-file --no-link --print-out-paths --impure --expr \
+            'import ./nix/ci-tools.nix { flake = builtins.getFlake ("git+file://" + toString ./.); scope = builtins.getEnv "SCOPE"; }' > /ci/tools
+          printf '%s/bin/python3\n' "$(cat /ci/tools)" > /ci/python
           BASH
       - name: Verify cache signing identity and write access
         if: github.ref == 'refs/heads/master'
@@ -312,21 +330,23 @@ jobs:
           BASH
       - name: Static checks and OCI integration
         run: |
-          docker exec nixos-ci nix develop --no-update-lock-file --command bash -euo pipefail -c '
+          docker exec --env SCOPE nixos-ci bash -euo pipefail -c '
+            export PATH="$(cat /ci/tools)/bin:$PATH"
             actionlint .github/workflows/*.yml
             shellcheck scripts/nix-cache.sh
             shellcheck -s bash scripts/desktop/screenshot.sh
             find modules home profiles hosts lib nix tests tools -type f -name "*.nix" -print0 | xargs -0 nixfmt --check
             nixfmt --check flake.nix
-            python3 -m tests.integration.cache
+            if [[ "$SCOPE" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
+            python3 -m tests.integration.cache --nixpkgs-input "$nixpkgs_input"
             python3 -m tests.integration.updates
           '
       - name: Evaluate the build inventory
         id: inventory
         run: |
-          docker exec --env HOST nixos-ci bash -euo pipefail -c '
+          docker exec --env HOST --env SCOPE nixos-ci bash -euo pipefail -c '
             nix eval --no-update-lock-file --json --impure --expr \
-              '\''import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; }'\'' > /ci/policy.json
+              '\''import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; scope = builtins.getEnv "SCOPE"; }'\'' > /ci/policy.json
           '
       - name: Start incremental cache publication
         id: publisher
@@ -353,18 +373,22 @@ jobs:
             '"$(cat /ci/python)" .github/ci/cache.py checkpoint --state /ci --phase publish-dependencies'
       - name: Run network and backup VM tests
         id: network-backup
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
+        if: ${{ !cancelled() && matrix.scope == 'laptop' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-backup --jobs 1 --state /ci'
       - name: Run desktop VM tests
         id: desktop
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
+        if: ${{ !cancelled() && matrix.scope == 'laptop' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-desktop --state /ci'
       - name: Run application VM tests
         id: applications
-        if: ${{ !cancelled() && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
+        if: ${{ !cancelled() && matrix.scope == 'laptop' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-applications --state /ci'
+      - name: Run VPS image and deployment VM tests
+        id: vps
+        if: ${{ !cancelled() && matrix.scope == 'remote' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-vps --jobs 1 --state /ci'
       - name: Assemble VM results
-        if: ${{ !cancelled() && steps.network-backup.outcome == 'success' && steps.desktop.outcome == 'success' && steps.applications.outcome == 'success' }}
+        if: ${{ !cancelled() && ((matrix.scope == 'remote' && steps.vps.outcome == 'success') || (matrix.scope == 'laptop' && steps.network-backup.outcome == 'success' && steps.desktop.outcome == 'success' && steps.applications.outcome == 'success')) }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py aggregate --state /ci'
       - name: Complete result cache publication
         if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.publish-dependencies.outcome == 'success' }}
@@ -394,7 +418,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: diagnostics-${{ matrix.host }}-${{ github.run_attempt }}
+          name: diagnostics-${{ matrix.scope }}${{ matrix.host != '' && format('-{0}', matrix.host) || '' }}-${{ github.run_attempt }}
           retention-days: 7
           path: |
             ${{ runner.temp }}/nixos-ci/timings.jsonl

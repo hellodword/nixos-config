@@ -1,5 +1,10 @@
-# Publication inventory for one host and the common test fixtures.
-{ flake, hostName }:
+# Publication policy for the products selected by ci.nix.
+{
+  flake,
+  hostName,
+  scope,
+  roots,
+}:
 let
   system = "x86_64-linux";
   host = flake.nixosConfigurations.${hostName};
@@ -47,26 +52,30 @@ let
   );
   image = import ../tests/fixtures/applications/container.nix { inherit pkgs; };
   outputs = package: map (name: toString package.${name}) package.outputs;
-  roots = [
-    host.config.system.build.toplevel
-    flake.devShells.${system}.default
-    flake.packages.${system}.oranc
-  ]
-  ++ builtins.attrValues flake.checks.${system};
+
 in
-{
-  roots = map (package: package.drvPath) roots;
-  excludedPaths = lib.unique (
-    lib.concatMap (
-      package: outputs package ++ lib.optional (package ? src) (toString package.src)
-    ) packages
-  );
-  excludedDerivations = map (package: package.drvPath) packages;
-  # Image layers embed restricted files. System symlinks and test results do not.
-  bundles = [ image.drvPath ];
-  privateBuilds = map (package: {
-    name = lib.getName package;
-    drv = package.drvPath;
-    outputs = outputs package;
-  }) (packages ++ [ image ]);
-}
+if scope == "remote" then
+  {
+    roots = map (package: package.drvPath) roots;
+    excludedPaths = [ ];
+    excludedDerivations = [ ];
+    bundles = [ ];
+    privateBuilds = [ ];
+  }
+else
+  {
+    roots = map (package: package.drvPath) roots;
+    excludedPaths = lib.unique (
+      lib.concatMap (
+        package: outputs package ++ lib.optional (package ? src) (toString package.src)
+      ) packages
+    );
+    excludedDerivations = map (package: package.drvPath) packages;
+    # Image layers embed restricted files. System symlinks and test results do not.
+    bundles = [ image.drvPath ];
+    privateBuilds = map (package: {
+      name = lib.getName package;
+      drv = package.drvPath;
+      outputs = outputs package;
+    }) (packages ++ [ image ]);
+  }

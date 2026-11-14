@@ -133,6 +133,7 @@ def rule_set_document(definition, location, config, rule_paths=None):
 
 
 def compile_policy(config, directory=None, connection_directory=None, include_connections=True, rule_paths=None):
+    outbounds = OUTBOUNDS | set(config.get("purposeGroups", []))
     shared, sources = fragments(config, "routeFragments", directory)
     files, rules, definitions = [], [], {}
     final, final_source = "proxy", "implicit final"
@@ -147,8 +148,8 @@ def compile_policy(config, directory=None, connection_directory=None, include_co
             definitions[definition["tag"]] = (definition, location)
         if "final" in fragment:
             final, final_source = fragment["final"], f"{filename}/final"
-    if final not in OUTBOUNDS:
-        raise ValueError(f"{final_source}: expected a bound outbound: {', '.join(sorted(OUTBOUNDS))}")
+    if final not in outbounds:
+        raise ValueError(f"{final_source}: expected a bound outbound: {', '.join(sorted(outbounds))}")
     sets, set_sources = {}, {}
     for tag, (definition, location) in definitions.items():
         document = rule_set_document(definition, location, config, rule_paths)
@@ -159,7 +160,7 @@ def compile_policy(config, directory=None, connection_directory=None, include_co
     for rule, location in rules:
         result = condition(rule, location, sets)
         action = rule.get("action", "route")
-        if action == "route" and rule.get("outbound") in OUTBOUNDS:
+        if action == "route" and rule.get("outbound") in outbounds:
             result.update(action="route", outbound=rule["outbound"])
         elif action == "reject" and "outbound" not in rule:
             result["action"] = "reject"

@@ -13,6 +13,7 @@ let
       "site-dns-race-cn"
       "site-dns-race-global"
     ]
+    ++ lib.optionals cfg.dns.enable (map (name: "site-dns-race-${name}") cfg.purposeGroups)
     ++ lib.optional cfg.singBox.enable "sing-box";
   journalConfig = pkgs.writeText "journald-network.conf" ''
     [Journal]

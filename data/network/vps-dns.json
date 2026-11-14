@@ -1,0 +1,14 @@
+[
+  {
+    "type": "https",
+    "server": "1.1.1.1",
+    "path": "/dns-query",
+    "tls": {"enabled": true, "server_name": "cloudflare-dns.com"}
+  },
+  {
+    "type": "https",
+    "server": "8.8.8.8",
+    "path": "/dns-query",
+    "tls": {"enabled": true, "server_name": "dns.google"}
+  }
+]

@@ -11,7 +11,8 @@ let
       source = pkgs.lib.fileset.toSource {
         root = ../.;
         fileset =
-          pkgs.lib.fileset.intersection (pkgs.lib.fileset.fileFilter (file: file.hasExt "py") ../.)
+          pkgs.lib.fileset.intersection
+            (pkgs.lib.fileset.fileFilter (file: file.hasExt "py" || file.hasExt "toml") ../.)
             (
               pkgs.lib.fileset.unions (
                 [
@@ -36,6 +37,17 @@ let
   policy = pkgs.writeText "network-test-policy.json" (
     builtins.toJSON (import ../tests/fixtures/network-policy.nix { inherit (pkgs) lib; })
   );
+  purposePolicy =
+    let
+      client = laptop.extendModules {
+        modules = [ { services.tailscale.enable = pkgs.lib.mkForce false; } ];
+      };
+    in
+    pkgs.writeText "client-purpose-policy.json" (
+      builtins.toJSON {
+        inherit (client.config.site.network) purposeGroups routeFragments connectionFragments;
+      }
+    );
   python = pkgs.python3.withPackages (p: [
     p.pyyaml
     p.dnspython
@@ -43,6 +55,7 @@ let
   ]);
 in
 rec {
+  inherit (import ./vps-checks.nix { inherit inputs; }) vps vm-vps;
   backup =
     pythonCheck "backup-behavior"
       [ ../scripts/backup ../tests/unit/test_backup.py ../tests/integration/backup.py ]
@@ -67,6 +80,7 @@ rec {
     pythonCheck "network-protocol-tests"
       [
         ../scripts/network
+        ../data/network/purposes.toml
         ../tests/unit/test_network.py
         ../tests/integration/dns.py
         ../tests/integration/network.py
@@ -87,7 +101,7 @@ rec {
       ''
         python3 -m unittest tests.unit.test_network -v
         python3 -m tests.integration.dns --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} > $out
-        python3 -m tests.integration.network --sing-box ${pkgs.sing-box}/bin/sing-box --template ${policy} --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} >> $out
+        python3 -m tests.integration.network --sing-box ${pkgs.sing-box}/bin/sing-box --template ${policy} --purpose-policy ${purposePolicy} --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} >> $out
       '';
   configuration = import ../tests/configuration.nix { inherit pkgs laptop userName; };
   desktop = import ../tests/desktop.nix {
@@ -110,6 +124,7 @@ rec {
             vm-applications
             vm-backup
             vm-network
+            vm-vps
             ;
         };
       })
@@ -118,6 +133,7 @@ rec {
         "vm-desktop"
         "vm-applications"
         "vm-backup"
+        "vm-vps"
       ]
   );
 }

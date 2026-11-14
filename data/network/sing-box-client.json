@@ -1,0 +1,92 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "dns": {
+    "reverse_mapping": true,
+    "servers": [
+      {
+        "type": "local",
+        "tag": "dns-local"
+      },
+      {
+        "type": "https",
+        "tag": "dns-direct",
+        "server": "223.5.5.5",
+        "path": "/dns-query"
+      },
+      {
+        "type": "https",
+        "tag": "dns-proxy",
+        "server": "1.1.1.1",
+        "path": "/dns-query",
+        "detour": "proxy"
+      }
+    ],
+    "rules": [
+      {
+        "domain_suffix": [
+          "local",
+          "home.arpa",
+          "ts.net"
+        ],
+        "action": "route",
+        "server": "dns-local"
+      }
+    ],
+    "final": "dns-proxy",
+    "strategy": "ipv4_only"
+  },
+  "inbounds": [
+    {
+      "type": "tun",
+      "tag": "tun",
+      "address": [
+        "172.19.0.1/30"
+      ],
+      "auto_route": true,
+      "strict_route": true,
+      "stack": "mixed"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "auto_detect_interface": true,
+    "default_domain_resolver": "dns-direct",
+    "rule_set": [],
+    "rules": [
+      {
+        "action": "sniff"
+      },
+      {
+        "protocol": "dns",
+        "action": "hijack-dns"
+      },
+      {
+        "ip_is_private": true,
+        "action": "route",
+        "outbound": "direct"
+      },
+      {
+        "domain_suffix": [
+          "local",
+          "home.arpa",
+          "ts.net"
+        ],
+        "action": "route",
+        "outbound": "direct"
+      }
+    ],
+    "final": "proxy"
+  },
+  "experimental": {
+    "cache_file": {
+      "enabled": true
+    }
+  }
+}

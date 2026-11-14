@@ -42,6 +42,7 @@ class Resolver:
         self.delay = 0.01 if branch == 0 else 0.09
         marker = 11 if group == "cn" else 22
         self.ipv4, self.ipv6 = f"192.0.2.{marker}", f"2001:db8::{marker}"
+        self.ipv4_by_name = {}
 
     def response(self, wire):
         query = dns.message.from_wire(wire)
@@ -63,7 +64,8 @@ class Resolver:
             pass
         else:
             qtype = query.question[0].rdtype
-            text = {1: self.ipv4, 28: self.ipv6, 15: f"10 mail.{name}",
+            ipv4 = self.ipv4_by_name.get(name.rstrip("."), self.ipv4)
+            text = {1: ipv4, 28: self.ipv6, 15: f"10 mail.{name}",
                     16: '"' + self.group + '"', 64: f"1 . alpn=\"h2\" ipv4hint={self.ipv4}",
                     65: f"1 . alpn=\"h2\" ipv4hint={self.ipv4}"}.get(qtype)
             if first == "large" and qtype == 16:

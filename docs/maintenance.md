@@ -36,7 +36,7 @@ nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 
 依赖升级或跨领域修改按[完整验收流程](validation.md#完整验收与计时)验证后再部署。
 
-自动更新的输入清单由[更新工作流](../.github/workflows/update.yml)维护。单独更新一个 input 使用 `nix flake update <名称>`，例如输入法主题：
+自动更新的输入分组由[候选工作流](../.github/workflows/update-inputs.yml)维护。VPS 的包集与部署步骤见 [VPS 维护](vps.md#更新-vps-包集)。单独更新一个 input 使用 `nix flake update <名称>`，例如输入法主题：
 
 ```sh
 nix flake update catppuccin-fcitx5
@@ -81,6 +81,6 @@ journalctl -u docker-prune.service
 1. 在 `hosts/<名称>/` 声明硬件、磁盘、启动方案、主机名、用户名、UID，以及该安装的系统和用户配置 `stateVersion`。
 2. 导入需要的 profile，选择实际备份目标、频率和网络公告。`site.storage.persistRoot` 指定持久根；已有数据的位置变化需要单独迁移。
 3. 配置该主机的 SOPS 密文与解密身份。`lib/credentials.nix` 提供 laptop 使用的字段绑定，主机传入目录、用户名与备份目标名称；可参考已有主机，不能复制其私钥或机器状态。
-4. 在 `nixosConfigurations` 注册主机，构建系统并检查对应配置。需要托管验收和缓存时，再将名称加入验证工作流的 `matrix.host` 数组；当前 CI 面向 `x86_64-linux`，其他架构需要安排对应 runner 和验证入口。
+4. 在 `nixosConfigurations` 注册主机，构建系统并检查对应配置。需要托管验收和缓存时，再加入验证工作流的 laptop 矩阵；当前 CI 面向 `x86_64-linux`，其他架构需要安排对应 runner 和验证入口。
 
 具体机器的磁盘与恢复约定放在它自己的主机说明中。测试使用独立的合成 laptop 配置，不需要新增一台真实主机来运行通用检查。

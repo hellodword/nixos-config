@@ -30,9 +30,56 @@ flowchart TD
   Filter -->|固定目的地隧道| SB
 ```
 
+## 用途出口
+
+`site.network.purposeRouting.enable` 使用 [purposes.toml](../data/network/purposes.toml) 中的共同策略，laptop profile 默认启用。通过 [VPS 订阅](vps.md#订阅与分流)的 `?client=linux` 获取 provider，保存在 `site.network.providerFile` 指定的运行时路径。文件含代理密码，应由 root 持有、权限 0600，并纳入持久存储。
+
+规则决定用途，provider 的 `groups` 决定用途使用的出口。分组 provider 必须绑定 `proxy`，用于通用海外规则及未绑定的可选用途；建议同时绑定 `hideme`，用于隐私站点和最终兜底。其他用途按需绑定。省略某个用途时，分类仍生效，并使用 `proxy`，例如未绑定 `payment` 时 PayPal 使用 `proxy`。只提供具体节点的 provider 也可使用这份策略，全部代理用途沿用 `proxy` / `auto` 选择。
+
+共同策略先拦截 PCDN，再处理 SSH/RDP：常见端口及 sing-box 可识别的应用协议按目标公网 IP 分流，国内使用 `direct`，其余使用 `hideme`。域名目标先解析真实地址，再判断归属。各平台自己的本地网络规则，以及排序在共同策略之前的用户例外，先于这些分类。
+
+接着匹配 `downloads`；随后处理 infrastructure 流量，即 `geosite-category-doh` 中的域名和 TCP 853，同样按目标公网 IP 选择国内 `direct`、其余 `hideme`。这些解析服务的域名通过 `hideme` 查询地址，系统 DNS 的固定上游隧道仍使用各用途配置的解析出口。其余域名按下表顺序匹配。
+
+| 用途 | 覆盖内容 |
+| --- | --- |
+| `downloads` | Cargo、npm、Go 依赖，Nix 缓存，Docker/GHCR，GitHub 发布附件，Google 下载和共享存储，Apple、Windows、Office 更新，VS Code，F-Droid 与官方 HTTPS 镜像 |
+| `cryptocurrency` | 加密货币服务、交易所及行情 |
+| `ai` | OpenAI、Anthropic |
+| `payment` | PayPal、Stripe |
+| `giffgaff` | Giffgaff |
+| `linuxdo` | LinuxDO、静态资源及关联服务 |
+| `streaming` | Netflix、Hulu、HBO、Disney、Spotify、Prime Video、YouTube、Apple TV、Twitch |
+| `apns` | Apple 推送 |
+| `social` | Imgur、Reddit、Facebook、Twitter/X、LinkedIn、Discord、Tumblr、4chan、Pixiv、Hacker News |
+| `hideme` | Proton、Telegram、Tor、成人站点、GitHub/GitLab、XDA |
+| `tiktok` | TikTok |
+| `google` | Google 通用服务 |
+| `microsoft` | Microsoft、Edge 通用服务 |
+| `apple` | Apple 通用服务 |
+
+下载分类优先。例如 GitHub 页面使用 `hideme`，release 附件使用 `downloads`；`storage.googleapis.com` 及其子域中的文件和应用附件都使用 `downloads`。YouTube 先于 Google，Apple TV 和 APNs 先于 Apple。用途与出口协议相互独立，`downloads` 可绑定到 VPS 的 native 出口。
+
+随后依次处理中国公司海外服务的 `@!cn` 例外、Cloudflare/Fastly 平台域名、一般海外域名，均使用 `proxy`；`geolocation-cn` 收录的国内站点使用 `direct`。剩余带域名的连接使用 `hideme`，即使域名以 `.cn` 结尾或解析到国内 IP。
+
+没有域名的连接继续匹配服务 IP：Telegram/Tor → `hideme`，Netflix → `streaming`，Facebook/Twitter → `social`，APNs → `apns`；然后国内 IP → `direct`，其余 → `hideme`。Shadowrocket 在前面的 SSH/RDP、infrastructure GEOIP 判断中允许解析域名；这里的末尾 IP 规则使用 `no-resolve`，带域名的请求继续到 `FINAL`。DNS 从同一份域名规则生成分类，未命中时也使用 `hideme`。
+
+TOML 的 `[[rules]]` 保持这个顺序：`scope = "domain"` 的条件供 DNS 和连接共用，`scope = "connection"` 表示端口、协议、IP 等连接条件。匹配字段、`action` 和 `outbound` 沿用 sing-box；`rule_sets` 集中记录两种客户端的原生列表，Shadowrocket 匹配表达式由同一条规则提供动作。各上游列表的覆盖范围可以不同；同一客户端按文件顺序决定重叠规则的结果。
+
+修改 `/var/lib/site-network/selections.json` 可持久选择出口，例如：
+
+```json
+{"proxy": "edge-native", "cryptocurrency": "west-native"}
+```
+
+出口名称来自订阅 provider 的授权集合。使用 root 权限编辑，执行 `sudo network-policy check`、`sudo network-policy apply`。选择文件覆盖订阅的默认值；删除某个用途的覆盖后恢复订阅默认。这个目录由 laptop profile 持久化。Linux 的用途组将这份选择同时应用于 DNS 和业务连接，跨出口切换由该文件完成；移动客户端使用其原生选择界面。
+
+每个 `exit-<出口名>` selector 默认选择对应的自动组，也可通过原生 Clash API 固定具体路径。多个用途选中同一出口时共享其路径选择。路径命名、探测与故障时的行为见 [VPS 订阅与分流](vps.md#订阅与分流)。
+
+DNS 与连接使用同一实际出口。用途选择相同、解析器配置也相同的组共用 DNS race 进程和缓存；切换用途时一起生成、校验和激活。FakeIP 继续保留同 IP 域名的区别，非 A/AAAA 查询沿共享 DNS 策略处理。
+
 ## FakeIP 与域名分流
 
-完整组合默认启用 `site.network.dns.fakeIP.enable`，也可显式关闭。公共 direct、proxy 域名的 A/AAAA 查询返回合成地址，连接到达 sing-box 后恢复原域名，再由 `dns-policy` 按共享规则选择 CN/GLOBAL 解析真实目标。随后按文件顺序执行域名、IP/CIDR 和 GeoIP 规则；IP 条件匹配真实地址。节点自身的域名使用独立的 `dns-bootstrap`，避免节点解析依赖尚未建立的代理。
+完整组合默认启用 `site.network.dns.fakeIP.enable`，也可显式关闭。公共 direct、proxy 及用途组域名的 A/AAAA 查询返回合成地址，连接到达 sing-box 后恢复原域名，再由 `dns-policy` 按共享规则选择解析组查询真实目标。随后按文件顺序执行域名、IP/CIDR 和 GeoIP 规则；IP 条件匹配真实地址。节点自身的域名使用独立的 `dns-bootstrap`，避免节点解析依赖尚未建立的代理。
 
 因此，即使两个域名解析到同一个真实 IP，应用连接各自的 FakeIP 时仍能使用不同出口，TCP 和 UDP 都适用。HTTP/TLS 嗅探仅处理仍以真实 IP 为目标的连接。应用自带 DoH、硬编码 IP 或已缓存的真实地址仍依靠 IP 规则、DNS 关联和可见的协议元数据分流。
 
@@ -128,6 +175,20 @@ sudo network-ipv6 off
 失败信息保留具体阶段、命令及服务退出原因；`network-ipv6 status` 显示最近失败摘要和受限日志路径。原始输出在 `/run/site-network-policy/last-error.log`，结构化摘要在 `last-error.json`。恢复阻断或重启观察器时的附加错误与最初失败一起保存。
 
 只有 DNS、DNS＋sing-box、完整 Lockdown 三种组合均使用相同入口。上游需要至少一个 IPv4 地址；仅有 IPv6 上游的分组无法生成 IPv4 配置。dnsdist 在 IPv4 模式下处理的 AAAA 回答标记为 `listener/ipv4-only`；公共 FakeIP 的空回答由 sing-box 直接返回。
+
+## 时间同步
+
+laptop 与 VPS 使用 chrony，通过 NTS 认证时间源。默认服务器集中在 [nts-servers.nix](../lib/nts-servers.nix)，主机模块可通过 `services.chrony.servers` 调整。NTS 使用 TLS 建立认证材料，随后交换带认证的 NTP 报文，通常需要出站 TCP 4460 与 UDP 123；时间戳本身仍可见。laptop 的解析和校时连接遵循现有 DNS、分流与 Lockdown 策略。
+
+chrony 将漂移、RTC 状态和 NTS 材料保存在 `/var/lib/chrony`。laptop 持久化该目录，VPS 将它保留在持久根磁盘；laptop 的网络重连由原生 NetworkManager dispatcher 通知 chrony。
+
+```sh
+chronyc sources
+chronyc authdata
+journalctl -b -u chronyd
+```
+
+`sources` 显示选中的时间源与可达性，`authdata` 显示 NTS 密钥和 cookie 状态。
 
 ## 明文 DNS 接管
 
@@ -273,7 +334,7 @@ site.network.routeFragments."05-local.json".rules = [
 
 `final` 是没有规则命中时的兜底，不是该文件位置的一条匹配规则；每个消费者采用它可见的最后一个 `final`。rule-set tag 在合并后须唯一。空 `rules` 清空同名声明片段，删除本机文件恢复声明内容。系统 DNS 传输、嗅探、DNS 接管和明确阻断规则始终先于这些可配置片段。
 
-默认片段也遵守同一顺序：
+laptop profile 的默认片段也遵守同一顺序：
 
 | 文件 | 内容 |
 | --- | --- |
@@ -281,15 +342,13 @@ site.network.routeFragments."05-local.json".rules = [
 | `10-tailnet.json` | Tailscale 域名及反向域 → `tailnet`；未启用 Tailscale 时 → `private` |
 | `15-tailscale-services.json` | `tailscale.com` / `tailscale.io` → `direct`，DNS 使用 CN |
 | `20-private.json` | 私有域和私网反向域 → `private` |
-| `70-geosite-global.json` | laptop 的 geolocation-!cn 规则集 → `proxy` |
-| `80-geosite-cn.json` | laptop 的 geosite-cn 规则集 → `direct` |
-| `90-cn.json` | `.cn` → `direct` |
-| `95-tailnet-ip.json` | 启用 Tailscale 时，Tailnet IP → `tailnet` |
-| `96-private-ip.json` | 私网 IP → `direct` |
+| `21-tailnet-ip.json` | 启用 Tailscale 时，无域名的 Tailnet IP → `tailnet` |
+| `22-private-ip.json` | 无域名的私网 IP → `direct` |
+| `40-purpose-*.json` | 共同策略的有序域名、连接规则和规则集；DNS 与连接的 `final` 为 `hideme` |
 | `97-direct-ip.json` | 已声明的 `directNetworks` → `direct` |
 | `98-geoip.json` | 已声明的 GeoIP 规则集 → `direct` |
 
-因此 `05-local.json` 可以覆盖私有域分类，`50-local.json` 位于私有域之后、订阅列表之前。重叠域名依据规则顺序选择；更长的后缀应按需要放到更早的规则中。`network-policy check` 输出实际文件顺序、来源和 `文件名/rules/索引`，索引从 0 开始。
+因此 `05-local.json` 可以覆盖私有域分类，`30-local.json` 位于私有域之后、共同策略之前。重叠域名依据规则顺序选择；更长的后缀应按需要放到更早的规则中。`network-policy check` 输出实际文件顺序、来源和 `文件名/rules/索引`，索引从 0 开始。
 
 节点文件的顶层为 `{"outbounds":[...], "endpoints":[...]}`，两类数组可分别省略，但合计至少提供一个具体节点。所有 tag 在两类数组和内置组件之间唯一。运行时由 `sing-box check` 校验原生字段，再发布 0600 配置与节点副本。
 
@@ -400,9 +459,11 @@ sudo mullvad-exclude setpriv --reuid="$(id -un)" --regid="$(id -gn)" --init-grou
 
 ## 规则来源与更新
 
-laptop profile 从 [lyc8503/sing-box-rules](https://github.com/lyc8503/sing-box-rules)下载规则。GeoSite 同时决定 DNS 分类和连接路由，由共享策略流程统一应用；GeoIP 由 sing-box 的[远程规则集](https://sing-box.sagernet.org/configuration/rule-set/)自动更新。两者通过现有代理下载。
+laptop profile 使用 [共同策略](../data/network/purposes.toml) 声明的规则来源。域名规则集同时决定 DNS 分类和连接路由，由共享策略流程统一应用；IP 规则集由 sing-box 的[远程规则集](https://sing-box.sagernet.org/configuration/rule-set/)自动更新。两者通过现有代理下载。
 
-GeoSite 在上次成功检查满 24 小时后下载，失败后每小时重试。下载和校验成功后保存为待应用版本，当前 DNS 和连接路由继续使用已应用版本。桌面通知可打开 Rofi 确认框，默认选择“稍后”；选择“立即应用”并完成系统认证后，DNS 与代理服务一起切换，现有连接可能需要重连。应用失败会恢复上一版。Sway/Plasma 可点击通知，i3 的 Dunst 使用中键点击；同一待应用版本每次登录提醒一次。
+目录中的 `seeds` 将下载 URL 前缀映射到锁定的规则 input，个别来源用 `seed` 声明固定的初始下载及哈希。Linux 首次启动使用这些离线初值，后续沿运行时流程更新。移动客户端直接下载目录中对应格式的原生列表。
+
+域名规则集在上次成功检查满 24 小时后下载，失败后每小时重试。下载和校验成功后保存为待应用版本，当前 DNS 和连接路由继续使用已应用版本。桌面通知可打开 Rofi 确认框，默认选择“稍后”；选择“立即应用”并完成系统认证后，DNS 与代理服务一起切换，现有连接可能需要重连。应用失败会恢复上一版。Sway/Plasma 可点击通知，i3 的 Dunst 使用中键点击；同一待应用版本每次登录提醒一次。
 
 已应用版本、待应用版本与检查时间保存在 `/var/lib/site-network-rules`，跨注销、重启保留。更换系统代次时优先使用同一来源的已应用规则，待应用版本继续等待确认。GeoIP 每 24 小时由 sing-box 更新，使用 `/var/lib/sing-box/cache.db` 持久缓存，更新时直接调整匹配内容。
 
@@ -456,7 +517,7 @@ DNS 事件由 dnsdist 原生 dnstap 经本地 UNIX socket 交给 DNS Collector�
 | `dnstap.identity = dnsdist-leg` | 每条实际加密上游分支的查询和响应；`extra.upstream` 包含协议、地址、端口、TLS 名称 |
 | `extra.response_source` | `query`、`upstream`、`cache` 或 `self`；本地 NXDOMAIN 和客户端 ECS 拒绝属于 `self` |
 
-`extra` 是 JSON 字符串。查询响应还带 DNS ID、客户端地址/端口与时间；分支记录包含被丢弃的错误响应。前端的 `group` 表示策略选择的 CN/GLOBAL/Tailnet；原生 dnsproxy 并发日志没有贯穿所有进程的请求标识，因此同名并发或响应相同时，无法严格把每个客户端请求绑定到唯一竞速胜者。逐分支结果、实际返回内容和 dnsproxy 的上游日志分别保留。
+`extra` 是 JSON 字符串。查询响应还带 DNS ID、客户端地址/端口与时间；分支记录包含被丢弃的错误响应。前端的 `group` 表示实际使用的解析组；用途出口共享相同解析器和出口时，记录的是合并后的组名，`outbound` 保留命中的用途。原生 dnsproxy 并发日志没有贯穿所有进程的请求标识，因此同名并发或响应相同时，无法严格把每个客户端请求绑定到唯一竞速胜者。逐分支结果、实际返回内容和 dnsproxy 的上游日志分别保留。
 
 ```sh
 # 完整 DNS 消息；--name 可选，按完整域名筛选

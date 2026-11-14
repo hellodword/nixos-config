@@ -6,6 +6,7 @@
 | --- | --- |
 | `hosts/<名称>/` | 硬件、启动、用户与版本、凭据位置、实际备份目标及主机特定策略 |
 | `profiles/laptop/` | 桌面与工具组合、持久状态清单、备份范围、共同网络默认值 |
+| `profiles/vps/` | 轻量持久系统、SSH 登录和资源默认值 |
 | `modules/` | 能力选项、NixOS 服务和软件装配 |
 | `home/` | 随系统激活的用户配置，包括 CLI、应用、桌面与状态栏 |
 | `lib/` | 策略组合、凭据字段绑定和共享服务设置 |
@@ -18,7 +19,9 @@
 
 ## 配置归属
 
-每台机器在主机目录声明用户名、UID、系统与 Home Manager 的 `stateVersion`、磁盘和密钥位置，并在 flake 中注册。profile 组合多台机器可以共用的选择。测试使用独立的合成 laptop，不依赖某台机器的硬件或真实密文。
+本仓库是受管主机和 VPS 期望配置的唯一来源。公开声明、SOPS 密文和读取它们的工具一起维护，部署配置与订阅由这些输入生成。
+
+笔记本在主机目录声明用户名、UID、系统与 Home Manager 的 `stateVersion`、磁盘和密钥位置，并在 flake 中注册。VPS 从私有 inventory 生成 Colmena hive，按节点组合服务模块。两类系统的包集分别锁定与更新，客户端和服务端通过共享协议场景验证兼容性。profile 维护同类机器的共同选择，测试使用独立的合成资料。
 
 Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户配置。系统闭包已经包含用户激活产物，维护入口统一见[主机维护](maintenance.md)。
 
@@ -34,6 +37,7 @@ Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户�
 | 壁纸 | [会话与定时任务](../modules/desktop/wallpaper.nix) | [恢复、轮换与下载](../scripts/desktop/wallpaper.py) |
 | SSH/GPG | [系统和用户服务](../modules/core/cli.nix) | [公钥发布与身份注册](../scripts/secrets/identity.py) |
 | CI | [工作流](../.github/workflows) | [构建统计、发布与更新](../.github/ci) |
+| VPS 与订阅 | [节点和服务](../modules/vps)、[部署](../nix/vps.nix) | [部署材料与客户端生成](../scripts/vps)、[Worker](../workers) |
 
 脚本选 Python 是为了文件状态、结构化数据和进程协调；简单线性调用留在 shell 或 Nix 服务定义。网络规则中的 Go 辅助程序使用实际 RE2 语义，避免以另一种正则实现近似判断规则。
 
@@ -45,7 +49,7 @@ laptop profile 的持久清单独立于功能开关。禁用应用后数据仍�
 
 系统声明、应用可写偏好和恢复资料各有入口，详见[本机配置](local-state.md)。持久化清单覆盖正常使用所需的状态和缓存；备份只选择[备份范围](backup.md)中的资料。现有仓库状态、调度记录和通知队列随持久根保留。
 
-凭据由 SOPS 密文在目标机运行时解密，模块接收文件路径。`lib/credentials.nix` 统一 laptop 的字段绑定，host 提供密文目录、用户名和备份目标；Wi-Fi profile 等机器选择仍由 host 声明。测试通过同一绑定使用合成资料。
+`lib/credentials.nix` 统一 laptop 的 SOPS 字段绑定，host 提供密文目录、用户名和备份目标，凭据在目标机运行时解密。VPS 的整份 inventory 在维护机解密，Colmena 按节点上传 root-only 的运行文件；系统与凭据代次共同支持回滚。操作入口见 [VPS](vps.md)。
 
 证书由最终 `security.pki.caBundle` 管理，网络服务和通知镜像使用同一信任来源。公共构建及发布范围见[缓存](cache.md)。
 

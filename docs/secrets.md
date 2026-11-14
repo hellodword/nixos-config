@@ -1,6 +1,8 @@
 # 主机凭据
 
-`hosts/<主机>/secrets.nix` 选择凭据目录、用户、备份目标和 Wi-Fi 连接，`lib/credentials.nix` 负责共享字段绑定。通用模块只接收运行时文件路径。SOPS 使用持久根下 `var/lib/sops-nix/keys.txt` 中的 age 身份解密，运行时文件由 sops-nix 管理。
+笔记本的 `hosts/<主机>/secrets.nix` 选择凭据目录、用户、备份目标和 Wi-Fi 连接，`lib/credentials.nix` 负责共享字段绑定。通用模块只接收运行时文件路径。SOPS 使用持久根下 `var/lib/sops-nix/keys.txt` 中的 age 身份解密，运行时文件由 sops-nix 管理。
+
+VPS 使用[整份加密 inventory](vps.md#建立私有-inventory)，维护机解密后通过 Colmena 分发节点专属的运行凭据。订阅地址、证书 Worker 凭据，以及撤销与换钥顺序也在该指南中维护。
 
 | 密文 | 内容 | 消费者 |
 | --- | --- | --- |

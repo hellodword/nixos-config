@@ -10,6 +10,13 @@ let
   resolver6 = cfg.dns.ingressIPv6;
   tailnet = config.services.tailscale.enable;
   tailInterface = config.services.tailscale.interfaceName;
+  raceUnits = map (name: "site-dns-race-${name}") (
+    [
+      "cn"
+      "global"
+    ]
+    ++ cfg.purposeGroups
+  );
   collectorConfig = (pkgs.formats.yaml { }).generate "dns-events.yaml" (
     import ../../lib/dns-collector.nix { }
   );
@@ -163,24 +170,21 @@ in
         ++ [ "site-network-policy.service" ];
         requires = [ "site-network-policy.service" ];
         partOf = [ "site-network-policy.service" ];
-        wants = [
-          "site-dns-events.service"
-          "site-dns-race-cn.service"
-          "site-dns-race-global.service"
-        ];
+        wants = [ "site-dns-events.service" ] ++ map (unit: "${unit}.service") raceUnits;
         serviceConfig = hardened // {
           ExecStart = "${pkgs.dnsdist}/bin/dnsdist --supervised --disable-syslog -C ${cfg.activePolicy}/dnsdist.conf";
           LimitNOFILE = 65536;
         };
       };
     }
-    // lib.genAttrs [ "site-dns-race-cn" "site-dns-race-global" ] (
+    // lib.genAttrs raceUnits (
       unit:
       let
         group = lib.removePrefix "site-dns-race-" unit;
       in
       {
         description = "Parallel DNS race for ${group}";
+        unitConfig.ConditionPathExists = "${cfg.activePolicy}/race-${group}.json";
         wantedBy = [ "multi-user.target" ];
         after = [
           "network.target"

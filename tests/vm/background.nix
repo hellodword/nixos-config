@@ -13,6 +13,11 @@ let
     });
 in
 {
+  # The VPS scenario supplies the authenticated time source.
+  systemd.services = deferred (
+    lib.optional (scenario != "vps" && config.services.chrony.enable) "chronyd"
+  );
+
   # Scheduled operations start after their scenario has prepared its data and
   # peers. Notification retries and status refreshes keep their normal schedule.
   systemd.timers = deferred (
@@ -25,6 +30,9 @@ in
     ++ lib.optional (
       scenario == "network" && (config.site.network.lockdown.enable or false)
     ) "site-network-logrotate"
+    ++ lib.optional (
+      scenario == "vps" && config.systemd.services ? site-vps-certificate
+    ) "site-vps-certificate"
   );
 
   # Application workflows use the local background. The desktop scenario owns

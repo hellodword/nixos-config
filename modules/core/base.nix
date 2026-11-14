@@ -89,12 +89,10 @@ in
       "zh_CN.UTF-8/UTF-8"
     ];
     time.timeZone = lib.mkDefault "UTC";
-    services.timesyncd = {
+    services.chrony = {
       enable = true;
-      servers = [
-        "ntp.aliyun.com"
-        "time.cloudflare.com"
-      ];
+      enableNTS = true;
+      servers = import ../../lib/nts-servers.nix;
     };
     environment.systemPackages = with pkgs; [
       vim

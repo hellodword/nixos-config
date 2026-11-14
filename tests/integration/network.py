@@ -2,6 +2,7 @@
 """Real resolver races through the shipped proxy, with observable egress paths."""
 import argparse
 import contextlib
+import copy
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -11,6 +12,7 @@ import socket
 import subprocess
 import tempfile
 import time
+from types import SimpleNamespace
 import urllib.request
 
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port
@@ -84,15 +86,154 @@ def remote_ip_rules(executable, root):
                 assert time.monotonic() < deadline, (root / "sing-box.log").read_text()
                 time.sleep(0.1)
             assert ("127.0.0.1", download_port) in calls
+            # A completed refresh confirms the cache write before offline restart.
+            offset = (root / "sing-box.log").stat().st_size
+            while "updated rule-set remote-ips" not in (root / "sing-box.log").read_text()[offset:]:
+                assert time.monotonic() < deadline, (root / "sing-box.log").read_text()
+                time.sleep(0.1)
         with proxy_process(executable, root, log, mixed):
             assert socks_http(mixed, "127.0.0.1", origin) == "proxy"
 
 
+def purpose_paths(args, templates):
+    """Run the catalog through DNS and real proxy paths, including saved selections."""
+    with tempfile.TemporaryDirectory() as temp, contextlib.ExitStack() as stack:
+        root = Path(temp)
+        key, cert = certificate(root)
+        upstreams, ports = [], []
+        for branch, protocol in enumerate(("tls", "https")):
+            resolver = Resolver("global", branch)
+            # Ordinary domains share a CN address, including the hideme fallback.
+            resolver.ipv4 = "223.5.5.5"
+            resolver.ipv4_by_name = {"foreign-transport.example.org": "1.1.1.1", "dns.alidns.com": "1.1.1.1"}
+            port = stack.enter_context(encrypted_server(resolver, protocol, key, cert))
+            ports.append(port)
+            upstreams.append({"protocol": protocol, "address": "127.0.0.1", "port": port, "serverName": "resolver.test"})
+        origin = stack.enter_context(http_server())
+        exits = {name: stack.enter_context(socks_server(ports, [origin, 22, 222, 2222, 3389, 853]))
+                 for name in ("east", "west", "media", "push", "apple", "google", "cn")}
+        provider = {
+            "outbounds": [{"type": "socks", "tag": "path-" + name, "server": "127.0.0.1", "server_port": port}
+                          for name, (port, _) in exits.items() if name != "cn"],
+            "exits": {name: {"paths": ["path-" + name]} for name in exits if name != "cn"},
+            "groups": {name: {"exits": [n for n in exits if n != "cn"], "default": default}
+                       for name, default in (("proxy", "east"), ("hideme", "west"), ("downloads", "east"),
+                                             ("cryptocurrency", "west"), ("streaming", "media"), ("apns", "push"),
+                                             ("apple", "apple"), ("google", "google"))},
+        }
+        front, bootstrap, mixed = free_port(), free_port(), free_port()
+        policy = json.loads(Path(args.purpose_policy).read_text())
+        policy.update(groups={name: {"upstreams": upstreams} for name in ["cn", "global", *policy["purposeGroups"]]},
+                      tunnelGroups=["global", *policy["purposeGroups"]], caStore=str(cert),
+                      frontPort=front, bootstrapPort=bootstrap,
+                      legPortBase=17400, racePortBase=17500, tunnelPortBase=17600)
+        # No test process can reach the public addresses from the catalog or DNS answers.
+        base = copy.deepcopy(templates["combined"])
+        base["outbounds"] = [node if node["tag"] != "direct" else {
+            "type": "socks", "tag": "direct", "server": "127.0.0.1", "server_port": exits["cn"][0]}
+            for node in base["outbounds"]]
+        for server in base["dns"]["servers"]:
+            server["server_port"] = front if server["tag"] == "dns-policy" else bootstrap
+        for inbound in base["inbounds"]:
+            inbound["listen_port"] = mixed
+        # Use locked IP seeds here; native refresh and offline reuse have their own process scenario.
+        for fragment in policy["connectionFragments"].values():
+            fragment["rule_set"] = [{"type": "local", "tag": rs["tag"], "path": rs["initial_path"], "format": rs["format"]}
+                                     for rs in fragment.get("rule_set", [])]
+        for name, value in (("base", base), ("policy", policy), ("provider", provider)):
+            (root / f"{name}.json").write_text(json.dumps(value))
+        selection = root / "selections.json"
+        for chosen in ("west", "east"):
+            selection.write_text(json.dumps({"cryptocurrency": chosen}))
+            generation = root / chosen
+            generation.mkdir()
+            dns_test.runtime.prepare(SimpleNamespace(
+                policy=root / "policy.json", base=root / "base.json", provider=root / "provider.json",
+                selections=selection, fragments=None, connections=None, rules_directory=None,
+                dnsdist=args.dnsdist, sing_box=args.sing_box, bootstrap=False, ipv4_only=True,
+                fakeip_exclude=None, wireguard_key=None, wireguard_peer=None), generation)
+            effective = json.loads((generation / "provider.json").read_text())
+            bound = compiler.bind_groups(policy, effective)
+            renderer.render(generation / "network.json", generation / "provider.json", generation / "network.json", args.sing_box)
+            aliases = json.loads((generation / "dns-groups.json").read_text())
+            assert aliases["cryptocurrency"] == aliases["hideme" if chosen == "west" else "global"]
+            assert aliases["payment"] == aliases["global"]
+            with (generation / "sing-box.log").open("w") as log, \
+                    proxy_process(args.sing_box, generation, log, mixed), \
+                    dns_test.processes(args, bound, generation / "dns", ipv4_only=True):
+                cases = [
+                    ("github.com", "west"), ("release-assets.githubusercontent.com", "east"),
+                    ("storage.googleapis.com", "east"), ("discord-attachments.storage.googleapis.com", "east"),
+                    ("youtube.com", "media"), ("google.com", "google"), ("tv.apple.com", "media"),
+                    ("push.apple.com", "push"), ("apple.com", "apple"), ("binance.com", chosen),
+                    ("paypal.com", "east"), ("alipay.hk", "east"), ("biliintl.com", "east"),
+                    ("baidu.com", "cn"), ("unclassified-fixture.example.cn", "west"),
+                    ("unclassified-fixture.example.org", "west"),
+                ]
+                for domain, expected in cases:
+                    for _, calls in exits.values():
+                        calls.clear()
+                    assert dns_test.marker(dns_test.query(front, domain)) == "223.5.5.5"
+                    assert socks_http(mixed, domain, origin) == "proxy", domain
+                    assert ("223.5.5.5", origin) in exits[expected][1], (domain, expected, exits)
+                    assert all(("223.5.5.5", origin) not in calls for name, (_, calls) in exits.items() if name != expected)
+                # Query records identify the selected pool even when DoH/DoT reuses a connection.
+                pools = {"east": "global", "west": "hideme", "media": "streaming", "push": "apns",
+                         "apple": "apple", "google": "google", "cn": "cn"}
+                deadline = time.monotonic() + 5
+                while True:
+                    events = dns_test.read_events(generation / "dns/events.jsonl")
+                    if all(any(event["name"] == domain and event["identity"] == "dnsdist-client"
+                               and event["policy"]["group"] == pools[expected]
+                               for event in events) for domain, expected in cases):
+                        break
+                    assert time.monotonic() < deadline, "DNS purpose did not match the connection exit"
+                    time.sleep(0.1)
+                for _, calls in exits.values():
+                    calls.clear()
+                assert socks_http(mixed, "223.5.5.5", origin) == "proxy"
+                assert ("223.5.5.5", origin) in exits["cn"][1]
+                # The same service follows its real destination's geography, even
+                # when a domain's ordinary purpose would select a different exit.
+                geography = [
+                    (host, port, address, expected, None)
+                    for host, address, expected in (
+                        ("223.5.5.5", "223.5.5.5", "cn"), ("1.1.1.1", "1.1.1.1", "west"),
+                        ("cn-transport.example.org", "223.5.5.5", "cn"),
+                        ("foreign-transport.example.org", "1.1.1.1", "west"))
+                    for port in (22, 222, 2222, 3389, 853)
+                ] + [
+                    ("dns.google", origin, "223.5.5.5", "cn", None),
+                    ("dns.alidns.com", origin, "1.1.1.1", "west", None),
+                    ("cn-transport.example.org", origin, "223.5.5.5", "cn", b"SSH-2.0-fixture\r\n"),
+                    ("foreign-transport.example.org", origin, "1.1.1.1", "west", b"SSH-2.0-fixture\r\n"),
+                ]
+                for host, port, address, expected, payload in geography:
+                    for _, calls in exits.values():
+                        calls.clear()
+                    assert socks_http(mixed, host, port, payload) == "proxy", (host, port)
+                    assert (address, port) in exits[expected][1], (host, port, expected, exits)
+                assert dns_test.query(front, "musicps.p2p.qq.com").rcode() == 3
+                try:
+                    socks_http(mixed, "musicps.p2p.qq.com", origin)
+                except (OSError, EOFError):
+                    pass
+                else:
+                    raise AssertionError("PCDN request reached an exit")
+
+        # Concrete-node providers use the same catalog with all purposes following proxy.
+        classic = {"outbounds": provider["outbounds"][:1]}
+        network = assembler.assemble(base, policy, ipv4_only=True)
+        result = renderer.address_family(renderer.combine(network, classic))
+        (root / "classic.json").write_text(json.dumps(result))
+        subprocess.run([args.sing_box, "check", "-c", str(root / "classic.json")], check=True)
+
 def main():
     parser = argparse.ArgumentParser()
-    for arg in ("sing-box", "template", "dnsdist", "dnsproxy", "dnscollector", "collector-template"):
+    for arg in ("sing-box", "template", "purpose-policy", "dnsdist", "dnsproxy", "dnscollector", "collector-template"):
         parser.add_argument("--" + arg, required=True)
     args = parser.parse_args()
+    purpose_paths(args, json.loads(Path(args.template).read_text()))
     with tempfile.TemporaryDirectory(prefix="network-contract-") as directory, contextlib.ExitStack() as stack:
         root = Path(directory)
         key, cert = certificate(root)

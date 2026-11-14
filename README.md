@@ -1,12 +1,13 @@
 # NixOS configuration
 
-以 laptop profile 组合桌面、网络、备份和开发环境的 NixOS 配置。支持 Sway、i3 和 Plasma，使用声明式系统配置，同时保留应用需要自行修改的持久状态。
+管理笔记本与 VPS 的 NixOS 配置。laptop profile 组合 Sway、i3、Plasma、网络和备份；VPS profile 提供轻量持久系统、远端部署和代理出口。
 
 主机目录记录具体机器的硬件、身份和策略，例如 [laptop2](hosts/laptop2/README.md)。`profiles/laptop/` 维护共同选择，`modules/` 提供能力。
 
 | 要做什么 | 从这里开始 |
 | --- | --- |
 | 构建、升级、切换、回退或增加主机 | [主机维护](docs/maintenance.md) |
+| 安装 VPS、部署服务与管理代理订阅 | [VPS](docs/vps.md) |
 | 修改 SSH、Wi-Fi、显示器、输入法和本机偏好 | [本机配置](docs/local-state.md) |
 | 调整分流、代理节点或 Lockdown | [网络](docs/network.md) |
 | 查看备份状态、控制成本、恢复资料 | [备份](docs/backup.md) |
@@ -26,6 +27,6 @@ host=laptop2  # 换成要构建的主机
 nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 ```
 
-依赖由 `flake.lock` 固定，开发工具通过 `nix develop` 提供。Home Manager 随 NixOS 系统一起构建和激活。构建读取公开配置与 SOPS 密文，凭据在目标机激活时解密。
+依赖由 `flake.lock` 固定，开发工具通过 `nix develop` 提供。Home Manager 随 laptop 系统一起构建和激活。laptop 凭据在目标机激活时解密；VPS inventory 在维护机解密，由 Colmena 分发每台机器所需的凭据。
 
 已有安装的迁移恢复材料保存在[归档](docs/archive/laptop2-migration.md)，日常维护使用现行指南。

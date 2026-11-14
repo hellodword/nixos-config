@@ -18,7 +18,8 @@ from domain_policy import read_json
 
 def combine(template, provider, wireguard_key=None, wireguard_peer=None):
     result = copy.deepcopy(template)
-    if not isinstance(provider, dict) or set(provider) - {"outbounds", "endpoints"}:
+    purposes = result.pop("_purposeGroups", [])
+    if not isinstance(provider, dict) or set(provider) - {"outbounds", "endpoints", "exits", "groups"}:
         raise ValueError("provider contains native outbounds and optional endpoints arrays")
     nodes = provider.get("outbounds", [])
     endpoints = provider.get("endpoints", [])
@@ -34,11 +35,22 @@ def combine(template, provider, wireguard_key=None, wireguard_peer=None):
             raise ValueError("provider must contain concrete proxy outbounds or endpoints")
         known.add(tag)
         tags.append(tag)
-    for outbound in result["outbounds"]:
-        if outbound["tag"] == "auto":
-            outbound["outbounds"] = tags
-        elif outbound["tag"] == "proxy":
-            outbound["outbounds"] = ["auto", *tags]
+    if "groups" in provider:
+        generated = grouped_outbounds(provider, known - {"auto", "proxy"}, selected_only=True)
+        result["outbounds"] = [node for node in result["outbounds"] if node["tag"] not in {"auto", "proxy"}]
+        result["outbounds"].extend(generated)
+    else:
+        for outbound in result["outbounds"]:
+            if outbound["tag"] == "auto":
+                outbound["outbounds"] = tags
+            elif outbound["tag"] == "proxy":
+                outbound["outbounds"] = ["auto", *tags]
+    for purpose in purposes:
+        if purpose not in provider.get("groups", {}):
+            if purpose in known:
+                raise ValueError("provider node conflicts with a declared purpose")
+            result["outbounds"].append({"type": "selector", "tag": purpose,
+                                       "outbounds": ["proxy"], "default": "proxy"})
     result["outbounds"].extend(copy.deepcopy(nodes))
     result.setdefault("endpoints", []).extend(copy.deepcopy(endpoints))
     for endpoint in result.get("endpoints", []):
@@ -48,6 +60,37 @@ def combine(template, provider, wireguard_key=None, wireguard_peer=None):
             endpoint["private_key"] = wireguard_key.strip()
             endpoint["peers"][0]["public_key"] = wireguard_peer.strip()
     return result
+
+
+def grouped_outbounds(provider, known=(), *, selected_only=False):
+    """Select a logical exit, then either probe or pin its complete paths."""
+    known = set(known)
+    paths = {node["tag"] for node in provider.get("outbounds", []) + provider.get("endpoints", [])}
+    exits = provider["exits"]
+    generated = []
+    for name, exit_ in exits.items():
+        tag = "exit-" + name
+        if {tag, tag + "-auto"} & known or not exit_["paths"] or not set(exit_["paths"]) <= paths:
+            raise ValueError("exit paths must reference concrete provider nodes")
+        known.update((tag, tag + "-auto"))
+        generated.append({"type": "urltest", "tag": tag + "-auto", "outbounds": exit_["paths"],
+                          "url": "https://www.gstatic.com/generate_204", "interval": "3m", "tolerance": 100,
+                          "interrupt_exist_connections": False})
+        generated.append({"type": "selector", "tag": tag, "default": tag + "-auto",
+                          "outbounds": [tag + "-auto", *exit_["paths"]], "interrupt_exist_connections": False})
+    for name, group in provider["groups"].items():
+        if name in known or name in {"direct", "private", "tailnet", "local", "auto", "transparent"}:
+            raise ValueError("purpose group conflicts with another outbound")
+        if not group["exits"] or not set(group["exits"]) <= exits.keys() or group["default"] not in group["exits"]:
+            raise ValueError("purpose group requires an explicit available default exit")
+        known.add(name)
+        choices = [group["default"]] if selected_only else group["exits"]
+        generated.append({"type": "selector", "tag": name,
+                          "outbounds": ["exit-" + value for value in choices],
+                          "default": "exit-" + group["default"]})
+    if "proxy" not in provider["groups"]:
+        raise ValueError("grouped providers require a proxy purpose")
+    return generated
 
 
 def address_family(config):
@@ -140,7 +183,7 @@ def bind_underlay(config, underlay):
     if not any(key in bind for key in ("inet4_bind_address", "inet6_bind_address")):
         raise ValueError("underlay has no usable address")
     for outbound in config["outbounds"] + config.get("endpoints", []):
-        if outbound["tag"] in {"local", "auto", "proxy", "tailnet", "transparent"}:
+        if outbound.get("type") in {"selector", "urltest"} or outbound["tag"] in {"local", "tailnet", "transparent"}:
             continue
         if "netns" in outbound or outbound.get("detour") in {"local", "direct"}:
             raise ValueError("provider cannot bypass declared physical bindings")

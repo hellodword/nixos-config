@@ -1,43 +1,90 @@
-# Derivations for the workflow's named steps. YAML owns their execution order.
-{ flake, hostName }:
+# Derivations for the selected verification scope. YAML owns execution order.
+{
+  flake,
+  scope,
+  hostName ? null,
+}:
 let
   system = "x86_64-linux";
+  remote = scope == "remote";
+  pkgs = flake.inputs.${if remote then "nixpkgs-remote" else "nixpkgs"}.legacyPackages.${system};
+  inherit (pkgs) lib;
   host = flake.nixosConfigurations.${hostName};
-  inherit (host.pkgs) lib;
   checks = flake.checks.${system};
-  policy = import ./cache-policy.nix { inherit flake hostName; };
+  allVMs = [
+    "vm-network"
+    "vm-desktop"
+    "vm-applications"
+    "vm-backup"
+    "vm-vps"
+  ];
+  vmNames = if remote then [ "vm-vps" ] else lib.remove "vm-vps" allVMs;
+  checkNames =
+    if remote then
+      [ "vps" ]
+    else
+      lib.filter (name: name != "e2e" && !(lib.elem name allVMs)) (builtins.attrNames checks);
+  tools = import ./ci-tools.nix { inherit flake scope; };
+  products = [
+    flake.packages.${system}.oranc
+    tools
+  ]
+  ++ (
+    if remote then
+      [
+        flake.packages.${system}.vps-python
+        flake.packages.${system}.wrangler
+      ]
+    else
+      [
+        host.config.system.build.toplevel
+        flake.devShells.${system}.default
+      ]
+  );
+  aggregate = pkgs.linkFarm "${scope}-vm-tests" (
+    map (name: {
+      inherit name;
+      path = checks.${name};
+    }) vmNames
+  );
+  roots = products ++ map (name: checks.${name}) (checkNames ++ vmNames) ++ [ aggregate ];
+  policy = import ./cache-policy.nix {
+    inherit
+      flake
+      hostName
+      scope
+      roots
+      ;
+  };
   build = name: package: {
     inherit name;
     drv = package.drvPath;
     outputs = map (output: toString package.${output}) package.outputs;
   };
   vm = name: (build name checks.${name}) // { vm = true; };
-  vmNames = [
-    "vm-network"
-    "vm-desktop"
-    "vm-applications"
-    "vm-backup"
-  ];
 in
+assert lib.assertMsg (lib.elem scope [
+  "laptop"
+  "remote"
+]) "CI scope must be laptop or remote";
 (builtins.removeAttrs policy [ "privateBuilds" ])
 // {
+  inherit scope;
   builds = {
     private = policy.privateBuilds;
-    dependencies = [
-      (build "${hostName}-system" host.config.system.build.toplevel)
-      (build "development-shell" flake.devShells.${system}.default)
-      (build "oranc" flake.packages.${system}.oranc)
-    ]
-    ++ map (name: build name checks.${name}) (
-      lib.filter (name: name != "e2e" && !(lib.elem name vmNames)) (builtins.attrNames checks)
-    )
-    ++ map (name: build "${name}-driver" checks.${name}.driver) vmNames;
-    vm-network-backup = map vm [
-      "vm-network"
-      "vm-backup"
-    ];
-    vm-desktop = [ (vm "vm-desktop") ];
-    vm-applications = [ (vm "vm-applications") ];
-    aggregate = [ (build "e2e" checks.e2e) ];
+    dependencies =
+      map (package: build (lib.getName package) package) products
+      ++ map (name: build name checks.${name}) checkNames
+      ++ map (name: build "${name}-driver" checks.${name}.driver) vmNames;
+    vm-network-backup = lib.optionals (!remote) (
+      map vm [
+        "vm-network"
+        "vm-backup"
+      ]
+    );
+    vm-desktop = lib.optionals (!remote) [ (vm "vm-desktop") ];
+    vm-applications = lib.optionals (!remote) [ (vm "vm-applications") ];
+    vm-vps = lib.optionals remote [ (vm "vm-vps") ];
+    aggregate = [ (build "${scope}-e2e" aggregate) ];
   };
 }

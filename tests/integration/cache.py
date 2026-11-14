@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Publish project outputs and restore a closure shared with a public Nix cache."""
 
+import argparse
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -114,13 +115,16 @@ def checkpoint(state, phase, *, finish=False):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--nixpkgs-input", choices=["nixpkgs", "nixpkgs-remote"], default="nixpkgs")
+    args = parser.parse_args()
     publication_settings = cache.load_cache_settings()
     with tempfile.TemporaryDirectory(prefix="cache-integration-") as temporary, \
          build_gate() as (gate_url, entered, release):
         work = Path(temporary)
         # Unique names make deletion below specific to this invocation's output.
         fixture = '''let
-          pkgs = (builtins.getFlake ("git+file://" + toString ./.)).inputs.nixpkgs.legacyPackages.x86_64-linux;
+          pkgs = (builtins.getFlake ("git+file://" + toString ./.)).inputs.NIXPKGS_INPUT.legacyPackages.x86_64-linux;
           prefix = PREFIX;
           child = pkgs.writeText "${prefix}-child" "synthetic project content";
           large = pkgs.writeText "${prefix}-large" (builtins.concatStringsSep "" (builtins.genList (_: "data") 2048));
@@ -146,7 +150,7 @@ def main():
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
           { inherit child large late publicLocal publicRemote source restricted bundle driver root failure; }
           // { buildInput.path = buildInput; runtimeInput.path = runtimeInput; }
-        '''.replace("PREFIX", json.dumps(work.name)).replace("GATE_URL", json.dumps(gate_url))
+        '''.replace("NIXPKGS_INPUT", args.nixpkgs_input).replace("PREFIX", json.dumps(work.name)).replace("GATE_URL", json.dumps(gate_url))
         fixture = json.loads(run(["nix", "eval", "--impure", "--json", "--expr", fixture], cwd=ROOT))
 
         def entry(name, **kwargs):

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Compile DNS classification, encrypted races and optional transport requests."""
 import argparse
+import copy
 import ipaddress
 import json
 import re
@@ -26,7 +27,7 @@ def lua(value):
 
 
 def compile_policy(config, destination, model=None, ipv4_only=False):
-    if set(config.get("groups", {})) != {"cn", "global"}:
+    if not {"cn", "global"} <= config.get("groups", {}).keys():
         raise ValueError("DNS policy requires both cn and global resolver groups")
     destination.mkdir(parents=True, exist_ok=True)
     model = model or domain_policy.compile_policy(config, include_connections=False)
@@ -93,8 +94,17 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
             tunnels[-1]["network"] = transport
         return f"127.0.0.1:{listen}"
 
+    # Only one race process and cache per resolver/egress combination.
+    aliases, unique = {}, {}
+    for group, settings in config["groups"].items():
+        signature = json.dumps(settings, sort_keys=True)
+        canonical = next((name for name, value in unique.items() if json.dumps(value, sort_keys=True) == signature), group)
+        aliases[group] = canonical
+        if canonical == group:
+            unique[group] = settings
+    (destination / "dns-groups.json").write_text(json.dumps(aliases) + "\n")
     leg_index = 0
-    for index, (group, settings) in enumerate(config["groups"].items()):
+    for index, (group, settings) in enumerate(unique.items()):
         race = reserve(config.get("racePortBase", 5500) + index)
         upstreams = []
         for upstream in settings["upstreams"]:
@@ -113,7 +123,7 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
             address = (f"[{upstream['address']}]" if ":" in upstream["address"] else upstream["address"]) + f":{upstream['port']}"
             if group in config.get("tunnelGroups", []):
                 address = tunnel(tag, upstream["address"], upstream["port"],
-                                 "direct" if group == "cn" else "proxy")
+                                 settings.get("outbound", "direct" if group == "cn" else "proxy"))
             options = {
                 "name": tag, "address": address, "pool": tag, "tls": "openssl",
                 "subjectName": upstream["serverName"], "validateCertificates": True,
@@ -202,7 +212,8 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
 
     def decision(match, rule, location):
         outbound = rule.get("outbound", "reject")
-        group = {"direct": "cn", "proxy": "global", "private": "private", "tailnet": "tailnet", "reject": "reject"}[outbound]
+        group = {"direct": "cn", "proxy": "global", "private": "private", "tailnet": "tailnet", "reject": "reject"}.get(outbound, outbound)
+        group = aliases.get(group, group)
         metadata = {"rule": location, "group": group, "outbound": outbound,
                     "rule_sets": {tag: model["summary"]["rule_sets"][tag] for tag in references(rule)}}
         if group == "tailnet":
@@ -212,7 +223,7 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
         lines.append("do")
         value = match() if callable(match) else match
         lines.append(f"local selected = {value}")
-        if group in {"cn", "global"}:
+        if group in unique:
             # Node bootstrap shares domain protection, but uses CN transport.
             bootstrap_match = f"AndRule({{selected,DSTPortRule({bootstrap})}})"
             record(bootstrap_match, {**metadata, "group": "cn", "listener": "bootstrap"})
@@ -228,6 +239,20 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
     (destination / "transports.json").write_text(json.dumps(tunnels) + "\n")
     (destination / "summary.json").write_text(json.dumps(model["summary"], indent=2) + "\n")
     return listeners
+
+
+def bind_groups(config, provider):
+    """Use selected physical exits for both DNS pools and their tunnels."""
+    config = copy.deepcopy(config)
+    purposes = config.get("purposeGroups", [])
+    if not purposes:
+        return config
+    groups = provider.get("groups", {})
+    for purpose in ["proxy", *purposes]:
+        group = "global" if purpose == "proxy" else purpose
+        binding = groups.get(purpose, groups.get("proxy"))
+        config["groups"][group]["outbound"] = "exit-" + binding["default"] if binding else "proxy"
+    return config
 
 
 def main():

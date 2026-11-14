@@ -159,6 +159,8 @@
               "http"
               "tls"
               "dns"
+              "ssh"
+              "rdp"
             ];
           }
           // lib.optionalAttrs fakeIP {
@@ -191,20 +193,38 @@
   };
   _fakeIP = fakeIP;
   _connectionFragments = {
-    "96-private-ip.json".rules = [
+    "22-private-ip.json".rules = [
       {
-        ip_is_private = true;
+        type = "logical";
+        mode = "and";
+        rules = [
+          { ip_is_private = true; }
+          {
+            domain_regex = [ "." ];
+            invert = true;
+          }
+        ];
         action = "route";
         outbound = "direct";
       }
     ];
   }
   // lib.optionalAttrs tailscale {
-    "95-tailnet-ip.json".rules = [
+    "21-tailnet-ip.json".rules = [
       {
-        ip_cidr = [
-          "100.64.0.0/10"
-          "fd7a:115c:a1e0::/48"
+        type = "logical";
+        mode = "and";
+        rules = [
+          {
+            ip_cidr = [
+              "100.64.0.0/10"
+              "fd7a:115c:a1e0::/48"
+            ];
+          }
+          {
+            domain_regex = [ "." ];
+            invert = true;
+          }
         ];
         action = "route";
         outbound = "tailnet";

@@ -51,6 +51,8 @@ def processes(args, config, root, fragments=None, ipv4_only=False):
                 raise AssertionError((root / "events.jsonl").read_text())
             time.sleep(0.05)
         for group in config["groups"]:
+            if not (root / f"race-{group}.json").exists():
+                continue
             log = stack.enter_context((root / f"race-{group}.log").open("w"))
             running.append(subprocess.Popen([args.dnsproxy, "--config-path", str(root / f"race-{group}.json")], stdout=log, stderr=log))
         log = stack.enter_context((root / "dnsdist.log").open("w"))
@@ -67,11 +69,12 @@ def processes(args, config, root, fragments=None, ipv4_only=False):
                     time.sleep(0.05)
             else:
                 raise AssertionError("DNS stack not ready")
-            assert query(config["frontPort"], "ready.global.test").rcode() == 0
+            assert query(config["frontPort"], "ready.example.org").rcode() == 0
             yield
         except BaseException:
             for handle in (root / "dnsdist.log", root / "race-cn.log", root / "race-global.log", root / "events.jsonl"):
-                print(handle.name + ":\n" + handle.read_text()[-12000:], flush=True)
+                if handle.exists():
+                    print(handle.name + ":\n" + handle.read_text()[-12000:], flush=True)
             raise
         finally:
             for process in running:

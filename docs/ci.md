@@ -1,42 +1,46 @@
 # 自动更新、验收与缓存发布
 
-[验证工作流](../.github/workflows/ci.yml)负责构建、测试和缓存发布；[更新工作流](../.github/workflows/update.yml)负责选择新的上游版本，并在验证成功后发布候选提交。
+[验证工作流](../.github/workflows/ci.yml)按 laptop 和 remote 两组构建、测试和发布缓存。[更新入口](../.github/workflows/update.yml)安排更新顺序，[候选工作流](../.github/workflows/update-inputs.yml)为每组准备提交、调用验证并合并 PR。
+
+VPS 使用合成 inventory 进行协议和部署验证。真实 inventory 在维护机解密，私有节点构建、凭据下发与 Worker 发布由维护机完成；公共 CI 缓存只包含公开配置和合成测试产物。
 
 ## 入口和候选提交
 
 | 入口 | 行为 |
 | --- | --- |
-| push 到 `master` | 验证该提交，构建期间增量发布签名缓存，在阶段结束时等待发布完成 |
-| 手动运行 Verify and cache | 默认验证所选 ref；只有 master 发布缓存 |
+| push 到 `master` | 分别验证 laptop 和 remote，构建期间增量发布签名缓存 |
+| 手动运行 Verify and cache | 选择 laptop、remote 或 all；只有 master 发布缓存 |
 | 在 master 手动勾选 `initialize-cache` | 只创建缓存索引，供首次设置 package；不执行系统构建和 VM |
-| 定时运行，或在 master 手动运行 Update flake inputs | 更新指定输入；需要候选时创建提交并调用验证工作流 |
+| 定时更新 | 先更新并验证 remote，再从当前 master 开始 laptop 更新 |
+| 在 master 手动运行 Update flake inputs | 选择一组或 all，按同样流程准备、验证和合并 |
 
-更新时间与输入列表见[更新工作流](../.github/workflows/update.yml)。本地更新及按需升级见[主机维护](maintenance.md#更新与验证)。
+更新时间见[更新入口](../.github/workflows/update.yml)，每组输入见[候选工作流](../.github/workflows/update-inputs.yml)。本地更新及按需升级见[主机维护](maintenance.md#更新与验证)。
 
 GeoSite、GeoIP 的初始快照随其他输入更新。只有这两个输入的版本变化时，本轮结束；包含其他输入或规则来源声明变化时，将全部变化放入同一候选。运行中规则的更新与确认见[网络规则](network.md#规则来源与更新)。
 
 更新任务先创建候选提交并交给验证任务。构建针对最终提交，系统的 `configurationRevision` 与验收 SHA 一致；失败候选不推送。
 
-所有 host 成功后，工作流创建 PR，将 master 快进到已验证的提交，再删除候选分支。若 master 已前进而无法快进，本轮关闭 PR 并删除分支，下一次从新基线开始。仓库分支策略必须允许这种合并方式；调整保护规则时需核对[合并实现](../.github/ci/update.py)。
+每组验证和缓存发布成功后，该组创建 PR，将 master 快进到已验证的提交，再删除候选分支。若 master 已前进而无法快进，本轮关闭 PR 并删除分支，下一次从新基线开始。仓库分支策略必须允许这种合并方式；调整保护规则时需核对[合并实现](../.github/ci/update.py)。
+
+remote 只更新 `nixpkgs-remote`，laptop 更新自己的包集和桌面相关输入。每组的分支、候选 artifact 和报告均有独立名称。前一组失败仍继续后一组；前一组合并成功时，后一组以合并后的 master 为基线。
 
 ## 主机与执行顺序
 
-验证工作流的 `matrix.host` 选择需要验收的主机，当前支持 `x86_64-linux`。主机依次执行，某台失败仍继续检查其余主机；自动更新等待全部成功才能合并。新增机器见[增加主机](maintenance.md#增加主机)。
+验证矩阵选择范围与主机，当前支持 `x86_64-linux`。laptop 构建所选 host、默认开发环境及桌面和网络检查；remote 构建合成 VPS、bootstrap 镜像及维护工具。两组都验证 laptop sing-box 客户端与 VPS sing-box 服务端的协议兼容性，相同 derivation 可直接复用缓存。新增机器见[增加主机](maintenance.md#增加主机)。
 
 | 步骤 | 内容 |
 | --- | --- |
 | 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
-| 缓存与工具 | 确认项目缓存可匿名读取，准备开发工具；发布任务核对签名身份和写入权限 |
-| 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存集成 |
-| 清单求值 | 求值所选系统、开发环境、检查与 VM driver，生成构建及发布清单 |
-| 依赖构建 | 构建受限依赖、所选系统、开发环境、领域检查和全部 VM driver；后台上传成功产物 |
+| 缓存与工具 | 确认项目缓存可匿名读取，准备所选范围的工具；发布任务核对签名身份和写入权限 |
+| 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存和更新候选集成 |
+| 清单求值 | 求值所选范围的系统、工具、检查与 VM driver，生成构建及发布清单 |
+| 依赖构建 | 构建所选范围的依赖、系统、领域检查和 VM driver；后台上传成功产物 |
 | 依赖发布收尾 | 补齐已有产物和运行时引用，上传大对象并等待队列完成；构建失败也保留成功产物 |
-| VM 第一组 | network 与 backup 依次运行 |
-| VM 第二组 | desktop 单独运行 |
-| VM 第三组 | applications 单独运行 |
-| 汇总与发布收尾 | 四组 VM 全部通过才生成聚合结果；完成剩余产物的发布并结束上传进程 |
+| laptop VM | network、backup 依次运行，随后分别运行 desktop、applications |
+| remote VM | 从 BIOS/UEFI 交付镜像启动，执行 VPS 部署与代理场景 |
+| 汇总与发布收尾 | 该组 VM 场景通过后生成聚合结果；完成剩余产物的发布并结束上传进程 |
 
-同一个 host 的步骤共享 runner、容器和 Nix store。不同 host 使用独立 runner，通过 GHCR 复用相同依赖和测试结果。本地求值要求、清单复核命令与检查范围见[验证指南](validation.md)。
+每个矩阵任务的步骤共享 runner、容器和 Nix store。任务依次运行，失败不跳过其他任务；各 runner 通过 GHCR 复用相同依赖和测试结果。remote 的构建清单直接使用 VPS 包集，客户端兼容检查只引用 laptop 的 sing-box 包。本地求值要求、清单复核命令与检查范围见[验证指南](validation.md)。
 
 GitHub Actions bootstrap cache 保存 oranc 的运行闭包，用于尽快启动代理。代理就绪后，开发环境和项目构建通过[GHCR 缓存](cache.md#发布范围)复用依赖。master 在 oranc 准备完成后立即保存 bootstrap cache，因此后续测试失败也能保留它。未命中或读取失败时照常构建；超过[工作流](../.github/workflows/ci.yml)中的容量上限时跳过保存，写入失败也不影响后续验证。运行 summary 中的 Oranc bootstrap cache 显示命中、大小和跳过原因，保存结果见对应步骤日志。
 
@@ -63,7 +67,7 @@ GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证
 
 容器的 `nofile` 上限需要保持有界：gawk 会据此分配管道管理数组，接近无限的默认值可能导致数十 GiB 的内存分配。调整 runner 或容器启动方式时，应保留工作流中的这项限制。
 
-发生失败时，先看运行页面的 summary，再下载 `diagnostics-<host>-<attempt>` artifact。诊断文件保留七天：
+发生失败时，先看运行页面的 summary，再下载 `diagnostics-<scope>[-<host>]-<attempt>` artifact。诊断文件保留七天：
 
 | 记录 | 用途 |
 | --- | --- |

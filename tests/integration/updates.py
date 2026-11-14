@@ -42,7 +42,7 @@ class UpdateCandidate(unittest.TestCase):
                     candidate["nodes"][names[0]]["original"]["repo"] = "different-source"
                 lock.write_text(json.dumps(candidate))
                 state, output = root / "candidate", root / "output"
-                subprocess.run([sys.executable, str(ROOT / ".github/ci/update.py"), "prepare", "--state", str(state)],
+                subprocess.run([sys.executable, str(ROOT / ".github/ci/update.py"), "prepare", "--scope", "laptop", "--state", str(state)],
                     cwd=root, env=os.environ | {"GITHUB_OUTPUT": str(output), "GITHUB_RUN_ID": "1", "GITHUB_RUN_ATTEMPT": "1"},
                     check=True, capture_output=True, text=True)
                 values = dict(line.split("=", 1) for line in output.read_text().splitlines())
@@ -56,6 +56,71 @@ class UpdateCandidate(unittest.TestCase):
                     self.assertEqual(values, {"changed": "false"})
                     self.assertEqual(git("rev-parse", "HEAD"), base)
                     self.assertFalse(state.exists())
+
+    def test_independent_inputs_and_sequential_candidates(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            work = Path(temporary)
+            upstream, project, next_checkout = (work / name for name in ("upstream", "project", "next"))
+
+            def git(directory, *arguments):
+                return subprocess.check_output(["git", *arguments], cwd=directory, text=True).strip()
+
+            def commit(directory, message):
+                git(directory, "-c", "user.name=Update fixture", "-c", "user.email=fixture@example.invalid",
+                    "-c", "commit.gpgsign=false", "commit", "--quiet", "-m", message)
+
+            def locked(directory, name):
+                lock = json.loads((directory / "flake.lock").read_text())
+                return lock["nodes"][lock["nodes"][lock["root"]]["inputs"][name]]["locked"]
+
+            def update(directory, *inputs):
+                subprocess.run(["nix", "flake", "update", "--refresh", *inputs], cwd=directory,
+                               check=True, capture_output=True, text=True)
+
+            def prepare(directory, scope):
+                state, output = work / f"candidate-{scope}", work / f"output-{scope}"
+                subprocess.run([sys.executable, str(ROOT / ".github/ci/update.py"), "prepare",
+                                "--scope", scope, "--state", str(state)], cwd=directory,
+                               env=os.environ | {"GITHUB_OUTPUT": str(output), "GITHUB_RUN_ID": "1",
+                                                 "GITHUB_RUN_ATTEMPT": "1"},
+                               check=True, capture_output=True, text=True)
+                git(directory, "bundle", "verify", str(state / "candidate.bundle"))
+                return json.loads((state / "update.json").read_text()), dict(
+                    line.split("=", 1) for line in output.read_text().splitlines())
+
+            for directory in (upstream, project):
+                directory.mkdir()
+                git(directory, "init", "--quiet", "--initial-branch=master")
+            (upstream / "flake.nix").write_text('{ outputs = { self }: { lib.revision = 1; }; }')
+            git(upstream, "add", "--", "flake.nix")
+            commit(upstream, "first upstream")
+            url = json.dumps(f"git+file://{upstream}?ref=master")
+            (project / "flake.nix").write_text(
+                f'{{ inputs.nixpkgs.url = {url}; inputs.nixpkgs-remote.url = {url}; outputs = inputs: {{ }}; }}')
+            git(project, "add", "--", "flake.nix")
+            update(project)
+            git(project, "add", "--", "flake.lock")
+            commit(project, "initial inputs")
+            original = locked(project, "nixpkgs")
+            (upstream / "flake.nix").write_text('{ outputs = { self }: { lib.revision = 2; }; }')
+            git(upstream, "add", "--", "flake.nix")
+            commit(upstream, "next upstream")
+            update(project, "nixpkgs-remote")
+            self.assertEqual(locked(project, "nixpkgs"), original)
+            remote_lock = locked(project, "nixpkgs-remote")
+            self.assertEqual(remote_lock["rev"], git(upstream, "rev-parse", "HEAD"))
+            remote, remote_outputs = prepare(project, "remote")
+
+            # The second update starts from the revision containing the first merge.
+            git(work, "clone", "--quiet", str(project), str(next_checkout))
+            update(next_checkout, "nixpkgs")
+            self.assertEqual(locked(next_checkout, "nixpkgs-remote"), remote_lock)
+            self.assertEqual(locked(next_checkout, "nixpkgs"), remote_lock)
+            laptop, laptop_outputs = prepare(next_checkout, "laptop")
+            self.assertEqual(laptop["base"], remote["head"])
+            self.assertEqual((remote["scope"], laptop["scope"]), ("remote", "laptop"))
+            self.assertNotEqual(remote["branch"], laptop["branch"])
+            self.assertNotEqual(remote_outputs["artifact"], laptop_outputs["artifact"])
 
 
 if __name__ == "__main__":

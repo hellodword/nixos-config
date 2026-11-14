@@ -10,7 +10,8 @@ import subprocess
 import time
 
 
-TITLE = "chore: update tracked flake inputs"
+def title(scope):
+    return f"chore: update {scope} flake inputs"
 
 
 def run(command, **kwargs):
@@ -42,7 +43,7 @@ def outputs(**values):
                 stream.write(f"{name}={value}\n")
 
 
-def prepare(state):
+def prepare(state, scope):
     changed = run(["git", "diff", "--name-only", "HEAD"]).splitlines()
     if not changed:
         outputs(changed="false")
@@ -61,13 +62,13 @@ def prepare(state):
     subprocess.run(["git", "add", "--", "flake.lock"], check=True)
     subprocess.run(["git", "-c", "user.name=github-actions[bot]",
                     "-c", "user.email=41898282+github-actions[bot]@users.noreply.github.com",
-                    "-c", "commit.gpgsign=false", "commit", "-m", TITLE], check=True)
+                    "-c", "commit.gpgsign=false", "commit", "-m", title(scope)], check=True)
     head = run(["git", "rev-parse", "HEAD"])
-    record = {"base": base, "head": head,
-              "branch": f"automation/flake-update-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"}
+    record = {"base": base, "head": head, "scope": scope,
+              "branch": f"automation/flake-update-{scope}-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}"}
     (state / "update.json").write_text(json.dumps(record) + "\n")
     subprocess.run(["git", "bundle", "create", str(state / "candidate.bundle"), "HEAD", "^" + base], check=True)
-    outputs(changed="true", sha=head, artifact=f"candidate-{os.environ['GITHUB_RUN_ATTEMPT']}")
+    outputs(changed="true", sha=head, artifact=f"candidate-{scope}-{os.environ['GITHUB_RUN_ATTEMPT']}")
     print(f"Local candidate {head}; validation precedes publication.")
 
 
@@ -82,13 +83,13 @@ def merge(state):
     body = state / "pull-request.md"
     run_url = f"{os.environ['GITHUB_SERVER_URL']}/{repository}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
     body.write_text(
-        "Update the tracked upstream inputs in flake.lock. Installation inputs, oranc and the optional remote VM client keep their existing revisions.\n\n"
-        f"Validation: every selected host passed its system build, domain checks, OCI cache integration "
-        f"and four VM suites at `{head}`. Signed redistributable paths were published.\n\n"
+        f"Update the {record['scope']} inputs in flake.lock.\n\n"
+        f"Validation: the {record['scope']} build inventory, protocol checks, OCI cache integration "
+        f"and VM suites passed at `{head}`. Signed redistributable paths were published.\n\n"
         f"Base: `{record['base']}`. [Validation run]({run_url}).\n"
     )
     pr = run(["gh", "pr", "create", "--repo", repository, "--base", "master", "--head", branch,
-              "--title", TITLE, "--body-file", str(body)])
+              "--title", title(record["scope"]), "--body-file", str(body)])
     # A concurrent master update cannot be overwritten by this non-forced FF.
     try:
         run(["gh", "api", "--method", "PATCH", f"repos/{repository}/git/refs/heads/master",
@@ -118,8 +119,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=["prepare", "merge"])
     parser.add_argument("--state", type=Path, required=True)
+    parser.add_argument("--scope", choices=["laptop", "remote"])
     args = parser.parse_args()
-    {"prepare": prepare, "merge": merge}[args.operation](args.state)
+    if args.operation == "prepare":
+        if args.scope is None:
+            parser.error("prepare requires --scope")
+        prepare(args.state, args.scope)
+    else:
+        merge(args.state)
 
 
 if __name__ == "__main__":

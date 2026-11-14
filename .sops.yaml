@@ -1,3 +1,5 @@
 creation_rules:
+  - path_regex: ^secrets/vps\.sops\.yaml$
+    age: age1k85kvyu5k4navf4vppvjk2mge9hwp5flctg07ep796h38jpsk5ws6jtgte
   - path_regex: hosts/laptop2/secrets/.*$
     age: age1k85kvyu5k4navf4vppvjk2mge9hwp5flctg07ep796h38jpsk5ws6jtgte

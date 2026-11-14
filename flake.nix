@@ -1,5 +1,5 @@
 {
-  description = "Native NixOS laptop, with explicit state and network policy";
+  description = "NixOS laptops and VPS, with explicit state and network policy";
   # Nix reads flake settings before evaluation; these lists must be literal.
   nixConfig = {
     extra-substituters = [
@@ -13,6 +13,7 @@
   };
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgs-remote.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -51,6 +52,7 @@
     };
     oranc.url = "github:linyinfeng/oranc";
     agents-misc.url = "github:hellodword/agents-misc";
+    colmena.url = "github:nix-community/colmena";
   };
   outputs =
     { self, nixpkgs, ... }@inputs:
@@ -67,11 +69,15 @@
           specialArgs = { inherit inputs userName; };
         };
       synthetic = mkHost ./tests/fixtures/laptop.nix "fixture";
+      vps = import ./nix/vps.nix { inherit inputs; };
     in
     {
       nixosConfigurations.laptop2 = mkHost ./hosts/laptop2 "ubuntu";
       nixosModules.default = import ./modules;
-      packages.${system} = import ./nix/packages.nix { inherit pkgs inputs; };
+      nixosModules.vps = import ./profiles/vps;
+      colmenaHive = inputs.colmena.lib.makeHive vps.hive;
+      vpsBootstrap = builtins.mapAttrs (_: node: node.config.system.build.image) vps.bootstrap;
+      packages.${system} = import ./nix/packages.nix { inherit pkgs inputs system; };
       devShells.${system} = {
         default = pkgs.mkShell {
           packages = with pkgs; [
@@ -102,6 +108,12 @@
             self.packages.${system}.oranc
             distribution
             inputs.agents-misc.packages.${system}.vm-test-submit
+            inputs.colmena.packages.${system}.default
+            nodejs
+            self.packages.${system}.wrangler
+            curl
+            wireguard-tools
+            openvpn
           ];
         };
       };

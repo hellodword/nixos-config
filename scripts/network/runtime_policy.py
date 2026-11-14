@@ -32,12 +32,41 @@ SERVICE_FILES = {
 WATCHER = "site-network-underlay.service"
 
 
+def service_files(policy):
+    return SERVICE_FILES | {f"site-dns-race-{name}.service": [f"race-{name}.json"]
+                            for name in policy.get("purposeGroups", [])}
+
+
+def enabled_units(manifest):
+    return {unit for unit, files in manifest.items() if any(files.values())}
+
+
 def command(*args, check=True, timeout=120):
     return subprocess.run(args, check=check, capture_output=True, timeout=timeout)
 
 
 def prepare(args, stage):
     policy = json.loads(args.policy.read_text())
+    files = service_files(policy)
+    provider_data = None
+    if args.sing_box:
+        if args.provider.exists():
+            provider_data = domain_policy.read_json(args.provider)
+            selection = getattr(args, "selections", None)
+            if selection and selection.exists():
+                for purpose, exit_id in json.loads(selection.read_text()).items():
+                    group = provider_data["groups"][purpose]
+                    if exit_id not in group["exits"]:
+                        raise ValueError("selected exit is no longer authorized for this purpose")
+                    group["default"] = exit_id
+        elif args.bootstrap:
+            provider_data = {"outbounds": [{"type": "http", "tag": "schema-check", "server": "192.0.2.1", "server_port": 443}]}
+            if policy.get("purposeGroups"):
+                provider_data.update(exits={"schema": {"paths": ["schema-check"]}},
+                                     groups={name: {"exits": ["schema"], "default": "schema"}
+                                             for name in ["proxy", *policy["purposeGroups"]]})
+        if provider_data is not None:
+            policy = compiler.bind_groups(policy, provider_data)
     if args.base:
         base = json.loads(args.base.read_text())
         policy["connectionFragments"] = base.get("_connectionFragments", {}) | policy.get("connectionFragments", {})
@@ -51,9 +80,12 @@ def prepare(args, stage):
         listeners["site-dns.service"] = compiler.compile_policy(policy, stage, model, args.ipv4_only)
         command(args.dnsdist, "--check-config", "-C", str(stage / "dnsdist.conf"))
         transports = json.loads((stage / "transports.json").read_text())
-        services.extend(unit for unit in SERVICE_FILES if unit != "sing-box.service")
-        for group in ("cn", "global"):
-            race = json.loads((stage / f"race-{group}.json").read_text())
+        services.extend(unit for unit in files if unit != "sing-box.service")
+        for group in ("cn", "global", *policy.get("purposeGroups", [])):
+            race_file = stage / f"race-{group}.json"
+            if not race_file.exists():
+                continue
+            race = json.loads(race_file.read_text())
             listeners[f"site-dns-race-{group}.service"] = [
                 (address, port) for address in race["listen-addrs"] for port in race["listen-ports"]]
     if args.sing_box:
@@ -66,12 +98,12 @@ def prepare(args, stage):
         if args.provider.exists():
             # systemd loads the generation's immutable credential before dropping
             # privileges. DNS workers share policy access, not proxy credentials.
-            provider.write_bytes(args.provider.read_bytes())
+            provider.write_text(json.dumps(provider_data) + "\n")
             provider.chmod(0o600)
         validation_provider = provider
         if args.bootstrap and not provider.exists():
             validation_provider = stage / ".schema-provider.json"
-            validation_provider.write_text(json.dumps({"outbounds": [{"type": "http", "tag": "schema-check", "server": "192.0.2.1", "server_port": 443}]}))
+            validation_provider.write_text(json.dumps(provider_data))
         try:
             renderer.render(stage / "network.json", validation_provider, stage / ".validated.json", args.sing_box,
                             wireguard_key=args.wireguard_key, wireguard_peer=args.wireguard_peer)
@@ -82,7 +114,7 @@ def prepare(args, stage):
     manifest = {}
     for unit in services:
         manifest[unit] = {filename: hashlib.sha256((stage / filename).read_bytes()).hexdigest()
-                          if (stage / filename).exists() else None for filename in SERVICE_FILES[unit]}
+                          if (stage / filename).exists() else None for filename in files[unit]}
     (stage / "activation.json").write_text(json.dumps(manifest) + "\n")
     (stage / "listeners.json").write_text(json.dumps(listeners) + "\n")
     (stage / "ipv6-mode.json").write_text(json.dumps({"ipv4_only": args.ipv4_only}) + "\n")
@@ -109,6 +141,8 @@ def publish(root, generation):
 def ready(generation, units, run, *, wait_binding=False):
     """Require live, stable processes and their local TCP listeners within 30s."""
     listeners = json.loads((generation / "listeners.json").read_text())
+    enabled = enabled_units(json.loads((generation / "activation.json").read_text()))
+    units = [unit for unit in units if unit in enabled]
     deadline = time.monotonic() + 30
     stable_since, previous = None, None
     pending = []
@@ -176,7 +210,8 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
     allowed = set(consumers if consumers is not None else SERVICE_FILES)
     if set(after) != allowed:
         raise ValueError("generation does not match the declared policy consumers")
-    changed, active = [], []
+    changed, active, restore = [], [], []
+    before_enabled, after_enabled = enabled_units(before), enabled_units(after)
     for unit in after:
         state = run("systemctl", "show", "--property=ActiveState", "--value", unit).stdout.decode().strip()
         # Restart=on-failure spends its delay in activating, not failed. An
@@ -184,7 +219,10 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
         recovering = state in {"failed", "activating"}
         if before.get(unit) != after[unit] or recovering or restart_all:
             changed.append(unit)
-            if restart_all or state in {"active", "reloading", "activating", "failed"}:
+            running = state in {"active", "reloading", "activating", "failed"}
+            if unit in before_enabled and (restart_all or running):
+                restore.append(unit)
+            if unit in after_enabled and (restart_all or running or unit not in before_enabled):
                 active.append(unit)
     watching = (watch and "sing-box.service" in changed and
                 run("systemctl", "is-active", "--quiet", WATCHER, check=False).returncode == 0)
@@ -206,11 +244,11 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
                 run("systemctl", "reset-failed", *changed)
         with recovery_step(error):
             publish(root, previous)
-        if active:
+        if restore:
             with recovery_step(error):
-                run("systemctl", "start", *active)
+                run("systemctl", "start", *restore)
             with recovery_step(error):
-                wait_ready(previous, active, run)
+                wait_ready(previous, restore, run)
         raise
     finally:
         if watching:
@@ -241,6 +279,7 @@ def main():
     parser.add_argument("--bootstrap", action="store_true")
     parser.add_argument("--prepare-command", required=False)
     parser.add_argument("--provider", type=Path)
+    parser.add_argument("--selections", type=Path)
     parser.add_argument("--dnsdist")
     parser.add_argument("--sing-box")
     parser.add_argument("--wireguard-key", type=Path)
@@ -276,10 +315,15 @@ def main():
     stage = None
     rule_store = None
     phase = args.action
-    consumers = (["site-dns.service", "site-dns-race-cn.service", "site-dns-race-global.service"] if args.dnsdist else []) + (["sing-box.service"] if args.sing_box else [])
+    files = service_files(json.loads(args.policy.read_text()))
+    consumers = ([unit for unit in files if unit != "sing-box.service"] if args.dnsdist else []) + (["sing-box.service"] if args.sing_box else [])
+    def show_ipv6_status():
+        manifest = args.root / "current/activation.json"
+        active = enabled_units(json.loads(manifest.read_text())) if manifest.exists() else set(consumers)
+        return ipv6.status(args.root, [unit for unit in consumers if unit in active], args.watch_underlay, args.tailscale)
     try:
         if args.action == "ipv6" and args.mode == "status":
-            return ipv6.status(args.root, consumers, args.watch_underlay, args.tailscale)
+            return show_ipv6_status()
         with (args.root / ".lock").open("a") as lock, ExitStack() as cleanup:
             fcntl.flock(lock, fcntl.LOCK_EX)
             if args.action == "initialize":
@@ -350,7 +394,7 @@ def main():
                     lambda: ready(stage, consumers, command, wait_binding=args.watch_underlay),
                     lockdown=args.watch_underlay, tailscale=args.tailscale)
                 shutil.rmtree(previous)
-                return ipv6.status(args.root, consumers, args.watch_underlay, args.tailscale)
+                return show_ipv6_status()
             elif args.action in {"apply", "apply-rules"}:
                 previous = activate(args.root, stage, args.watch_underlay, consumers=consumers)
                 saved = rule_store.state.copy()

@@ -1,0 +1,641 @@
+# 按 [[rules]] 顺序首次匹配。domain 同时生成 DNS 和连接规则；connection 只参与连接分流。
+# 匹配条件沿用 sing-box；shadowrocket 只填写该格式的匹配表达式，动作由同一条规则提供。
+# 可选用途未绑定时使用 proxy；最终未命中的域名和连接使用 hideme。
+final = "hideme"
+
+[seeds]
+sing-box-geosite = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/"
+sing-box-geoip = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/"
+
+[rule_set_defaults]
+type = "remote"
+format = "binary"
+update_interval = "24h"
+http_client.detour = "proxy"
+
+# PCDN 在国内直连及业务用途之前拒绝。
+[[rules]]
+scope = "domain"
+rule_set = ["pcdn"]
+action = "reject"
+
+# SSH/RDP 先解析真实目标，再按公网 IP 归属分流：国内 direct，其余 hideme。
+# sing-box 还按嗅探出的应用协议匹配非标准端口。
+[[rules]]
+scope = "connection"
+type = "logical"
+mode = "or"
+rules = [{ port = [22, 222, 2222, 3389] }, { protocol = ["ssh", "rdp"] }]
+action = "resolve"
+
+[[rules]]
+scope = "connection"
+type = "logical"
+mode = "and"
+rules = [
+  { type = "logical", mode = "or", rules = [{ port = [22, 222, 2222, 3389] }, { protocol = ["ssh", "rdp"], shadowrocket = [] }] },
+  { rule_set = ["geoip-cn"] },
+]
+action = "route"
+outbound = "direct"
+
+[[rules]]
+scope = "connection"
+port = [22, 222, 2222, 3389]
+action = "route"
+outbound = "hideme"
+
+[[rules]]
+scope = "connection"
+protocol = ["ssh", "rdp"]
+shadowrocket = []
+action = "route"
+outbound = "hideme"
+
+# 下载优先于站点分类：包括 GitHub release/GHCR、共享 Google 存储及系统和软件更新。
+# 共享存储中的附件也走 downloads。F-Droid HTTPS 镜像来源：
+# https://gitlab.com/fdroid/fdroiddata/-/blob/master/config/mirrors.yml
+[[rules]]
+scope = "domain"
+domain_suffix = [
+  "crates.io",
+  "static.rust-lang.org",
+  "rustup.rs",
+  "registry.npmjs.org",
+  "registry.npmjs.com",
+  "proxy.golang.org",
+  "sum.golang.org",
+  "proxy.golang.com.cn",
+  "goproxy.cn",
+  "goproxy.io",
+  "cache.nixos.org",
+  "cachix.org",
+  "cache.numtide.com",
+  "releases.nixos.org",
+  "channels.nixos.org",
+  "ghcr.io",
+  "pkg-containers.githubusercontent.com",
+  "release-assets.githubusercontent.com",
+  "objects.githubusercontent.com",
+  "objects-origin.githubusercontent.com",
+  "github-releases.githubusercontent.com",
+  "github-registry-files.githubusercontent.com",
+  "github-cloud.githubusercontent.com",
+  "github-cloud.s3.amazonaws.com",
+  "dl.google.com",
+  "dl-ssl.google.com",
+  "storage.googleapis.com",
+  "edgedl.me.gvt1.com",
+  "redirector.gvt1.com",
+  "updates.cdn-apple.com",
+  "updates-http.cdn-apple.com",
+  "apps.mzstatic.com",
+  "iosapps.itunes.apple.com",
+  "osxapps.itunes.apple.com",
+  "download.windowsupdate.com",
+  "windowsupdate.com",
+  "dl.delivery.mp.microsoft.com",
+  "download.microsoft.com",
+  "download.prss.microsoft.com",
+  "officecdn.microsoft.com",
+  "officecdn.microsoft.com.edgesuite.net",
+  "update.code.visualstudio.com",
+  "vscode.download.prss.microsoft.com",
+  "vscode.blob.core.windows.net",
+  "marketplace.visualstudio.com",
+  "gallery.vsassets.io",
+  "fdroid.tetaneutral.net",
+  "ftp.agdsn.de",
+  "ftp.fau.de",
+  "ftp.gwdg.de",
+  "ftp.lysator.liu.se",
+  "mirror.cyberbits.eu",
+  "mirror.eu.ossplanet.net",
+  "mirror.fcix.net",
+  "mirror.kumi.systems",
+  "mirror.level66.services",
+  "mirror.ossplanet.net",
+  "mirrors.dotsrc.org",
+  "opencolo.mm.fcix.net",
+  "plug-mirror.rcac.purdue.edu",
+  "mirror.init7.net",
+  "mirror.freedif.org",
+  "mirrors.hostico.ro",
+  "ftp.lug.ro",
+  "mirrors.chroot.ro",
+]
+action = "route"
+outbound = "downloads"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-docker", "geosite-apple-update", "geosite-f-droid"]
+action = "route"
+outbound = "downloads"
+
+# 应用自行发起的加密 DNS 同样按真实目标 IP 分流。
+# 解析服务域名使用 hideme 查询地址；系统 DNS 仍使用各用途对应的解析出口。
+[[rules]]
+scope = "connection"
+type = "logical"
+mode = "or"
+rules = [{ rule_set = ["geosite-category-doh"] }, { port = [853], network = "tcp" }]
+action = "resolve"
+
+[[rules]]
+scope = "connection"
+type = "logical"
+mode = "and"
+rules = [
+  { type = "logical", mode = "or", rules = [{ rule_set = ["geosite-category-doh"] }, { port = [853], network = "tcp" }] },
+  { rule_set = ["geoip-cn"] },
+]
+action = "route"
+outbound = "direct"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-category-doh"]
+action = "route"
+outbound = "hideme"
+
+[[rules]]
+scope = "connection"
+port = [853]
+network = "tcp"
+action = "route"
+outbound = "hideme"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-category-cryptocurrency"]
+action = "route"
+outbound = "cryptocurrency"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-openai", "geosite-anthropic"]
+action = "route"
+outbound = "ai"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-paypal", "geosite-stripe"]
+action = "route"
+outbound = "payment"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-giffgaff"]
+action = "route"
+outbound = "giffgaff"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-linuxdo"]
+action = "route"
+outbound = "linuxdo"
+
+[[rules]]
+scope = "domain"
+domain_suffix = ["hybgzs.com"]
+action = "route"
+outbound = "linuxdo"
+
+# YouTube、Apple TV 先于 Google、Apple 的通用分类。
+[[rules]]
+scope = "domain"
+rule_set = [
+  "geosite-netflix",
+  "geosite-hulu",
+  "geosite-hbo",
+  "geosite-disney",
+  "geosite-spotify",
+  "geosite-primevideo",
+  "geosite-youtube",
+  "geosite-apple-tvplus",
+  "geosite-twitch",
+]
+action = "route"
+outbound = "streaming"
+
+# APNs 先于 Apple；IP 范围见末尾，仅用于没有域名的连接。
+[[rules]]
+scope = "domain"
+domain = ["identity.apple.com"]
+domain_suffix = ["push.apple.com"]
+action = "route"
+outbound = "apns"
+
+[[rules]]
+scope = "domain"
+rule_set = [
+  "geosite-imgur",
+  "geosite-reddit",
+  "geosite-facebook",
+  "geosite-twitter",
+  "geosite-linkedin",
+  "geosite-discord",
+  "geosite-tumblr",
+  "geosite-4chan",
+  "geosite-pixiv",
+]
+action = "route"
+outbound = "social"
+
+[[rules]]
+scope = "domain"
+domain = ["news.ycombinator.com"]
+action = "route"
+outbound = "social"
+
+[[rules]]
+scope = "domain"
+rule_set = [
+  "geosite-protonmail",
+  "geosite-telegram",
+  "geosite-tor",
+  "geosite-torproject",
+  "geosite-category-porn",
+  "geosite-github",
+  "geosite-gitlab",
+  "geosite-xda",
+]
+action = "route"
+outbound = "hideme"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-tiktok"]
+action = "route"
+outbound = "tiktok"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-google"]
+action = "route"
+outbound = "google"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-microsoft"]
+action = "route"
+outbound = "microsoft"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-apple"]
+action = "route"
+outbound = "apple"
+
+# 中国公司海外服务先于国内集合，例如 alipay.hk、biliintl.com。
+[[rules]]
+scope = "domain"
+rule_set = [
+  "geosite-alibaba@!cn",
+  "geosite-alibabacloud@!cn",
+  "geosite-aliyun@!cn",
+  "geosite-bilibili@!cn",
+  "geosite-bytedance@!cn",
+  "geosite-huawei@!cn",
+  "geosite-huaweicloud@!cn",
+  "geosite-jd@!cn",
+  "geosite-qcloud@!cn",
+  "geosite-tiktok@!cn",
+  "geosite-xiaomi@!cn",
+]
+action = "route"
+outbound = "proxy"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-cloudflare", "geosite-fastly"]
+action = "route"
+outbound = "proxy"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-geolocation-!cn"]
+action = "route"
+outbound = "proxy"
+
+# 已收录的国内站点直连。
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-geolocation-cn"]
+action = "route"
+outbound = "direct"
+
+# 带域名的连接到这里即使用 hideme，解析到国内 IP 也保持此选择。
+# Shadowrocket 的后续 IP 规则使用 no-resolve，带域名的请求由 FINAL 处理。
+[[rules]]
+scope = "connection"
+domain_regex = ["."]
+shadowrocket = []
+action = "route"
+outbound = "hideme"
+
+[[rules]]
+scope = "connection"
+rule_set = ["geoip-telegram", "geoip-tor"]
+action = "route"
+outbound = "hideme"
+
+[[rules]]
+scope = "connection"
+rule_set = ["geoip-netflix"]
+action = "route"
+outbound = "streaming"
+
+[[rules]]
+scope = "connection"
+rule_set = ["geoip-facebook", "geoip-twitter"]
+action = "route"
+outbound = "social"
+
+# Apple 公布的 APNs 网段：https://support.apple.com/101555
+[[rules]]
+scope = "connection"
+ip_cidr = [
+  "17.188.128.0/18",
+  "17.188.20.0/23",
+  "17.249.0.0/16",
+  "17.252.0.0/16",
+  "17.57.144.0/22",
+  "2403:300:a42::/48",
+  "2403:300:a51::/48",
+  "2620:149:a44::/48",
+  "2a01:b740:a42::/48",
+]
+action = "route"
+outbound = "apns"
+
+# 只有无域名连接继续按国内 IP 直连；其余使用 final。
+[[rules]]
+scope = "connection"
+rule_set = ["geoip-cn"]
+action = "route"
+outbound = "direct"
+
+# 各格式直接使用上游原生列表。Linux 用锁定种子启动，域名列表经共享策略流程应用。
+# Shadowrocket 的域名源仅含域名条件，IP 源集中用于末尾的连接规则。
+
+[rule_sets."pcdn"]
+url = "https://raw.githubusercontent.com/DDCHlsq/sing-ruleset/master/pcdn.json"
+format = "source"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/ifflagged/Miami/main/Rulesets/Shadowrocket/zirawell/PCDN-Filter.list"]
+seed = { url = "https://raw.githubusercontent.com/DDCHlsq/sing-ruleset/c2c1e652acc950982b92d1006ad29151ceabd438/pcdn.json", hash = "sha256-9q+gl55dYKc+UKoHrN5FAqtcxkhEuvLTjxissQMPq7A=" }
+
+[rule_sets."geosite-docker"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-docker.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/docker.conf"]
+
+[rule_sets."geosite-apple-update"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-apple-update.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/apple-update.conf"]
+
+[rule_sets."geosite-f-droid"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-f-droid.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/f-droid.conf"]
+
+[rule_sets."geosite-category-doh"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-category-doh.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/category-doh.conf"]
+
+[rule_sets."geosite-category-cryptocurrency"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-category-cryptocurrency.srs"
+shadowrocket = [
+  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Cryptocurrency/Cryptocurrency.list",
+  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Binance/Binance.list",
+  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/OKX/OKX.list",
+  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Crypto/Crypto.list",
+  "RULE-SET,https://raw.githubusercontent.com/LeiyuG/Surge/main/rules/Binancenew.list",
+]
+
+[rule_sets."geosite-openai"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-openai.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/openai.conf"]
+
+[rule_sets."geosite-anthropic"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-anthropic.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/anthropic.conf"]
+
+[rule_sets."geosite-paypal"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-paypal.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/paypal.conf"]
+
+[rule_sets."geosite-stripe"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-stripe.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/stripe.conf"]
+
+[rule_sets."geosite-giffgaff"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-giffgaff.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/giffgaff.conf"]
+
+[rule_sets."geosite-linuxdo"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-linuxdo.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/linuxdo.conf"]
+
+[rule_sets."geosite-netflix"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-netflix.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/netflix.conf"]
+
+[rule_sets."geosite-hulu"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-hulu.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/hulu.conf"]
+
+[rule_sets."geosite-hbo"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-hbo.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/hbo.conf"]
+
+[rule_sets."geosite-disney"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-disney.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/disney.conf"]
+
+[rule_sets."geosite-spotify"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-spotify.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/spotify.conf"]
+
+[rule_sets."geosite-primevideo"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-primevideo.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/primevideo.conf"]
+
+[rule_sets."geosite-youtube"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-youtube.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/youtube.conf"]
+
+[rule_sets."geosite-apple-tvplus"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-apple-tvplus.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/apple-tvplus.conf"]
+
+[rule_sets."geosite-twitch"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-twitch.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/twitch.conf"]
+
+[rule_sets."geosite-imgur"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-imgur.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/imgur.conf"]
+
+[rule_sets."geosite-reddit"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-reddit.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/reddit.conf"]
+
+[rule_sets."geosite-facebook"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-facebook.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/facebook.conf"]
+
+[rule_sets."geosite-twitter"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-twitter.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/twitter.conf"]
+
+[rule_sets."geosite-linkedin"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-linkedin.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/linkedin.conf"]
+
+[rule_sets."geosite-discord"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-discord.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/discord.conf"]
+
+[rule_sets."geosite-tumblr"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tumblr.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tumblr.conf"]
+
+[rule_sets."geosite-4chan"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-4chan.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/4chan.conf"]
+
+[rule_sets."geosite-pixiv"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-pixiv.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/pixiv.conf"]
+
+[rule_sets."geosite-protonmail"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-protonmail.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/protonmail.conf"]
+
+[rule_sets."geosite-telegram"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-telegram.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/telegram.conf"]
+
+[rule_sets."geosite-tor"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tor.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tor.conf"]
+
+[rule_sets."geosite-torproject"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-torproject.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/torproject.conf"]
+
+[rule_sets."geosite-category-porn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-category-porn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/category-porn.conf"]
+
+[rule_sets."geosite-github"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-github.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/github.conf"]
+
+[rule_sets."geosite-gitlab"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-gitlab.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/gitlab.conf"]
+
+[rule_sets."geosite-xda"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-xda.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/xda.conf"]
+
+[rule_sets."geosite-tiktok"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tiktok.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tiktok.conf"]
+
+[rule_sets."geosite-google"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-google.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/google.conf"]
+
+[rule_sets."geosite-microsoft"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-microsoft.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/microsoft.conf"]
+
+[rule_sets."geosite-apple"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-apple.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/apple.conf"]
+
+[rule_sets."geosite-alibaba@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-alibaba@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/alibaba@!cn.conf"]
+
+[rule_sets."geosite-alibabacloud@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-alibabacloud@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/alibabacloud@!cn.conf"]
+
+[rule_sets."geosite-aliyun@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-aliyun@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/aliyun@!cn.conf"]
+
+[rule_sets."geosite-bilibili@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-bilibili@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/bilibili@!cn.conf"]
+
+[rule_sets."geosite-bytedance@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-bytedance@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/bytedance@!cn.conf"]
+
+[rule_sets."geosite-huawei@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-huawei@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/huawei@!cn.conf"]
+
+[rule_sets."geosite-huaweicloud@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-huaweicloud@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/huaweicloud@!cn.conf"]
+
+[rule_sets."geosite-jd@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-jd@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/jd@!cn.conf"]
+
+[rule_sets."geosite-qcloud@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-qcloud@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/qcloud@!cn.conf"]
+
+[rule_sets."geosite-tiktok@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tiktok@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tiktok@!cn.conf"]
+
+[rule_sets."geosite-xiaomi@!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-xiaomi@!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/xiaomi@!cn.conf"]
+
+[rule_sets."geosite-cloudflare"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-cloudflare.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/cloudflare.conf"]
+
+[rule_sets."geosite-fastly"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-fastly.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/fastly.conf"]
+
+[rule_sets."geosite-geolocation-!cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-geolocation-!cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/geolocation-!cn.conf"]
+
+[rule_sets."geosite-geolocation-cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-geolocation-cn.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/geolocation-cn.conf"]
+
+[rule_sets."geoip-telegram"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-telegram.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/telegram.txt"]
+
+[rule_sets."geoip-tor"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-tor.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/tor.txt"]
+
+[rule_sets."geoip-netflix"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-netflix.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/netflix.txt"]
+
+[rule_sets."geoip-facebook"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-facebook.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/facebook.txt"]
+
+[rule_sets."geoip-twitter"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-twitter.srs"
+shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/twitter.txt"]
+
+[rule_sets."geoip-cn"]
+url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cn.srs"
+shadowrocket = ["GEOIP,CN"]

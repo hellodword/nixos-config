@@ -226,33 +226,52 @@ let
         };
       };
     };
-    environment.etc."test/provider.json".text = builtins.toJSON {
-      outbounds = [
-        {
-          type = "hysteria2";
-          tag = "synthetic";
-          server = "192.168.1.20";
-          server_port = 4443;
-          password = "public-test-fixture-only";
-          tls = {
-            enabled = true;
-            server_name = "dns.test.nix";
-            certificate_path = "${certificates.ca.cert}";
-          };
-        }
-      ];
-    };
+    environment.etc."test/provider.json".text = builtins.toJSON (
+      {
+        outbounds = [
+          {
+            type = "hysteria2";
+            tag = "synthetic";
+            server = "192.168.1.20";
+            server_port = 4443;
+            password = "public-test-fixture-only";
+            tls = {
+              enabled = true;
+              server_name = "dns.test.nix";
+              certificate_path = "${certificates.ca.cert}";
+            };
+          }
+        ];
+      }
+      // lib.optionalAttrs proxy {
+        exits.fixture.paths = [ "synthetic" ];
+        groups = lib.genAttrs [ "proxy" "hideme" ] (_: {
+          exits = [ "fixture" ];
+          default = "fixture";
+        });
+      }
+    );
     site.network = {
       ipv6.enable = false;
       dns.enable = true;
       singBox.enable = proxy;
+      purposeGroups = lib.optional proxy "hideme";
       providerFile = "/etc/test/provider.json";
       dnsPolicy = {
         caStore = "${certificates.ca.cert}";
         groups = {
           cn.upstreams = upstreams 24001;
           global.upstreams = upstreams 24003;
-        };
+        }
+        // lib.optionalAttrs proxy { hideme.upstreams = upstreams 24003; };
+      };
+      routeFragments = lib.optionalAttrs proxy {
+        "40-purpose.json".rules = [
+          {
+            domain = "www.example.org";
+            outbound = "hideme";
+          }
+        ];
       };
     };
   };
@@ -792,7 +811,9 @@ in
         node.succeed("su -s /bin/sh sender -c 'bark IPv4网络通知'")
         if node == dnsProxy:
             node.succeed("curl --proxy socks5h://127.0.0.1:10800 --max-time 8 -sSf http://www.example.org:18080/family")
+            node.succeed("python3 -c 'import json; aliases=json.load(open(\"/run/site-network-policy/current/dns-groups.json\")); assert aliases[\"hideme\"] == aliases[\"global\"]'")
         node.succeed("network-ipv6 on")
+        node.succeed("network-ipv6 status")
         node.succeed("dig +short www.example.org AAAA | grep ':'")
         intercepted_dns(node, "www.example.org", ["", "docker exec ordinary "], dual=True)
         node.shutdown()
