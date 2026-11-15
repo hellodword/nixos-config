@@ -143,15 +143,87 @@ wrangler login --device --browser=false \
 
 ## 逐台安装与部署
 
-先设置 `node=$first`。完成该节点的安装、代理验证和重启后，再设置 `node=$second`，用第二台的救援参数重复本节。下面的命令在 `nix develop .#vps` 的 Bash 中执行。
+先设置 `node=$first`。完成该节点的安装、代理验证和重启后，再设置 `node=$second`，用第二台的救援参数重复本节。维护机上的命令在 `nix develop .#vps` 的 Bash 中执行；进入救援环境时，按下文标明的位置操作。
 
 ```sh
 node=$first
 ```
 
+### 进入救援环境
+
+救援系统需要 root 权限、SSH、Bash、gzip、GNU coreutils 和 util-linux。bootstrap 镜像保留在维护机，随后通过 SSH 流式写入目标盘。
+
+#### Oracle Cloud：netboot.xyz 与 Tiny Core
+
+以下用于 x86_64 UEFI 实例，对应 inventory 中的 `uefi: true`。
+
+原系统仍可通过 SSH 登录时，将 [netboot.xyz 的 x86_64 EFI 启动文件](https://netboot.xyz/downloads/) 放入 EFI 系统分区。已有该文件时可直接使用。以原 NixOS 的 EFI 分区挂载在 `/boot` 为例，在原 VPS 的 root shell 中执行：
+
+```sh
+install -d /boot/EFI/netboot
+curl --fail --location https://boot.netboot.xyz/ipxe/netboot.xyz.efi \
+  --output /boot/EFI/netboot/netboot.xyz.efi
+sync
+```
+
+在 OCI 实例页面打开 **Console connection → Launch Cloud Shell connection**，连接实例的[串口控制台](https://docs.oracle.com/en-us/iaas/Content/Compute/References/serialconsole.htm)。保持串口连接，在 OCI 控制台重启实例，启动时连续按 `Esc` 进入 UEFI 菜单。从 **Boot Maintenance Manager → Boot From File** 选择 EFI 分区中的 `EFI/netboot/netboot.xyz.efi`。
+
+进入 netboot.xyz 后，先选择 **iPXE shell**，输入：
+
+```text
+set cmdline console=ttyS0,115200n8 noswap norestore rdinit=/bin/sh -- -i
+exit
+```
+
+按所示顺序设置参数，`noswap norestore` 位于 `rdinit` 之前，`-- -i` 传给早期 shell。`noswap` 停用磁盘 swap，保留内存中的 zram。返回菜单后依次选择 **Live CDs → Tiny Core Linux → x86_64 → CorePure**。
+
+出现早期 root shell 后，在串口窗口执行：
+
+```sh
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+printf '\nttyS0::respawn:/bin/sh\n' >> /etc/inittab
+exec /init
+```
+
+这会为 `ttyS0` 添加 shell，再将 PID 1 交给 Tiny Core 的正常启动流程。等初始化完成、串口再次出现提示符后，安装 SSH 和写盘依赖：
+
+```sh
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+su - tc -c 'tce-load -wi openssh bash coreutils util-linux gzip'
+passwd root
+touch /etc/sysconfig/superuser
+```
+
+`tce-load` 以 Tiny Core 的 `tc` 用户安装扩展；`superuser` 文件使 root 登录保持为 root。接着在同一串口 root shell 中配置本次救援的密码登录，并让 SSH 命令优先使用刚安装的工具：
+
+```sh
+cat > /tmp/rescue-sshd_config <<'EOF'
+Port 22
+ListenAddress 0.0.0.0
+PermitRootLogin yes
+PasswordAuthentication yes
+PermitEmptyPasswords no
+AllowUsers root
+SetEnv PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Subsystem sftp internal-sftp
+EOF
+mv /tmp/rescue-sshd_config /usr/local/etc/ssh/sshd_config
+/usr/local/etc/init.d/openssh start
+
+for key in /usr/local/etc/ssh/ssh_host_*_key.pub; do
+  ssh-keygen -lf "$key"
+done
+```
+
+在 OCI 的 Security List 或 NSG 放行维护机来源的 TCP 22。下一节的救援地址填写实例公网 IP，用户为 `root`，使用刚设置的密码，并与串口显示的 SSH 指纹比对。Tiny Core 的配置和依赖保存在内存中，本次启动结束即释放。
+
+#### Virtualizor：Rescue Mode
+
+在 VPS 面板的 [Rescue Mode](https://www.virtualizor.com/docs/enduser/rescue-mode) 页面设置临时 root 密码，启用救援模式。面板会重启 VPS 并启动带 SSH 的救援系统；使用面板提供的地址、端口和该密码连接。下一节确认写盘工具与目标磁盘；完成写入和回读校验后，在面板关闭 Rescue Mode，再从系统盘启动。
+
 ### 救援连接与目标磁盘
 
-从供应商控制台进入当前节点的救援系统，填写它提供的连接参数。以下以有权限写入目标盘的 root 用户为默认值，使用密码或键盘交互认证，密码由 SSH 在终端提示输入。需要代理时，在数组的目标地址之前加入 `-o 'ProxyCommand=…'`，填写维护机可用的完整代理命令。
+救援系统的 SSH 就绪后，回到维护机填写连接参数。以下以有权限写入目标盘的 root 用户为默认值，使用密码或键盘交互认证，密码由 SSH 在终端提示输入。需要代理时，在数组的目标地址之前加入 `-o 'ProxyCommand=…'`，填写维护机可用的完整代理命令。
 
 首次连接时通过供应商控制台核对救援 SSH 指纹；本次记录保存在对应节点的安装目录。命令使用 Linux 救援系统中的 Bash、gzip、GNU coreutils 和 util-linux。
 
@@ -177,6 +249,7 @@ ssh "${rescue_ssh[@]}" 'bash -se' <<'RESCUE'
 for tool in gzip dd head sha256sum blockdev lsblk swapon sync; do
   command -v "$tool"
 done
+dd --version
 lsblk -b -o NAME,PATH,SIZE,TYPE,MODEL,MOUNTPOINTS
 swapon --show
 RESCUE
@@ -274,7 +347,7 @@ ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
 ```sh
 provider="tmp/vps/subscriptions/$subscription/linux.json"
 jq -r '.outbounds[].tag' "$provider"
-probe_path="path-${node}-${node}-${node}-native-trojan"
+probe_path="${node} · native · Trojan"
 umask 077
 install -d -m 700 tmp/devtools/network
 jq -e --arg path "$probe_path" '
@@ -296,7 +369,7 @@ curl --fail --show-error --max-time 20 \
   --socks5-hostname 127.0.0.1:11080 https://www.cloudflare.com/cdn-cgi/trace
 ```
 
-用 Ctrl-C 停下探测。把 `probe_path` 的协议改为 `hysteria2`，重新生成配置并执行同一请求，确认 UDP 入口也可用。随后保存为默认启动代次，并确认重启后的服务：
+用 Ctrl-C 停下探测。把 `probe_path` 末尾的 `Trojan` 改为 `HY2`，重新生成配置并执行同一请求，确认 UDP 入口也可用。随后保存为默认启动代次，并确认重启后的服务：
 
 ```sh
 colmena apply switch --impure --on "$node" --parallel 1 --no-substitute
@@ -305,7 +378,7 @@ ssh "$ssh_host" 'systemctl reboot'
 ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
 ```
 
-第二台使用 `node=$second`，从[救援连接与目标磁盘](#救援连接与目标磁盘)开始，填写该台的临时连接参数并选择目标盘，重复安装与部署。两台均上线后，再选择 `path-${first}-${second}-${second}-native-trojan` 等跨节点路径，以两个方向、两种协议完成实际请求。
+第二台使用 `node=$second`，从[进入救援环境](#进入救援环境)开始，填写该台的临时连接参数并选择目标盘，重复安装与部署。两台均上线后，再选择 `${first} → ${second} · native · Trojan` 等跨节点路径，以两个方向、两种协议完成实际请求。
 
 `test` 只改变当前运行系统，重启回到原来的启动默认代次；`switch` 同时设置启动默认代次。后续更新先重新准备材料并构建受影响系统，再按相同的 `test`、请求验证、`switch` 顺序部署。连接失效时通过供应商控制台选择旧启动项；系统内回退可用：
 
@@ -339,7 +412,7 @@ cmp "tmp/vps/subscriptions/$subscription/linux.json" \
 unset subscription_url
 ```
 
-完整 URL 可用于官方 sing-box 或 Shadowrocket。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
+官方 sing-box 可直接导入完整 URL；Shadowrocket 分别导入[节点订阅和分流配置](#shadowrocket-导入)。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
 
 ## 入口、出口与端口
 
@@ -370,7 +443,17 @@ OpenVPN 的 `tls.server_name` 默认精确匹配服务端证书的 CN，填写�
 
 ## 订阅与分流
 
-`subscriptions` 声明独立的订阅，例如 `primary`、`guest`，同一订阅可供多个客户端使用。`exits` 决定授权的逻辑出口，`entries` 决定可选入口，`groups` 把站点用途绑定到出口。完整路径为“入口 × 承载 VPS × 出口 × 协议”，名称也按此顺序生成。例如 `path-edge-west-us-trojan` 表示连接 edge 的 TCP 443，由 west 解密，再从 `us` 上游发出。
+`subscriptions` 声明独立的订阅，例如 `primary`、`guest`，同一订阅可供多个客户端使用。可选的 `name` 是客户端显示名，省略时使用订阅键名。`exits` 决定授权的逻辑出口，`entries` 决定可选入口，`groups` 把站点用途绑定到出口。
+
+完整路径为“入口 × 承载 VPS × 出口 × 协议”。所有客户端共用以下命名：
+
+| 路径 | 含义 |
+| --- | --- |
+| `edge → west · [us] · Trojan` | 连接 edge 的 TCP 443，由 west 解密，再从 `us` 上游发出 |
+| `edge → west · native · HY2` | 连接 edge 的 Hysteria2 入口，由 west 解密并使用原生网络出站 |
+| `west · native · Trojan` | 直接连接 west，由 west 原生网络出站 |
+
+入口与承载 VPS 相同时只显示一次。类型为 `native`、标识为 `<承载 VPS>-native` 的出口显示为 `native`，其他出口显示为 `[出口标识]`，便于区分同机承载的多个出口。首次获得新路径名称后，原先固定的路径需要重新选择。
 
 每份订阅的 `key` 通过 HMAC-SHA256 为各出口、各协议派生密码；同一出口的所有承载 VPS 使用相同订阅身份。VPS 只收到自身承载的身份和上游凭据。调整入口、承载 VPS、订阅名称、订阅路径或用途选择时，已有密码保持稳定；更换密钥或出口标识会改变密码。
 
@@ -379,7 +462,7 @@ OpenVPN 的 `tls.server_name` 默认精确匹配服务端证书的 CN，填写�
 | 选择位置 | 作用 | 示例 |
 | --- | --- | --- |
 | 用途组，如 `cryptocurrency` | 选择逻辑出口 | 从 `us` 切到 `uk` |
-| `exit-us` | 自动选择或固定一条完整路径 | `exit-us-auto`，或 `path-edge-west-us-trojan` |
+| `exit-us` | 自动选择或固定一条完整路径 | `exit-us-auto`，或 `edge → west · [us] · Trojan` |
 
 用途组的 `exits` 是可选出口，`default` 是初始选择；多出口组明确填写，单出口组可省略。客户端已保存的有效选择优先。多个用途选中同一个出口时，共享该出口的路径选择；例如 `hideme` 和 `cryptocurrency` 都使用 `us`，固定 `exit-us` 的路径会同时影响这两个用途。
 
@@ -401,9 +484,39 @@ Worker 根据官方 sing-box 或 Shadowrocket 的 UA 选择内容，也可通过
 | --- | --- |
 | `?client=linux` | 本项目使用的 provider |
 | `?client=sing-box` | 官方 sing-box 完整配置 |
-| `?client=shadowrocket` | Shadowrocket 配置 |
+| `?client=shadowrocket` | Shadowrocket 节点订阅 |
+| `?client=shadowrocket-config` | Shadowrocket 分流配置 |
 
 UA 无法识别时返回 400，提示指定 `client`。本项目下载 provider 时使用 `?client=linux`。Worker 通过 HTTPS 提供内容；完整订阅地址是访问凭据，应保存在私密位置。响应使用 `private, no-store`，Worker 访问日志保持关闭。
+
+### Shadowrocket 导入
+
+在首页导入节点订阅，在配置页导入并启用分流配置。节点订阅保存连接地址、协议、认证信息和路径名；分流配置保存 DNS、用途规则及出口组。出口组通过 `name` 引用订阅，并按完整路径名筛选成员，保留自动选择和固定路径两种用法。
+
+准备材料后，在维护机生成两个导入链接。`subscription` 使用前面选择的订阅键名；提示输入的地址是 Cloudflare 路由前缀拼接订阅 UUID 的完整 HTTPS 地址：
+
+```sh
+python3 - "$subscription" <<'PY'
+import base64
+import getpass
+import json
+from pathlib import Path
+import sys
+from urllib.parse import quote
+
+metadata = json.loads((Path("tmp/vps/subscriptions") / sys.argv[1] / "metadata.json").read_text())
+url = getpass.getpass("订阅的完整 HTTPS 地址：").strip()
+nodes = base64.b64encode((url + "?client=shadowrocket").encode()).decode()
+print("节点订阅：")
+print(f"shadowrocket://add/sub://{nodes}?remark={quote(metadata['name'], safe='')}")
+print("分流配置：")
+print(f"shadowrocket://config/add/{url}?client=shadowrocket-config")
+PY
+```
+
+节点导入链接带入订阅显示名，配置下载使用 `<name>.conf` 文件名。通过 HTTPS 地址手动添加节点订阅时，将备注填写为相同的 `name`；配置中的订阅引用按这个名称查找节点。
+
+连接地址或密码调整后更新首页订阅；DNS、用途规则或组设置调整后更新配置。入口、承载 VPS 或逻辑出口变化时，发布 Worker 后更新两者。修改显示名后同步修改首页订阅备注并更新配置。
 
 ## 规则与 DNS
 
@@ -411,12 +524,14 @@ UA 无法识别时返回 400，提示指定 `client`。本项目下载 provider 
 
 移动客户端的基础配置分别位于 [sing-box-client.json](../data/network/sing-box-client.json) 和 [shadowrocket-client.conf](../data/network/shadowrocket-client.conf)。生成器插入订阅授权的路径及用途规则；远程规则的内容由客户端原生机制更新。Linux 的用途分类也读取同一目录，应用方式见[网络规则来源](network.md#规则来源与更新)。
 
+Shadowrocket 的主解析和备用解析均使用配置中声明的加密解析器，由客户端原生机制调度；直连域名使用同一解析配置。解析器使用 IP 地址并校验 TLS 证书，建立连接时无需先解析 DNS 服务的域名。
+
 VPS 有两种 DNS 用途：
 
 - 系统 DNS 供系统服务、证书获取、时钟服务和上游服务器域名解析使用。systemd-resolved 通过严格 DoT 查询，按 TTL 缓存；当前解析器不可用时切换到另一台，恢复后继续使用当前可用服务器。`nodes.*.nameservers` 可用 `IP#TLS证书名` 覆盖默认列表。DHCP 与 RA 负责网络配置，解析器由清单指定。
 - 代理目标的 DNS 经选中的逻辑出口发送。默认列表在 [vps-dns.json](../data/network/vps-dns.json)，`exits.*.dns` 可用原生 DNS server 数组覆盖。sing-box 并发查询各解析器，首先返回的正常应答或 NXDOMAIN 完成本次查询；SERVFAIL、拒绝和连接错误留给其他解析器继续处理，全部失败则返回失败。各出口使用各自的解析器实例及缓存。
 
-例如，客户端将 `foo.example` 经 `path-edge-west-us-trojan` 发送：edge 转发 TLS 到 west；west 根据认证身份选择 `us`，从 `us` 查询目标 DNS，再从 `us` 连接解析结果。系统 DNS 只负责必要的基础设施域名，代理目标的解析与流量采用同一出口。
+例如，客户端将 `foo.example` 经 `edge → west · [us] · Trojan` 发送：edge 转发 TLS 到 west；west 根据认证身份选择 `us`，从 `us` 查询目标 DNS，再从 `us` 连接解析结果。系统 DNS 只负责必要的基础设施域名，代理目标的解析与流量采用同一出口。
 
 ```sh
 resolvectl status

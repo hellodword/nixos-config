@@ -3,7 +3,8 @@ import {reply} from "./auth.js";
 const formats = {
   linux: ["linux.json", "application/json"],
   "sing-box": ["sing-box.json", "application/json"],
-  shadowrocket: ["shadowrocket.conf", "text/plain; charset=utf-8"],
+  shadowrocket: ["shadowrocket.txt", "text/plain; charset=utf-8"],
+  "shadowrocket-config": ["shadowrocket.conf", "text/plain; charset=utf-8"],
 };
 
 export default {
@@ -22,13 +23,21 @@ export default {
       else if (/sing-box|\b(?:sfa|sfi|sfm|sft)\//i.test(agent)) client = "sing-box";
     }
     if (!Object.hasOwn(formats, client)) {
-      return reply("Specify ?client=linux, sing-box or shadowrocket\n", 400, "text/plain; charset=utf-8");
+      return reply("Specify ?client=linux, sing-box, shadowrocket or shadowrocket-config\n", 400, "text/plain; charset=utf-8");
     }
     const [filename, contentType] = formats[client];
     const asset = await env.ASSETS.fetch(new Request(new URL(`${path}/${filename}`, url.origin)));
     if (!asset.ok) return reply(null, 404);
     const response = reply(asset.body, 200, contentType);
     response.headers.set("Vary", "User-Agent");
+    if (client === "shadowrocket-config") {
+      const metadata = await env.ASSETS.fetch(new Request(new URL(`${path}/metadata.json`, url.origin)));
+      if (!metadata.ok) return reply(null, 404);
+      const {id, name} = await metadata.json();
+      const filename = encodeURIComponent(`${name}.conf`).replace(/['()*]/g,
+        character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
+      response.headers.set("Content-Disposition", `attachment; filename="${id}.conf"; filename*=UTF-8''${filename}`);
+    }
     return response;
   },
 };

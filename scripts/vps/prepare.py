@@ -10,7 +10,7 @@ import tempfile
 import yaml
 
 from model import Inventory
-from clients import mobile, shadowrocket
+from clients import mobile, shadowrocket, shadowrocket_nodes
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,7 +46,9 @@ def generate(vps, directory):
     for subscription_id, subscription in vps.subscriptions.items():
         provider = vps.provider(subscription_id)
         for name, value in {"linux.json": provider, "sing-box.json": mobile(provider),
-                            "shadowrocket.conf": shadowrocket(provider)}.items():
+                            "shadowrocket.txt": shadowrocket_nodes(provider),
+                            "shadowrocket.conf": shadowrocket(provider, subscription["name"]),
+                            "metadata.json": {"id": subscription_id, "name": subscription["name"]}}.items():
             write(subscription_worker / "assets" / subscription["path"][1:] / name, value)
             write(directory / "subscriptions" / subscription_id / name, value)
     # Credential bindings are uploaded using Wrangler's native secret command.

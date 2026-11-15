@@ -52,7 +52,7 @@ def generate(source, keys, output):
         (output / f'provider-{generation}.json').write_text(json.dumps(vps.provider('primary')))
     provider = Inventory(document).provider('primary')
     paths = [path for path in provider['outbounds']
-             if path['tag'].endswith('-us-trojan')]
+             if path['tag'] in provider['exits']['us']['paths'] and path['type'] == 'trojan']
     for path in paths:
         path['tls']['certificate_path'] = str(keys / 'ca.crt')
     provider = {'outbounds': paths, 'exits': {'us': {'paths': [p['tag'] for p in paths]}},

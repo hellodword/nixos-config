@@ -80,9 +80,14 @@ class Inventory:
                 raise ValueError("unsupported exit type")
             if exit_["type"] == "native" and len(carriers) != 1:
                 raise ValueError("a native exit belongs to one node")
-        keys, paths = set(), set()
+        keys, paths, names = set(), set(), set()
         for name, subscription in self.subscriptions.items():
             identifier(name)
+            title = subscription.setdefault("name", name)
+            if (not isinstance(title, str) or not title or title != title.strip()
+                    or re.search(r'[\x00-\x1f\x7f,="/\\]', title) or title.casefold() in names):
+                raise ValueError("subscription names must be distinct single-line client labels")
+            names.add(title.casefold())
             path = subscription["path"]
             if not re.fullmatch(r"/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", path) or path in paths:
                 raise ValueError("subscriptions require distinct /UUIDv4 paths")
@@ -201,8 +206,11 @@ class Inventory:
             members = []
             for entry in entries:
                 for carrier in exit_["nodes"]:
+                    hop = entry if entry == carrier else f"{entry} → {carrier}"
+                    label = "native" if exit_["type"] == "native" and exit_id == f"{carrier}-native" else f"[{exit_id}]"
                     for protocol in ("trojan", "hysteria2"):
-                        tag = f"path-{entry}-{carrier}-{exit_id}-{protocol}"
+                        transport = "Trojan" if protocol == "trojan" else "HY2"
+                        tag = f"{hop} · {label} · {transport}"
                         members.append(tag)
                         outbounds.append({
                             "type": protocol, "tag": tag, "server": self.nodes[entry]["address"],

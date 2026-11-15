@@ -1,10 +1,12 @@
 """Exercise generated credentials, native proxy protocols and client artifacts."""
 import argparse
+import base64
 import contextlib
 import copy
 import json
 import os
 from pathlib import Path
+import re
 import ssl
 import subprocess
 import sys
@@ -12,6 +14,7 @@ import tempfile
 import time
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import yaml
@@ -72,7 +75,7 @@ class InventoryProtocol(unittest.TestCase):
             with (root / "sing-box.log").open("w") as log, proxy_process(SERVER_SING_BOX, root, log, ports["trojan"]):
                 for name, (resolvers, calls) in observations.items():
                     path = next(p for p in vps.provider("primary")["outbounds"]
-                                if p["tag"] == f"path-edge-edge-{name}-trojan")
+                                if p["tag"] == f"edge · [{name}] · Trojan")
                     path.update(server="127.0.0.1", server_port=ports["trojan"],
                                 tls={"enabled": True, "server_name": "resolver.test", "certificate_path": str(cert)})
                     client = root / name
@@ -95,7 +98,45 @@ class InventoryProtocol(unittest.TestCase):
 
     def test_prepared_deployments_and_native_clients(self):
         inventory = self.inventory()
+        inventory["subscriptions"]["primary"]["name"] = "个人网络 (iPhone)"
         vps = model.Inventory(inventory)
+
+        def check_clients(directory):
+            provider = json.loads((directory / "linux.json").read_text())
+            title = json.loads((directory / "metadata.json").read_text())["name"]
+            tags = {node["tag"] for node in provider["outbounds"]}
+            self.assertEqual(len(tags), len(provider["outbounds"]))
+            decoded = []
+            for line in base64.b64decode((directory / "shadowrocket.txt").read_text()).decode().splitlines():
+                uri = urllib.parse.urlsplit(line)
+                parameters = urllib.parse.parse_qs(uri.query)
+                self.assertEqual(parameters["allowInsecure" if uri.scheme == "trojan" else "insecure"], ["0"])
+                decoded.append({
+                    "type": uri.scheme, "tag": urllib.parse.unquote(uri.fragment),
+                    "server": uri.hostname, "server_port": uri.port,
+                    "password": urllib.parse.unquote(uri.username),
+                    "tls": {"enabled": True, "server_name": parameters["sni"][0]},
+                })
+            self.assertEqual(decoded, provider["outbounds"])
+            mobile = json.loads((directory / "sing-box.json").read_text())
+            self.assertEqual([node for node in mobile["outbounds"] if node["tag"] in tags], decoded)
+            subprocess.run([CLIENT_SING_BOX, "check", "-c", str(directory / "sing-box.json")], check=True)
+            group_section = (directory / "shadowrocket.conf").read_text().partition("[Proxy Group]\n")[2].partition("\n[Rule]")[0]
+            groups = dict(line.split(" = ", 1) for line in group_section.splitlines() if line)
+            for name, exit_ in provider["exits"].items():
+                for group in (f"exit-{name}", f"exit-{name}-auto"):
+                    members = groups[group].split(", ")
+                    self.assertIn(title, members)
+                    self.assertIn("use=true", members)
+                    pattern = next(value.removeprefix("policy-regex-filter=") for value in members
+                                   if value.startswith("policy-regex-filter="))
+                    self.assertEqual({tag for tag in tags if re.fullmatch(pattern, tag)}, set(exit_["paths"]))
+                self.assertEqual(groups[f"exit-{name}"].split(", ")[:2], ["select", f"exit-{name}-auto"])
+            for name, binding in provider["groups"].items():
+                members = groups[name].split(", ")
+                self.assertEqual(members[1], "exit-" + binding["default"])
+                self.assertEqual(set(members[1:]), {"exit-" + name for name in binding["exits"]})
+
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "tmp/vps"
             subprocess.run([sys.executable, str(ROOT / "scripts/vps/prepare.py")],
@@ -119,12 +160,13 @@ class InventoryProtocol(unittest.TestCase):
                          if node["type"] == "selector"}
             self.assertEqual(selectors["ai"]["default"], "exit-west-native")
             self.assertEqual(selectors["proxy"]["default"], "exit-edge-native")
-            subprocess.run([CLIENT_SING_BOX, "check", "-c", str(mobile_path)], check=True)
+            check_clients(root / "subscriptions/primary")
 
             # Publishing an additional exit and changing subscription presentation preserve existing passwords.
             revised = copy.deepcopy(inventory)
             subscription = revised["subscriptions"].pop("primary")
             revised["subscriptions"]["personal"] = subscription
+            subscription.pop("name")
             subscription["path"] = "/7ae7d48e-6d6c-4b0d-b108-72eb8c20ed7b"
             subscription["entries"].reverse()
             subscription["groups"]["proxy"]["default"] = "west-native"
@@ -134,6 +176,9 @@ class InventoryProtocol(unittest.TestCase):
                 subprocess.run([sys.executable, str(ROOT / "scripts/vps/prepare.py")],
                                input=yaml.safe_dump(revised), text=True, cwd=regenerated, check=True)
                 updated = json.loads((Path(regenerated) / "tmp/vps/subscriptions/personal/linux.json").read_text())
+                check_clients(Path(regenerated) / "tmp/vps/subscriptions/personal")
+                self.assertEqual(json.loads((Path(regenerated) / "tmp/vps/subscriptions/personal/metadata.json").read_text())["name"],
+                                 "personal")
                 passwords = {path["tag"]: path["password"] for path in updated["outbounds"]}
                 for path in provider["outbounds"]:
                     self.assertEqual(passwords[path["tag"]], path["password"])
@@ -175,12 +220,20 @@ class InventoryProtocol(unittest.TestCase):
                     for agent, filename in (
                         ("SFA (sing-box 1.14; language en_US)", "sing-box.json"),
                         ("SFI (sing-box 1.14; language en_US)", "sing-box.json"),
-                        ("Shadowrocket/2.2", "shadowrocket.conf"),
+                        ("Shadowrocket/2.2", "shadowrocket.txt"),
                     ):
                         with self.subTest(agent=agent):
                             request = urllib.request.Request(url, headers={"User-Agent": agent})
                             with urllib.request.urlopen(request, timeout=2, context=tls) as response:
                                 self.assertEqual(response.read().decode(), (root / "subscriptions/primary" / filename).read_text())
+                    for client, filename in (("shadowrocket", "shadowrocket.txt"), ("shadowrocket-config", "shadowrocket.conf")):
+                        request = urllib.request.Request(url + "?client=" + client, headers={"User-Agent": "Shadowrocket/2.2"})
+                        with urllib.request.urlopen(request, timeout=2, context=tls) as response:
+                            self.assertEqual(response.read().decode(), (root / "subscriptions/primary" / filename).read_text())
+                            if client == "shadowrocket-config":
+                                title = inventory["subscriptions"]["primary"]["name"] + ".conf"
+                                self.assertEqual(response.headers["Content-Disposition"],
+                                                 'attachment; filename="primary.conf"; filename*=UTF-8\'\'' + urllib.parse.quote(title, safe=""))
                     # The static-asset binding is reachable only through the subscription handler.
                     with self.assertRaises(urllib.error.HTTPError) as denied:
                         urllib.request.urlopen(url + "/linux.json", timeout=2, context=tls)
@@ -247,9 +300,9 @@ class InventoryProtocol(unittest.TestCase):
                     for name, subscription in inventory["subscriptions"].items():
                         for exit_id in subscription["exits"]:
                             for protocol in ports:
-                                tag = f"path-edge-edge-{exit_id}-{protocol}"
-                                path = next(p for p in providers[name]["outbounds"] if p["tag"] == tag)
-                                with self.subTest(subscription=name, path=tag, rotated=previous is not None):
+                                path = next(p for p in providers[name]["outbounds"]
+                                            if p["tag"] in providers[name]["exits"][exit_id]["paths"] and p["type"] == protocol)
+                                with self.subTest(subscription=name, path=path["tag"], rotated=previous is not None):
                                     expected = {exit_: len(requests) + (exit_ == exit_id) for exit_, requests in calls.items()}
                                     self.assertEqual(connect(path), "proxy")
                                     self.assertEqual({exit_: len(requests) for exit_, requests in calls.items()}, expected)

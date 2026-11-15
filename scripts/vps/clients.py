@@ -1,8 +1,11 @@
 """Insert authorized paths into the native client configuration and rule catalog."""
+import base64
 import copy
 import json
 from pathlib import Path
+import re
 import sys
+from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "network"))
 from render import grouped_outbounds
@@ -28,18 +31,25 @@ def mobile(provider):
     return config
 
 
-def shadowrocket(provider):
-    general, _, rules = (DATA / "shadowrocket-client.conf").read_text().partition("[Rule]\n")
-    lines = [general.rstrip(), "", "[Proxy]"]
+def shadowrocket_nodes(provider):
+    lines = []
     for node in provider["outbounds"]:
-        lines.append(f"{node['tag']} = {node['type']}, {node['server']}, {node['server_port']}, "
-                     f"password={json.dumps(node['password'])}, sni={node['tls']['server_name']}, "
-                     "skip-cert-verify=false, udp-relay=true")
-    lines += ["", "[Proxy Group]"]
+        parameters = {"sni": node["tls"]["server_name"]}
+        parameters["allowInsecure" if node["type"] == "trojan" else "insecure"] = "0"
+        lines.append(f"{node['type']}://{quote(node['password'], safe='')}@{node['server']}:{node['server_port']}"
+                     f"/?{urlencode(parameters)}#{quote(node['tag'], safe='')}")
+    return base64.b64encode(("\n".join(lines) + "\n").encode()).decode() + "\n"
+
+
+def shadowrocket(provider, subscription_name):
+    general, _, rules = (DATA / "shadowrocket-client.conf").read_text().partition("[Rule]\n")
+    lines = [general.rstrip(), "", "[Proxy Group]"]
     for name, exit_ in provider["exits"].items():
-        lines.append(f"exit-{name}-auto = url-test, " + ", ".join(exit_["paths"]) +
+        pattern = "^(?:" + "|".join(re.escape(path) for path in exit_["paths"]) + ")$"
+        members = f"{subscription_name}, use=true, policy-regex-filter={pattern}"
+        lines.append(f"exit-{name}-auto = url-test, {members}" +
                      ", url=https://www.gstatic.com/generate_204, interval=180, tolerance=100")
-        lines.append(f"exit-{name} = select, exit-{name}-auto, " + ", ".join(exit_["paths"]))
+        lines.append(f"exit-{name} = select, exit-{name}-auto, {members}")
     for name, binding in provider["groups"].items():
         choices = [binding["default"], *(e for e in binding["exits"] if e != binding["default"])]
         lines.append(f"{name} = select, " + ", ".join("exit-" + e for e in choices))

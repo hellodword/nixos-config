@@ -455,10 +455,13 @@ in
                 carriers = ["edge", "west"] if exit_id == "us" else ["edge" if exit_id == "edge-native" else "west"]
                 for carrier in carriers:
                     for protocol in ("trojan", "hysteria2"):
-                        path = next(p for p in provider["outbounds"] if p["tag"] == f"path-{entry}-{carrier}-{exit_id}-{protocol}")
+                        paths = provider["exits"][exit_id]["paths"]
+                        path = next(p for p in provider["outbounds"] if p["tag"] in paths and p["type"] == protocol
+                                    and p["server"] == addresses[entry]
+                                    and p["tls"]["server_name"] == f"{carrier}.test.nix")
                         request(path, address)
     with subtest("Exit DNS survives an unavailable resolver and a resolver returning SERVFAIL"):
-        path = next(p for p in provider["outbounds"] if p["tag"] == "path-edge-west-us-trojan")
+        path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · [us] · Trojan")
         controller.succeed("systemctl stop vps-dns-0.service")
         request(path, "198.51.100.30", "transport.fixture.example")
         controller.succeed("systemctl start vps-dns-0.service")
@@ -473,7 +476,7 @@ in
             controller.succeed("curl --fail -sS -X PUT -H 'Content-Type: application/json' --data " +
                                shlex.quote(json.dumps({"name": name})) + " http://127.0.0.1:19090/proxies/exit-us")
 
-        select_path("path-west-west-us-trojan")
+        select_path("west · [us] · Trojan")
         stream = """
     import json, socket, time
     from pathlib import Path
@@ -495,14 +498,14 @@ in
         controller.succeed("systemd-run --unit=vps-stream --collect ${fixture} /run/stream.py")
         controller.wait_until_succeeds("test -s /run/stream-count")
         count = int(controller.succeed("cat /run/stream-count"))
-        select_path("path-edge-edge-us-trojan")
+        select_path("edge · [us] · Trojan")
         controller.wait_until_succeeds(f"test $(cat /run/stream-count) -gt {count + 3}")
         controller.succeed("systemctl stop vps-stream.service")
-        select_path("path-west-west-us-trojan")
+        select_path("west · [us] · Trojan")
         poweroff(west)
         controller.fail("curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/")
         selected = json.loads(controller.succeed("curl --fail -sS http://127.0.0.1:19090/proxies/exit-us"))
-        assert selected["now"] == "path-west-west-us-trojan", selected
+        assert selected["now"] == "west · [us] · Trojan", selected
         select_path("exit-us-auto")
         controller.wait_until_succeeds("test \"$(curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/)\" = 198.51.100.30", timeout=45)
         west.start()
@@ -519,7 +522,7 @@ in
         assert succeed(west, "cat /etc/vps-generation") == "v2"
         assert succeed(west, "cat /nix/var/nix/profiles/system/etc/vps-generation") == "v1"
         next_provider = json.loads(controller.succeed("cat /run/vps/provider-v2.json"))
-        next_path = next(p for p in next_provider["outbounds"] if p["tag"] == "path-edge-west-west-native-trojan")
+        next_path = next(p for p in next_provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
         request(next_path, "192.0.2.11")
         deploy("v2", "switch", "west")
         powercycle(west)
@@ -528,7 +531,7 @@ in
         succeed(west, "nix-env -p /nix/var/nix/profiles/system --rollback; /nix/var/nix/profiles/system/bin/switch-to-configuration switch")
         wait_unit(west, "site-vps-proxy.service")
         assert succeed(west, "cat /etc/vps-generation") == "v1"
-        old_path = next(p for p in provider["outbounds"] if p["tag"] == "path-edge-west-west-native-trojan")
+        old_path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
         request(old_path, "192.0.2.11")
         succeed(west, "test -f /var/lib/site-vps/releases/v1/proxy.json; test -f /var/lib/site-vps/releases/v2/proxy.json")
     powercycle(edge)
