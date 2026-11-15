@@ -49,6 +49,8 @@ GitHub Actions bootstrap cache 保存 oranc 的运行闭包，用于尽快启动
 
 master push 和自动更新在构建、依赖缓存发布均成功后进入 VM 验证。后台上传失败会在当前构建阶段结束后的发布检查点报告，随后收集诊断；进入 VM 后，某组失败仍继续其余组，并在收尾发布已完成的新产物。手动验证非 master ref 时，构建成功后直接进入 VM。取消任务时有界停止上传进程，已经发布的缓存保留在 GHCR。
 
+同一构建阶段内，Nix 首次报告失败计数或错误消息时立即在 Actions 标注，独立构建继续执行并发布成功产物。summary 分别记录首次失败时间和之后的构建耗时，详细错误保留在构建日志中，阶段最终结果由 Nix 退出状态及诊断收集结果确定。本地构建入口也保存错误记录；工作流通过 `--github-actions` 启用页面标注。
+
 GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证任务失败。缓存可在全部验证完成前发布，其存在不代表验收通过或已经部署。自动更新直接调用验证工作流，因为 [GITHUB_TOKEN 引发的 push](https://docs.github.com/en/actions/concepts/security/github_token)不会再次触发 push 工作流。
 
 ## 首次启用
@@ -75,16 +77,19 @@ Nix 获取 GitHub inputs、缓存读取和发布使用当前 job 自动提供的
 | 记录 | 用途 |
 | --- | --- |
 | summary、`timings.jsonl` | 查看各阶段墙钟时间及耗时依赖，区分实际执行与缓存复用；查看后台查询、上传数量与体积，以及发布检查点的等待时间和结果 |
+| `logs/<pass>/<group>/<attempt>.log` | 构建 stdout、stderr 的连续记录，与控制台同步输出；普通检查和 VM 均保留，summary 给出每次执行的路径 |
 | `evaluation.jsonl` | 查看各个求值条目的 derivation、输出、耗时和错误 |
 | `publication-paths.jsonl` | 核对每次发布选中的路径、再分发排除项、公共及项目缓存命中，以及待上传路径的 NAR 大小 |
 | `publisher.log`、`cache/status.json`、`published-paths.json` | 定位上传进程错误，核对退出状态和本轮成功发布的路径 |
-| `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘与 OOM 记录判断资源瓶颈 |
+| `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘、内存上限触发、socket 内存限流及 OOM 记录判断资源瓶颈 |
 | `oranc.log`、`monitor.log` | 按 UTC 时间对照缓存请求与 manifest 重试，排查缓存代理及资源采集故障 |
-| `vm/<pass>/<check>/<attempt>/` | VM 日志、截图与 OCR 记录，网络观察快照、通知诊断及应用工作流产物；具体目录见 summary 的 VM evidence |
+| `vm/<pass>/<check>/<attempt>/` | 测试脚本写出的截图、OCR 记录、网络观察快照及应用工作流文件；summary 的 VM evidence 列出实际收集的文件数量与目录 |
 
 VM 判定使用当前清单的 derivation 和输出路径，并且只采用该组最新一次已开始的执行。中断或失败的重跑会留下对应状态，较早的成功不会代替它；每次执行的证据保存在独立目录。summary 保留各次构建耗时，VM 表展示当前判定。
 
-构建目录及权限由 Nix 管理。VM 构建使用 `--keep-failed` 保留失败现场，原目录位置见构建日志，在 runner 生命周期结束时释放。构建进程结束后，工作流将已写出的测试输出收集到诊断 artifact；输出缺失和收集错误在 summary 中单独列出，构建结果照常记录。
+构建日志在执行期间持续写入，失败和中断时保留已有内容。VM 的控制台记录位于构建日志中，额外文件由测试脚本写入输出目录。构建进程结束后收集这些文件；输出缺失和收集错误在 summary 中单独列出，原始构建结果照常记录。
+
+构建目录及权限由 Nix 管理。VM 构建使用 `--keep-failed` 保留失败现场，原目录位置见构建日志，在 runner 生命周期结束时释放。
 
 后台缓存查询和上传与构建重叠，发布检查点的等待时间反映阶段结束后的剩余工作。比较运行效率时看任务总墙钟时间和检查点等待时间，后台耗时不与构建耗时相加。
 

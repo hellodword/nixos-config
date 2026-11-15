@@ -5,12 +5,13 @@ import grp
 import json
 import os
 from pathlib import Path
-import socket
 import subprocess
+import sys
 import time
 from types import SimpleNamespace
 
 import dns.edns
+import dns.exception
 import dns.message
 import dns.query
 
@@ -35,56 +36,73 @@ def processes(args, config, root, fragments=None, ipv4_only=False):
         collector["pipelines"][0]["dnstap"]["sock-path"] = config["logSocket"]
         collector_config = root / "collector.json"
         collector_config.write_text(json.dumps(collector))
-        events = stack.enter_context((root / "events.jsonl").open("w"))
-        running = [subprocess.Popen([args.dnscollector, "-config", str(collector_config)], stdout=events, stderr=events)]
-        for _ in range(100):
-            if Path(config["logSocket"]).exists():
-                break
-            if running[0].poll() is not None:
-                raise AssertionError((root / "events.jsonl").read_text())
-            time.sleep(0.05)
-        for group in config["groups"]:
-            if not (root / f"race-{group}.json").exists():
-                continue
-            log = stack.enter_context((root / f"race-{group}.log").open("w"))
-            running.append(subprocess.Popen([args.dnsproxy, "--config-path", str(root / f"race-{group}.json")], stdout=log, stderr=log))
-        log = stack.enter_context((root / "dnsdist.log").open("w"))
-        running.append(subprocess.Popen([args.dnsdist, "--supervised", "--disable-syslog", "-C", str(root / "dnsdist.conf")], stdout=log, stderr=log, stdin=subprocess.DEVNULL))
+        running = {}
+        logs = []
+
+        def start(name, command, filename):
+            path = root / filename
+            log = stack.enter_context(path.open("w"))
+            logs.append(path)
+            running[name] = subprocess.Popen(command, stdout=log, stderr=log, stdin=subprocess.DEVNULL)
+
+        def check_processes():
+            for name, process in running.items():
+                if process.poll() is not None:
+                    raise AssertionError(f"{name} exited with status {process.returncode}")
+
         try:
-            for _ in range(100):
-                if any(p.poll() is not None for p in running):
-                    raise AssertionError("DNS process exited: " + (root / "dnsdist.log").read_text())
-                try:
-                    with socket.create_connection(("127.0.0.1", config["frontPort"]), timeout=0.1):
-                        pass
-                    break
-                except OSError:
-                    time.sleep(0.05)
-            else:
-                raise AssertionError("DNS stack not ready")
-            assert query(config["frontPort"], "ready.example.org").rcode() == 0
+            deadline = time.monotonic() + 30
+            start("collector", [args.dnscollector, "-config", str(collector_config)], "events.jsonl")
+            while not Path(config["logSocket"]).exists():
+                check_processes()
+                assert time.monotonic() < deadline, "collector dnstap socket did not become ready"
+                time.sleep(0.05)
+            for group in config["groups"]:
+                if (root / f"race-{group}.json").exists():
+                    start(f"race-{group}", [args.dnsproxy, "--config-path", str(root / f"race-{group}.json")], f"race-{group}.log")
+            start("dnsdist", [args.dnsdist, "--supervised", "--disable-syslog", "-C", str(root / "dnsdist.conf")], "dnsdist.log")
+            pending = {(port, tcp): "not queried" for port in (config["frontPort"], config["bootstrapPort"])
+                       for tcp in (False, True)}
+            while pending:
+                check_processes()
+                for port, tcp in list(pending):
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise AssertionError(f"DNS stack not ready after 30s: {pending}")
+                    try:
+                        response = query(port, "ready.example.org", tcp=tcp, timeout=min(1, remaining))
+                    except (OSError, EOFError, dns.exception.Timeout) as error:
+                        pending[port, tcp] = f"{type(error).__name__}: {error}"
+                    else:
+                        if response.rcode() == 0 and response.answer:
+                            del pending[port, tcp]
+                        else:
+                            pending[port, tcp] = response.to_text()
+                if pending:
+                    time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+            check_processes()
             yield
         except BaseException:
-            for handle in (root / "dnsdist.log", root / "race-cn.log", root / "race-global.log", root / "events.jsonl"):
-                if handle.exists():
-                    print(handle.name + ":\n" + handle.read_text()[-12000:], flush=True)
+            for path in logs:
+                print(path.name + ":\n" + path.read_text(errors="replace")[-12000:], file=sys.stderr, flush=True)
             raise
         finally:
-            for process in running:
+            for process in running.values():
                 process.terminate()
-            for process in running:
+            deadline = time.monotonic() + 5
+            for process in running.values():
                 try:
-                    process.wait(timeout=5)
+                    process.wait(timeout=max(0, deadline - time.monotonic()))
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
 
 
-def query(port, name, kind="A", tcp=False, ecs=False, address="127.0.0.1"):
+def query(port, name, kind="A", tcp=False, ecs=False, address="127.0.0.1", timeout=8):
     message = dns.message.make_query(name, kind)
     if ecs:
         message.use_edns(options=[dns.edns.ECSOption("192.0.2.0", 24)])
-    return (dns.query.tcp if tcp else dns.query.udp)(message, address, port=port, timeout=8)
+    return (dns.query.tcp if tcp else dns.query.udp)(message, address, port=port, timeout=timeout)
 
 
 def marker(message):

@@ -211,19 +211,23 @@ def socks_http(port, domain, destination, payload=None):
         return data.split(b"\r\n\r\n", 1)[1].decode()
 
 
+def wait_for_proxy(process, root, port):
+    deadline = time.monotonic() + 30
+    while True:
+        assert process.poll() is None, (root / "sing-box.log").read_text()
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+                return
+        except OSError:
+            assert time.monotonic() < deadline, f"proxy listener {port} did not become ready"
+            time.sleep(0.05)
+
+
 @contextlib.contextmanager
 def proxy_process(executable, root, log, port):
     process = subprocess.Popen([executable, "run", "-D", str(root), "-c", str(root / "network.json")], stdout=log, stderr=log)
     try:
-        deadline = time.monotonic() + 10
-        while True:
-            assert process.poll() is None, (root / "sing-box.log").read_text()
-            try:
-                with socket.create_connection(("127.0.0.1", port), timeout=0.1):
-                    break
-            except OSError:
-                assert time.monotonic() < deadline, "proxy listener did not become ready"
-                time.sleep(0.05)
+        wait_for_proxy(process, root, port)
         yield
     finally:
         process.terminate()

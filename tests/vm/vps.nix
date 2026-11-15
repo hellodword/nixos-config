@@ -380,7 +380,7 @@ in
     images = ${builtins.toJSON (lib.mapAttrs (_: image: "${image}/nixos.img") images)}
 
     def remote(machine, command):
-        return f"ssh -o BatchMode=yes -o ConnectTimeout=3 {ssh_hosts[machine.name]} " + shlex.quote("set -euo pipefail; " + command)
+        return f"ssh -n -o BatchMode=yes -o ConnectTimeout=3 {ssh_hosts[machine.name]} " + shlex.quote("set -euo pipefail; " + command)
 
     def succeed(machine, command, timeout=60):
         return controller.succeed(remote(machine, command), timeout=timeout)
@@ -436,10 +436,14 @@ in
         controller.succeed("runuser -u publisher -- ${python}/bin/python3 ${source}/tests/integration/wrangler.py", timeout=120)
     def deploy(release, goal, target="edge,west"):
         for name in target.split(","):
-            status, output = controller.execute(f"VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute", timeout=300)
+            status, output = controller.execute(f"VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute < /dev/null", timeout=300)
             if status:
-                print(controller.succeed("free -m; df -h / /nix/store; journalctl -b -u nix-daemon -u systemd-oomd --no-pager; dmesg | tail -n 40"))
-                print(controller.execute(remote({"edge": edge, "west": west}[name], "journalctl -b -u site-vps-proxy -u site-vps-certificate -u nginx --no-pager -n 80"))[1])
+                for command in ("free -m; df -h / /nix/store; journalctl -b -u nix-daemon -u systemd-oomd --no-pager; dmesg | tail -n 40",
+                                remote({"edge": edge, "west": west}[name], "journalctl -b -u site-vps-proxy -u site-vps-certificate -u nginx --no-pager -n 80")):
+                    try:
+                        print(controller.execute(command, timeout=10)[1])
+                    except Exception as error:
+                        print("Deployment diagnostics:", error)
                 raise RuntimeError(f"{name}: Colmena {goal} exited {status}: {output}")
     with subtest("Colmena deploys through SSH aliases, identities, ports and a SOCKS proxy"):
         deploy("v1", "switch")
@@ -522,9 +526,19 @@ in
     with subtest("A failed certificate refresh retains the active pair"):
         previous = succeed(west, "readlink /var/lib/site-vps-certificate/fixture/current")
         controller.succeed("touch /run/certificate-unavailable")
-        controller.fail(remote(west, "systemctl start site-vps-certificate.service"))
-        assert succeed(west, "readlink /var/lib/site-vps-certificate/fixture/current") == previous
-        controller.succeed("rm /run/certificate-unavailable")
+        try:
+            status, output = controller.execute(remote(west, "systemctl start site-vps-certificate.service"), timeout=150)
+            assert status == 1, (status, output)
+            state = succeed(west, "systemctl show site-vps-certificate.service -p Result -p ExecMainStatus")
+            assert set(state.splitlines()) == {"Result=exit-code", "ExecMainStatus=1"}, state
+            assert succeed(west, "readlink /var/lib/site-vps-certificate/fixture/current") == previous
+        except Exception:
+            try:
+                print(controller.execute(remote(west, "systemctl show site-vps-certificate.service; journalctl -b -u site-vps-certificate.service --no-pager -n 40"), timeout=10)[1])
+            except Exception as error:
+                print("Certificate diagnostics:", error)
+            raise
+        controller.succeed("rm /run/certificate-unavailable", timeout=10)
     with subtest("Test, switch, reboot and rollback retain the required credentials"):
         deploy("v2", "test", "west")
         wait_unit(west, "site-vps-proxy.service")

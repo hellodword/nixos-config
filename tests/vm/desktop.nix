@@ -261,7 +261,7 @@ in
         options = "".join(" --retained " + purpose for purpose in retained)
         machine.wait_until_succeeds(user_command("${identityFixture} verify --directory ${identityDirectory}" + options), timeout=30)
         for purpose in ("github", "local"):
-            assert user(machine, "ssh fixture-" + purpose + " whoami").strip() == "desktop"
+            assert user(machine, "ssh -n fixture-" + purpose + " whoami").strip() == "desktop"
 
     def preferred_layout(machine):
         try:
@@ -643,16 +643,16 @@ in
             user(machine, "gpg --batch --import /run/site-identity/desktop/current/public.asc")
             machine.wait_until_succeeds(user_command("systemctl --user is-failed site-gpg-ssh-identities.service"), timeout=30)
             user(machine, "${identityFixture} verify --directory ${identityDirectory} --missing ios")
-            assert user(machine, "ssh fixture-github whoami").strip() == "desktop"
+            assert user(machine, "ssh -n fixture-github whoami").strip() == "desktop"
             user(machine, "mv ${identityDirectory}/ios.key " + missing_key)
             identity_ready(machine)
-            assert user(machine, "ssh fixture-gitlab whoami").strip() == "desktop"
+            assert user(machine, "ssh -n fixture-gitlab whoami").strip() == "desktop"
             user(machine, "git init ${identityDirectory}/repo && cd ${identityDirectory}/repo && git signing && git commit --allow-empty -m 'Declared GPG identity' && git verify-commit HEAD")
             user(machine, "cp /etc/ssh/gpg.github." + keys["github"]["keyid"] + ".pub ${identityDirectory}/previous.pub")
             identity_fixture(machine, "rotate")
             machine.succeed("systemctl restart site-identity.service")
             identity_ready(machine, retained=("github", "gitlab"))
-            assert user(machine, "ssh -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i ${identityDirectory}/previous.pub desktop@localhost whoami").strip() == "desktop"
+            assert user(machine, "ssh -n -F /dev/null -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -i ${identityDirectory}/previous.pub desktop@localhost whoami").strip() == "desktop"
             for purpose in ("github", "gitlab"):
                 user(machine, "gpg-connect-agent " + shlex.quote("KEYATTR " + keys[purpose]["keygrip"] + " Use-for-ssh: false") + " /bye")
             identity_ready(machine)

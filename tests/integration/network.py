@@ -10,13 +10,14 @@ import ipaddress
 from pathlib import Path
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 from types import SimpleNamespace
 import urllib.request
 
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port
-from tests.fixtures.network_fixture import http_server, socks_server, socks_http, serve, proxy_process
+from tests.fixtures.network_fixture import http_server, socks_server, socks_http, serve, proxy_process, wait_for_proxy
 
 
 from tests.support import load_script
@@ -306,13 +307,7 @@ def main():
         log = stack.enter_context((root / "sing-box.log").open("w"))
         process = subprocess.Popen([args.sing_box, "run", "-D", str(root), "-c", str(output)], stdout=log, stderr=log)
         try:
-            for _ in range(100):
-                assert process.poll() is None, (root / "sing-box.log").read_text()
-                try:
-                    with socket.create_connection(("127.0.0.1", mixed), timeout=0.1):
-                        break
-                except OSError:
-                    time.sleep(0.05)
+            wait_for_proxy(process, root, mixed)
             assertions = 0
             with dns_test.processes(args, policy, root / "dns"):
                 assert "fixture" in api()["all"]
@@ -320,7 +315,9 @@ def main():
                 process.terminate()
                 process.wait(timeout=5)
                 process = subprocess.Popen([args.sing_box, "run", "-D", str(root), "-c", str(output)], stdout=log, stderr=log)
-                for _ in range(100):
+                wait_for_proxy(process, root, mixed)
+                deadline = time.monotonic() + 30
+                while time.monotonic() < deadline:
                     assert process.poll() is None, (root / "sing-box.log").read_text()
                     try:
                         if api()["now"] == "fixture":
@@ -377,7 +374,7 @@ def main():
                 assertions += 2
 
         except BaseException:
-            print((root / "sing-box.log").read_text()[-10000:])
+            print((root / "sing-box.log").read_text()[-10000:], file=sys.stderr, flush=True)
             raise
         finally:
             process.terminate()

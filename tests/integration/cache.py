@@ -3,9 +3,10 @@
 
 import argparse
 import base64
-from contextlib import contextmanager
+from contextlib import contextmanager, redirect_stderr
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import io
 import json
 import os
 import shutil
@@ -203,7 +204,7 @@ def authenticated_recovery(work, entry, inventory, publisher_settings, secret, p
                 assert output in json.loads((state / "published-paths.json").read_text())
                 verify(publisher_settings["project_cache"], [output], publisher_settings["public_key"])
         # These are the diagnostics CI retains, using only synthetic credentials.
-        logs = [proxy_log, state / "publisher.log", state / "timings.jsonl"]
+        logs = [proxy_log, state / "publisher.log", state / "timings.jsonl", *(state / "logs").rglob("*.log")]
         for path in logs:
             text = path.read_text()
             assert password not in text
@@ -241,7 +242,12 @@ def main():
             ${pkgs.curl}/bin/curl --fail --max-time 240 GATE_URL
             printf ready > $out
           '';
-          failure = pkgs.runCommand "${prefix}-failed" {} "exit 17";
+          failure = pkgs.runCommand "${prefix}-failed" {} ''
+            mkdir -p $out
+            printf 'synthetic builder stdout\\n'
+            printf 'synthetic builder stderr\\n' >&2
+            exit 17
+          '';
           root = pkgs.runCommand "${prefix}-result" {} ''
             test "$(cat ${driver})" = ready
             test "$(cat ${buildInput})" = 'build input'
@@ -327,9 +333,10 @@ def main():
                                       repository="synthetic/cache-test", no_ssl=True, **publication_settings)
             with publishing(state, inventory, secret=secret, **publisher_settings):
                 run_build([entry("large")], state=state, phase="preparation")
-                with ThreadPoolExecutor(max_workers=1) as pool:
+                annotations = io.StringIO()
+                with ThreadPoolExecutor(max_workers=1) as pool, redirect_stderr(annotations):
                     future = pool.submit(run_build, [*dependencies, entry("failure")],
-                                         state=state, phase="dependencies", jobs=1)
+                                         state=state, phase="dependencies", jobs=2, github_actions=True)
                     try:
                         assert entered.wait(180), "the dependent build did not reach its gate"
                         deadline = time.monotonic() + 120
@@ -340,6 +347,20 @@ def main():
                             assert time.monotonic() < deadline, "completed dependency was not published during the build"
                             time.sleep(0.2)
                         verify(uri, [fixture["child"]["path"]], public)
+                        while not (errors := [event for event in read_records(state / "timings.jsonl")
+                                              if event["kind"] == "build-error"]):
+                            assert time.monotonic() < deadline, "build failure was not reported while the peer was running"
+                            time.sleep(0.1)
+                        while "::error::" not in annotations.getvalue():
+                            assert time.monotonic() < deadline, "Actions error annotation was not emitted"
+                            time.sleep(0.1)
+                        assert errors[0]["phase"] == "dependencies"
+                        while True:
+                            retained = (state / errors[0]["log"]).read_text()
+                            if "synthetic builder stdout" in retained and "synthetic builder stderr" in retained:
+                                break
+                            assert time.monotonic() < deadline, "builder output was not retained while the peer was running"
+                            time.sleep(0.1)
                         assert not future.done(), "publication must complete while the dependent build is still running"
                         assert fixture["large"]["path"] not in json.loads(receipt.read_text())
                     finally:
@@ -371,6 +392,14 @@ def main():
                     pass
                 else:
                     raise AssertionError("the retry should fail with the fixture's native build error")
+                events = read_records(state / "timings.jsonl")
+                failed_attempt = [event for event in events if event["kind"] == "build"][-1]
+                assert failed_attempt["returncode"] != 0
+                assert "synthetic builder stderr" in (state / failed_attempt["log"]).read_text()
+                assert not any(event["kind"] == "vm-evidence" and event["attempt"] == failed_attempt["attempt"] for event in events)
+                evidence = next(event for event in events if event["kind"] == "vm-evidence")
+                assert evidence["files"] == 1
+                assert (state / evidence["path"] / Path(test["outputs"][0]).name).read_bytes() == Path(test["outputs"][0]).read_bytes()
                 try:
                     report.verify_results(state, "candidate")
                 except RuntimeError:

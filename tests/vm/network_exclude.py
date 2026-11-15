@@ -59,7 +59,7 @@ def run(client, target):
     client.succeed("printf %s " + shlex.quote(public) + " > /etc/ssh/gpg.exclusion.pub")
     target.succeed("mkdir -p -m700 /root/.ssh; printf %s " + shlex.quote(public) + " >> /root/.ssh/authorized_keys")
     ssh = ("export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket); "
-           "network-exclude ssh -o BatchMode=yes -o LogLevel=ERROR -o StrictHostKeyChecking=accept-new "
+           "network-exclude ssh -n -o BatchMode=yes -o LogLevel=ERROR -o StrictHostKeyChecking=accept-new "
            "-o IdentitiesOnly=yes -i /etc/ssh/gpg.exclusion.pub root@web.proxy.test 'printf agent-ok'")
     try:
         assert user(ssh).strip() == "agent-ok"

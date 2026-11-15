@@ -1050,7 +1050,7 @@ in
     client.succeed('ssh-keygen -q -t ed25519 -N "" -f /run/proxy-test-key')
     public_key = client.succeed("cat /run/proxy-test-key.pub")
     target.succeed("install -d -m700 /root/.ssh; printf %s " + shlex.quote(public_key) + " > /root/.ssh/authorized_keys")
-    client.succeed("ssh -i /run/proxy-test-key -o UserKnownHostsFile=/run/proxy-known-hosts -o StrictHostKeyChecking=accept-new -o 'ProxyCommand=nc -x 127.0.0.1:10800 %h %p' root@198.51.100.30 printf proxy-ssh | grep -Fx proxy-ssh")
+    client.succeed("ssh -n -i /run/proxy-test-key -o UserKnownHostsFile=/run/proxy-known-hosts -o StrictHostKeyChecking=accept-new -o 'ProxyCommand=nc -x 127.0.0.1:10800 %h %p' root@198.51.100.30 printf proxy-ssh | grep -Fx proxy-ssh")
     intercepted_dns(client, "web.proxy.test", ["", compose_exec + " "], dual=True)
     assert client.succeed("curl -6 --noproxy '*' --cacert ${certificates.ca.cert} --max-time 10 -fsS https://proxy.test.nix:18087/dual").strip() in {"192.168.1.20", "2001:db8:10::20"}
     client.wait_for_unit("docker-site-apprise.service")

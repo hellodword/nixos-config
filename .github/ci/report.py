@@ -176,15 +176,20 @@ def render(state):
     builds = [event for event in events if event["kind"] == "build"]
     if builds:
         lines += ["", "### Nix build groups", "", "Each row is one attempt; group wall times include dependency work and cache transfers.",
-                  "", "| Revision | Group | Result | Wall time |", "| --- | --- | --- | --- |"]
+                  "", "| Revision | Group | Result | Wall time | After first error | Log |", "| --- | --- | --- | --- | --- | --- |"]
         for event in builds:
             status = "success" if event["returncode"] == 0 else event.get("signal", f"exit {event['returncode']}")
-            lines.append(f"| {event['pass']} | {event['phase']} | {status} | {duration(event['seconds'])} |")
+            lines.append(f"| {event['pass']} | {event['phase']} | {status} | {duration(event['seconds'])} | "
+                         f"{duration(event.get('afterErrorSeconds'))} | `{event.get('log', '')}` |")
     completed = {event["attempt"] for event in builds}
     for event in events:
         if event["kind"] == "build-start" and event["attempt"] not in completed:
             lines += ["", f"Unfinished attempt: {event['pass']}/{event['phase']} "
-                      f"started at {event['started']} (`{event['attempt']}`)."]
+                      f"started at {event['started']} (`{event['attempt']}`); log: `{event.get('log', '')}`."]
+    for event in events:
+        if event["kind"] == "build-error":
+            lines += ["", f"First Nix error in {event['pass']}/{event['phase']} at {event['time']}:\n",
+                      "```text", event["message"], "```"]
     activities = [event for event in events if event["kind"] == "activity"]
     for source, title in (("build", "Longest builds"), ("restore", "Longest cache restores")):
         selected = [event for event in activities if event["source"] == source]
@@ -221,9 +226,9 @@ def render(state):
     evidence = [event for event in events if event["kind"] == "vm-evidence"]
     if evidence:
         lines += ["", "### VM evidence", "", "Paths below are inside the diagnostics artifact.", "",
-                  "| Revision | Group | Test | Evidence |", "| --- | --- | --- | --- |"]
+                  "| Revision | Group | Test | Files | Evidence |", "| --- | --- | --- | --- | --- |"]
         for event in evidence:
-            lines.append(f"| {event['pass']} | {event['phase']} | {event['name']} | `{event['path']}` |")
+            lines.append(f"| {event['pass']} | {event['phase']} | {event['name']} | {event.get('files', '—')} | `{event['path']}` |")
     for event in events:
         if event["kind"] == "evidence-missing":
             lines += ["", f"VM output unavailable for {event['pass']}/{event['name']}: `{event['output']}`."]
@@ -246,6 +251,9 @@ def render(state):
         if counters:
             killed = counters[-1].get("oom_kill", 0) - counters[0].get("oom_kill", 0)
             lines.append(f"- Container OOM kills during monitoring: {killed}.")
+            for key, label in (("max", "Memory limit hits"), ("sock_throttled", "Socket memory throttling events")):
+                if any(key in counter for counter in counters):
+                    lines.append(f"- {label}: {counters[-1].get(key, 0) - counters[0].get(key, 0)}.")
     else:
         lines.append("Resource samples are unavailable; SIGKILL alone does not establish OOM.")
     for filename in ("oom-kernel.log", "oom-userspace.log", "monitor.log"):

@@ -397,8 +397,8 @@ jobs:
         id: build
         run: |
           docker exec nixos-ci bash -euo pipefail -c '
-            "$(cat /ci/python)" .github/ci/build.py private --state /ci
-            "$(cat /ci/python)" .github/ci/build.py dependencies --state /ci
+            "$(cat /ci/python)" .github/ci/build.py private --state /ci --github-actions
+            "$(cat /ci/python)" .github/ci/build.py dependencies --state /ci --github-actions
           '
       - name: Complete dependency cache publication
         id: publish-dependencies
@@ -409,19 +409,19 @@ jobs:
       - name: Run network and backup VM tests
         id: network-backup
         if: ${{ !cancelled() && matrix.scope == 'laptop' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-backup --jobs 1 --state /ci'
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-network-backup --jobs 1 --state /ci --github-actions'
       - name: Run desktop VM tests
         id: desktop
         if: ${{ !cancelled() && matrix.scope == 'laptop' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-desktop --state /ci'
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-desktop --state /ci --github-actions'
       - name: Run application VM tests
         id: applications
         if: ${{ !cancelled() && matrix.scope == 'laptop' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-applications --state /ci'
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-applications --state /ci --github-actions'
       - name: Run VPS image and deployment VM tests
         id: vps
         if: ${{ !cancelled() && matrix.scope == 'remote' && steps.build.outcome == 'success' && (github.ref != 'refs/heads/master' || steps.publish-dependencies.outcome == 'success') }}
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-vps --jobs 1 --state /ci'
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-vps --jobs 1 --state /ci --github-actions'
       - name: Assemble VM results
         if: ${{ !cancelled() && ((matrix.scope == 'remote' && steps.vps.outcome == 'success') || (matrix.scope == 'laptop' && steps.network-backup.outcome == 'success' && steps.desktop.outcome == 'success' && steps.applications.outcome == 'success')) }}
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/report.py verify --state /ci'
@@ -468,3 +468,4 @@ jobs:
             ${{ runner.temp }}/nixos-ci/monitor.log
             ${{ runner.temp }}/nixos-ci/oranc.log
             ${{ runner.temp }}/nixos-ci/vm/
+            ${{ runner.temp }}/nixos-ci/logs/
