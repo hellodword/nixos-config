@@ -623,11 +623,11 @@ in
             user(machine, "systemd-run --user --collect --unit=ime-fixture sh -c 'QT_QPA_PLATFORM=wayland kdialog --title Native-input-check --inputbox \"Input method check\" > /run/user/1000/ime-result'")
             visible(machine, "Input method check", region=(0.3, 0.25, 0.4, 0.5))
             with machine.input_lock:
-                user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
+                gui["input_method"](machine, user_command, True, time.monotonic() + 60)
                 machine.send_chars("nihao ")
                 machine.send_key("ret")
-            machine.wait_until_succeeds(user_command("test -s /run/user/1000/ime-result"), timeout=30)
-            entered = user(machine, "cat /run/user/1000/ime-result").strip()
+                machine.wait_until_succeeds(user_command("test -s /run/user/1000/ime-result"), timeout=30)
+                entered = user(machine, "cat /run/user/1000/ime-result").strip()
             assert entered == "你好", entered
             controller = "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 "
             user(machine, controller + "SetConfig sv fcitx://config/addon/pinyin 'a{sv}' 1 PageSize s 9")

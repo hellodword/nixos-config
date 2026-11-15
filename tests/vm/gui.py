@@ -179,6 +179,34 @@ def remaining(deadline):
     return min(15, value)
 
 
+def input_method(machine, user_command, active, deadline):
+    """Confirm the focused Fcitx context before the next keyboard action."""
+    command = "fcitx5-remote -s pinyin && fcitx5-remote -o" if active else "fcitx5-remote -c"
+    machine.succeed(user_command(command), timeout=timedelta(seconds=remaining(deadline)))
+    last = ""
+    while time.monotonic() < deadline:
+        status, last = machine.execute(user_command(
+            "fcitx5-remote; fcitx5-remote -n"
+        ), timeout=remaining(deadline))
+        lines = last.strip().splitlines()
+        if status == 0 and lines and lines[0] == ("2" if active else "1"):
+            if not active or lines[1:] == ["pinyin"]:
+                return {"state": int(lines[0]), "method": lines[-1]}
+        time.sleep(0.1)
+    raise AssertionError(f"Fcitx {'activation' if active else 'deactivation'} timed out: {last!r}")
+
+
+def focused_window(machine, user_command):
+    query = '''case "$XDG_CURRENT_DESKTOP" in
+      *sway*) wm=swaymsg ;;
+      *i3*) wm=i3-msg ;;
+      *KDE*) kdotool getwindowclassname "$(kdotool getactivewindow)"; exit ;;
+    esac
+    "$wm" -t get_tree | jq -c 'first(.. | objects | select(.focused? == true) | {app_id, window_properties, name, pid})'
+    '''
+    return machine.succeed(user_command(query), timeout=timedelta(seconds=15)).strip()
+
+
 def wait_for_session(machine, session, user_command):
     # The WM target is started after environment import and PAM wallet setup.
     # graphical-session.target alone can become active before those finish.

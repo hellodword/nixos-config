@@ -160,28 +160,98 @@
     def user_status(command):
         return "runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus sh -c " + shlex.quote(command)
 
-    def input_actions(machine, actions):
-        with machine.input_lock:
-            for action in actions:
-                if "powerGuard" in action:
-                    power_menu["blocked"](machine, user, visible, "Log out", action["powerGuard"])
-                elif "pinyin" in action:
-                    user(machine, "fcitx5-remote -s pinyin && fcitx5-remote -o")
-                    if "candidateScreenshot" in action:
-                        machine.send_chars(action["pinyin"].rstrip(), delay=key_delay)
-                        machine.sleep(0.5)
-                        machine.screenshot(machine.name + "-" + action["candidateScreenshot"])
-                        machine.send_chars(" ", delay=key_delay)
-                    else:
-                        machine.send_chars(action["pinyin"], delay=key_delay)
+    def input_json(machine, name, value):
+        path = "/home/desktop/application-workspace/" + name
+        machine.succeed("printf '%s' " + shlex.quote(json.dumps(value, ensure_ascii=False))
+                        + " > " + path + ".pending && mv " + path + ".pending " + path)
+
+    def input_actions(machine, actions, window, request_id=None, observe=None):
+        started = time.monotonic()
+        deadline = started + 90
+        events = []
+        phase = "focus"
+        last = None
+
+        def event(stage, **details):
+            nonlocal phase
+            phase = stage
+            record = {"id": request_id, "phase": stage, "seconds": time.monotonic() - started, **details}
+            events.append(record)
+            if request_id:
+                input_json(machine, "input-progress.json", record)
+
+        def received(index, stage):
+            nonlocal last
+            event(stage, action=index)
+            while time.monotonic() < deadline:
+                if observe:
+                    last = observe(stage)
                 else:
-                    user(machine, "fcitx5-remote -c")
-                    if "key" in action:
-                        machine.send_key(action["key"], delay=key_delay)
+                    status, text = machine.execute(
+                        "cat /home/desktop/application-workspace/input-observed.json", timeout=gui["remaining"](deadline))
+                    last = json.loads(text) if status == 0 else None
+                    if last and last.get("id") == request_id and last.get("error"):
+                        raise AssertionError(last["error"])
+                    if last and (last.get("id"), last.get("action"), last.get("phase")) != (request_id, index, stage):
+                        last = None
+                if last and last.get("ready"):
+                    event(stage + "-received", observed=last)
+                    return
+                time.sleep(0.1)
+            raise AssertionError(f"Input {stage} timed out: {last!r}")
+
+        with machine.input_lock:
+            try:
+                while time.monotonic() < deadline:
+                    focused: str = gui["focused_window"](machine, user_command)
+                    last = focused
+                    if re.search(window, focused, re.I):
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise AssertionError(f"Window focus timed out: {last!r}")
+                event("focused", window=last)
+                for index, action in enumerate(actions):
+                    if "powerGuard" in action:
+                        power_menu["blocked"](machine, user, visible, "Log out", action["powerGuard"])
+                    elif "pinyin" in action:
+                        event("activating", action=index)
+                        state = gui["input_method"](machine, user_command, True, deadline)
+                        event("activated", **state)
+                        machine.send_chars(action["pinyin"], delay=key_delay)
+                        if "candidateScreenshot" in action:
+                            received(index, "preedit")
+                            machine.screenshot(machine.name + "-" + action["candidateScreenshot"])
+                        machine.send_chars(" ", delay=key_delay)
+                        received(index, "committed")
+                        event("deactivating")
+                        state = gui["input_method"](machine, user_command, False, deadline)
+                        event("deactivated", **state)
                     else:
-                        machine.send_chars(action["text"], delay=key_delay)
-                machine.sleep(0.2)
-            user(machine, "fcitx5-remote -c")
+                        event("english", action=index)
+                        gui["input_method"](machine, user_command, False, deadline)
+                        if "key" in action:
+                            machine.send_key(action["key"], delay=key_delay)
+                        else:
+                            machine.send_chars(action["text"], delay=key_delay)
+                event("complete")
+                return True
+            except Exception as error:
+                failed_phase = phase
+                details = {"observed": last}
+                try:
+                    details["fcitx"] = user(machine, "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 DebugInfo", timeout=10)
+                    details["window"] = gui["focused_window"](machine, user_command)
+                    machine.screenshot(machine.name + "-input-failure")
+                except Exception as diagnostic_error:
+                    details["diagnosticError"] = str(diagnostic_error)
+                event("error", error=f"Input {failed_phase}: {error}", **details)
+                if request_id:
+                    return False
+                raise
+            finally:
+                destination = Path(machine.out_dir) / (machine.name + "-input-" + (request_id or str(time.monotonic_ns())) + ".json")
+                destination.write_text(json.dumps(events, ensure_ascii=False, indent=2))
 
     def exercise_application(machine, application, full=False):
         root = "/home/desktop/application-workspace"
@@ -207,8 +277,8 @@
             if status == 0:
                 request = json.loads(request)
                 if request["id"] != handled:
-                    input_actions(machine, request["actions"])
-                    machine.succeed("printf '%s' " + shlex.quote(request["id"]) + " > " + root + "/input-complete")
+                    if input_actions(machine, request["actions"], request["window"], request_id=request["id"]):
+                        machine.succeed("printf '%s' " + shlex.quote(request["id"]) + " > " + root + "/input-complete")
                     handled = request["id"]
             time.sleep(0.5)
         raise AssertionError(application + " workflow timed out")
@@ -230,10 +300,12 @@
             focused = wm + " -t get_tree | jq -e " + shlex.quote('first(.. | objects | select(.focused? == true) | (.app_id // .window_properties.class // "") | ascii_downcase | select(. == "kitty"))')
         machine.wait_until_succeeds(user_command(focused), timeout=60)
         machine.screenshot(machine.name + "-kitty-prompt")
-        input_actions(machine, [
-            {"text": "printf '"}, {"pinyin": "nihao ", "candidateScreenshot": "kitty-candidates"},
-            {"text": "\\n' > ~/application-workspace/terminal.txt\n"},
-        ])
+        input_actions(machine, [{"text": "printf ready > ~/application-workspace/terminal-ready; IFS= read -r -n 2 value; printf '%s\\n' \"$value\" > ~/application-workspace/terminal.txt\n"}], "kitty")
+        machine.wait_until_succeeds("test -f /home/desktop/application-workspace/terminal-ready", timeout=30)
+        def terminal_received(stage):
+            status, text = machine.execute("cat /home/desktop/application-workspace/terminal.txt", timeout=10)
+            return {"ready": status == 0 and text == "你好\n", "text": text}
+        input_actions(machine, [{"pinyin": "nihao"}], "kitty", observe=terminal_received)
         machine.wait_until_succeeds("grep -Fx '你好' /home/desktop/application-workspace/terminal.txt", timeout=30)
         with machine.input_lock:
             machine.send_chars("exit\n", delay=key_delay)

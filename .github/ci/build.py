@@ -46,6 +46,16 @@ def collect_vm_evidence(entries, state, context):
                 record(state, {**context, "kind": "evidence-missing",
                                "name": entry["name"], "output": output})
                 print(f"{entry['name']} evidence output unavailable: {output}", flush=True)
+        if destination.exists():
+            # The build container and the artifact uploader have different UIDs.
+            # Failed outputs retain the modes chosen by the application.
+            for parent in destination.parents:
+                if parent == state:
+                    break
+                parent.chmod(0o755)
+            for path in (destination, *destination.rglob("*")):
+                if not path.is_symlink():
+                    path.chmod(0o755 if path.is_dir() else 0o644)
         files = sum(path.is_file() for path in destination.rglob("*"))
         if files:
             record(state, {**context, "kind": "vm-evidence",
@@ -112,7 +122,11 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None, github
         elif event["action"] == "stop" and event["id"] in active:
             active.pop(event["id"])["stop"] = now
         elif event["action"] == "msg" and event.get("level") == 0:
-            report_error(event.get("raw_msg", event.get("msg", "Nix build error")), now)
+            # ErrorInfo carries raw_msg. Ordinary level-zero output also
+            # includes notes such as the location of a retained build directory.
+            message = re.sub(r"\x1b\[[0-9;]*m", "", event.get("msg", ""))
+            if "raw_msg" in event or message.startswith("error:"):
+                report_error(event.get("raw_msg", message), now)
 
     # Each Nix process owns a separate log. It is read continuously so elapsed
     # times use the local monotonic clock, rather than parsing console timestamps.
@@ -136,6 +150,9 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None, github
                         break
                     time.sleep(0.05)
                 returncode = process.wait()
+                if returncode:
+                    report_error(f"Nix exited with status {returncode} in {pass_name}/{phase}. Log: {log_path}",
+                                 time.monotonic())
             finally:
                 relay.stdin.close()
                 if process is not None and process.poll() is None:

@@ -153,18 +153,94 @@ def electron(playwright, name, arguments, port):
                     shutil.copyfile(network_log, ARTIFACTS / "bitwarden-network.json")
 
 
-def ui_input(*actions):
-    """Ask the VM driver to type through the real keyboard and Fcitx."""
+def input_observer(evaluate, expected="你好"):
+    """Observe real IME delivery in a DOM input or a native EditContext."""
+    evaluate("""element => {
+        const context = element.editContext;
+        const state = { composing: false, committed: '', events: [] };
+        const text = () => context ? context.text : (element.value ?? element.textContent);
+        const receive = event => {
+            if (event.type === 'compositionstart') {
+                state.composing = true;
+                state.committed = '';
+            }
+            if (event.type === 'compositionend') {
+                state.composing = false;
+                state.committed = event.data || text();
+            }
+            if (event.type === 'input' && !event.isComposing && event.data) {
+                state.committed += event.data;
+            }
+            state.events.push({type: event.type, data: event.data ?? event.text ?? '',
+                               time: performance.now(), composing: event.isComposing});
+            state.events = state.events.slice(-20);
+        };
+        for (const target of context ? [element, context] : [element]) {
+            for (const event of ['compositionstart', 'compositionupdate', 'compositionend', 'input', 'textupdate']) {
+                target.addEventListener(event, receive);
+            }
+        }
+        element.applicationInput = () => ({...state, text: text(),
+            nativeEditContext: Boolean(context), connected: element.isConnected,
+            focused: document.hasFocus() && document.activeElement === element});
+    }""")
+
+    def observe(stage):
+        state = evaluate("element => element.applicationInput()")
+        if stage == "preedit":
+            preedit = " ".join(event["data"] for event in state["events"]) + " " + state["text"]
+            complete = "nihao" in re.sub(r"[\s'’]", "", preedit) or expected in preedit
+            state["ready"] = state["focused"] and state["composing"] and complete
+        else:
+            state["ready"] = state["focused"] and not state["composing"] and expected in state["committed"]
+        return state
+    return observe
+
+
+def input_json(name, value):
+    pending = ROOT / (name + ".pending")
+    pending.write_text(json.dumps(value, ensure_ascii=False))
+    pending.replace(ROOT / name)
+
+
+def ui_input(*actions, window, observe=None):
+    """Acknowledge application receipt while the VM owns the keyboard."""
     request_id = str(time.monotonic_ns())
     request = ROOT / "input-request.json"
-    pending = ROOT / "input-request.pending"
     acknowledgement = ROOT / "input-complete"
-    pending.write_text(json.dumps({"id": request_id, "actions": actions}))
-    pending.replace(request)
+    progress = ROOT / "input-progress.json"
+    started = time.monotonic()
+    # The driver has 90 seconds for input, then captures Fcitx and the window
+    # before reporting failure. Keep the application open for those diagnostics.
+    deadline = started + 135
+    history, last = [], None
+    input_json(request.name, {"id": request_id, "actions": actions, "window": window})
     try:
-        wait_for(lambda: acknowledgement.exists() and acknowledgement.read_text() == request_id,
-                 "desktop keyboard input")
+        while time.monotonic() < deadline:
+            if progress.exists():
+                phase = json.loads(progress.read_text())
+                if phase["id"] == request_id:
+                    if phase.get("error"):
+                        raise AssertionError(phase["error"])
+                    if phase["phase"] in ("preedit", "committed"):
+                        state = observe(phase["phase"])
+                        observed = {**phase, **state}
+                        if observed != last:
+                            history.append({**observed, "observedSeconds": time.monotonic() - started})
+                            input_json("input-observed.json", observed)
+                            last = observed
+                    elif phase != last:
+                        history.append(phase)
+                        last = phase
+            if acknowledgement.exists() and acknowledgement.read_text() == request_id:
+                return
+            time.sleep(0.1)
+        raise AssertionError(f"Desktop input timed out: {last!r}")
+    except Exception as error:
+        input_json("input-observed.json", {"id": request_id, "error": str(error)})
+        raise
     finally:
+        (ARTIFACTS / ("input-" + request_id + ".json")).write_text(json.dumps(history, ensure_ascii=False, indent=2))
         request.unlink(missing_ok=True)
 
 
@@ -220,8 +296,15 @@ def vscode(*, full):
                 editor_input.focus()
                 expect(editor_input).to_be_focused(timeout=30000)
                 print("VS Code: document opened; editing with Fcitx", flush=True)
-                ui_input({"key": "ctrl-end"}, {"text": "Edited: "},
-                         {"pinyin": "nihao "}, {"key": "ctrl-s"})
+                ui_input({"key": "ctrl-end"}, {"text": "Edited: "}, window="code")
+                committed = input_observer(editor_input.evaluate)
+                def editor_received(stage):
+                    state = committed(stage)
+                    state["document"] = page.locator(".monaco-editor:visible .view-lines").inner_text(timeout=5000).replace("\u00a0", " ")
+                    state["ready"] = state["ready"] and "Edited: 你好" in state["document"]
+                    return state
+                ui_input({"pinyin": "nihao"}, window="code", observe=editor_received)
+                ui_input({"key": "ctrl-s"}, window="code")
                 wait_for(lambda: "Edited: 你好" in (workspace / "example.txt").read_text(),
                          "saving Chinese text in the editor")
                 page.screenshot(path=str(ARTIFACTS / "vscode-editor.png"))
@@ -238,19 +321,21 @@ def vscode(*, full):
                     context_command += "; test -f /.dockerenv && printf container > " + terminal_root + "/terminal-context.txt"
                     context_results["terminal-context.txt"] = "container"
                 # A completed command confirms that the focused terminal's shell is ready.
-                ui_input({"text": context_command + "\n"})
+                ui_input({"text": context_command + "\n"}, window="code")
                 wait_for(lambda: all(
                     (workspace / name).exists() and (workspace / name).read_text() == expected
                     for name, expected in context_results.items()
                 ), "integrated shell ready in " + terminal_root)
-                ui_input({"text": "printf '"}, {"pinyin": "nihao "},
-                         {"text": "\\n' > " + terminal_root + "/terminal.txt\n"})
+                ui_input({"text": "printf '"}, window="code")
+                committed = input_observer(terminal_input.evaluate)
+                ui_input({"pinyin": "nihao"}, window="code", observe=committed)
+                ui_input({"text": "\\n' > " + terminal_root + "/terminal.txt\n"}, window="code")
                 terminal = workspace / "terminal.txt"
                 wait_for(lambda: terminal.exists() and terminal.read_text() == "你好\n",
                          "Chinese input and command execution in the integrated terminal")
                 page.screenshot(path=str(ARTIFACTS / "vscode-terminal.png"))
-                ui_input({"text": "exit\n"})
-                ui_input({"powerGuard": "VS Code"})
+                ui_input({"text": "exit\n"}, window="code")
+                ui_input({"powerGuard": "VS Code"}, window="code")
     finally:
         if container_id:
             # Complete network teardown before the next application starts.
@@ -278,10 +363,12 @@ def firefox(*, full):
             WebDriverWait(browser, 30).until(lambda driver: driver.find_element(By.ID, "ready").text == "Page loaded")
             field = browser.find_element(By.ID, "message")
             field.click()
-            ui_input({"pinyin": "nihao ", "candidateScreenshot": "firefox-candidates"})
+            committed = input_observer(lambda script: browser.execute_script("return (" + script + ")(arguments[0])", field))
+            ui_input({"pinyin": "nihao", "candidateScreenshot": "firefox-candidates"},
+                     window="firefox|navigator", observe=committed)
             assert field.get_attribute("value") == "你好", repr(field.get_attribute("value"))
             browser.save_screenshot(str(ARTIFACTS / "firefox.png"))
-            ui_input({"powerGuard": "Firefox"})
+            ui_input({"powerGuard": "Firefox"}, window="firefox|navigator")
         except Exception:
             with cleanup("Firefox diagnostics"):
                 browser.save_screenshot(str(ARTIFACTS / "firefox-failure.png"))
@@ -344,14 +431,14 @@ def bitwarden(*, full):
                 page.get_by_text("No items in the vault", exact=True).wait_for()
                 search = page.get_by_placeholder(re.compile(r"Search vault", re.I))
                 search.click()
-                ui_input({"pinyin": "nihao "})
+                ui_input({"pinyin": "nihao"}, window="bitwarden", observe=input_observer(search.evaluate))
                 assert search.input_value() == "你好", repr(search.input_value())
             else:
                 field = page.get_by_label("Email address")
                 field.click()
-                ui_input({"pinyin": "nihao "})
+                ui_input({"pinyin": "nihao"}, window="bitwarden", observe=input_observer(field.evaluate))
                 assert field.input_value() == "你好", repr(field.input_value())
-            ui_input({"powerGuard": "Bitwarden"})
+            ui_input({"powerGuard": "Bitwarden"}, window="bitwarden")
     return {"flow": "local Vaultwarden login and search" if full else "login screen input", "input": "你好"}
 
 

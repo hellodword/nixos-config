@@ -243,7 +243,10 @@ def main():
             printf ready > $out
           '';
           failure = pkgs.runCommand "${prefix}-failed" {} ''
-            mkdir -p $out
+            mkdir -p $out/artifacts
+            printf '{"fixture":"failed application network log"}' > $out/artifacts/network.json
+            chmod 700 $out/artifacts
+            chmod 600 $out/artifacts/network.json
             printf 'synthetic builder stdout\\n'
             printf 'synthetic builder stderr\\n' >&2
             exit 17
@@ -396,7 +399,16 @@ def main():
                 failed_attempt = [event for event in events if event["kind"] == "build"][-1]
                 assert failed_attempt["returncode"] != 0
                 assert "synthetic builder stderr" in (state / failed_attempt["log"]).read_text()
-                assert not any(event["kind"] == "vm-evidence" and event["attempt"] == failed_attempt["attempt"] for event in events)
+                failure_error = next(event for event in events if event["kind"] == "build-error"
+                                     and event["attempt"] == failed_attempt["attempt"])
+                assert "failed" in failure_error["message"].lower(), failure_error
+                failed_evidence = next(event for event in events if event["kind"] == "vm-evidence"
+                                       and event["attempt"] == failed_attempt["attempt"])
+                retained = state / failed_evidence["path"] / Path(failed["outputs"][0]).name
+                assert json.loads((retained / "artifacts/network.json").read_text()) == {
+                    "fixture": "failed application network log"}
+                assert (retained / "artifacts").stat().st_mode & 0o777 == 0o755
+                assert (retained / "artifacts/network.json").stat().st_mode & 0o777 == 0o644
                 evidence = next(event for event in events if event["kind"] == "vm-evidence")
                 assert evidence["files"] == 1
                 assert (state / evidence["path"] / Path(test["outputs"][0]).name).read_bytes() == Path(test["outputs"][0]).read_bytes()
