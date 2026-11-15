@@ -173,8 +173,7 @@ jobs:
           container_pid=$(docker inspect --format '{{.State.Pid}}' nixos-ci)
           python3 .github/ci/report.py monitor --state "$state" --container-pid "$container_pid" \
             > "$state/monitor.log" 2>&1 &
-      - name: Configure public caches and identify oranc
-        id: oranc-key
+      - name: Configure public caches
         run: |
           docker exec -i nixos-ci bash -euo pipefail <<'BASH'
           cat > /ci/nix-base.conf <<'CONFIG'
@@ -189,8 +188,16 @@ jobs:
           CONFIG
           cat /ci/nix-base.conf > /ci/nix.conf
           bash scripts/nix-cache.sh print --public-only >> /ci/nix.conf
-          nix eval --no-update-lock-file --raw .#oranc.outPath > /ci/oranc-root
           BASH
+      - name: Check source and workflow definitions
+        run: |
+          docker exec nixos-ci nix build --no-link --print-build-logs \
+            --no-update-lock-file .#checks.x86_64-linux.lint
+      - name: Identify oranc
+        id: oranc-key
+        run: |
+          docker exec nixos-ci bash -euo pipefail -c \
+            'nix eval --no-update-lock-file --raw .#oranc.outPath > /ci/oranc-root'
           oranc_root=$(cat "$RUNNER_TEMP/nixos-ci/oranc-root")
           printf 'key=oranc-v1-%s-%s-%s-%s\n' \
             "$RUNNER_OS" "$RUNNER_ARCH" "$ORANC_CACHE_MAX_BYTES" "${oranc_root##*/}" >> "$GITHUB_OUTPUT"
@@ -356,17 +363,17 @@ jobs:
           # verify write access to the existing package before expensive work.
           "$(cat /ci/oranc)" push --repository "$repository" --parallel 1 initialize --priority 41
           BASH
-      - name: Static checks and OCI integration
+      - name: Exercise OCI cache publication
         run: |
           docker exec --env SCOPE nixos-ci bash -euo pipefail -c '
             export PATH="$(cat /ci/tools)/bin:$PATH"
-            actionlint .github/workflows/*.yml
-            shellcheck scripts/nix-cache.sh
-            shellcheck -s bash scripts/desktop/screenshot.sh
-            find modules home profiles hosts lib nix tests tools -type f -name "*.nix" -print0 | xargs -0 nixfmt --check
-            nixfmt --check flake.nix
             if [[ "$SCOPE" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
             python3 -m tests.integration.cache --nixpkgs-input "$nixpkgs_input"
+          '
+      - name: Exercise update candidates
+        run: |
+          docker exec nixos-ci bash -euo pipefail -c '
+            export PATH="$(cat /ci/tools)/bin:$PATH"
             python3 -m tests.integration.updates
           '
       - name: Evaluate the build inventory

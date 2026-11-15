@@ -55,6 +55,7 @@ let
   ]);
 in
 rec {
+  lint = import ./lint.nix { inherit pkgs; };
   inherit (import ./vps-checks.nix { inherit inputs; }) vps vm-vps;
   backup =
     pythonCheck "backup-behavior"
@@ -86,6 +87,7 @@ rec {
         ../tests/integration/network.py
         ../tests/fixtures/__init__.py
         ../tests/fixtures/dns_fixture.py
+        ../tests/fixtures/dns_stack.py
         ../tests/fixtures/network_fixture.py
       ]
       [
@@ -113,6 +115,7 @@ rec {
   );
   vm-backup = pkgs.testers.runNixOSTest (import ../tests/vm/backup.nix { inherit inputs; });
   vm-network = pkgs.testers.runNixOSTest (import ../tests/vm/network.nix { inherit inputs; });
+  vm-files = pkgs.testers.runNixOSTest (import ../tests/vm/files.nix { inherit inputs; });
   e2e = pkgs.linkFarm "nixos-vm-tests" (
     map
       (name: {

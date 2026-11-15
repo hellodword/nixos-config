@@ -21,8 +21,7 @@ import yaml
 
 from tests.support import ROOT, load_script
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port
-from tests.fixtures.network_fixture import http_server, socks_server, socks_http
-from tests.integration.network import proxy_process
+from tests.fixtures.network_fixture import http_server, socks_server, socks_http, proxy_process
 
 model = load_script("vps/model.py")
 clients = load_script("vps/clients.py")
@@ -100,6 +99,22 @@ class InventoryProtocol(unittest.TestCase):
         inventory = self.inventory()
         inventory["subscriptions"]["primary"]["name"] = "个人网络 (iPhone)"
         vps = model.Inventory(inventory)
+
+        # Diagnose a declaration before producing any deployable material.
+        broken = copy.deepcopy(inventory)
+        broken["exits"]["edge-native"]["options"] = {"password": {"secret": "missing-private-reference"}}
+        for document, location in (
+            (yaml.safe_dump(broken), "exits.edge-native.options.password.secret"),
+            ("nodes: [\n  private-unfinished-value:\n", "line 3, column 1"),
+        ):
+            with tempfile.TemporaryDirectory() as temp:
+                result = subprocess.run([sys.executable, str(ROOT / "scripts/vps/prepare.py")],
+                                        input=document, text=True, cwd=temp, capture_output=True)
+                self.assertEqual(result.returncode, 2)
+                self.assertIn(location, result.stderr)
+                self.assertNotIn("missing-private-reference", result.stderr)
+                self.assertNotIn("private-unfinished-value", result.stderr)
+                self.assertFalse((Path(temp) / "tmp/vps").exists())
 
         def check_clients(directory):
             provider = json.loads((directory / "linux.json").read_text())

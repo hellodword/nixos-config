@@ -5,14 +5,7 @@ let
     let
       laptop = scope == "laptop";
       pkgs = inputs.${if laptop then "nixpkgs" else "nixpkgs-remote"}.legacyPackages.${system};
-      sandbox = import ./tool-sandbox.nix { inherit pkgs; };
-      networkTool =
-        name: package:
-        sandbox {
-          inherit name package;
-          network = true;
-          writable = [ "tmp/devtools/network" ];
-        };
+      tools = import ./dev-tools.nix { inherit inputs pkgs system; };
       python = pkgs.python3.withPackages (p: [
         p.pyyaml
         p.dnspython
@@ -56,26 +49,9 @@ let
           shellcheck
           curl
           bubblewrap
-          (networkTool "sing-box" sing-box)
-          (sandbox {
-            package = actionlint;
-            runtime = [ shellcheck ];
-          })
-          (sandbox {
-            name = "oranc";
-            package = inputs.oranc.packages.${system}.oranc;
-            network = true;
-            nix = true;
-            database = true;
-            runtime = [ nix ];
-            writable = [ "tmp/devtools/cache" ];
-            passEnvironment = [
-              "ORANC_USERNAME"
-              "ORANC_PASSWORD"
-              "ORANC_SIGNING_KEY"
-              "NIX_CONFIG"
-            ];
-          })
+          tools.sing-box
+          tools.actionlint
+          tools.oranc
         ]
         ++ lib.optionals laptop [
           (import ./route-regex.nix { inherit pkgs; })
@@ -85,9 +61,9 @@ let
           mkpasswd
           distribution
           inputs.agents-misc.packages.${system}.vm-test-submit
-          (networkTool "dnsdist" dnsdist)
-          (networkTool "dnsproxy" dnsproxy)
-          (networkTool "go-dnscollector" dns-collector)
+          tools.dnsdist
+          tools.dnsproxy
+          tools.dns-collector
         ]
         ++ lib.optionals (!laptop) [
           nix

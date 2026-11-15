@@ -16,19 +16,56 @@ UDP_FIRST, UDP_LAST = 20000, 29999
 DEFAULT_DNS = json.loads((Path(__file__).resolve().parents[2] / "data/network/vps-dns.json").read_text())
 
 
-def identifier(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,47}", value):
-        raise ValueError("identifiers use lowercase letters, digits and hyphens")
+class DeclarationError(ValueError):
+    """A field location and a safe explanation, without its supplied value."""
+
+    def __init__(self, path, reason):
+        super().__init__(f"{path}: {reason}")
+
+
+def field(mapping, key, kind, path, default=...):
+    location = f"{path}.{key}" if path else key
+    if not isinstance(mapping, dict):
+        raise DeclarationError(path or "inventory", "expected a mapping")
+    if key not in mapping:
+        if default is not ...:
+            return default
+        raise DeclarationError(location, "required field is missing")
+    value = mapping[key]
+    if not isinstance(value, kind):
+        names = {dict: "a mapping", list: "a list", str: "text", int: "an integer"}
+        raise DeclarationError(location, "expected " + names[kind])
     return value
 
 
-def secret_values(value, secrets):
+def require(condition, path, reason):
+    if not condition:
+        raise DeclarationError(path, reason)
+
+
+def references(values, choices, path, *, distinct=True):
+    require(isinstance(values, list) and bool(values), path, "select at least one entry")
+    require(all(isinstance(value, str) and value in choices for value in values), path,
+            "each entry must name an existing authorized item")
+    if distinct:
+        require(len(set(values)) == len(values), path, "entries must be distinct")
+
+
+def identifier(value, path="identifier"):
+    if not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9-]{0,47}", value):
+        raise DeclarationError(path, "use lowercase letters, digits and hyphens, starting with a letter")
+    return value
+
+
+def secret_values(value, secrets, path):
     if isinstance(value, dict):
         if set(value) == {"secret"}:
-            return copy.deepcopy(secrets[value["secret"]])
-        return {key: secret_values(item, secrets) for key, item in value.items()}
+            name = value["secret"]
+            require(isinstance(name, str) and name in secrets, path + ".secret", "referenced secret is not declared")
+            return copy.deepcopy(secrets[name])
+        return {key: secret_values(item, secrets, f"{path}.{key}") for key, item in value.items()}
     if isinstance(value, list):
-        return [secret_values(item, secrets) for item in value]
+        return [secret_values(item, secrets, f"{path}[{index}]") for index, item in enumerate(value)]
     return value
 
 
@@ -39,83 +76,108 @@ def digest(value):
 class Inventory:
     def __init__(self, document):
         self.data = copy.deepcopy(document)
-        self.nodes = self.data["nodes"]
-        self.exits = self.data["exits"]
-        self.subscriptions = self.data.get("subscriptions", {})
-        self.secrets = self.data.get("secrets", {})
+        self.nodes = field(self.data, "nodes", dict, "")
+        self.exits = field(self.data, "exits", dict, "")
+        self.subscriptions = field(self.data, "subscriptions", dict, "", {})
+        self.secrets = field(self.data, "secrets", dict, "", {})
+        self.validate_nodes()
+        self.validate_exits()
+        self.validate_subscriptions()
+
+    def validate_nodes(self):
         slots, snis = set(), set()
         for name, node in self.nodes.items():
-            identifier(name)
-            ipaddress.IPv4Address(node["address"])
-            slot = node["udpSlot"]
-            if type(slot) is not int or slot < 0 or UDP_FIRST + slot > UDP_LAST or slot in slots:
-                raise ValueError(f"each node requires a unique udpSlot between 0 and {UDP_LAST - UDP_FIRST}")
+            identifier(name, "nodes")
+            path = f"nodes.{name}"
+            address = field(node, "address", str, path)
+            try:
+                ipaddress.IPv4Address(address)
+            except ValueError:
+                raise DeclarationError(path + ".address", "expected an IPv4 address") from None
+            slot = field(node, "udpSlot", int, path)
+            require(type(slot) is int and 0 <= slot <= UDP_LAST - UDP_FIRST and slot not in slots,
+                    path + ".udpSlot", f"use a unique integer between 0 and {UDP_LAST - UDP_FIRST}")
             slots.add(slot)
-            sni = node["serverName"]
-            if not re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", sni) or sni in snis:
-                raise ValueError("nodes require unique DNS serverName values")
+            sni = field(node, "serverName", str, path)
+            require(re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", sni) and sni not in snis,
+                    path + ".serverName", "use a unique DNS server name")
             snis.add(sni)
-            ssh_host = node["sshHost"]
-            if not isinstance(ssh_host, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", ssh_host):
-                raise ValueError("nodes require a concrete SSH host alias")
-            if not node["sshServer"].get("rootAuthorizedKeys"):
-                raise ValueError("nodes require sshServer.rootAuthorizedKeys")
-            if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,15}", node.get("interface", "eth0")):
-                raise ValueError("invalid uplink interface name")
-            for path in node.get("modules", []):
-                if not re.fullmatch(r"[a-zA-Z0-9_/-]+\.nix", path) or path.startswith("/") or ".." in path.split("/"):
-                    raise ValueError("node modules must be repository-relative Nix paths")
-            for hostname, upstream in node.get("web", {}).items():
-                if not re.fullmatch(r"[a-z0-9][a-z0-9.-]*", hostname) or hostname == sni:
-                    raise ValueError("web names must differ from the node proxy SNI")
-                url = urlparse(upstream)
-                if url.scheme not in {"http", "https"} or url.hostname not in {"127.0.0.1", "::1", "localhost"}:
-                    raise ValueError("web upstreams must be local HTTP services")
+            ssh_host = field(node, "sshHost", str, path)
+            require(re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", ssh_host),
+                    path + ".sshHost", "expected a concrete SSH host alias")
+            ssh = field(node, "sshServer", dict, path)
+            require(field(ssh, "rootAuthorizedKeys", list, path + ".sshServer"),
+                    path + ".sshServer.rootAuthorizedKeys", "supply at least one public key")
+            interface = field(node, "interface", str, path, "eth0")
+            require(re.fullmatch(r"[a-zA-Z0-9_.:-]{1,15}", interface), path + ".interface", "invalid interface name")
+            for index, module in enumerate(field(node, "modules", list, path, [])):
+                require(isinstance(module, str) and re.fullmatch(r"[a-zA-Z0-9_/-]+\.nix", module)
+                        and not module.startswith("/") and ".." not in module.split("/"),
+                        f"{path}.modules[{index}]", "use a repository-relative Nix path")
+            for hostname, upstream in field(node, "web", dict, path, {}).items():
+                require(isinstance(hostname, str) and re.fullmatch(r"[a-z0-9][a-z0-9.-]*", hostname)
+                        and hostname != sni, path + ".web", "use DNS names distinct from the proxy SNI")
+                try:
+                    url = urlparse(upstream)
+                    valid = url.scheme in {"http", "https"} and url.hostname in {"127.0.0.1", "::1", "localhost"}
+                except (ValueError, TypeError, AttributeError):
+                    valid = False
+                require(valid, path + ".web." + hostname, "expected a local HTTP service URL")
+
+    def validate_exits(self):
         for name, exit_ in self.exits.items():
-            identifier(name)
-            carriers = exit_["nodes"]
-            if not carriers or len(set(carriers)) != len(carriers) or not set(carriers) <= self.nodes.keys():
-                raise ValueError("exit nodes must name distinct existing nodes")
-            if exit_["type"] not in {"native", "wireguard", "socks", "openvpn-client"}:
-                raise ValueError("unsupported exit type")
-            if exit_["type"] == "native" and len(carriers) != 1:
-                raise ValueError("a native exit belongs to one node")
+            identifier(name, "exits")
+            path = f"exits.{name}"
+            carriers = field(exit_, "nodes", list, path)
+            references(carriers, self.nodes, path + ".nodes")
+            kind = field(exit_, "type", str, path)
+            require(kind in {"native", "wireguard", "socks", "openvpn-client"}, path + ".type", "unsupported exit type")
+            require(kind != "native" or len(carriers) == 1, path + ".nodes", "a native exit belongs to one node")
+            options = field(exit_, "options", dict, path, {})
+            secret_values(options, self.secrets, path + ".options")
+
+    def validate_subscriptions(self):
         keys, paths, names = set(), set(), set()
         for name, subscription in self.subscriptions.items():
-            identifier(name)
-            title = subscription.setdefault("name", name)
-            if (not isinstance(title, str) or not title or title != title.strip()
-                    or re.search(r'[\x00-\x1f\x7f,="/\\]', title) or title.casefold() in names):
-                raise ValueError("subscription names must be distinct single-line client labels")
+            identifier(name, "subscriptions")
+            path = f"subscriptions.{name}"
+            title = field(subscription, "name", str, path, name)
+            require(title and title == title.strip() and not re.search(r'[\x00-\x1f\x7f,="/\\]', title)
+                    and title.casefold() not in names, path + ".name", "use a distinct single-line client label")
+            subscription["name"] = title
             names.add(title.casefold())
-            path = subscription["path"]
-            if not re.fullmatch(r"/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", path) or path in paths:
-                raise ValueError("subscriptions require distinct /UUIDv4 paths")
-            paths.add(path)
-            key = subscription["key"]
-            if not isinstance(key, str) or not re.fullmatch(r"[0-9a-fA-F]{64}", key):
-                raise ValueError("subscription keys require 32 bytes encoded as hexadecimal")
+            route = field(subscription, "path", str, path)
+            require(re.fullmatch(r"/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", route)
+                    and route not in paths, path + ".path", "use a distinct /UUIDv4 path")
+            paths.add(route)
+            key = field(subscription, "key", str, path)
+            require(re.fullmatch(r"[0-9a-fA-F]{64}", key), path + ".key", "supply 32 bytes encoded as hexadecimal")
             key = bytes.fromhex(key)
-            if key in keys:
-                raise ValueError("each subscription requires an independent key")
+            require(key not in keys, path + ".key", "each subscription requires an independent key")
             keys.add(key)
-            exits = subscription["exits"]
-            if not isinstance(exits, list) or not exits or not set(exits) <= self.exits.keys():
-                raise ValueError("subscriptions must authorize existing exits")
-            if len(set(exits)) != len(exits):
-                raise ValueError("subscription exits must be distinct")
-            for group, binding in subscription["groups"].items():
-                identifier(group)
-                if group in {"direct", "private", "tailnet", "local", "auto", "transparent", "cn", "global"}:
-                    raise ValueError("purpose group conflicts with a local route")
+            exits = field(subscription, "exits", list, path)
+            references(exits, self.exits, path + ".exits")
+            groups = field(subscription, "groups", dict, path)
+            for group, binding in groups.items():
+                identifier(group, path + ".groups")
+                group_path = path + ".groups." + group
+                require(group not in {"direct", "private", "tailnet", "local", "auto", "transparent", "cn", "global"},
+                        group_path, "purpose group conflicts with a local route")
+                choices = field(binding, "exits", list, group_path)
+                references(choices, exits, group_path + ".exits", distinct=False)
                 if "default" not in binding:
-                    if len(binding["exits"]) != 1:
-                        raise ValueError("groups with multiple exits require an explicit default")
-                    binding["default"] = binding["exits"][0]
-                if binding["default"] not in binding["exits"] or not set(binding["exits"]) <= set(exits):
-                    raise ValueError("groups must select authorized exits")
-            if "proxy" not in subscription["groups"]:
-                raise ValueError("subscriptions require a proxy group")
+                    require(len(choices) == 1, group_path + ".default", "select a default when the group has multiple exits")
+                    binding["default"] = choices[0]
+                require(binding["default"] in choices, group_path + ".default", "select an exit from this group")
+            require("proxy" in groups, path + ".groups.proxy", "a proxy group is required")
+
+    def worker(self, name):
+        workers = field(self.data, "workers", dict, "")
+        return field(workers, name, dict, "workers")
+
+    def secret(self, name, path):
+        require(isinstance(name, str) and name in self.secrets, path, "referenced secret is not declared")
+        return self.secrets[name]
 
     def port(self, node):
         return UDP_FIRST + self.nodes[node]["udpSlot"]
@@ -146,7 +208,7 @@ class Inventory:
             if node not in exit_["nodes"]:
                 continue
             tag = "exit-" + exit_id
-            options = secret_values(exit_.get("options", {}), self.secrets)
+            options = secret_values(exit_.get("options", {}), self.secrets, f"exits.{exit_id}.options")
             concrete = options | {"type": "direct" if exit_["type"] == "native" else exit_["type"], "tag": tag,
                                   "domain_resolver": {"server": "bootstrap", "strategy": "prefer_ipv4"}}
             if exit_["type"] in {"wireguard", "openvpn-client"}:
@@ -157,11 +219,16 @@ class Inventory:
             users = [user["name"] for protocol in ("trojan", "hysteria2")
                      for user in self.credentials(node, protocol) if user["name"].split("/")[1] == exit_id]
             if users:
-                resolvers = secret_values(exit_.get("dns", DEFAULT_DNS), self.secrets)
-                if not resolvers:
-                    raise ValueError("an exit requires at least one DNS server")
+                resolvers = secret_values(exit_.get("dns", DEFAULT_DNS), self.secrets, f"exits.{exit_id}.dns")
+                require(isinstance(resolvers, list) and bool(resolvers), f"exits.{exit_id}.dns",
+                        "supply at least one DNS server")
                 for index, resolver in enumerate(resolvers):
-                    ipaddress.ip_address(resolver["server"])
+                    location = f"exits.{exit_id}.dns[{index}]"
+                    address = field(resolver, "server", str, location)
+                    try:
+                        ipaddress.ip_address(address)
+                    except ValueError:
+                        raise DeclarationError(location + ".server", "expected an IP address") from None
                     dns_tag = f"dns-{exit_id}-{index}"
                     dns.append(resolver | {"tag": dns_tag, "detour": tag})
                     dns_rules.append({"auth_user": users, "action": "evaluate", "server": dns_tag,
@@ -199,8 +266,7 @@ class Inventory:
         subscription = self.subscriptions[subscription_id]
         outbounds, exits = [], {}
         entries = subscription.get("entries", list(self.nodes))
-        if not entries or not set(entries) <= self.nodes.keys():
-            raise ValueError("subscription entries must name existing nodes")
+        references(entries, self.nodes, f"subscriptions.{subscription_id}.entries", distinct=False)
         for exit_id in subscription["exits"]:
             exit_ = self.exits[exit_id]
             members = []
@@ -236,8 +302,8 @@ class Inventory:
         return result
 
     def certificate_request(self, node):
-        worker = self.data["workers"]["certificates"]
-        return {"url": worker["url"].rstrip("/") + "/" + node,
-                "token": self.secrets[self.nodes[node]["certificateToken"]],
+        worker = self.worker("certificates")
+        return {"url": field(worker, "url", str, "workers.certificates").rstrip("/") + "/" + node,
+                "token": self.secret(field(self.nodes[node], "certificateToken", str, f"nodes.{node}"), f"nodes.{node}.certificateToken"),
                 "serverName": self.nodes[node]["serverName"],
                 "names": [self.nodes[node]["serverName"], *self.nodes[node].get("web", {})]}

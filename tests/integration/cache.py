@@ -363,6 +363,32 @@ def main():
                 targets = [event for event in read_records(state / "timings.jsonl") if event.get("vm")]
                 assert targets[0]["source"] == "built" and targets[0]["success"] and targets[0]["buildSeconds"] > 0
                 assert targets[1]["source"] == "local" and targets[1]["success"] and targets[1]["buildSeconds"] is None
+                # A failed retry must supersede this round's earlier success.
+                failed = entry("failure", vm=True) | {"name": test["name"]}
+                try:
+                    run_build([failed], state=state, phase="vm-fixture")
+                except RuntimeError:
+                    pass
+                else:
+                    raise AssertionError("the retry should fail with the fixture's native build error")
+                try:
+                    report.verify_results(state, "candidate")
+                except RuntimeError:
+                    pass
+                else:
+                    raise AssertionError("a previous success hid the latest failed retry")
+                run_build([test], state=state, phase="vm-fixture")
+                report.verify_results(state, "candidate")
+                # Changing the inventory also requires the corresponding build result.
+                changed = policy | {"builds": {"vm-fixture": [entry("driver", vm=True) | {"name": test["name"]}]}}
+                (state / "policy.json").write_text(json.dumps(changed))
+                try:
+                    report.verify_results(state, "candidate")
+                except RuntimeError:
+                    pass
+                else:
+                    raise AssertionError("the verifier accepted a different derivation under the same name")
+                (state / "policy.json").write_text(json.dumps(policy))
                 checkpoint(state, "results", finish=True)
                 assert set(json.loads(receipt.read_text())) - first == {
                     fixture[name]["path"] for name in ("root", "runtimeInput")}

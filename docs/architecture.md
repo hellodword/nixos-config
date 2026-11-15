@@ -12,10 +12,10 @@
 | `lib/` | 策略组合、凭据字段绑定和共享服务设置 |
 | `nix/` | 包定制、工具包装、检查和缓存清单 |
 | `scripts/` | 系统服务及本地维护命令的运行逻辑 |
-| `.github/workflows/` | GitHub 事件、步骤、权限、runner 准备与释放 |
+| `.github/workflows/` | GitHub 事件、步骤、权限、runner 磁盘、容器和资源设置 |
 | `.github/ci/` | 构建事件统计、资源采集、缓存筛选和候选提交处理 |
 | `tests/` | 合成配置、行为与进程检查、原生 NixOS VM 场景 |
-| `tools/vm-test-mcp/` | 可选远端执行客户端和可移除的兼容处理 |
+| `tools/vm-test-mcp/` | 可选远端执行的接入说明 |
 
 ## 配置归属
 
@@ -38,6 +38,8 @@ Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户�
 | SSH/GPG | [系统和用户服务](../modules/core/cli.nix) | [公钥发布与身份注册](../scripts/secrets/identity.py) |
 | CI | [工作流](../.github/workflows) | [构建统计、发布与更新](../.github/ci) |
 | VPS 与订阅 | [节点和服务](../modules/vps)、[部署](../nix/vps.nix) | [部署材料与客户端生成](../scripts/vps)、[Worker](../workers) |
+
+脚本按运行责任组织：网络的 `runtime_policy.py` 协调输入、候选校验和激活，`dns_policy.py` 分别规划解析器与生成 dnsdist 配置；VPS 的 `model.py` 校验声明和关系，`clients.py` 输出客户端格式，`prepare.py` 写出部署材料。共享测试进程放在 `tests/fixtures/`，由需要它们的场景引用。
 
 脚本选 Python 是为了文件状态、结构化数据和进程协调；简单线性调用留在 shell 或 Nix 服务定义。网络规则中的 Go 辅助程序使用实际 RE2 语义，避免以另一种正则实现近似判断规则。
 

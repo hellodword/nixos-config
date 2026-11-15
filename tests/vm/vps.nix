@@ -19,7 +19,10 @@ let
     root = ../..;
     fileset = lib.fileset.unions [
       ../../scripts/vps
-      ../../scripts/network
+      ../../scripts/network/render.py
+      ../../scripts/network/domain_policy.py
+      ../../scripts/network/rules.py
+      ../../scripts/network/purposes.py
       ../../workers
       ../../data/network
       ../../nix/vps.nix
@@ -29,7 +32,13 @@ let
       ../../lib/service-hardening.nix
       ../../data/secrets/vps.example.yaml
       ../__init__.py
-      ../fixtures
+      ../fixtures/__init__.py
+      ../fixtures/vps.py
+      ../fixtures/vps_dns.py
+      ../fixtures/vps_certificate.py
+      ../fixtures/vm_network_fixture.py
+      ../fixtures/dns_fixture.py
+      ../fixtures/network_fixture.py
       ../integration/wrangler.py
     ];
   };

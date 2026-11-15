@@ -75,7 +75,9 @@ def monitor(state, pid):
 def read_records(path):
     if not path.exists():
         return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    # A killed writer can leave one incomplete final record.
+    return [json.loads(line) for line in path.read_text().splitlines(keepends=True)
+            if line.endswith("\n") and line.strip()]
 
 
 def duration(seconds):
@@ -84,21 +86,42 @@ def duration(seconds):
     return f"{seconds / 60:.2f} min"
 
 
+def current_vm_results(policy, events, pass_name):
+    """Match the inventory against the latest started attempt of each group."""
+    events = [event for event in events if event.get("pass") == pass_name]
+    attempts = {event["phase"]: event["attempt"] for event in events if event["kind"] == "build-start"}
+    completed = {event["attempt"]: event for event in events if event["kind"] == "build"}
+    targets = {(event["attempt"], event["name"]): event
+               for event in events if event["kind"] == "target" and event.get("vm")}
+    results = []
+    for phase, entries in policy["builds"].items():
+        for item in entries:
+            if not item.get("vm"):
+                continue
+            attempt = attempts.get(phase)
+            batch = completed.get(attempt, {})
+            target = targets.get((attempt, item["name"]), {})
+            matches = (target.get("drv") == item["drv"]
+                       and set(target.get("outputs", [])) == set(item["outputs"]))
+            success = (matches and target.get("success", False) and batch.get("returncode") == 0
+                       and not batch.get("evidenceError"))
+            results.append({**item, "phase": phase, "pass": pass_name,
+                            "attempt": attempt, "success": success,
+                            "source": target.get("source", "unknown") if matches else "unknown",
+                            "buildSeconds": target.get("buildSeconds") if matches else None,
+                            "restoreSeconds": target.get("restoreSeconds") if matches else None})
+    return results
+
+
 def verify_results(state, pass_name):
     policy = json.loads((state / "policy.json").read_text())
-    expected = {(phase, item["name"]) for phase, entries in policy["builds"].items()
-                for item in entries if item.get("vm")}
-    events = [event for event in read_records(state / "timings.jsonl") if event.get("pass") == pass_name]
-    batches = {event["phase"]: event["returncode"] for event in events if event["kind"] == "build"}
-    targets = {(event["phase"], event["name"]): event["success"]
-               for event in events if event["kind"] == "target" and event.get("vm")}
-    incomplete = sorted(name for phase, name in expected
-                        if not targets.get((phase, name)) or batches.get(phase) != 0)
-    record(state, {"kind": "verification", "pass": pass_name, "expected": len(expected),
+    results = current_vm_results(policy, read_records(state / "timings.jsonl"), pass_name)
+    incomplete = sorted(item["name"] for item in results if not item["success"])
+    record(state, {"kind": "verification", "pass": pass_name, "expected": len(results),
                    "incomplete": incomplete})
     if incomplete:
         raise RuntimeError("VM results incomplete: " + ", ".join(incomplete))
-    print(f"{pass_name}: all {len(expected)} required VM results succeeded")
+    print(f"{pass_name}: all {len(results)} required VM results succeeded")
 
 
 def render(state):
@@ -152,11 +175,16 @@ def render(state):
             lines.append(f"- {event['phase']}: `{event['cache']}` (exit {event['returncode']}).")
     builds = [event for event in events if event["kind"] == "build"]
     if builds:
-        lines += ["", "### Nix build groups", "", "Group wall times include dependency work and cache transfers.",
+        lines += ["", "### Nix build groups", "", "Each row is one attempt; group wall times include dependency work and cache transfers.",
                   "", "| Revision | Group | Result | Wall time |", "| --- | --- | --- | --- |"]
         for event in builds:
             status = "success" if event["returncode"] == 0 else event.get("signal", f"exit {event['returncode']}")
             lines.append(f"| {event['pass']} | {event['phase']} | {status} | {duration(event['seconds'])} |")
+    completed = {event["attempt"] for event in builds}
+    for event in events:
+        if event["kind"] == "build-start" and event["attempt"] not in completed:
+            lines += ["", f"Unfinished attempt: {event['pass']}/{event['phase']} "
+                      f"started at {event['started']} (`{event['attempt']}`)."]
     activities = [event for event in events if event["kind"] == "activity"]
     for source, title in (("build", "Longest builds"), ("restore", "Longest cache restores")):
         selected = [event for event in activities if event["source"] == source]
@@ -167,7 +195,10 @@ def render(state):
             for event in sorted(selected, key=lambda item: item["seconds"], reverse=True)[:20]:
                 status = "ended" if event["finished"] else "unfinished"
                 lines.append(f"| {event['phase']} | `{event['path']}` | {status} | {duration(event['seconds'])} |")
-    tests = [event for event in events if event["kind"] == "target" and event.get("vm")]
+    policy_path = state / "policy.json"
+    policy = json.loads(policy_path.read_text()) if policy_path.exists() else {"builds": {}}
+    passes = dict.fromkeys(event["pass"] for event in events if event["kind"] == "build-start")
+    tests = [result for pass_name in passes for result in current_vm_results(policy, events, pass_name)]
     if tests:
         sources = {"built": "executed", "local": "local reuse", "substituted": "cache restored", "unknown": "unclassified"}
         lines += ["", "### VM results", "", "Execution time covers the Nix VM builder, including guest startup and teardown.",
@@ -177,7 +208,6 @@ def render(state):
             result = "success" if event["success"] else "incomplete/failed"
             lines.append(f"| {event['pass']} | {event['name']} | {sources[event['source']]} | {result} | "
                          f"{duration(event['buildSeconds'])} | {duration(event['restoreSeconds'])} |")
-        policy = json.loads((state / "policy.json").read_text())
         expected = {item["name"] for entries in policy["builds"].values() for item in entries if item.get("vm")}
         for pass_name in dict.fromkeys(event["pass"] for event in tests):
             fresh = {event["name"] for event in tests if event["pass"] == pass_name
@@ -185,7 +215,7 @@ def render(state):
             seconds = sum(event["seconds"] for event in builds if event["pass"] == pass_name
                           and event["phase"].startswith("vm-"))
             completeness = "all required VM tests freshly executed" if fresh == expected else "includes reuse or incomplete tests"
-            lines += ["", f"**{pass_name}:** VM stage wall time {duration(seconds)}; "
+            lines += ["", f"**{pass_name}:** VM stage wall time including retries {duration(seconds)}; "
                       f"{len(fresh)}/{len(expected)} freshly executed successfully ({completeness})."]
     samples = read_records(state / "resources.jsonl")
     evidence = [event for event in events if event["kind"] == "vm-evidence"]

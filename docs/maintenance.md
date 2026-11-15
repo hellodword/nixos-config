@@ -26,11 +26,10 @@ sudo nixos-rebuild boot --flake ".#${host}"
 
 ## 更新与验证
 
-日常依赖更新可由 [GitHub Actions](ci.md)完成。本地更新时，通过 Nix 写入锁文件，先完成[配置求值](validation.md#配置求值)，再构建系统并按改动范围选择行为测试：
+日常依赖更新可由 [GitHub Actions](ci.md)完成。本地更新时，通过 Nix 写入锁文件，更新后按[验证指南](validation.md#配置求值)完成所选范围的清单求值，再构建系统并选择行为测试。更新和构建命令分别为：
 
 ```sh
 nix flake update nixpkgs home-manager plasma-manager
-nix flake check --no-build --no-update-lock-file
 nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 ```
 

@@ -9,6 +9,7 @@ import signal
 import subprocess
 import tempfile
 import time
+import uuid
 
 from report import record, utc_now
 
@@ -25,12 +26,12 @@ def valid_paths(paths):
     return set(paths) - set(result.stdout.splitlines())
 
 
-def collect_vm_evidence(entries, state, phase, pass_name):
+def collect_vm_evidence(entries, state, context):
     """Native VM builders put diagnostics in $out even when assertions fail."""
     for entry in entries:
         if not entry.get("vm"):
             continue
-        destination = state / "vm" / pass_name / entry["name"]
+        destination = state / "vm" / context["pass"] / entry["name"] / context["attempt"]
         for output in entry["outputs"]:
             source = Path(output)
             if source.is_dir():
@@ -39,11 +40,11 @@ def collect_vm_evidence(entries, state, phase, pass_name):
                 destination.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination / source.name, follow_symlinks=False)
             else:
-                record(state, {"kind": "evidence-missing", "pass": pass_name, "phase": phase,
+                record(state, {**context, "kind": "evidence-missing",
                                "name": entry["name"], "output": output})
                 print(f"{entry['name']} evidence output unavailable: {output}", flush=True)
         if destination.exists():
-            record(state, {"kind": "vm-evidence", "pass": pass_name, "phase": phase,
+            record(state, {**context, "kind": "vm-evidence",
                            "name": entry["name"], "path": str(destination.relative_to(state))})
             print(f"{entry['name']} evidence: {destination}", flush=True)
 
@@ -53,10 +54,12 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
     if not entries:
         return
     state.mkdir(parents=True, exist_ok=True)
+    context = {"pass": pass_name, "phase": phase, "attempt": uuid.uuid4().hex}
+    started, start = utc_now(), time.monotonic()
+    record(state, {**context, "kind": "build-start", "started": started})
     paths = [path for entry in entries for path in entry["outputs"]]
     present = valid_paths(paths)
     active, activities = {}, []
-    started, start = utc_now(), time.monotonic()
     command = ["nix", "build", "--no-link", "--print-build-logs", "--keep-going"]
     hook = state / "cache" / "post-build-hook"
     if hook.exists():
@@ -110,22 +113,22 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
                     # Collect declared outputs after Nix exits, including
                     # diagnostics written by a failed VM builder.
                     try:
-                        collect_vm_evidence(entries, state, phase, pass_name)
+                        collect_vm_evidence(entries, state, context)
                     except Exception as error:
                         collection_error = error
-                        record(state, {"kind": "evidence-error", "pass": pass_name,
-                                       "phase": phase, "error": str(error)})
+                        record(state, {**context, "kind": "evidence-error", "error": str(error)})
                         print(f"VM evidence collection failed: {error}", flush=True)
 
     end = time.monotonic()
     realized = valid_paths(paths)
-    batch = {"kind": "build", "pass": pass_name, "phase": phase, "started": started,
+    batch = {**context, "kind": "build", "started": started,
              "seconds": end - start, "returncode": returncode, "command": command}
+    if collection_error:
+        batch["evidenceError"] = str(collection_error)
     if returncode < 0:
         batch["signal"] = signal.Signals(-returncode).name
-    record(state, batch)
     for activity in activities:
-        record(state, {"kind": "activity", "pass": pass_name, "phase": phase,
+        record(state, {**context, "kind": "activity",
                        "source": "build" if activity["type"] == BUILD else "restore",
                        "path": activity["path"], "finished": "stop" in activity,
                        "seconds": activity.get("stop", end) - activity["start"]})
@@ -134,11 +137,14 @@ def run_build(entries, *, state, phase, pass_name="candidate", jobs=None):
         restored = [a for a in activities if a["type"] == SUBSTITUTE and a["path"] in entry["outputs"]]
         source = ("built" if built else "local" if set(entry["outputs"]) <= present
                   else "substituted" if restored else "unknown")
-        result = {"kind": "target", "pass": pass_name, "phase": phase, **entry,
+        result = {**context, "kind": "target", **entry,
                   "source": source, "success": set(entry["outputs"]) <= realized,
                   "buildSeconds": sum(a.get("stop", end) - a["start"] for a in built) if built else None,
                   "restoreSeconds": sum(a.get("stop", end) - a["start"] for a in restored) if restored else None}
         record(state, result)
+    # Completion follows all target records. An interrupted writer leaves a
+    # started attempt, which cannot satisfy verification with an older result.
+    record(state, batch)
     if returncode:
         reason = batch.get("signal", f"exit {returncode}")
         error = RuntimeError(f"{pass_name}/{phase}: nix build failed ({reason}); see the diagnostics artifact")

@@ -26,11 +26,10 @@ def lua(value):
     return "{" + ",".join(f"[{lua(k)}]={lua(v)}" for k, v in value.items()) + "}"
 
 
-def compile_policy(config, destination, model=None, ipv4_only=False):
+def plan_resolvers(config, ipv4_only=False):
+    """Assign listeners and one race/cache for each resolver and egress combination."""
     if not {"cn", "global"} <= config.get("groups", {}).keys():
         raise ValueError("DNS policy requires both cn and global resolver groups")
-    destination.mkdir(parents=True, exist_ok=True)
-    model = model or domain_policy.compile_policy(config, include_connections=False)
     front = config.get("frontPort", 5300)
     bootstrap = config.get("bootstrapPort", 5301)
     listeners = [("127.0.0.1", front), ("127.0.0.1", bootstrap)]
@@ -38,6 +37,88 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
         listeners.append(("::1", front))
     if front == bootstrap or any(type(port) is not int or not 1024 <= port <= 65535 for port in (front, bootstrap)):
         raise ValueError("DNS listeners must use distinct unprivileged ports")
+    tunnels, occupied = [], {front, bootstrap}
+    groups = []
+
+    def reserve(port):
+        if type(port) is not int or not 1024 <= port <= 65535 or port in occupied:
+            raise ValueError("DNS internal ports must be distinct and unprivileged")
+        occupied.add(port)
+        return port
+
+    def tunnel(tag, address, port, outbound, transport="tcp"):
+        ipaddress.ip_address(address)
+        listen = reserve(config.get("tunnelPortBase", 5600) + len(tunnels))
+        tunnels.append({"tag": tag, "listen_port": listen, "address": address,
+                        "port": port, "outbound": outbound})
+        if transport:
+            tunnels[-1]["network"] = transport
+        return f"127.0.0.1:{listen}"
+
+    # Only one race process and cache per resolver/egress combination.
+    aliases, unique = {}, {}
+    for group, settings in config["groups"].items():
+        signature = json.dumps(settings, sort_keys=True)
+        canonical = next((name for name, value in unique.items() if json.dumps(value, sort_keys=True) == signature), group)
+        aliases[group] = canonical
+        if canonical == group:
+            unique[group] = settings
+    leg_index = 0
+    for index, (group, settings) in enumerate(unique.items()):
+        race = reserve(config.get("racePortBase", 5500) + index)
+        upstreams, legs = [], []
+        for upstream in settings["upstreams"]:
+            if ipv4_only and ipaddress.ip_address(upstream["address"]).version == 6:
+                continue
+            protocol = upstream["protocol"]
+            if type(upstream["port"]) is not int or not 1 <= upstream["port"] <= 65535:
+                raise ValueError("invalid encrypted DNS upstream port")
+            if protocol not in {"tls", "https"}:
+                raise ValueError("public DNS must use authenticated DoT or DoH")
+            leg = reserve(config.get("legPortBase", 5400) + leg_index)
+            listeners.append(("127.0.0.1", leg))
+            tag = f"dns-{group}-{leg_index}"
+            leg_index += 1
+            ipaddress.ip_address(upstream["address"])
+            address = (f"[{upstream['address']}]" if ":" in upstream["address"] else upstream["address"]) + f":{upstream['port']}"
+            if group in config.get("tunnelGroups", []):
+                address = tunnel(tag, upstream["address"], upstream["port"],
+                                 settings.get("outbound", "direct" if group == "cn" else "proxy"))
+            options = {
+                "name": tag, "address": address, "pool": tag, "tls": "openssl",
+                "subjectName": upstream["serverName"], "validateCertificates": True,
+                "caStore": config.get("caStore", "/etc/ssl/certs/ca-certificates.crt"),
+                "healthCheckMode": "up", "tcpConnectTimeout": 2,
+                "tcpSendTimeout": 2, "tcpRecvTimeout": 2,
+                "useClientSubnet": True,
+            }
+            if protocol == "https":
+                options["dohPath"] = upstream.get("path", "/dns-query")
+            ecs4 = str(ipaddress.ip_network(settings.get("ecs4", "0.0.0.0/0"), strict=True))
+            ecs6 = str(ipaddress.ip_network(settings.get("ecs6", "::/0"), strict=True))
+            if ipaddress.ip_network(ecs4).version != 4 or ipaddress.ip_network(ecs6).version != 6:
+                raise ValueError("ECS prefixes must have the declared address family")
+            legs.append({"port": leg, "options": options, "ecs4": ecs4, "ecs6": ecs6,
+                         "tag": tag, "upstream": upstream})
+            upstreams.append(f"tcp://127.0.0.1:{leg}")
+        if len(upstreams) < (1 if ipv4_only else 2):
+            raise ValueError("each DNS group needs an IPv4 upstream" if ipv4_only else "a race group requires at least two independent branches")
+        race_config = {
+            "listen-addrs": ["127.0.0.1"], "listen-ports": [race],
+            "upstream": upstreams, "upstream-mode": "parallel", "timeout": "4s",
+            "cache": False, "edns": False, "hosts-file-enabled": False,
+            "pending-requests-enabled": True, "use-private-rdns": False, "verbose": True,
+        }
+        groups.append({"name": group, "port": race, "legs": legs, "config": race_config})
+    return {"front": front, "bootstrap": bootstrap, "listeners": listeners,
+            "aliases": aliases, "groups": groups, "transports": tunnels}
+
+
+def render_dnsdist(config, model, plan, ipv4_only=False):
+    """Render ordered decisions against the planned resolver pools."""
+    front, bootstrap = plan["front"], plan["bootstrap"]
+    aliases = plan["aliases"]
+    groups = {group["name"] for group in plan["groups"]}
     lines = [
         "-- Generated from ordered sing-box route fragments.",
         f"setLocal('127.0.0.1:{front}')",
@@ -77,88 +158,21 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
     if ipv4_only:
         record("QTypeRule(DNSQType.AAAA)", {"rule": "listener/ipv4-only", "group": "local"})
         lines.append("addAction(QTypeRule(DNSQType.AAAA), RCodeAction(DNSRCode.NOERROR))")
-    tunnels, occupied = [], {front, bootstrap}
-
-    def reserve(port):
-        if type(port) is not int or not 1024 <= port <= 65535 or port in occupied:
-            raise ValueError("DNS internal ports must be distinct and unprivileged")
-        occupied.add(port)
-        return port
-
-    def tunnel(tag, address, port, outbound, transport="tcp"):
-        ipaddress.ip_address(address)
-        listen = reserve(config.get("tunnelPortBase", 5600) + len(tunnels))
-        tunnels.append({"tag": tag, "listen_port": listen, "address": address,
-                        "port": port, "outbound": outbound})
-        if transport:
-            tunnels[-1]["network"] = transport
-        return f"127.0.0.1:{listen}"
-
-    # Only one race process and cache per resolver/egress combination.
-    aliases, unique = {}, {}
-    for group, settings in config["groups"].items():
-        signature = json.dumps(settings, sort_keys=True)
-        canonical = next((name for name, value in unique.items() if json.dumps(value, sort_keys=True) == signature), group)
-        aliases[group] = canonical
-        if canonical == group:
-            unique[group] = settings
-    (destination / "dns-groups.json").write_text(json.dumps(aliases) + "\n")
-    leg_index = 0
-    for index, (group, settings) in enumerate(unique.items()):
-        race = reserve(config.get("racePortBase", 5500) + index)
-        upstreams = []
-        for upstream in settings["upstreams"]:
-            if ipv4_only and ipaddress.ip_address(upstream["address"]).version == 6:
-                continue
-            protocol = upstream["protocol"]
-            if type(upstream["port"]) is not int or not 1 <= upstream["port"] <= 65535:
-                raise ValueError("invalid encrypted DNS upstream port")
-            if protocol not in {"tls", "https"}:
-                raise ValueError("public DNS must use authenticated DoT or DoH")
-            leg = reserve(config.get("legPortBase", 5400) + leg_index)
-            listeners.append(("127.0.0.1", leg))
-            tag = f"dns-{group}-{leg_index}"
-            leg_index += 1
-            ipaddress.ip_address(upstream["address"])
-            address = (f"[{upstream['address']}]" if ":" in upstream["address"] else upstream["address"]) + f":{upstream['port']}"
-            if group in config.get("tunnelGroups", []):
-                address = tunnel(tag, upstream["address"], upstream["port"],
-                                 settings.get("outbound", "direct" if group == "cn" else "proxy"))
-            options = {
-                "name": tag, "address": address, "pool": tag, "tls": "openssl",
-                "subjectName": upstream["serverName"], "validateCertificates": True,
-                "caStore": config.get("caStore", "/etc/ssl/certs/ca-certificates.crt"),
-                "healthCheckMode": "up", "tcpConnectTimeout": 2,
-                "tcpSendTimeout": 2, "tcpRecvTimeout": 2,
-                "useClientSubnet": True,
-            }
-            if protocol == "https":
-                options["dohPath"] = upstream.get("path", "/dns-query")
-            ecs4 = str(ipaddress.ip_network(settings.get("ecs4", "0.0.0.0/0"), strict=True))
-            ecs6 = str(ipaddress.ip_network(settings.get("ecs6", "::/0"), strict=True))
-            if ipaddress.ip_network(ecs4).version != 4 or ipaddress.ip_network(ecs6).version != 6:
-                raise ValueError("ECS prefixes must have the declared address family")
+    for group in plan["groups"]:
+        name = group["name"]
+        for leg in group["legs"]:
+            port, tag = leg["port"], leg["tag"]
             lines.extend([
-                f"addLocal('127.0.0.1:{leg}')", f"newServer({lua(options)})",
-                f"addAction(DSTPortRule({leg}), SetTagAction('race-leg', '1'))",
-                f"addAction(DSTPortRule({leg}), SetECSOverrideAction(true))",
-                f"addAction(DSTPortRule({leg}), SetECSAction({lua(ecs4)}, {lua(ecs6)}))",
-
+                f"addLocal('127.0.0.1:{port}')", f"newServer({lua(leg['options'])})",
+                f"addAction(DSTPortRule({port}), SetTagAction('race-leg', '1'))",
+                f"addAction(DSTPortRule({port}), SetECSOverrideAction(true))",
+                f"addAction(DSTPortRule({port}), SetECSAction({lua(leg['ecs4'])}, {lua(leg['ecs6'])}))",
             ])
-            record(f"DSTPortRule({leg})", {"group": group, "leg": tag, "upstream": upstream}, "dnsdist-leg")
-            lines.append(f"addAction(DSTPortRule({leg}), PoolAction({lua(tag)}))")
-            upstreams.append(f"tcp://127.0.0.1:{leg}")
-        if len(upstreams) < (1 if ipv4_only else 2):
-            raise ValueError("each DNS group needs an IPv4 upstream" if ipv4_only else "a race group requires at least two independent branches")
-        (destination / f"race-{group}.json").write_text(json.dumps({
-            "listen-addrs": ["127.0.0.1"], "listen-ports": [race],
-            "upstream": upstreams, "upstream-mode": "parallel", "timeout": "4s",
-            "cache": False, "edns": False, "hosts-file-enabled": False,
-            "pending-requests-enabled": True, "use-private-rdns": False, "verbose": True,
-        }, indent=2) + "\n")
-        lines.append("newServer(" + lua({"name": "race-" + group, "address": f"127.0.0.1:{race}",
-                     "pool": group, "healthCheckMode": "up", "tcpRecvTimeout": 6}) + ")")
-        lines.append(f"getPool({lua(group)}):setCache(newPacketCache(10000, "
+            record(f"DSTPortRule({port})", {"group": name, "leg": tag, "upstream": leg["upstream"]}, "dnsdist-leg")
+            lines.append(f"addAction(DSTPortRule({port}), PoolAction({lua(tag)}))")
+        lines.append("newServer(" + lua({"name": "race-" + name, "address": f"127.0.0.1:{group['port']}",
+                     "pool": name, "healthCheckMode": "up", "tcpRecvTimeout": 6}) + ")")
+        lines.append(f"getPool({lua(name)}):setCache(newPacketCache(10000, "
                      "{maxTTL=86400,minTTL=0,maxNegativeTTL=60,temporaryFailureTTL=0,dontAge=false}))")
     lines.extend([
         "local bad = AndRule({TagRule('race-leg','1'), NotRule(OrRule({ERCodeRule(DNSRCode.NOERROR),ERCodeRule(DNSRCode.NXDOMAIN)}))})",
@@ -223,7 +237,7 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
         lines.append("do")
         value = match() if callable(match) else match
         lines.append(f"local selected = {value}")
-        if group in unique:
+        if group in groups:
             # Node bootstrap shares domain protection, but uses CN transport.
             bootstrap_match = f"AndRule({{selected,DSTPortRule({bootstrap})}})"
             record(bootstrap_match, {**metadata, "group": "cn", "listener": "bootstrap"})
@@ -235,10 +249,22 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
     for rule, provenance in zip(model["route"]["rules"], model["summary"]["rules"]):
         decision(lambda: selector(rule), rule, provenance["rule"])
     decision("AllRule()", {"outbound": model["route"]["final"]}, model["summary"]["final_source"])
-    (destination / "dnsdist.conf").write_text("\n".join(lines) + "\n")
-    (destination / "transports.json").write_text(json.dumps(tunnels) + "\n")
-    (destination / "summary.json").write_text(json.dumps(model["summary"], indent=2) + "\n")
-    return listeners
+    return "\n".join(lines) + "\n"
+
+
+def compile_policy(config, destination, model=None, ipv4_only=False):
+    model = model or domain_policy.compile_policy(config, include_connections=False)
+    plan = plan_resolvers(config, ipv4_only)
+    dnsdist = render_dnsdist(config, model, plan, ipv4_only)
+    destination.mkdir(parents=True, exist_ok=True)
+    files = {"dns-groups.json": plan["aliases"], "transports.json": plan["transports"],
+             "summary.json": model["summary"]}
+    files.update({f"race-{group['name']}.json": group["config"] for group in plan["groups"]})
+    for name, value in files.items():
+        indent = None if name in {"dns-groups.json", "transports.json"} else 2
+        (destination / name).write_text(json.dumps(value, indent=indent) + "\n")
+    (destination / "dnsdist.conf").write_text(dnsdist)
+    return plan["listeners"]
 
 
 def bind_groups(config, provider):

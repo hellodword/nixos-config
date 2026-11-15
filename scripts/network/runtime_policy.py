@@ -45,9 +45,8 @@ def command(*args, check=True, timeout=120):
     return subprocess.run(args, check=check, capture_output=True, timeout=timeout)
 
 
-def prepare(args, stage):
+def read_inputs(args):
     policy = json.loads(args.policy.read_text())
-    files = service_files(policy)
     provider_data = None
     if args.sing_box:
         if args.provider.exists():
@@ -67,50 +66,68 @@ def prepare(args, stage):
                                              for name in ["proxy", *policy["purposeGroups"]]})
         if provider_data is not None:
             policy = compiler.bind_groups(policy, provider_data)
+    base = None
     if args.base:
         base = json.loads(args.base.read_text())
         policy["connectionFragments"] = base.get("_connectionFragments", {}) | policy.get("connectionFragments", {})
+    return policy, base, provider_data
+
+
+def prepare_dns(args, stage, policy, model):
+    listeners = {}
+    listeners["site-dns.service"] = compiler.compile_policy(policy, stage, model, args.ipv4_only)
+    command(args.dnsdist, "--check-config", "-C", str(stage / "dnsdist.conf"))
+    transports = json.loads((stage / "transports.json").read_text())
+    for group in ("cn", "global", *policy.get("purposeGroups", [])):
+        race_file = stage / f"race-{group}.json"
+        if not race_file.exists():
+            continue
+        race = json.loads(race_file.read_text())
+        listeners[f"site-dns-race-{group}.service"] = [
+            (address, port) for address in race["listen-addrs"] for port in race["listen-ports"]]
+    return listeners, transports
+
+
+def prepare_proxy(args, stage, policy, base, provider_data, model, transports):
+    listeners = {}
+    exclusions = domain_policy.read_json(args.fakeip_exclude, policy.get("jsoncTool", "hujsonfmt")) if args.fakeip_exclude else {}
+    network = assembler.assemble(base, policy, transports, model, args.ipv4_only, exclusions)
+    (stage / "network.json").write_text(json.dumps(network) + "\n")
+    listeners["sing-box.service"] = [(inbound["listen"], inbound["listen_port"])
+                                     for inbound in network["inbounds"] if inbound.get("network") != "udp"]
+    provider = stage / "provider.json"
+    if args.provider.exists():
+        # systemd loads the generation's immutable credential before dropping
+        # privileges. DNS workers share policy access, not proxy credentials.
+        provider.write_text(json.dumps(provider_data) + "\n")
+        provider.chmod(0o600)
+    validation_provider = provider
+    if args.bootstrap and not provider.exists():
+        validation_provider = stage / ".schema-provider.json"
+        validation_provider.write_text(json.dumps(provider_data))
+    try:
+        renderer.render(stage / "network.json", validation_provider, stage / ".validated.json", args.sing_box,
+                        wireguard_key=args.wireguard_key, wireguard_peer=args.wireguard_peer)
+    finally:
+        (stage / ".validated.json").unlink(missing_ok=True)
+        (stage / ".schema-provider.json").unlink(missing_ok=True)
+    return listeners
+
+
+def prepare(args, stage):
+    """Generate and validate a candidate without changing active services."""
+    policy, base, provider_data = read_inputs(args)
+    files = service_files(policy)
     model = domain_policy.compile_policy(policy, args.fragments, args.connections,
         include_connections=bool(args.sing_box), rule_paths=rule_updates.paths(args.rules_directory))
-    (stage / "summary.json").write_text(json.dumps(model["summary"], indent=2) + "\n")
-    services = []
-    listeners = {}
-    transports = []
+    listeners, transports, services = {}, [], []
     if args.dnsdist:
-        listeners["site-dns.service"] = compiler.compile_policy(policy, stage, model, args.ipv4_only)
-        command(args.dnsdist, "--check-config", "-C", str(stage / "dnsdist.conf"))
-        transports = json.loads((stage / "transports.json").read_text())
+        listeners, transports = prepare_dns(args, stage, policy, model)
         services.extend(unit for unit in files if unit != "sing-box.service")
-        for group in ("cn", "global", *policy.get("purposeGroups", [])):
-            race_file = stage / f"race-{group}.json"
-            if not race_file.exists():
-                continue
-            race = json.loads(race_file.read_text())
-            listeners[f"site-dns-race-{group}.service"] = [
-                (address, port) for address in race["listen-addrs"] for port in race["listen-ports"]]
     if args.sing_box:
-        exclusions = domain_policy.read_json(args.fakeip_exclude, policy.get("jsoncTool", "hujsonfmt")) if args.fakeip_exclude else {}
-        network = assembler.assemble(base, policy, transports, model, args.ipv4_only, exclusions)
-        (stage / "network.json").write_text(json.dumps(network) + "\n")
-        listeners["sing-box.service"] = [(inbound["listen"], inbound["listen_port"])
-                                         for inbound in network["inbounds"] if inbound.get("network") != "udp"]
-        provider = stage / "provider.json"
-        if args.provider.exists():
-            # systemd loads the generation's immutable credential before dropping
-            # privileges. DNS workers share policy access, not proxy credentials.
-            provider.write_text(json.dumps(provider_data) + "\n")
-            provider.chmod(0o600)
-        validation_provider = provider
-        if args.bootstrap and not provider.exists():
-            validation_provider = stage / ".schema-provider.json"
-            validation_provider.write_text(json.dumps(provider_data))
-        try:
-            renderer.render(stage / "network.json", validation_provider, stage / ".validated.json", args.sing_box,
-                            wireguard_key=args.wireguard_key, wireguard_peer=args.wireguard_peer)
-        finally:
-            (stage / ".validated.json").unlink(missing_ok=True)
-            (stage / ".schema-provider.json").unlink(missing_ok=True)
+        listeners.update(prepare_proxy(args, stage, policy, base, provider_data, model, transports))
         services.append("sing-box.service")
+    (stage / "summary.json").write_text(json.dumps(model["summary"], indent=2) + "\n")
     manifest = {}
     for unit in services:
         manifest[unit] = {filename: hashlib.sha256((stage / filename).read_bytes()).hexdigest()
@@ -262,7 +279,67 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
     return previous
 
 
-def main():
+def validate_candidate(args, stage):
+    if not args.prepare_command:
+        raise ValueError("a sandboxed preparation command is required")
+    try:
+        command(args.prepare_command, str(stage), args.action, "ipv4" if args.ipv4_only else "dual",
+                str(args.rules_directory) if args.rules_directory else "", timeout=300)
+    except subprocess.CalledProcessError as error:
+        fd = os.open(args.root / "last-prepare.log", os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as log:
+            log.write((error.stdout or b"") + (error.stderr or b""))
+        raise ValueError("Candidate validation failed; inspect the protected last-prepare.log") from error
+    finish_stage(stage, args.group)
+
+
+def commit_policy(args, stage, rule_store, snapshot, definitions, consumers):
+    """Commit state after activation; restore services if the state write fails."""
+    if args.action == "bootstrap":
+        rule_store.state["active"] = snapshot
+        if pending := rule_store.state.get("pending"):
+            if set(rule_updates.paths(rule_store.directory(pending))) != {
+                    rule_updates.remote_source(definition) for definition in definitions}:
+                rule_store.state["pending"] = None
+        rule_store.save()
+        publish(args.root, stage)
+    elif args.action == "ipv6":
+        previous = ipv6.transition(args.root, args.ipv4_only,
+            lambda: activate(args.root, stage, False, consumers=consumers, restart_all=True),
+            lambda: ready(stage, consumers, command, wait_binding=args.watch_underlay),
+            lockdown=args.watch_underlay, tailscale=args.tailscale)
+        shutil.rmtree(previous)
+    elif args.action in {"apply", "apply-rules"}:
+        previous = activate(args.root, stage, args.watch_underlay, consumers=consumers)
+        saved = rule_store.state.copy()
+        try:
+            rule_store.state["active"] = snapshot
+            if args.action == "apply-rules":
+                rule_store.state.update(pending=None, result="applied")
+            rule_store.save()
+        except OSError as error:
+            rule_store.state = saved
+            with recovery_step(error):
+                rule_store.save()
+            with recovery_step(error):
+                activate(args.root, previous, args.watch_underlay, consumers=consumers)
+            raise
+        shutil.rmtree(previous)
+
+
+def show_policy(args, stage):
+    summary = json.loads((stage / "summary.json").read_text())
+    print(("Validated " if args.action == "check" else "Applied ") + summary["generation"])
+    if args.sing_box:
+        summary = summary | summary["connection"]
+    for item in summary["files"]:
+        print(f"  {item['file']} ({item['source']})")
+    for item in summary["rules"]:
+        print(f"  {item['rule']} -> {item['outbound']}")
+    print(f"  {summary['final_source']} -> {summary['final']}")
+
+
+def parse_arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["bootstrap", "check", "apply", "prepare", "ipv6", "initialize", "reconcile",
                                          "update-rules", "apply-rules", "rules-status"])
@@ -294,6 +371,21 @@ def main():
     parser.add_argument("--curl", default="curl")
     parser.add_argument("--download-proxy")
     args = parser.parse_args()
+    if args.action == "ipv6" and args.mode is None:
+        args.mode = "status"
+    if args.action == "rules-status":
+        return args
+    if not (args.dnsdist or args.sing_box):
+        parser.error("select DNS or sing-box")
+    if args.sing_box and not (args.base and args.provider):
+        parser.error("sing-box requires --base and --provider")
+    if os.geteuid() != 0:
+        parser.exit(1, "network-policy requires root\n")
+    return args
+
+
+def main():
+    args = parse_arguments()
     if args.action == "rules-status":
         try:
             print(args.rules_status_file.read_text().strip())
@@ -301,14 +393,6 @@ def main():
         except FileNotFoundError:
             print("Rule update status is not available yet", file=sys.stderr)
             return 1
-    if args.action == "ipv6" and args.mode is None:
-        args.mode = "status"
-    if not (args.dnsdist or args.sing_box):
-        parser.error("select DNS or sing-box")
-    if args.sing_box and not (args.base and args.provider):
-        parser.error("sing-box requires --base and --provider")
-    if os.geteuid() != 0:
-        parser.exit(1, "network-policy requires root\n")
     if args.action == "prepare":
         prepare(args, args.stage)
         return 0
@@ -360,18 +444,8 @@ def main():
             args.rules_directory = rule_store.directory(snapshot) if snapshot else None
             args.ipv4_only = args.mode == "off" if args.action == "ipv6" else ipv6.ipv4_only(args.root)
             stage = Path(tempfile.mkdtemp(prefix="generation-", dir=args.root))
-            if not args.prepare_command:
-                raise ValueError("a sandboxed preparation command is required")
             phase = "candidate validation"
-            try:
-                command(args.prepare_command, str(stage), args.action, "ipv4" if args.ipv4_only else "dual",
-                        str(args.rules_directory) if args.rules_directory else "", timeout=300)
-            except subprocess.CalledProcessError as error:
-                fd = os.open(args.root / "last-prepare.log", os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
-                with os.fdopen(fd, "wb") as log:
-                    log.write((error.stdout or b"") + (error.stderr or b""))
-                raise ValueError("Candidate validation failed; inspect the protected last-prepare.log") from error
-            finish_stage(stage, args.group)
+            validate_candidate(args, stage)
             if args.action == "update-rules":
                 pending = snapshot if snapshot != rule_store.state.get("active") else None
                 rule_store.state.update(pending=pending, checked=rule_updates.timestamp(),
@@ -380,46 +454,10 @@ def main():
                 print("Rule update ready for confirmation" if pending else "Rules are current")
                 return 0
             phase = "policy activation"
-            if args.action == "bootstrap":
-                rule_store.state["active"] = snapshot
-                if pending := rule_store.state.get("pending"):
-                    if set(rule_updates.paths(rule_store.directory(pending))) != {
-                            rule_updates.remote_source(definition) for definition in definitions}:
-                        rule_store.state["pending"] = None
-                rule_store.save()
-                publish(args.root, stage)
-            elif args.action == "ipv6":
-                previous = ipv6.transition(args.root, args.ipv4_only,
-                    lambda: activate(args.root, stage, False, consumers=consumers, restart_all=True),
-                    lambda: ready(stage, consumers, command, wait_binding=args.watch_underlay),
-                    lockdown=args.watch_underlay, tailscale=args.tailscale)
-                shutil.rmtree(previous)
+            commit_policy(args, stage, rule_store, snapshot, definitions, consumers)
+            if args.action == "ipv6":
                 return show_ipv6_status()
-            elif args.action in {"apply", "apply-rules"}:
-                previous = activate(args.root, stage, args.watch_underlay, consumers=consumers)
-                saved = rule_store.state.copy()
-                try:
-                    rule_store.state["active"] = snapshot
-                    if args.action == "apply-rules":
-                        rule_store.state.update(pending=None, result="applied")
-                    rule_store.save()
-                except OSError as error:
-                    rule_store.state = saved
-                    with recovery_step(error):
-                        rule_store.save()
-                    with recovery_step(error):
-                        activate(args.root, previous, args.watch_underlay, consumers=consumers)
-                    raise
-                shutil.rmtree(previous)
-            summary = json.loads((stage / "summary.json").read_text())
-            print(("Validated " if args.action == "check" else "Applied ") + summary["generation"])
-            if args.sing_box:
-                summary = summary | summary["connection"]
-            for item in summary["files"]:
-                print(f"  {item['file']} ({item['source']})")
-            for item in summary["rules"]:
-                print(f"  {item['rule']} -> {item['outbound']}")
-            print(f"  {summary['final_source']} -> {summary['final']}")
+            show_policy(args, stage)
     except (OSError, ValueError, RuntimeError, KeyError, TypeError, subprocess.SubprocessError) as error:
         ipv6.record_failure(args.root, phase, error)
         print(f"{phase}: {ipv6.error_summary(error)}; details: {args.root / 'last-error.log'}", file=sys.stderr)

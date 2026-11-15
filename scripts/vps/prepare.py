@@ -9,7 +9,7 @@ import tempfile
 
 import yaml
 
-from model import Inventory
+from model import Inventory, DeclarationError, field
 from clients import mobile, shadowrocket, shadowrocket_nodes
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,8 +35,8 @@ def generate(vps, directory):
         write(location / "index.js", (ROOT / "workers" / name / "index.js").read_text())
         write(location / "auth.js", (ROOT / "workers/auth.js").read_text())
         (location / ".wrangler").mkdir(mode=0o700)
-        settings = vps.data["workers"][name]
-        config = {"name": settings["name"], "main": "index.js", "compatibility_date": "2026-10-01",
+        settings = vps.worker(name)
+        config = {"name": field(settings, "name", str, f"workers.{name}"), "main": "index.js", "compatibility_date": "2026-10-01",
                   "workers_dev": False, "preview_urls": False,
                   "observability": {"enabled": False}}
         if name == "subscriptions":
@@ -53,12 +53,12 @@ def generate(vps, directory):
             write(subscription_worker / "assets" / subscription["path"][1:] / name, value)
             write(directory / "subscriptions" / subscription_id / name, value)
     # Credential bindings are uploaded using Wrangler's native secret command.
-    cert_settings = vps.data["workers"]["certificates"]
-    cert_auth = {node: [vps.secrets[vps.nodes[node]["certificateToken"]]] for node in vps.nodes}
+    cert_settings = vps.worker("certificates")
+    cert_auth = {node: [vps.certificate_request(node)["token"]] for node in vps.nodes}
     write(certificate / "secrets.json", {
-        "ACCESS": json.dumps(cert_auth), "PORKBUN_DOMAIN": cert_settings["domain"],
-        "PORKBUN_API_KEY": vps.secrets[cert_settings["apiKey"]],
-        "PORKBUN_SECRET_KEY": vps.secrets[cert_settings["secretKey"]],
+        "ACCESS": json.dumps(cert_auth), "PORKBUN_DOMAIN": field(cert_settings, "domain", str, "workers.certificates"),
+        "PORKBUN_API_KEY": vps.secret(field(cert_settings, "apiKey", str, "workers.certificates"), "workers.certificates.apiKey"),
+        "PORKBUN_SECRET_KEY": vps.secret(field(cert_settings, "secretKey", str, "workers.certificates"), "workers.certificates.secretKey"),
     })
 
 
@@ -76,8 +76,14 @@ def main():
             directory = Path(temp)
             generate(inventory, directory)
             directory.rename(output)
-    except (ValueError, KeyError, TypeError, yaml.YAMLError):
-        parser.error("invalid VPS declaration; check the structure and secret references against data/secrets/vps.example.yaml")
+    except DeclarationError as error:
+        parser.error(str(error))
+    except yaml.YAMLError as error:
+        mark = getattr(error, "problem_mark", None)
+        location = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
+        parser.error("invalid YAML syntax" + location)
+    except (ValueError, KeyError, TypeError) as error:
+        parser.error(f"could not render the VPS declaration ({type(error).__name__}); check native exit options")
     except OSError as error:
         print(f"Could not prepare deployment files: {error}", file=sys.stderr)
         return 1

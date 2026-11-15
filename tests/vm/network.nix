@@ -3,7 +3,16 @@
 let
   notification = import ../fixtures/notifications.nix { inherit pkgs; };
   caches = import ../../nix/cache-config.nix;
-  oranc = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.oranc;
+  devTools = import ../../nix/dev-tools.nix {
+    inherit inputs;
+    pkgs = pkgs // {
+      cacert = pkgs.runCommand "devtools-test-ca" { } ''
+        mkdir -p $out/etc/ssl/certs
+        cat ${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt ${tlsCA} > $out/etc/ssl/certs/ca-bundle.crt
+      '';
+    };
+    system = pkgs.stdenv.hostPlatform.system;
+  };
   cachePayload = pkgs.writeText "network-cache-payload" "shared host cache content\n";
   initialRules = pkgs.runCommand "initial-domain-rules.srs" { } ''
     ${pkgs.sing-box}/bin/sing-box rule-set compile ${
@@ -121,10 +130,16 @@ let
   # Public, deliberately non-secret nixpkgs test CA/keys, never production input.
   certificates = import (pkgs.path + /nixos/tests/nginx/proxyprotocol/snakeoil-certs.nix);
   cert = certificates."*.test.nix".cert;
+  tlsCA = certificates.ca.cert;
   key = certificates."*.test.nix".key;
   fixtures = lib.fileset.toSource {
     root = ../.;
-    fileset = lib.fileset.fileFilter (file: file.hasExt "py") ../fixtures;
+    fileset = lib.fileset.unions [
+      ../fixtures/__init__.py
+      ../fixtures/vm_network_fixture.py
+      ../fixtures/dns_fixture.py
+      ../fixtures/network_fixture.py
+    ];
   };
   fixture = "${pkgs.coreutils}/bin/env PYTHONPATH=${fixtures} ${python}/bin/python3 -m fixtures.vm_network_fixture";
   hyConfig = pkgs.writeText "synthetic-hysteria-server.json" (
@@ -613,6 +628,12 @@ in
       networking.firewall.enable = false;
       nix.settings.experimental-features = [ "nix-command" ];
       virtualisation.additionalPaths = [ cachePayload ];
+      virtualisation.emptyDiskImages = [ 2048 ];
+      virtualisation.fileSystems."/persist" = {
+        device = "/dev/vdb";
+        fsType = "ext4";
+        autoFormat = true;
+      };
       services.dockerRegistry = {
         enable = true;
         listenAddress = "192.168.1.30";
@@ -658,7 +679,8 @@ in
       };
       environment.systemPackages = [
         pkgs.headscale
-        oranc
+        pkgs.gitMinimal
+        pkgs.dig
       ];
       networking.interfaces.eth1 = {
         ipv4.addresses = lib.mkForce (
@@ -804,10 +826,41 @@ in
     target.wait_for_unit("headscale.service")
     target.wait_for_open_port(443, addr="192.168.1.30")
     target.wait_for_unit("docker-registry.service")
+    target.succeed("mkdir -p /persist/tools/tmp/devtools/network /persist/tools/.github/workflows; git init -q /persist/tools")
+    with subtest("development tool policies support their ordinary workflows"):
+        directory = "/persist/tools/tmp/devtools/network"
+        configs = {
+            "proxy.json": {"listen-addrs": ["127.0.0.1"], "listen-ports": [11554], "upstream": ["192.168.1.20:53"]},
+            "sing-box.json": {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": 11080}],
+                              "outbounds": [{"type": "direct", "tag": "direct"}]},
+            "collector.json": {"pipelines": [
+                {"name": "input", "dnstap": {"sock-path": directory + "/dnstap.sock"}, "routing-policy": {"forward": ["output"]}},
+                {"name": "output", "stdout": {"mode": "json", "flush-interval": 0.1}}]},
+        }
+        for filename, config in configs.items():
+            target.succeed("printf %s " + shlex.quote(json.dumps(config)) + " > " + directory + "/" + filename)
+        lua = 'setLocal("127.0.0.1:11553")\nsetACL({"127.0.0.0/8"})\nnewServer({address="127.0.0.1:11554"})\n'
+        lua += 'local log=newFrameStreamUnixLogger("' + directory + '/dnstap.sock")\naddAction(AllRule(),DnstapLogAction("devtools",log))\n'
+        target.succeed("printf %s " + shlex.quote(lua) + " > " + directory + "/dnsdist.conf")
+        workflow = 'name: fixture\non: push\njobs:\n  check:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo ready\n'
+        target.succeed("printf %s " + shlex.quote(workflow) + " > /persist/tools/.github/workflows/check.yml")
+        target.succeed("cd /persist/tools; ${devTools.actionlint}/bin/actionlint")
+        for name, command in (
+            ("collector", "${devTools.dns-collector}/bin/go-dnscollector -config collector.json"),
+            ("dnsproxy", "${devTools.dnsproxy}/bin/dnsproxy --config-path proxy.json"),
+            ("dnsdist", "${devTools.dnsdist}/bin/dnsdist --supervised --disable-syslog -C dnsdist.conf"),
+            ("proxy", "${devTools.sing-box}/bin/sing-box run -c sing-box.json"),
+        ):
+            target.succeed(f"systemd-run --unit=devtools-{name} --property=WorkingDirectory={directory} {command}")
+        target.wait_until_succeeds("dig @127.0.0.1 -p 11553 +short tools.example.org | grep -Fx 192.168.1.20")
+        target.succeed("curl --fail --max-time 15 --proxy socks5h://127.0.0.1:11080 http://198.51.100.30:18080/")
+        target.wait_until_succeeds("journalctl -u devtools-collector --no-pager | grep tools.example.org")
+        target.succeed("systemctl stop devtools-collector devtools-dnsproxy devtools-dnsdist devtools-proxy")
     target.succeed("umask 077; nix key generate-secret --key-name network-cache-test > /run/cache-signing-key")
-    publisher = "oranc push --registry cache.test.nix:5000 --repository synthetic/network-cache --no-closure --parallel 1 --zstd-level 3"
-    target.succeed('ORANC_SIGNING_KEY="$(cat /run/cache-signing-key)" ' + publisher + " initialize --priority 41")
-    target.succeed("printf '%s\\n' '${cachePayload}' | ORANC_SIGNING_KEY=\"$(cat /run/cache-signing-key)\" " + publisher)
+    publisher = "${devTools.oranc}/bin/oranc push --registry cache.test.nix:5000 --repository synthetic/network-cache --no-closure --parallel 1 --zstd-level 3"
+    publisher = "cd /persist/tools; " + 'ORANC_SIGNING_KEY="$(cat /run/cache-signing-key)" ' + publisher
+    target.succeed(publisher + " initialize --priority 41")
+    target.succeed(publisher + " <<'PATHS'\n${cachePayload}\nPATHS")
     cache_nar_hash = target.succeed("nix hash path --type sha256 --base16 ${cachePayload}").strip()
     # Exercise independent combinations first, with one client VM at a time.
     for node, address in ((dnsOnly, "192.168.1.11"), (dnsProxy, "192.168.1.12")):

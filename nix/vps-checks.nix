@@ -26,7 +26,10 @@ in
             root = ../.;
             fileset = pkgs.lib.fileset.unions [
               ../scripts/vps
-              ../scripts/network
+              ../scripts/network/render.py
+              ../scripts/network/domain_policy.py
+              ../scripts/network/rules.py
+              ../scripts/network/purposes.py
               ../data/network
               ../workers
               ../data/secrets/vps.example.yaml
@@ -35,9 +38,9 @@ in
               ../tests/integration/__init__.py
               ../tests/integration/vps.py
               ../tests/integration/vps-workers.mjs
-              ../tests/integration/network.py
-              ../tests/integration/dns.py
-              ../tests/fixtures
+              ../tests/fixtures/__init__.py
+              ../tests/fixtures/dns_fixture.py
+              ../tests/fixtures/network_fixture.py
             ];
           }
         }/. .

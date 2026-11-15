@@ -116,9 +116,4 @@ gh secret set NIX_CACHE_SIGNING_KEY < "$signing_key"
 
 ## 本地验证
 
-```sh
-nix build --no-link .#oranc
-nix develop .#laptop --command python3 -m tests.integration.cache
-```
-
-集成使用临时 registry 和合成密钥，覆盖范围见[验证指南](validation.md#完整验收与计时)。首次启用和权限变更还需通过真实 Actions 运行确认 GHCR 匿名访问、发布权限及后续缓存命中。
+升级 oranc 后构建 `nix build --no-link .#oranc`，再按[验证指南](validation.md#完整验收与计时)运行 OCI 集成。该流程使用临时 registry 和合成密钥；首次启用和权限变更通过真实 Actions 运行确认 GHCR 匿名访问、发布权限及后续缓存命中。

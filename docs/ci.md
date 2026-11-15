@@ -31,8 +31,9 @@ remote 只更新 `nixpkgs-remote`，laptop 更新自己的包集和桌面相关�
 | 步骤 | 内容 |
 | --- | --- |
 | 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
+| 基础检查 | 运行统一的 `lint`，检查源码与工作流 |
 | 缓存与工具 | 确认项目缓存可匿名读取，准备所选范围的工具；发布任务核对签名身份和写入权限 |
-| 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存和更新候选集成 |
+| 进程集成 | 分别执行 OCI 缓存和更新候选集成 |
 | 清单求值 | 分项求值所选范围的系统、工具、检查与 VM，合并独立求值的发布策略，生成构建及发布清单 |
 | 依赖构建 | 构建所选范围的依赖、系统、领域检查和 VM driver；后台上传成功产物 |
 | 依赖发布收尾 | 补齐已有产物和运行时引用，上传大对象并等待队列完成；构建失败也保留成功产物 |
@@ -79,7 +80,9 @@ Nix 获取 GitHub inputs、缓存读取和发布使用当前 job 自动提供的
 | `publisher.log`、`cache/status.json`、`published-paths.json` | 定位上传进程错误，核对退出状态和本轮成功发布的路径 |
 | `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘与 OOM 记录判断资源瓶颈 |
 | `oranc.log`、`monitor.log` | 按 UTC 时间对照缓存请求与 manifest 重试，排查缓存代理及资源采集故障 |
-| `vm/<pass>/<check>/` | VM 日志、截图与 OCR 记录，网络观察快照、通知诊断及应用工作流产物；具体目录见 summary 的 VM evidence |
+| `vm/<pass>/<check>/<attempt>/` | VM 日志、截图与 OCR 记录，网络观察快照、通知诊断及应用工作流产物；具体目录见 summary 的 VM evidence |
+
+VM 判定使用当前清单的 derivation 和输出路径，并且只采用该组最新一次已开始的执行。中断或失败的重跑会留下对应状态，较早的成功不会代替它；每次执行的证据保存在独立目录。summary 保留各次构建耗时，VM 表展示当前判定。
 
 构建目录及权限由 Nix 管理。VM 构建使用 `--keep-failed` 保留失败现场，原目录位置见构建日志，在 runner 生命周期结束时释放。构建进程结束后，工作流将已写出的测试输出收集到诊断 artifact；输出缺失和收集错误在 summary 中单独列出，构建结果照常记录。
 

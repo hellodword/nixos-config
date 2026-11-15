@@ -23,9 +23,20 @@ let
     if remote then
       [ "vps" ]
     else
-      lib.filter (name: name != "e2e" && !(lib.elem name allVMs)) (builtins.attrNames checks);
+      lib.filter (
+        name:
+        !(lib.elem name (
+          [
+            "e2e"
+            "lint"
+            "vm-files"
+          ]
+          ++ allVMs
+        ))
+      ) (builtins.attrNames checks);
   tools = import ./ci-tools.nix { inherit flake scope; };
   products = {
+    inherit (checks) lint;
     oranc = flake.packages.${system}.oranc;
     ci-tools = tools;
   }

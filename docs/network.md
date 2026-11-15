@@ -38,24 +38,7 @@ flowchart TD
 
 共同策略先拦截 PCDN，再处理 SSH/RDP：常见端口及 sing-box 可识别的应用协议按目标公网 IP 分流，国内使用 `direct`，其余使用 `hideme`。域名目标先解析真实地址，再判断归属。各平台自己的本地网络规则，以及排序在共同策略之前的用户例外，先于这些分类。
 
-接着匹配 `downloads`；随后处理 infrastructure 流量，即 `geosite-category-doh` 中的域名和 TCP 853，同样按目标公网 IP 选择国内 `direct`、其余 `hideme`。这些解析服务的域名通过 `hideme` 查询地址，系统 DNS 的固定上游隧道仍使用各用途配置的解析出口。其余域名按下表顺序匹配。
-
-| 用途 | 覆盖内容 |
-| --- | --- |
-| `downloads` | Cargo、npm、Go 依赖，Nix 缓存，Docker/GHCR，GitHub 发布附件，Google 下载和共享存储，Apple、Windows、Office 更新，VS Code，F-Droid 与官方 HTTPS 镜像 |
-| `cryptocurrency` | 加密货币服务、交易所及行情 |
-| `ai` | OpenAI、Anthropic |
-| `payment` | PayPal、Stripe |
-| `giffgaff` | Giffgaff |
-| `linuxdo` | LinuxDO、静态资源及关联服务 |
-| `streaming` | Netflix、Hulu、HBO、Disney、Spotify、Prime Video、YouTube、Apple TV、Twitch |
-| `apns` | Apple 推送 |
-| `social` | Imgur、Reddit、Facebook、Twitter/X、LinkedIn、Discord、Tumblr、4chan、Pixiv、Hacker News |
-| `hideme` | Proton、Telegram、Tor、成人站点、GitHub/GitLab、XDA |
-| `tiktok` | TikTok |
-| `google` | Google 通用服务 |
-| `microsoft` | Microsoft、Edge 通用服务 |
-| `apple` | Apple 通用服务 |
+接着匹配 `downloads`；随后处理 infrastructure 流量，即 `geosite-category-doh` 中的域名和 TCP 853，同样按目标公网 IP 选择国内 `direct`、其余 `hideme`。这些解析服务的域名通过 `hideme` 查询地址，系统 DNS 的固定上游隧道仍使用各用途配置的解析出口。其余域名按 [purposes.toml](../data/network/purposes.toml) 中的顺序匹配；用途、覆盖范围和原生规则源直接在该文件中维护。
 
 下载分类优先。例如 GitHub 页面使用 `hideme`，release 附件使用 `downloads`；`storage.googleapis.com` 及其子域中的文件和应用附件都使用 `downloads`。YouTube 先于 Google，Apple TV 和 APNs 先于 Apple。用途与出口协议相互独立，`downloads` 可绑定到 VPS 的 native 出口。
 

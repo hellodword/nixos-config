@@ -16,38 +16,15 @@ from types import SimpleNamespace
 import urllib.request
 
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port
-from tests.fixtures.network_fixture import http_server, socks_server, socks_http, serve
+from tests.fixtures.network_fixture import http_server, socks_server, socks_http, serve, proxy_process
 
 
 from tests.support import load_script
-from tests.integration import dns as dns_test
+from tests.fixtures import dns_stack as dns_test
 
 compiler = load_script("network/dns_policy.py")
 assembler = load_script("network/assemble.py")
 renderer = load_script("network/render.py")
-
-
-@contextlib.contextmanager
-def proxy_process(executable, root, log, port):
-    process = subprocess.Popen([executable, "run", "-D", str(root), "-c", str(root / "network.json")], stdout=log, stderr=log)
-    try:
-        deadline = time.monotonic() + 10
-        while True:
-            assert process.poll() is None, (root / "sing-box.log").read_text()
-            try:
-                with socket.create_connection(("127.0.0.1", port), timeout=0.1):
-                    break
-            except OSError:
-                assert time.monotonic() < deadline, "proxy listener did not become ready"
-                time.sleep(0.05)
-        yield
-    finally:
-        process.terminate()
-        try:
-            process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
 
 
 def remote_ip_rules(executable, root):
