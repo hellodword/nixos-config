@@ -399,10 +399,10 @@ def main():
             installer = client / "scripts/nix-cache.sh"
             shutil.copyfile(ROOT / "scripts/nix-cache.sh", installer)
             shutil.copyfile(ROOT / "nix/cache-config.nix", client / "nix/cache-config-base.nix")
-            (client / "flake.nix").write_text(
-                "{ nixConfig = builtins.fromJSON " + json.dumps(json.dumps({
-                    "extra-substituters": [public_uri], "extra-trusted-public-keys": [upstream_public],
-                })) + "; }\n"
+            (client / "nix/public-caches.nix").write_text(
+                "builtins.fromJSON " + json.dumps(json.dumps({
+                    "substituters": [public_uri], "trusted-public-keys": [upstream_public],
+                })) + "\n"
             )
             (client / "nix/cache-identity.json").write_text(json.dumps({"repository": "synthetic/cache-test", "publicKey": public}))
             project = {"listenAddress": "127.0.0.1", "port": proxy_port, "publicKey": public,

@@ -4,7 +4,7 @@
 
 本项目的 laptop 主机和 CI 自动配置构建缓存，其他开发环境需要[安装客户端配置](#开发容器及其他-nix-客户端)。这些设置持久生效，构建其他 flake 项目时同样使用，无需在每次运行 Nix 时添加参数。VPS 由维护机构建后通过 Colmena 接收完整闭包。
 
-添加或移除公共缓存时，修改 [flake.nix](../flake.nix) 的 `nixConfig`；更换项目缓存仓库或签名身份时，修改 [cache-identity.json](../nix/cache-identity.json)。代理地址和端口在 [cache-config.nix](../nix/cache-config.nix) 中设置。修改后，NixOS 主机重新部署配置，其他客户端重新执行安装命令。
+添加或移除公共缓存时，修改 [public-caches.nix](../nix/public-caches.nix)；更换项目缓存仓库或签名身份时，修改 [cache-identity.json](../nix/cache-identity.json)。代理地址和端口在 [cache-config.nix](../nix/cache-config.nix) 中设置。修改后，NixOS 主机重新部署配置，其他客户端重新执行安装命令。
 
 缓存需要包含构建所请求的精确 store path。自定义源码或构建参数可能产生公共缓存没有的路径，由项目缓存补充；刚初始化的项目缓存还需要经过构建和发布才有软件产物。
 
@@ -18,7 +18,7 @@ package 的创建、Public 和 Actions Write 设置见 [CI 首次启用](ci.md#�
 
 主机通过 `site.cache` 指定项目仓库、公钥、监听地址和端口。默认只监听本机；需要与 Docker 容器共用时，选择容器可达的宿主地址，并在依赖网桥时安排服务在 Docker 之后启动。[laptop2 的主机配置](../hosts/laptop2/default.nix)采用统一声明的网桥地址，可作为此类配置的实例。
 
-切换配置后，`nixos-rebuild`、`nix build` 和 `nix develop` 自动使用公共缓存与项目缓存，并验证签名。首次切换的构建使用旧代次的 Nix 配置。公共 GHCR 包可匿名读取，消费端只需公钥，无需签名私钥或 registry token。容器访问由[私网访问策略](network.md#私网开发访问与公网入站)管理。
+系统配置激活后，普通用户和 root 执行 `nixos-rebuild`、`nix build` 和 `nix develop` 时自动使用公共缓存与项目缓存，并验证签名，无需逐个用户确认缓存设置。`nixos-rebuild switch` 立即激活，`boot` 在下次启动时生效；构建过程使用当前已激活的 Nix 配置。公共 GHCR 包可匿名读取，消费端只需公钥，无需签名私钥或 registry token。容器访问由[私网访问策略](network.md#私网开发访问与公网入站)管理。
 
 在采用统一声明的主机上，可从仓库根目录检查已初始化的缓存：
 
@@ -54,9 +54,7 @@ sudo bash scripts/nix-cache.sh install --system
 sudo systemctl restart nix-daemon.service
 ```
 
-系统模式写入 `${NIX_CONF_DIR:-/etc/nix}`，由当前平台的服务管理器重启运行中的 daemon。NixOS 主机通过声明式配置和 `nixos-rebuild` 应用。若设置了 `NIX_USER_CONF_FILES`，需确认它包含安装目标的 `nix.conf`；`NIX_CONFIG` 和命令行遵循 Nix 自身的优先级。
-
-直接打开 flake 时，Nix 可能另外要求确认仓库内的缓存设置，审阅 URL 和公钥后再决定是否接受。忽略这份 flake 设置不会移除已安装的持久设置，可用 `nix config show` 核对。配置层次与 daemon 行为见 [Nix 配置文档](https://nix.dev/manual/nix/2.34/command-ref/conf-file.html)。
+系统模式写入 `${NIX_CONF_DIR:-/etc/nix}`，由当前平台的服务管理器重启运行中的 daemon。NixOS 主机通过声明式配置和 `nixos-rebuild` 应用。若设置了 `NIX_USER_CONF_FILES`，需确认它包含安装目标的 `nix.conf`；`NIX_CONFIG` 和命令行遵循 [Nix 自身的优先级](https://nix.dev/manual/nix/2.34/command-ref/conf-file.html)。
 
 ## 发布范围
 

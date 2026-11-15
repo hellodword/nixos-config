@@ -1,8 +1,5 @@
 let
-  flakeConfig = (import ../flake.nix).nixConfig;
-  publicSettings = {
-    substituters = flakeConfig.extra-substituters;
-    trusted-public-keys = flakeConfig.extra-trusted-public-keys;
+  publicSettings = (import ./public-caches.nix) // {
     require-sigs = true;
   };
   project = (builtins.fromJSON (builtins.readFile ./cache-identity.json)) // {
