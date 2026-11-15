@@ -47,7 +47,8 @@ def generate(vps, directory):
         provider = vps.provider(subscription_id)
         for name, value in {"linux.json": provider, "sing-box.json": mobile(provider),
                             "shadowrocket.txt": shadowrocket_nodes(provider),
-                            "shadowrocket.conf": shadowrocket(provider, subscription["name"]),
+                            "shadowrocket.conf": shadowrocket(provider),
+                            "shadowrocket-config.conf": shadowrocket(provider, subscription["name"]),
                             "metadata.json": {"id": subscription_id, "name": subscription["name"]}}.items():
             write(subscription_worker / "assets" / subscription["path"][1:] / name, value)
             write(directory / "subscriptions" / subscription_id / name, value)

@@ -121,21 +121,38 @@ class InventoryProtocol(unittest.TestCase):
             mobile = json.loads((directory / "sing-box.json").read_text())
             self.assertEqual([node for node in mobile["outbounds"] if node["tag"] in tags], decoded)
             subprocess.run([CLIENT_SING_BOX, "check", "-c", str(directory / "sing-box.json")], check=True)
-            group_section = (directory / "shadowrocket.conf").read_text().partition("[Proxy Group]\n")[2].partition("\n[Rule]")[0]
-            groups = dict(line.split(" = ", 1) for line in group_section.splitlines() if line)
-            for name, exit_ in provider["exits"].items():
-                for group in (f"exit-{name}", f"exit-{name}-auto"):
-                    members = groups[group].split(", ")
-                    self.assertIn(title, members)
-                    self.assertIn("use=true", members)
-                    pattern = next(value.removeprefix("policy-regex-filter=") for value in members
-                                   if value.startswith("policy-regex-filter="))
-                    self.assertEqual({tag for tag in tags if re.fullmatch(pattern, tag)}, set(exit_["paths"]))
-                self.assertEqual(groups[f"exit-{name}"].split(", ")[:2], ["select", f"exit-{name}-auto"])
-            for name, binding in provider["groups"].items():
-                members = groups[name].split(", ")
-                self.assertEqual(members[1], "exit-" + binding["default"])
-                self.assertEqual(set(members[1:]), {"exit-" + name for name in binding["exits"]})
+            full = (directory / "shadowrocket.conf").read_text()
+            separate = (directory / "shadowrocket-config.conf").read_text()
+            proxy_section = full.partition("[Proxy]\n")[2].partition("\n[Proxy Group]")[0]
+            proxies = dict(line.split(" = ", 1) for line in proxy_section.splitlines() if line)
+            self.assertEqual(set(proxies), tags)
+            for node in decoded:
+                protocol, server, port, *options = proxies[node["tag"]].split(", ")
+                self.assertEqual((protocol, server, int(port)), (node["type"], node["server"], node["server_port"]))
+                options = dict(option.split("=", 1) for option in options)
+                self.assertEqual(json.loads(options["password"]), node["password"])
+                self.assertEqual(options["sni"], node["tls"]["server_name"])
+                self.assertEqual(options["skip-cert-verify"], "false")
+            self.assertEqual(full.partition("[Rule]\n")[2], separate.partition("[Rule]\n")[2])
+            for config, embedded in ((full, True), (separate, False)):
+                group_section = config.partition("[Proxy Group]\n")[2].partition("\n[Rule]")[0]
+                groups = dict(line.split(" = ", 1) for line in group_section.splitlines() if line)
+                for name, exit_ in provider["exits"].items():
+                    for group in (f"exit-{name}", f"exit-{name}-auto"):
+                        members = groups[group].split(", ")
+                        if embedded:
+                            self.assertEqual(set(members) & tags, set(exit_["paths"]))
+                        else:
+                            self.assertIn(title, members)
+                            self.assertIn("use=true", members)
+                            pattern = next(value.removeprefix("policy-regex-filter=") for value in members
+                                           if value.startswith("policy-regex-filter="))
+                            self.assertEqual({tag for tag in tags if re.fullmatch(pattern, tag)}, set(exit_["paths"]))
+                    self.assertEqual(groups[f"exit-{name}"].split(", ")[:2], ["select", f"exit-{name}-auto"])
+                for name, binding in provider["groups"].items():
+                    members = groups[name].split(", ")
+                    self.assertEqual(members[1], "exit-" + binding["default"])
+                    self.assertEqual(set(members[1:]), {"exit-" + name for name in binding["exits"]})
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "tmp/vps"
@@ -220,17 +237,19 @@ class InventoryProtocol(unittest.TestCase):
                     for agent, filename in (
                         ("SFA (sing-box 1.14; language en_US)", "sing-box.json"),
                         ("SFI (sing-box 1.14; language en_US)", "sing-box.json"),
-                        ("Shadowrocket/2.2", "shadowrocket.txt"),
+                        ("Shadowrocket/2.2", "shadowrocket.conf"),
                     ):
                         with self.subTest(agent=agent):
                             request = urllib.request.Request(url, headers={"User-Agent": agent})
                             with urllib.request.urlopen(request, timeout=2, context=tls) as response:
                                 self.assertEqual(response.read().decode(), (root / "subscriptions/primary" / filename).read_text())
-                    for client, filename in (("shadowrocket", "shadowrocket.txt"), ("shadowrocket-config", "shadowrocket.conf")):
-                        request = urllib.request.Request(url + "?client=" + client, headers={"User-Agent": "Shadowrocket/2.2"})
+                    for client, filename in (("shadowrocket", "shadowrocket.conf"),
+                                             ("shadowrocket-subscribe", "shadowrocket.txt"),
+                                             ("shadowrocket-config", "shadowrocket-config.conf")):
+                        request = urllib.request.Request(url + "?client=" + client, headers={"User-Agent": "SFI (sing-box 1.14)"})
                         with urllib.request.urlopen(request, timeout=2, context=tls) as response:
                             self.assertEqual(response.read().decode(), (root / "subscriptions/primary" / filename).read_text())
-                            if client == "shadowrocket-config":
+                            if client in ("shadowrocket", "shadowrocket-config"):
                                 title = inventory["subscriptions"]["primary"]["name"] + ".conf"
                                 self.assertEqual(response.headers["Content-Disposition"],
                                                  'attachment; filename="primary.conf"; filename*=UTF-8\'\'' + urllib.parse.quote(title, safe=""))

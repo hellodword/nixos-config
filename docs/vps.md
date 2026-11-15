@@ -398,7 +398,7 @@ cmp "tmp/vps/subscriptions/$subscription/linux.json" \
 unset subscription_url
 ```
 
-官方 sing-box 可直接导入完整 URL；Shadowrocket 分别导入[节点订阅和分流配置](#shadowrocket-导入)。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
+官方 sing-box 可直接导入完整 URL；Shadowrocket 可导入[完整配置或分开的节点订阅与分流配置](#shadowrocket-导入)。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
 
 ## 入口、出口与端口
 
@@ -470,16 +470,19 @@ Worker 根据官方 sing-box 或 Shadowrocket 的 UA 选择内容，也可通过
 | --- | --- |
 | `?client=linux` | 本项目使用的 provider |
 | `?client=sing-box` | 官方 sing-box 完整配置 |
-| `?client=shadowrocket` | Shadowrocket 节点订阅 |
-| `?client=shadowrocket-config` | Shadowrocket 分流配置 |
+| `?client=shadowrocket` | Shadowrocket 完整配置，包含节点、DNS、用途规则和出口组 |
+| `?client=shadowrocket-subscribe` | Shadowrocket 节点订阅 |
+| `?client=shadowrocket-config` | Shadowrocket 分流配置，通过订阅名称引用节点 |
 
 UA 无法识别时返回 400，提示指定 `client`。本项目下载 provider 时使用 `?client=linux`。Worker 通过 HTTPS 提供内容；完整订阅地址是访问凭据，应保存在私密位置。响应使用 `private, no-store`，Worker 访问日志保持关闭。
 
 ### Shadowrocket 导入
 
-在首页导入节点订阅，在配置页导入并启用分流配置。节点订阅保存连接地址、协议、认证信息和路径名；分流配置保存 DNS、用途规则及出口组。出口组通过 `name` 引用订阅，并按完整路径名筛选成员，保留自动选择和固定路径两种用法。
+在配置页导入并启用 `?client=shadowrocket`，即可使用包含节点的完整配置；省略参数且 UA 识别为 Shadowrocket 时返回相同内容。节点、DNS、用途规则和出口组随配置一起更新。
 
-准备材料后，在维护机生成两个导入链接。`subscription` 使用前面选择的订阅键名；提示输入的地址是 Cloudflare 路由前缀拼接订阅 UUID 的完整 HTTPS 地址：
+也可在首页导入 `?client=shadowrocket-subscribe` 节点订阅，再在配置页导入 `?client=shadowrocket-config` 分流配置。节点订阅保存连接地址、协议、认证信息和路径名；分流配置保存 DNS、用途规则及出口组。出口组通过 `name` 引用订阅，并按完整路径名筛选成员。两种导入方式都支持自动选择和固定路径。
+
+准备材料后，在维护机生成导入链接，选择完整配置或分开导入。`subscription` 使用前面选择的订阅键名；提示输入的地址是 Cloudflare 路由前缀拼接订阅 UUID 的完整 HTTPS 地址：
 
 ```sh
 python3 - "$subscription" <<'PY'
@@ -492,7 +495,9 @@ from urllib.parse import quote
 
 metadata = json.loads((Path("tmp/vps/subscriptions") / sys.argv[1] / "metadata.json").read_text())
 url = getpass.getpass("订阅的完整 HTTPS 地址：").strip()
-nodes = base64.b64encode((url + "?client=shadowrocket").encode()).decode()
+print("完整配置（含节点）：")
+print(f"shadowrocket://config/add/{url}?client=shadowrocket")
+nodes = base64.b64encode((url + "?client=shadowrocket-subscribe").encode()).decode()
 print("节点订阅：")
 print(f"shadowrocket://add/sub://{nodes}?remark={quote(metadata['name'], safe='')}")
 print("分流配置：")
@@ -502,7 +507,7 @@ PY
 
 节点导入链接带入订阅显示名，配置下载使用 `<name>.conf` 文件名。通过 HTTPS 地址手动添加节点订阅时，将备注填写为相同的 `name`；配置中的订阅引用按这个名称查找节点。
 
-连接地址或密码调整后更新首页订阅；DNS、用途规则或组设置调整后更新配置。入口、承载 VPS 或逻辑出口变化时，发布 Worker 后更新两者。修改显示名后同步修改首页订阅备注并更新配置。
+采用分开导入时，连接地址或密码调整后更新首页订阅；DNS、用途规则或组设置调整后更新配置。入口、承载 VPS 或逻辑出口变化时，发布 Worker 后更新两者。修改显示名后同步修改首页订阅备注并更新配置。
 
 ## 规则与 DNS
 

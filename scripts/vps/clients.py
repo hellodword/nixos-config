@@ -41,12 +41,22 @@ def shadowrocket_nodes(provider):
     return base64.b64encode(("\n".join(lines) + "\n").encode()).decode() + "\n"
 
 
-def shadowrocket(provider, subscription_name):
+def shadowrocket(provider, subscription_name=None):
     general, _, rules = (DATA / "shadowrocket-client.conf").read_text().partition("[Rule]\n")
-    lines = [general.rstrip(), "", "[Proxy Group]"]
+    lines = [general.rstrip()]
+    if subscription_name is None:
+        lines += ["", "[Proxy]"]
+        for node in provider["outbounds"]:
+            lines.append(f"{node['tag']} = {node['type']}, {node['server']}, {node['server_port']}, "
+                         f"password={json.dumps(node['password'])}, sni={node['tls']['server_name']}, "
+                         "skip-cert-verify=false, udp-relay=true")
+    lines += ["", "[Proxy Group]"]
     for name, exit_ in provider["exits"].items():
-        pattern = "^(?:" + "|".join(re.escape(path) for path in exit_["paths"]) + ")$"
-        members = f"{subscription_name}, use=true, policy-regex-filter={pattern}"
+        if subscription_name is None:
+            members = ", ".join(exit_["paths"])
+        else:
+            pattern = "^(?:" + "|".join(re.escape(path) for path in exit_["paths"]) + ")$"
+            members = f"{subscription_name}, use=true, policy-regex-filter={pattern}"
         lines.append(f"exit-{name}-auto = url-test, {members}" +
                      ", url=https://www.gstatic.com/generate_204, interval=180, tolerance=100")
         lines.append(f"exit-{name} = select, exit-{name}-auto, {members}")
