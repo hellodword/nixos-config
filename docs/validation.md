@@ -40,27 +40,17 @@ sing-box run -c config.json
 
 ## 配置求值
 
-修改共享 Nix 模块、系统组合或 flake 输出后，先在仓库根目录执行：
+修改共享 Nix 模块、系统组合或 flake 输出后，使用与 CI 相同的[清单求值入口](../.github/ci/evaluate.py)。它通过 nix-eval-jobs 分别求值系统、开发环境、配置场景和各组 VM，再合并发布策略；worker 按内存预算回收。每个条目的结果保存在 `evaluation.jsonl`，全部成功后生成 `policy.json`，供构建与缓存发布使用。
 
-```sh
-nix flake check --no-build --no-update-lock-file
-```
-
-求值检查已声明的系统、软件包、开发环境和检查定义，包括各组 VM 的配置。通过后，按改动影响选择产物构建和行为测试。共享模块的影响范围沿实际使用者确定，涵盖导入它的系统与测试组合。
-
-VPS 模块或仅 `nixpkgs-remote` 的升级，使用下面的 remote 清单求值，检查其系统、工具和测试；laptop 改动使用 laptop 清单。共享入口的变动执行完整 flake 求值和两组清单求值。交付前必须完成最终工作树对应范围的求值。求值后若继续修改相关配置，重新执行这一步；验证记录分别说明配置求值、产物构建和行为场景的结果。
-
-CI 使用同一[清单求值入口](../nix/ci.nix)，修改构建或发布清单时按影响范围执行：
+VPS 模块或仅 `nixpkgs-remote` 的升级执行 remote 清单，laptop 改动执行 laptop 清单；共享入口执行两组。共享模块的影响范围沿实际使用者确定，涵盖导入它的系统与测试组合。交付前完成最终工作树对应范围的求值，再按改动选择产物构建和行为测试；继续修改相关配置后重新求值。
 
 ```sh
 host=laptop2  # 换成要验证的主机
-SCOPE=laptop HOST="$host" nix eval --no-update-lock-file --json --impure \
-  --expr 'import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; scope = builtins.getEnv "SCOPE"; }' \
-  > /dev/null
+nix develop .#laptop --command python3 .github/ci/evaluate.py \
+  --scope laptop --host "$host" --state tmp/ci/laptop
 
-nix eval --no-update-lock-file --json --impure \
-  --expr 'import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); scope = "remote"; }' \
-  > /dev/null
+nix develop .#vps --command python3 .github/ci/evaluate.py \
+  --scope remote --state tmp/ci/remote
 ```
 
 ## 检查入口
@@ -72,7 +62,8 @@ nix eval --no-update-lock-file --json --impure \
 | `identity` | 公钥推导、已有身份自动注册、SSH 签名、Git 验签，以及换钥期间新旧身份共存 |
 | `network` | 配置组合、出口选择；真实 DNS/DoT/DoH 与代理进程、FakeIP 域名恢复和记录类型、远程规则更新及离线缓存、日志和故障 |
 | `desktop` | 字体匹配和混排、原生 Sway/i3 配置、显示布局选择，以及网络规则通知的确认流程 |
-| `configuration` | 独立合成 laptop 的能力组合、凭据绑定、服务与会话、持久化所有权和系统求值；临时 Git 仓库中的备份推送 |
+| `configuration-*` | 独立合成 laptop 的能力组合、服务与会话、持久化所有权和完整系统求值；`configuration-full` 同时构建凭据绑定产物 |
+| `git-backup` | 临时 Git 仓库中的本地备份与远端推送 |
 | `vm-network` | systemd 下的网络切换、规则下载与确认应用、失败与重启恢复，持续双栈流量、DNS、Tailscale、容器和日志隔离 |
 | `vm-backup` | 实际窗口触发、独立仓库、中断和有界关机、重启恢复、gVisor 通知与补发 |
 | `vm-desktop` | 三会话登录、注销、锁屏、钱包、壁纸、输入法与显示状态，以及加密启动和重启后的恢复 |
@@ -100,10 +91,9 @@ nix develop .#laptop --command python3 -m tests.integration.backup -v
 配置求值通过后，完整项目验收继续执行所选 host 的系统构建、领域检查、OCI 缓存与更新候选集成，以及所有 VM 场景。Home Manager 是系统构建的依赖，不单独构建。
 
 ```sh
-host=laptop2  # 换成要验证的主机
-nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
-nix build --no-link .#checks.x86_64-linux.backup .#checks.x86_64-linux.identity \
-  .#checks.x86_64-linux.network .#checks.x86_64-linux.desktop .#checks.x86_64-linux.configuration .#checks.x86_64-linux.vps
+# 使用上一步为所选 host 生成的清单。
+nix develop .#laptop --command python3 .github/ci/build.py private --state tmp/ci/laptop
+nix develop .#laptop --command python3 .github/ci/build.py dependencies --state tmp/ci/laptop
 nix develop .#laptop --command python3 -m tests.integration.cache
 nix develop .#laptop --command python3 -m tests.integration.updates
 ```
@@ -132,7 +122,9 @@ nix build --no-link --print-build-logs .#checks.x86_64-linux.e2e
 
 CI 的执行分组、资源安排与报告入口见[工作流说明](ci.md)。上面的原生 Nix 命令使用本机配置的资源限制，并行安排不一定与 CI 相同。
 
-OCI 集成使用真实 Nix 构建、原生构建钩子、临时公共缓存、registry 和合成密钥，验证构建期间即可读取成功产物、大对象在检查点发布、部分构建失败后的缓存保留，以及 registry 中断时的发布失败。它同时覆盖运行时引用、公共与项目缓存去重、许可筛选、跨缓存的签名和内容恢复及事件计时。上传与构建并发访问 Nix store，执行环境需允许 oranc 正常读取可写目录中的 Nix 数据库。更新候选集成使用临时 Git 上游和 Nix 生成的 lockfile，验证独立推进包集，以及后一组从前一组候选的新基线开始。网络 VM 另行验证宿主与 Docker 容器通过生产 oranc 服务读取缓存，以及网络和服务重启后的恢复。真实 GHCR 权限由 Actions 运行验证。
+OCI 集成使用真实 Nix 构建、原生构建钩子、临时公共缓存、registry 和合成密钥，验证构建期间即可读取成功产物、大对象在检查点发布、部分构建失败后的缓存保留，以及 registry 中断时的发布失败。它同时覆盖认证读取、NAR 下载中断后的构建与发布、诊断日志中的凭据隔离、运行时引用、公共与项目缓存去重、许可筛选、跨缓存的签名和内容恢复及事件计时。清单入口通过实际的求值错误验证逐项结果判定，并按清单核对 VM 结果。上传与构建并发访问 Nix store，执行环境需允许 oranc 正常读取可写目录中的 Nix 数据库。
+
+更新候选集成使用临时 Git 上游和 Nix 生成的 lockfile，验证独立推进包集，以及后一组从前一组候选的新基线开始。网络 VM 另行验证宿主与 Docker 容器通过生产 oranc 服务读取缓存，以及网络和服务重启后的恢复。真实 GHCR 权限由 Actions 运行验证。
 
 ## VM 场景的分工
 

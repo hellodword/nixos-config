@@ -64,7 +64,7 @@ jobs:
         run: |
           # Initialization publishes only nix-cache-info and needs no signing key.
           # Use the same finite descriptor limit as the verification container.
-          docker run --rm -i --ulimit nofile=65536:65536 \
+          docker run --rm -i --ulimit nofile=65536:65536 --memory=12g --memory-swap=20g \
             --volume "$GITHUB_WORKSPACE:/workspace:ro" --workdir /workspace \
             --env ORANC_USERNAME --env ORANC_PASSWORD \
             --env NIX_USER_CONF_FILES=/tmp/ci-nix.conf \
@@ -76,6 +76,9 @@ jobs:
           accept-flake-config = false
           max-jobs = 1
           cores = 0
+          fallback = true
+          max-substitution-jobs = 4
+          http-connections = 8
           CONFIG
           bash scripts/nix-cache.sh print --public-only >> /tmp/ci-nix.conf
           oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths .#oranc)
@@ -158,6 +161,7 @@ jobs:
           # allocate tens of GiB. Bound both limits for all container processes.
           docker run --detach --name nixos-ci --device /dev/kvm \
             --ulimit nofile=65536:65536 \
+            --memory=12g --memory-swap=20g \
             --volume nixos-ci-store:/nix \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --volume "$state:/ci" \
@@ -179,6 +183,9 @@ jobs:
           system-features = nixos-test benchmark big-parallel kvm
           max-jobs = 1
           cores = 0
+          fallback = true
+          max-substitution-jobs = 4
+          http-connections = 8
           CONFIG
           cat /ci/nix-base.conf > /ci/nix.conf
           bash scripts/nix-cache.sh print --public-only >> /ci/nix.conf
@@ -279,21 +286,34 @@ jobs:
             printf '\n%s\n' "${SKIP_REASON:-See the save action log for the cache service result.}"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Start the cache proxy and prepare tools
+        env:
+          ORANC_USERNAME: ${{ github.actor }}
+          ORANC_PASSWORD: ${{ github.token }}
         run: |
           python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase tools -- \
-            docker exec -i --env SCOPE nixos-ci bash -euo pipefail <<'BASH'
+            docker exec -i --env SCOPE --env ORANC_USERNAME --env ORANC_PASSWORD nixos-ci bash -euo pipefail <<'BASH'
+          if [[ "$SCOPE" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
+          export NIXPKGS_INPUT="$nixpkgs_input"
+          python_root=$(nix build --no-update-lock-file --no-link --print-out-paths --impure --expr \
+            '(builtins.getFlake ("git+file://" + toString ./.)).inputs.${builtins.getEnv "NIXPKGS_INPUT"}.legacyPackages.x86_64-linux.python3')
           listen=$(nix eval --raw --file nix/cache-config.nix ci.listen)
-          "$(cat /ci/oranc)" server --listen "$listen" > /ci/oranc.log 2>&1 < /dev/null &
+          # netrc matches a host, not a port. The proxy has its own loopback
+          # address so local integration fixtures do not receive this token.
+          (umask 077; printf 'machine %s\nlogin %s\npassword %s\n' \
+            "${listen%:*}" "$ORANC_USERNAME" "$ORANC_PASSWORD" > /ci/oranc.netrc)
+          RUST_LOG=oranc=info,oranc::registry=debug \
+            "$(cat /ci/oranc)" server --listen "$listen" < /dev/null 2>&1 | \
+            "$python_root/bin/python3" -u -c '
+          import datetime, sys
+          for line in sys.stdin:
+              print(datetime.datetime.now(datetime.timezone.utc).isoformat() + " " + line.rstrip())
+          ' > /ci/oranc.log 2>&1 &
           proxy_pid=$!
           for ((attempt=0; attempt<50; attempt++)); do
             if (exec 3<>"/dev/tcp/${listen%:*}/${listen##*:}") 2>/dev/null; then break; fi
             kill -0 "$proxy_pid"
             sleep 0.1
           done
-          if [[ "$SCOPE" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
-          export NIXPKGS_INPUT="$nixpkgs_input"
-          python_root=$(nix build --no-update-lock-file --no-link --print-out-paths --impure --expr \
-            '(builtins.getFlake ("git+file://" + toString ./.)).inputs.${builtins.getEnv "NIXPKGS_INPUT"}.legacyPackages.x86_64-linux.python3')
           cache_uri=$(nix eval --raw --file nix/cache-config.nix ci.uri)
           # A plain GET cannot turn a missing cache into an implicit PUT.
           "$python_root/bin/python3" - "$cache_uri" <<'PY'
@@ -311,6 +331,7 @@ jobs:
           PY
           cat /ci/nix-base.conf > /ci/nix.conf
           bash scripts/nix-cache.sh print --ci >> /ci/nix.conf
+          printf 'netrc-file = /ci/oranc.netrc\n' >> /ci/nix.conf
           nix build --no-update-lock-file --no-link --print-out-paths --impure --expr \
             'import ./nix/ci-tools.nix { flake = builtins.getFlake ("git+file://" + toString ./.); scope = builtins.getEnv "SCOPE"; }' > /ci/tools
           printf '%s/bin/python3\n' "$(cat /ci/tools)" > /ci/python
@@ -352,8 +373,8 @@ jobs:
         id: inventory
         run: |
           docker exec --env HOST --env SCOPE nixos-ci bash -euo pipefail -c '
-            nix eval --no-update-lock-file --json --impure --expr \
-              '\''import ./nix/ci.nix { flake = builtins.getFlake ("git+file://" + toString ./.); hostName = builtins.getEnv "HOST"; scope = builtins.getEnv "SCOPE"; }'\'' > /ci/policy.json
+            export PATH="$(cat /ci/tools)/bin:$PATH"
+            python3 .github/ci/evaluate.py --scope "$SCOPE" --host "$HOST" --state /ci
           '
       - name: Start incremental cache publication
         id: publisher
@@ -396,7 +417,7 @@ jobs:
         run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py vm-vps --jobs 1 --state /ci'
       - name: Assemble VM results
         if: ${{ !cancelled() && ((matrix.scope == 'remote' && steps.vps.outcome == 'success') || (matrix.scope == 'laptop' && steps.network-backup.outcome == 'success' && steps.desktop.outcome == 'success' && steps.applications.outcome == 'success')) }}
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/build.py aggregate --state /ci'
+        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/report.py verify --state /ci'
       - name: Complete result cache publication
         if: ${{ !cancelled() && github.ref == 'refs/heads/master' && steps.build.outcome == 'success' && steps.publish-dependencies.outcome == 'success' }}
         run: |
@@ -410,6 +431,7 @@ jobs:
         run: |
           state="$RUNNER_TEMP/nixos-ci"
           mkdir -p "$state"
+          rm -f -- "$state/oranc.netrc"
           touch "$state/monitor.stop"
           if container_pid=$(docker inspect --format '{{.State.Pid}}' nixos-ci); then
             python3 .github/ci/report.py sample --state "$state" --container-pid "$container_pid" || true
@@ -429,6 +451,7 @@ jobs:
           retention-days: 7
           path: |
             ${{ runner.temp }}/nixos-ci/timings.jsonl
+            ${{ runner.temp }}/nixos-ci/evaluation.jsonl
             ${{ runner.temp }}/nixos-ci/publication-paths.jsonl
             ${{ runner.temp }}/nixos-ci/published-paths.json
             ${{ runner.temp }}/nixos-ci/publisher.log

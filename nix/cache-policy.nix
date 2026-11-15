@@ -3,7 +3,6 @@
   flake,
   hostName,
   scope,
-  roots,
 }:
 let
   system = "x86_64-linux";
@@ -56,7 +55,6 @@ let
 in
 if scope == "remote" then
   {
-    roots = map (package: package.drvPath) roots;
     excludedPaths = [ ];
     excludedDerivations = [ ];
     bundles = [ ];
@@ -64,7 +62,6 @@ if scope == "remote" then
   }
 else
   {
-    roots = map (package: package.drvPath) roots;
     excludedPaths = lib.unique (
       lib.concatMap (
         package: outputs package ++ lib.optional (package ? src) (toString package.src)

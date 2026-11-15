@@ -41,5 +41,5 @@ in
   inherit project publicSettings withProject;
   public.text = render publicSettings;
   local = withProject project;
-  ci = withProject (project // { listenAddress = "127.0.0.1"; });
+  ci = withProject (project // { listenAddress = "127.0.0.2"; });
 }

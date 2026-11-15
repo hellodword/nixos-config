@@ -12,6 +12,7 @@ pkgs.buildEnv {
     pkgs.actionlint
     pkgs.shellcheck
     pkgs.nixfmt
+    pkgs.nix-eval-jobs
     pkgs.distribution
     flake.packages.x86_64-linux.oranc
   ];

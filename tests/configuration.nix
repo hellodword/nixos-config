@@ -187,43 +187,54 @@ let
     assert lib.assertMsg (
       persistentState config == persistentState laptop.config
     ) "${name}: disabling a capability changed the laptop state inventory";
-    builtins.deepSeq config.system.build.toplevel.drvPath { inherit name actual; };
+    builtins.deepSeq config.system.build.toplevel.drvPath (
+      pkgs.runCommand "configuration-${name}.json" (
+        {
+          scenario = pkgs.writeText "scenario.json" (builtins.toJSON { inherit name actual; });
+        }
+        // lib.optionalAttrs (name == "full") {
+          credentials = config.system.build.sops-nix-manifest;
+          loginCredentials = config.system.build.sops-nix-users-manifest;
+        }
+      ) ''cp "$scenario" "$out"''
+    );
 in
-pkgs.runCommand "configuration-scenarios.json"
-  {
-    nativeBuildInputs = [
-      pkgs.git
-      pkgs.bash
-    ];
-    scenarios = pkgs.writeText "scenarios.json" (builtins.toJSON (lib.mapAttrsToList evaluate cases));
-    credentials = laptop.config.system.build.sops-nix-manifest;
-    loginCredentials = laptop.config.system.build.sops-nix-users-manifest;
-  }
-  ''
-    export HOME="$TMPDIR/home" GIT_CONFIG_NOSYSTEM=1
-    mkdir -p "$HOME"
-    git init --bare upstream
-    git init work
-    cd work
-    git config user.name Fixture
-    git config user.email fixture@example.invalid
-    git config alias.backup ${
-      lib.escapeShellArg laptop.config.home-manager.users.${userName}.programs.git.settings.alias.backup
-    }
-    git remote add origin "$NIX_BUILD_TOP/upstream"
-    git backup project
-    for revision in first second; do
-      echo "$revision" > document
-      git add document
-      git commit -m "$revision"
-      git push origin HEAD:refs/heads/main
-      test "$(git rev-parse HEAD)" = "$(git --git-dir="$HOME/backups/git/project" rev-parse refs/heads/main)"
-      test "$(git rev-parse HEAD)" = "$(git --git-dir="$NIX_BUILD_TOP/upstream" rev-parse refs/heads/main)"
-    done
-    git remote remove origin
-    git remote remove laptop-git-backup
-    git backup -f local-only
-    git push laptop-git-backup HEAD:refs/heads/main
-    test "$(git rev-parse HEAD)" = "$(git --git-dir="$HOME/backups/git/local-only" rev-parse refs/heads/main)"
-    cp "$scenarios" "$out"
-  ''
+lib.mapAttrs' (name: spec: lib.nameValuePair "configuration-${name}" (evaluate name spec)) cases
+// {
+  git-backup =
+    pkgs.runCommand "git-backup"
+      {
+        nativeBuildInputs = [
+          pkgs.git
+          pkgs.bash
+        ];
+      }
+      ''
+        export HOME="$TMPDIR/home" GIT_CONFIG_NOSYSTEM=1
+        mkdir -p "$HOME"
+        git init --bare upstream
+        git init work
+        cd work
+        git config user.name Fixture
+        git config user.email fixture@example.invalid
+        git config alias.backup ${
+          lib.escapeShellArg laptop.config.home-manager.users.${userName}.programs.git.settings.alias.backup
+        }
+        git remote add origin "$NIX_BUILD_TOP/upstream"
+        git backup project
+        for revision in first second; do
+          echo "$revision" > document
+          git add document
+          git commit -m "$revision"
+          git push origin HEAD:refs/heads/main
+          test "$(git rev-parse HEAD)" = "$(git --git-dir="$HOME/backups/git/project" rev-parse refs/heads/main)"
+          test "$(git rev-parse HEAD)" = "$(git --git-dir="$NIX_BUILD_TOP/upstream" rev-parse refs/heads/main)"
+        done
+        git remote remove origin
+        git remote remove laptop-git-backup
+        git backup -f local-only
+        git push laptop-git-backup HEAD:refs/heads/main
+        test "$(git rev-parse HEAD)" = "$(git --git-dir="$HOME/backups/git/local-only" rev-parse refs/heads/main)"
+        touch "$out"
+      '';
+}

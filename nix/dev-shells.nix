@@ -52,6 +52,7 @@ let
           git
           openssh
           nixfmt
+          nix-eval-jobs
           shellcheck
           curl
           bubblewrap

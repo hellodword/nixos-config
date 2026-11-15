@@ -33,12 +33,12 @@ remote 只更新 `nixpkgs-remote`，laptop 更新自己的包集和桌面相关�
 | 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
 | 缓存与工具 | 确认项目缓存可匿名读取，准备所选范围的工具；发布任务核对签名身份和写入权限 |
 | 静态检查与集成 | 工作流、Shell、Nix 格式检查；读取实际发布配置，执行 OCI 缓存和更新候选集成 |
-| 清单求值 | 求值所选范围的系统、工具、检查与 VM driver，生成构建及发布清单 |
+| 清单求值 | 分项求值所选范围的系统、工具、检查与 VM，合并独立求值的发布策略，生成构建及发布清单 |
 | 依赖构建 | 构建所选范围的依赖、系统、领域检查和 VM driver；后台上传成功产物 |
 | 依赖发布收尾 | 补齐已有产物和运行时引用，上传大对象并等待队列完成；构建失败也保留成功产物 |
 | laptop VM | network、backup 依次运行，随后分别运行 desktop、applications |
 | remote VM | 从 BIOS/UEFI 交付镜像启动，执行 VPS 部署与代理场景 |
-| 汇总与发布收尾 | 该组 VM 场景通过后生成聚合结果；完成剩余产物的发布并结束上传进程 |
+| 汇总与发布收尾 | 按清单核对各项 VM 结果；完成剩余产物的发布并结束上传进程 |
 
 每个矩阵任务的步骤共享 runner、容器和 Nix store。任务依次运行，失败不跳过其他任务；各 runner 通过 GHCR 复用相同依赖和测试结果。remote 的构建清单直接使用 VPS 包集，客户端兼容检查只引用 laptop 的 sing-box 包。本地求值要求、清单复核命令与检查范围见[验证指南](validation.md)。
 
@@ -59,11 +59,13 @@ GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证
 5. 在仓库 Settings → Secrets and variables → Actions 设置 `NIX_CACHE_SIGNING_KEY`，复用与仓库公钥配套的私钥。生成、核对及可选 CLI 上传命令见[缓存签名密钥](cache.md#签名密钥)。
 6. 在 master 手动运行 Verify and cache，保持 `initialize-cache` **不勾选**。确认验证和发布成功；再观察一次更新任务，核对 PR 合并的 SHA 与验证的候选提交一致。
 
-Nix 获取 GitHub inputs 和缓存初始化使用当前 job 自动提供的临时 `GITHUB_TOKEN`，无需配置个人 token。package 的公开设置和访问角色由上述网页步骤管理。日常验证在系统构建前检查匿名读取，发布任务还检查签名身份和写入权限；失败时先核对 package 设置及签名密钥。
+Nix 获取 GitHub inputs、缓存读取和发布使用当前 job 自动提供的临时 `GITHUB_TOKEN`，无需配置个人 token。package 的公开设置和访问角色由上述网页步骤管理。日常验证在系统构建前检查匿名读取，发布任务还检查签名身份和写入权限；失败时先核对 package 设置及签名密钥。
 
 ## 资源和故障记录
 
-依赖构建一次执行一个 derivation，供它使用全部可用 CPU，避免多个编译器同时争抢内存。CI 使用自己的 Nix 配置；runner、超时、磁盘清理和 swap 设置集中在[验证工作流](../.github/workflows/ci.yml)，VM 的资源需求由[测试定义](../tests/vm)负责。
+清单求值由 nix-eval-jobs 在内存预算内调度独立条目，逐项记录成功或错误；全部条目与发布策略完成后才写出供后续使用的清单。求值期间每分钟向 Actions 控制台输出资源概要，便于在 runner 失联时定位最后的资源状况。
+
+依赖构建一次执行一个 derivation，供它使用全部可用 CPU，避免多个编译器同时争抢内存。CI 容器限制内存及 swap 总量，为 runner 留出空间。CI 使用自己的 Nix 配置；runner、超时、磁盘清理和资源限制集中在[验证工作流](../.github/workflows/ci.yml)，求值预算位于[清单入口](../.github/ci/evaluate.py)，VM 的资源需求由[测试定义](../tests/vm)负责。
 
 容器的 `nofile` 上限需要保持有界：gawk 会据此分配管道管理数组，接近无限的默认值可能导致数十 GiB 的内存分配。调整 runner 或容器启动方式时，应保留工作流中的这项限制。
 
@@ -72,10 +74,11 @@ Nix 获取 GitHub inputs 和缓存初始化使用当前 job 自动提供的临�
 | 记录 | 用途 |
 | --- | --- |
 | summary、`timings.jsonl` | 查看各阶段墙钟时间及耗时依赖，区分实际执行与缓存复用；查看后台查询、上传数量与体积，以及发布检查点的等待时间和结果 |
+| `evaluation.jsonl` | 查看各个求值条目的 derivation、输出、耗时和错误 |
 | `publication-paths.jsonl` | 核对每次发布选中的路径、再分发排除项、公共及项目缓存命中，以及待上传路径的 NAR 大小 |
 | `publisher.log`、`cache/status.json`、`published-paths.json` | 定位上传进程错误，核对退出状态和本轮成功发布的路径 |
 | `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘与 OOM 记录判断资源瓶颈 |
-| `oranc.log`、`monitor.log` | 排查缓存代理及资源采集故障 |
+| `oranc.log`、`monitor.log` | 按 UTC 时间对照缓存请求与 manifest 重试，排查缓存代理及资源采集故障 |
 | `vm/<pass>/<check>/` | VM 日志、截图与 OCR 记录，网络观察快照、通知诊断及应用工作流产物；具体目录见 summary 的 VM evidence |
 
 构建目录及权限由 Nix 管理。VM 构建使用 `--keep-failed` 保留失败现场，原目录位置见构建日志，在 runner 生命周期结束时释放。构建进程结束后，工作流将已写出的测试输出收集到诊断 artifact；输出缺失和收集错误在 summary 中单独列出，构建结果照常记录。
@@ -83,5 +86,7 @@ Nix 获取 GitHub inputs 和缓存初始化使用当前 job 自动提供的临�
 后台缓存查询和上传与构建重叠，发布检查点的等待时间反映阶段结束后的剩余工作。比较运行效率时看任务总墙钟时间和检查点等待时间，后台耗时不与构建耗时相加。
 
 SIGKILL 本身不能证明 OOM，需要结合资源记录与内核日志。构建活动结束也不等于构建成功；未结束的活动只记录到命令退出为止。VM 耗时的比较方式见[完整验收与计时](validation.md#完整验收与计时)。
+
+NAR 下载中断时，对照 Nix 客户端错误、`oranc.log` 中的路径和时间。代理的流式响应日志不能覆盖所有底层传输错误；判断限流需要实际的限流响应或其他服务端证据。
 
 缓存的发布范围、失败重试和历史对象保留见[缓存指南](cache.md#发布范围)。

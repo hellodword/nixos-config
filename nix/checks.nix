@@ -103,7 +103,6 @@ rec {
         python3 -m tests.integration.dns --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} > $out
         python3 -m tests.integration.network --sing-box ${pkgs.sing-box}/bin/sing-box --template ${policy} --purpose-policy ${purposePolicy} --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} >> $out
       '';
-  configuration = import ../tests/configuration.nix { inherit pkgs laptop userName; };
   desktop = import ../tests/desktop.nix {
     inherit pkgs userName;
     config = laptop.config;
@@ -137,3 +136,4 @@ rec {
       ]
   );
 }
+// import ../tests/configuration.nix { inherit pkgs laptop userName; }

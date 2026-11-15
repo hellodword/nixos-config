@@ -25,67 +25,46 @@ let
     else
       lib.filter (name: name != "e2e" && !(lib.elem name allVMs)) (builtins.attrNames checks);
   tools = import ./ci-tools.nix { inherit flake scope; };
-  products = [
-    flake.packages.${system}.oranc
-    tools
-  ]
-  ++ (
+  products = {
+    oranc = flake.packages.${system}.oranc;
+    ci-tools = tools;
+  }
+  // (
     if remote then
-      [
-        flake.devShells.${system}.vps
-        flake.packages.${system}.vps-python
-        flake.packages.${system}.wrangler
-      ]
+      {
+        dev-shell = flake.devShells.${system}.vps;
+        inherit (flake.packages.${system}) vps-python wrangler;
+      }
     else
-      [
-        host.config.system.build.toplevel
-        flake.devShells.${system}.laptop
-      ]
+      {
+        system = host.config.system.build.toplevel;
+        dev-shell = flake.devShells.${system}.laptop;
+      }
   );
-  aggregate = pkgs.linkFarm "${scope}-vm-tests" (
+  drivers = builtins.listToAttrs (
     map (name: {
-      inherit name;
-      path = checks.${name};
+      name = "${name}-driver";
+      value = checks.${name}.driver;
     }) vmNames
   );
-  roots = products ++ map (name: checks.${name}) (checkNames ++ vmNames) ++ [ aggregate ];
-  policy = import ./cache-policy.nix {
-    inherit
-      flake
-      hostName
-      scope
-      roots
-      ;
-  };
-  build = name: package: {
-    inherit name;
-    drv = package.drvPath;
-    outputs = map (output: toString package.${output}) package.outputs;
-  };
-  vm = name: (build name checks.${name}) // { vm = true; };
 in
 assert lib.assertMsg (lib.elem scope [
   "laptop"
   "remote"
 ]) "CI scope must be laptop or remote";
-(builtins.removeAttrs policy [ "privateBuilds" ])
-// {
-  inherit scope;
-  builds = {
-    private = policy.privateBuilds;
-    dependencies =
-      map (package: build (lib.getName package) package) products
-      ++ map (name: build name checks.${name}) checkNames
-      ++ map (name: build "${name}-driver" checks.${name}.driver) vmNames;
-    vm-network-backup = lib.optionals (!remote) (
-      map vm [
-        "vm-network"
-        "vm-backup"
-      ]
-    );
-    vm-desktop = lib.optionals (!remote) [ (vm "vm-desktop") ];
-    vm-applications = lib.optionals (!remote) [ (vm "vm-applications") ];
-    vm-vps = lib.optionals remote [ (vm "vm-vps") ];
-    aggregate = [ (build "${scope}-e2e" aggregate) ];
+{
+  # Listing groups does not force the system or test derivations. Each job is
+  # evaluated independently by nix-eval-jobs before Python assembles the manifest.
+  jobs = products // drivers // lib.genAttrs (checkNames ++ vmNames) (name: checks.${name});
+  groups = {
+    dependencies = builtins.attrNames products ++ checkNames ++ builtins.attrNames drivers;
+    vm-network-backup = lib.optionals (!remote) [
+      "vm-network"
+      "vm-backup"
+    ];
+    vm-desktop = lib.optionals (!remote) [ "vm-desktop" ];
+    vm-applications = lib.optionals (!remote) [ "vm-applications" ];
+    vm-vps = lib.optionals remote [ "vm-vps" ];
   };
+  policy = import ./cache-policy.nix { inherit flake hostName scope; };
 }

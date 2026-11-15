@@ -84,6 +84,23 @@ def duration(seconds):
     return f"{seconds / 60:.2f} min"
 
 
+def verify_results(state, pass_name):
+    policy = json.loads((state / "policy.json").read_text())
+    expected = {(phase, item["name"]) for phase, entries in policy["builds"].items()
+                for item in entries if item.get("vm")}
+    events = [event for event in read_records(state / "timings.jsonl") if event.get("pass") == pass_name]
+    batches = {event["phase"]: event["returncode"] for event in events if event["kind"] == "build"}
+    targets = {(event["phase"], event["name"]): event["success"]
+               for event in events if event["kind"] == "target" and event.get("vm")}
+    incomplete = sorted(name for phase, name in expected
+                        if not targets.get((phase, name)) or batches.get(phase) != 0)
+    record(state, {"kind": "verification", "pass": pass_name, "expected": len(expected),
+                   "incomplete": incomplete})
+    if incomplete:
+        raise RuntimeError("VM results incomplete: " + ", ".join(incomplete))
+    print(f"{pass_name}: all {len(expected)} required VM results succeeded")
+
+
 def render(state):
     events = read_records(state / "timings.jsonl")
     lines = ["## Nix build and VM results"]
@@ -93,6 +110,13 @@ def render(state):
                   "| Phase | Exit status | Wall time |", "| --- | --- | --- |"]
         for event in phases:
             lines.append(f"| {event['phase']} | {event['returncode']} | {duration(event['seconds'])} |")
+    evaluations = [event for event in events if event["kind"] == "evaluation"]
+    if evaluations:
+        lines += ["", "### Inventory evaluation", "",
+                  "| Job | Result | Evaluation time |", "| --- | --- | --- |"]
+        for event in evaluations:
+            lines.append(f"| {event['name']} | {'success' if event['success'] else 'failed'} | "
+                         f"{duration(event['seconds'])} |")
     cache_events = [event for event in events if event["kind"] in
                     ("publication", "cache-query", "cache-upload", "cache-checkpoint", "cache-error")]
     if cache_events:
@@ -204,11 +228,13 @@ def render(state):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="operation", required=True)
-    for operation in ("monitor", "sample", "summary"):
+    for operation in ("monitor", "sample", "summary", "verify"):
         subparser = subparsers.add_parser(operation)
         subparser.add_argument("--state", type=Path, required=True)
         if operation in ("monitor", "sample"):
             subparser.add_argument("--container-pid", type=int, required=True)
+        if operation == "verify":
+            subparser.add_argument("--pass-name", default="candidate")
     run = subparsers.add_parser("run", help="record wall time and exit status of a CI phase")
     run.add_argument("--state", type=Path, required=True)
     run.add_argument("--phase", required=True)
@@ -227,6 +253,8 @@ def main():
         monitor(args.state, args.container_pid)
     elif args.operation == "sample":
         resource_sample(args.state, cgroup_path(args.container_pid))
+    elif args.operation == "verify":
+        verify_results(args.state, args.pass_name)
     else:
         print(render(args.state), end="")
 
