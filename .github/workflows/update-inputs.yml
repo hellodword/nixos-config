@@ -32,9 +32,12 @@ jobs:
       - name: Update tracked inputs
         env:
           SCOPE: ${{ inputs.scope }}
+          NIX_CONFIG: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ github.token }}
         run: |
           docker run --rm --ulimit nofile=65536:65536 --env SCOPE --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace \
-            --env 'NIX_CONFIG=experimental-features = nix-command flakes' \
+            --env NIX_CONFIG \
             "$NIX_IMAGE" bash -euo pipefail -c '
               git config --global --add safe.directory /workspace
               if [[ "$SCOPE" == remote ]]; then

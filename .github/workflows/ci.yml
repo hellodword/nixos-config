@@ -58,6 +58,9 @@ jobs:
         env:
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}
+          NIX_CONFIG: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ github.token }}
         run: |
           # Initialization publishes only nix-cache-info and needs no signing key.
           # Use the same finite descriptor limit as the verification container.
@@ -65,7 +68,7 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/workspace:ro" --workdir /workspace \
             --env ORANC_USERNAME --env ORANC_PASSWORD \
             --env NIX_USER_CONF_FILES=/tmp/ci-nix.conf \
-            --env 'NIX_CONFIG=experimental-features = nix-command flakes' \
+            --env NIX_CONFIG \
             "$NIX_IMAGE" bash -euo pipefail <<'BASH'
           git config --global --add safe.directory /workspace
           cat > /tmp/ci-nix.conf <<'CONFIG'
@@ -130,6 +133,10 @@ jobs:
           test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE_SHA"
           git checkout --detach "$CANDIDATE_SHA"
       - name: Prepare disk, swap, KVM and Nix store
+        env:
+          NIX_CONFIG: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ github.token }}
         run: |
           state="$RUNNER_TEMP/nixos-ci"
           mkdir -p "$state" "$RUNNER_TEMP/nixos-build"
@@ -156,7 +163,7 @@ jobs:
             --volume "$state:/ci" \
             --volume "$RUNNER_TEMP/nixos-build:/build" \
             --workdir /workspace --env TMPDIR=/build --env NIX_USER_CONF_FILES=/ci/nix.conf \
-            --env 'NIX_CONFIG=experimental-features = nix-command flakes' \
+            --env NIX_CONFIG \
             "$NIX_IMAGE" sleep infinity
           docker exec nixos-ci git config --global --add safe.directory /workspace
           container_pid=$(docker inspect --format '{{.State.Pid}}' nixos-ci)

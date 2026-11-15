@@ -59,7 +59,7 @@ GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证
 5. 在仓库 Settings → Secrets and variables → Actions 设置 `NIX_CACHE_SIGNING_KEY`，复用与仓库公钥配套的私钥。生成、核对及可选 CLI 上传命令见[缓存签名密钥](cache.md#签名密钥)。
 6. 在 master 手动运行 Verify and cache，保持 `initialize-cache` **不勾选**。确认验证和发布成功；再观察一次更新任务，核对 PR 合并的 SHA 与验证的候选提交一致。
 
-初始化使用 GITHUB_TOKEN，package 的公开设置和访问角色由上述网页步骤管理。日常验证在系统构建前检查匿名读取，发布任务还检查签名身份和写入权限；失败时先核对 package 设置及签名密钥。
+Nix 获取 GitHub inputs 和缓存初始化使用当前 job 自动提供的临时 `GITHUB_TOKEN`，无需配置个人 token。package 的公开设置和访问角色由上述网页步骤管理。日常验证在系统构建前检查匿名读取，发布任务还检查签名身份和写入权限；失败时先核对 package 设置及签名密钥。
 
 ## 资源和故障记录
 
