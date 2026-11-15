@@ -10,7 +10,7 @@ VPS 的状态随根磁盘保留。这里采用普通持久系统，便于保留 
 
 从 [inventory 示例](../data/secrets/vps.example.yaml) 开始。示例地址、密钥和密码均需替换。每份订阅用 `openssl rand -hex 32` 生成一把独立的 `key`，以带引号的字符串保存；各节点的证书获取 token 也分别用该命令生成。`secrets` 表保存证书服务和上游出口等配置引用的秘密值。订阅路径使用 `python3 -c 'import uuid; print(uuid.uuid4())'` 生成的随机 UUID。
 
-整份 YAML 作为 SOPS 的 binary 输入加密，密文以 YAML 保存到 `secrets/vps.sops.yaml`。节点名称、地址、关系和秘密字段名随正文一起加密。接收者在根目录 `.sops.yaml` 声明，可复用已有 age 身份；离线备份该身份。从仓库根目录准备维护工具：
+inventory 保存为 `secrets/vps.sops.yaml`，密钥准备与编辑方法见[凭据指南](secrets.md#创建与编辑)。从仓库根目录准备维护工具：
 
 ```sh
 nix develop .#vps
@@ -26,34 +26,20 @@ second=west
 subscription=primary
 ```
 
-首次建立密文：
+创建或编辑 inventory：
 
 ```sh
-(
-  set -euo pipefail
-  umask 077
-  work=$(mktemp -d "$XDG_RUNTIME_DIR/vps.XXXXXX")
-  trap 'rm -rf "$work"' EXIT
-  cp data/secrets/vps.example.yaml "$work/inventory.yaml"
-  "${EDITOR:-vim}" "$work/inventory.yaml"
-  mkdir -p secrets
-  sops encrypt --input-type binary --output-type yaml \
-    --filename-override secrets/vps.sops.yaml "$work/inventory.yaml" \
-    > secrets/vps.sops.yaml
-)
+mkdir -p secrets
+sops secrets/vps.sops.yaml
 ```
-
-后续修改时，用下面的解密命令将内容写入同样的私密临时文件，编辑后重新加密。确认密文可解密后再替换原文件。维护机保存 age 私钥。
 
 ## 准备部署材料
 
-一次解密生成本轮部署所需的文件。`key_file` 换成本机已有 age 身份路径，只有 SOPS 需要读取它；生成、构建和部署由当前用户执行。
+一次解密生成本轮部署所需的文件，生成、构建和部署由当前用户执行。
 
 ```sh
 set -o pipefail
-key_file=/var/lib/sops-nix/keys.txt
-sudo env SOPS_AGE_KEY_FILE="$key_file" "$(command -v sops)" \
-  decrypt --input-type yaml --output-type binary secrets/vps.sops.yaml |
+sops decrypt secrets/vps.sops.yaml |
   python3 scripts/vps/prepare.py
 ```
 

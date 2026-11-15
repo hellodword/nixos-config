@@ -2,7 +2,9 @@
 
 笔记本的 `hosts/<主机>/secrets.nix` 选择凭据目录、用户、备份目标和 Wi-Fi 连接，`lib/credentials.nix` 负责共享字段绑定。通用模块只接收运行时文件路径。SOPS 使用持久根下 `var/lib/sops-nix/keys.txt` 中的 age 身份解密，运行时文件由 sops-nix 管理。
 
-VPS 使用[整份加密 inventory](vps.md#建立私有-inventory)，维护机解密后通过 Colmena 分发节点专属的运行凭据。订阅地址、证书 Worker 凭据，以及撤销与换钥顺序也在该指南中维护。
+VPS 使用[加密 inventory](vps.md#建立私有-inventory)，维护机解密后通过 Colmena 分发节点专属的运行凭据。订阅地址、证书 Worker 凭据，以及撤销与换钥顺序也在该指南中维护。
+
+主机凭据和 VPS inventory 均采用 SOPS 原生 YAML：字段名可见，秘密值加密。节点等标识作为 YAML 键时也会保留可读，因此使用适合公开的名称。
 
 | 密文 | 内容 | 消费者 |
 | --- | --- | --- |
@@ -12,9 +14,24 @@ VPS 使用[整份加密 inventory](vps.md#建立私有-inventory)，维护机解
 
 多行配置使用 YAML 的 `|` 字符串，例如 `repositories/r2/environment` 对应一个完整环境文件。完整身份文档由 root 读取，再发布对应用户可读的 SSH/Git 配置和公钥文件，权限为 `0400`；其余凭据默认由 root 持有，登录密码 hash 在创建用户前提供。
 
-## 新用户填写
+## 创建与编辑
 
-公开示例在 `data/secrets/{system,backup,identity}.example.yaml`，全部为合成值或空字段。创建自己的 age 身份，将公钥写入 `.sops.yaml` 的 `age` 接收者，并为新主机添加匹配规则；私钥放在配置指定的 SOPS key 路径，设为 `0600`。再将三个示例复制到私密临时目录填写，使用 `sops encrypt --filename-override hosts/<主机>/secrets/system.sops.yaml` 等命令生成对应密文。命令中的 `<主机>` 换成实际主机名，仓库只保存加密后的结果。
+公开示例在 `data/secrets/`，使用合成值或空字段。创建自己的 age 身份，将公钥写入 `.sops.yaml` 对应路径规则的 `age` 接收者；新增主机时添加匹配规则。私钥放在系统配置指定的 `sops.age.keyFile` 路径，由 root 持有、权限为 `0600`，并另存离线备份。
+
+laptop 会话通过 `SOPS_AGE_KEY_CMD` 读取该密钥：SOPS 和编辑器以当前用户运行，读取密钥时按现有 sudo 规则认证。会话设置在切换系统配置并重新登录后生效，`laptop` 和 `vps` 开发环境都会继承。
+
+从仓库根目录创建或编辑凭据：
+
+```sh
+host=laptop2  # 换成要编辑的主机
+sops "hosts/$host/secrets/system.sops.yaml"
+```
+
+`backup.sops.yaml`、`identity.sops.yaml` 和 `secrets/vps.sops.yaml` 使用相同方式。新建文件时，在编辑器中用对应示例替换初始内容并填写；保存时 SOPS 将加密结果写入目标文件。新建时按 `.sops.yaml` 选择接收者，文件格式由 `.yaml` 扩展名确定。
+
+向其他程序提供 YAML 时使用 `sops decrypt <密文路径>`。只确认解密与完整性校验时，将输出重定向到 `/dev/null`。
+
+## 新用户填写
 
 | 字段 | 填写方式 |
 | --- | --- |

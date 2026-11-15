@@ -31,6 +31,11 @@ in
       };
       gnupg.sshKeyPaths = [ ];
     };
+    environment.sessionVariables.SOPS_AGE_KEY_CMD = lib.escapeShellArgs [
+      "${config.security.wrapperDir}/sudo"
+      "${pkgs.coreutils}/bin/cat"
+      config.sops.age.keyFile
+    ];
     security.sudo.enable = false;
     security.sudo-rs = {
       enable = true;

@@ -66,14 +66,14 @@ GTK 3/4 的系统默认值位于 `/etc/xdg/gtk-{3,4}.0/settings.ini`，用户修
 
 ## 修改加密基线
 
-SSH、Git/GPG 等基线保存在所选主机的 `secrets/` 目录，激活使用该主机的 SOPS 身份。文件按系统、备份和身份分组，填写方式见[主机凭据](secrets.md)。
+SSH、Git/GPG 等基线保存在所选主机的 `secrets/` 目录，激活使用该主机的 SOPS 身份。文件按系统、备份和身份分组，编辑方式见[主机凭据](secrets.md#创建与编辑)。
 
 ```sh
 host=laptop2  # 换成要编辑的主机
-nix develop .#laptop --command sops edit "hosts/$host/secrets/identity.sops.yaml"
+sops "hosts/$host/secrets/identity.sops.yaml"
 ```
 
-基线或系统配置变化需要重新构建；解密保持在目标机运行时。身份文档以完整子密钥指纹声明 SSH 用途和 Git 签名，系统推导公钥文件和 Git 配置，用户服务自动启用 GPG 中对应的 SSH 身份。密钥导入、智能卡初始化和旧身份停用由用户操作；自动注册及换钥流程见[身份配置](secrets.md#gpgssh-与-git-身份)。
+基线或系统配置变化需要重新构建，系统激活时由目标机解密。身份文档以完整子密钥指纹声明 SSH 用途和 Git 签名，系统推导公钥文件和 Git 配置，用户服务自动启用 GPG 中对应的 SSH 身份。密钥导入、智能卡初始化和旧身份停用由用户操作；自动注册及换钥流程见[身份配置](secrets.md#gpgssh-与-git-身份)。
 
 ## tmpfs 占用与临时持久化
 
