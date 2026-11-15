@@ -156,6 +156,8 @@ in
         ".config/mozilla/firefox"
         ".cache/mozilla/firefox"
         ".config/google-chrome"
+        ".config/google-chrome-direct"
+        ".cache/google-chrome-direct"
         ".config/Bitwarden"
         ".config/Bitwarden CLI"
         ".config/kdeconnect"

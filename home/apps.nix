@@ -87,6 +87,11 @@ in
           id = 1;
           isDefault = false;
         };
+        direct = {
+          id = 2;
+          isDefault = false;
+          settings = prefs;
+        };
       };
     };
     programs.vscode = {

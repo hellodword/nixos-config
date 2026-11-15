@@ -32,13 +32,61 @@ let
     dbus-user.talk org.freedesktop.portal.*
     dbus-user.talk org.freedesktop.Notifications
   '';
-  keyring = "dbus-user.talk org.freedesktop.secrets";
+  keyring = "dbus-user.talk org.freedesktop.secrets\n";
   browserProfile = profile "firefox" desktopBus;
   firefox = wrap {
     package = config.programs.firefox.finalPackage;
     binaries = [ "firefox" ];
     profile = browserProfile;
   };
+  chrome = wrap {
+    package = pkgs.google-chrome;
+    arguments = [ "--password-store=gnome-libsecret" ];
+    binaries = [
+      "google-chrome"
+      "google-chrome-stable"
+    ];
+    profile = profile "google-chrome" (
+      desktopBus
+      + keyring
+      + ''
+        noblacklist ''${DOCUMENTS}
+        noblacklist ''${PICTURES}
+        mkdir ''${HOME}/dev
+        mkdir ''${HOME}/share
+        mkdir ''${HOME}/.config/google-chrome-direct
+        mkdir ''${HOME}/.cache/google-chrome-direct
+        whitelist ''${HOME}/dev
+        read-only ''${HOME}/dev
+        whitelist ''${HOME}/share
+        whitelist ''${DOCUMENTS}
+        whitelist ''${PICTURES}
+        whitelist ''${HOME}/.config/google-chrome-direct
+        whitelist ''${HOME}/.cache/google-chrome-direct
+      ''
+    );
+  };
+  directBrowser =
+    name: command:
+    pkgs.writeShellScriptBin name ''
+      dns=()
+      while [[ "''${1:-}" == --dns ]]; do
+        if [[ $# -lt 2 ]]; then
+          echo 'Usage: ${name} [--dns SERVER]... [--] [browser arguments...]' >&2
+          exit 2
+        fi
+        dns+=(--dns "$2")
+        shift 2
+      done
+      if [[ "''${1:-}" == -- ]]; then shift; fi
+      # Keep one process owner for the profile and its DNS lifetime.
+      exec 9>"''${XDG_RUNTIME_DIR:?}/${name}.lock"
+      if ! ${pkgs.util-linux}/bin/flock --nonblock 9; then
+        echo '${name} is running; close its window before starting another DNS environment.' >&2
+        exit 1
+      fi
+      exec /run/current-system/sw/bin/network-exclude "''${dns[@]}" -- ${command} "$@"
+    '';
   cliProfile = pkgs.writeText "bitwarden-cli.profile" ''
     blacklist ${nixosConfig.site.storage.persistRoot}
     noblacklist ''${HOME}/.config/Bitwarden CLI
@@ -65,30 +113,7 @@ in
     home.packages =
       lib.optionals apps [
         firefox
-        (wrap {
-          package = pkgs.google-chrome;
-          arguments = [ "--password-store=gnome-libsecret" ];
-          binaries = [
-            "google-chrome"
-            "google-chrome-stable"
-          ];
-          profile = profile "google-chrome" (
-            desktopBus
-            + keyring
-            + ''
-
-              noblacklist ''${DOCUMENTS}
-              noblacklist ''${PICTURES}
-              mkdir ''${HOME}/dev
-              mkdir ''${HOME}/share
-              whitelist ''${HOME}/dev
-              read-only ''${HOME}/dev
-              whitelist ''${HOME}/share
-              whitelist ''${DOCUMENTS}
-              whitelist ''${PICTURES}
-            ''
-          );
-        })
+        chrome
         (wrap {
           package = pkgs.bitwarden-desktop;
           arguments = [ "--password-store=gnome-libsecret" ];
@@ -145,6 +170,10 @@ in
         (pkgs.writeShellScriptBin "firefox-origin" ''
           exec ${firefox}/bin/firefox --no-remote -P origin "$@"
         '')
+      ]
+      ++ lib.optionals (apps && (nixosConfig.site.network.lockdown.enable or false)) [
+        (directBrowser "firefox-direct" "${firefox}/bin/firefox --no-remote -P direct")
+        (directBrowser "google-chrome-direct" ''${chrome}/bin/google-chrome --user-data-dir="$HOME/.config/google-chrome-direct" --disk-cache-dir="$HOME/.cache/google-chrome-direct"'')
       ]
       ++ lib.optionals productivity [
         (wrap {

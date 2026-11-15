@@ -124,6 +124,10 @@ def firewall(bridges, routes, lockdown):
         type route hook output priority -90; policy accept;
         {chr(10).join(local_output)}
     }}
+    chain prerouting {{
+        type filter hook prerouting priority -160; policy accept;
+        {('iifname "br-site-direct" ct mark set 0xf41 meta mark set 0x6d6f6c65') if lockdown else ''}
+    }}
     chain forward {{
         type filter hook forward priority -15; policy accept;
         {('iifname @bridges oifname @bridges ct mark set 0xf41') if lockdown else ''}
@@ -190,6 +194,13 @@ def notify():
 
 
 def watch(dns, lockdown, local_access):
+    if lockdown:
+        if run("docker", "network", "inspect", "site-direct", check=False).returncode:
+            run("docker", "network", "create", "--driver", "bridge",
+                "--opt", "com.docker.network.bridge.name=br-site-direct", "site-direct")
+        direct = json.loads(run("docker", "network", "inspect", "site-direct").stdout)[0]
+        if direct["Driver"] != "bridge" or direct.get("Options", {}).get("com.docker.network.bridge.name") != "br-site-direct":
+            raise RuntimeError("site-direct must use the br-site-direct Docker bridge")
     # Subscribe before the initial inventory. Periodic reconciliation also
     # observes address-family changes and an administrator's firewall reload.
     commands = [("docker", "events", "--filter", "type=network", "--format", "{{json .}}"),

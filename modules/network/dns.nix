@@ -108,10 +108,15 @@ in
         }
         chain output {
           type nat hook output priority -105; policy accept;
+          ${lib.optionalString cfg.lockdown.enable ''meta mark 0x6d6f6c65 return''}
           meta l4proto { tcp, udp } th dport 53 jump dns_dnat
         }
         chain prerouting {
           type nat hook prerouting priority -105; policy accept;
+          ${lib.optionalString cfg.lockdown.enable ''
+            iifname "br-site-direct" ip daddr ${resolver4} meta l4proto { tcp, udp } th dport 53 dnat ip to 169.254.53.54
+            iifname "br-site-direct" return
+          ''}
           iifname @docker_bridges meta l4proto { tcp, udp } th dport 53 jump dns_dnat
           ${lib.optionalString tailnet ''iifname "${tailInterface}" meta l4proto { tcp, udp } th dport 53 jump dns_dnat''}
         }

@@ -27,6 +27,7 @@ in
         "nftables.service"
       ]
       ++ lib.optional dns "systemd-resolved.service";
+      wants = lib.optional lockdown "site-network-exclude-dns.service";
       after = [
         "docker.service"
         "nftables.service"

@@ -10,5 +10,6 @@
     ./dns.nix
     ./sing-box.nix
     ./lockdown.nix
+    ./exclude.nix
   ];
 }

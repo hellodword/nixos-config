@@ -72,6 +72,7 @@ def main():
         if args.mode == "dns":
             # Hysteria server's own resolver, reachable only inside the fixture.
             stack.enter_context(dns_server("198.51.100.30", "2001:db8:2::30", "127.0.0.1", 15353))
+            stack.enter_context(dns_server("192.168.1.20", "2001:db8:10::20", "0.0.0.0", 53))
             for group, base in (("cn", 24001), ("global", 24003)):
                 for branch, protocol in enumerate(("tls", "https")):
                     resolver = Resolver(group, branch)

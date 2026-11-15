@@ -300,6 +300,7 @@ in
       pkgs.nftables
       pkgs.tcpdump
       pkgs.wireguard-tools
+      pkgs.gnupg
       pkgs.zstd
       python
     ];
@@ -346,6 +347,17 @@ in
         isNormalUser = true;
         uid = 1000;
       };
+      security.sudo.extraRules = [
+        {
+          users = [ "desktop" ];
+          commands = [
+            {
+              command = "ALL";
+              options = [ "NOPASSWD" ];
+            }
+          ];
+        }
+      ];
       # Keep the deliberate daemon crash observable until the test restores it.
       systemd.services.mullvad-daemon.serviceConfig.Restart = lib.mkForce "no";
       networking.interfaces.eth1 = {
@@ -383,6 +395,10 @@ in
         dns.fakeIP.excludeFile = "/var/lib/network-policy/fakeip-exclude.jsonc";
         singBox.enable = true;
         lockdown.enable = true;
+        exclude = {
+          dns = [ "tls://dns.test.nix:24003" ];
+          bootstrap = [ "192.168.1.20" ];
+        };
         providerFile = "/run/provider.json";
         runtimeRouteDirectory = "/var/lib/network-policy/route.d";
         runtimeConnectionDirectory = "/var/lib/network-policy/connection.d";
@@ -895,6 +911,7 @@ in
 
     healthy()
     container_start(client)
+    __import__("runpy").run_path("${./network_exclude.py}")["run"](client, target)
     containers_active = True
     container_web(client, "192.168.1.20", ipv6=True)
     container_local(client)
@@ -1369,6 +1386,8 @@ in
         shutdown()
         client.start()
         client.wait_for_unit("multi-user.target")
+        client.wait_for_unit("site-network-exclude-dns.service")
+        assert user("network-exclude dig +time=3 +tries=1 +short web.proxy.test A").strip() == "198.51.100.30"
         client.succeed("journalctl --namespace=network -u site-dns-events -o cat --no-pager | network-dns-log --name after-rotation.direct.test | grep 192.0.2.30")
         client.succeed("journalctl -t backup-history-fixture -o cat --no-pager | grep -Fx backup-history-fixture")
         client.succeed("test -s /var/log/mullvad-vpn/daemon.log.1.gz")

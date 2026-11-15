@@ -93,7 +93,7 @@ IPv4 地址池为 `198.18.0.0/15`，IPv6 为 `2001:2::/48`。映射由 sing-box 
 
 HTTPS/SVCB 空回答使连接继续使用域名映射，也意味着客户端无法通过这些记录发现 ECH 配置和服务绑定参数。`private`、`tailnet`、`reject` 分类仍由共享 DNS 策略处理。常见本地域名、MagicDNS，以及 Tailscale 官方控制与 DERP 域名保留真实解析结果。
 
-需要原生连接或被排除应用访问的其他域名，可用 `site.network.dns.fakeIP.excludeFile` 指向运行时 JSONC 文件，例如持久目录中的 `fakeip-exclude.jsonc` 或 SOPS 解密路径：
+需要所有应用都获得真实地址的其他域名，可用 `site.network.dns.fakeIP.excludeFile` 指向运行时 JSONC 文件，例如持久目录中的 `fakeip-exclude.jsonc` 或 SOPS 解密路径：
 
 ```jsonc
 {
@@ -113,6 +113,40 @@ HTTPS/SVCB 空回答使连接继续使用域名映射，也意味着客户端无
 1. 执行 `sudo network-lockdown disconnect`，停止 sing-box 并保持 Lockdown。
 2. 完全退出受影响的应用，清理相关客户端的 DNS 缓存；使用本机 DNS 的局域网或出口节点客户端也需重新解析。
 3. 执行 `sudo network-lockdown connect`、`sudo network-lockdown status`，再打开应用建立新连接。
+
+## 临时排除应用与 shell
+
+`network-exclude` 让命令及其子进程通过本机原生网络访问，并使用返回真实地址的 DNS。它保留工作目录、用户身份、环境变量、SSH agent 和应用原有代理设置。
+
+```sh
+network-exclude                         # 进入当前用户的交互 shell
+network-exclude curl https://example.com/
+network-exclude ssh my-host
+
+# 临时 DNS，仅用于本次 shell 或命令
+network-exclude --dns tls://1.1.1.1
+network-exclude --dns tls://1.1.1.1 --dns https://223.6.6.6/dns-query -- curl https://example.com/
+
+# 替换本次开机期间的共用 DNS 列表
+network-exclude dns set tls://223.5.5.5 https://223.6.6.6/dns-query
+network-exclude dns show
+network-exclude dns reset
+```
+
+入口通过 sudo 建立排除环境，实际应用以原用户身份运行。命令参数和输入输出原样传递；`--` 明确结束入口参数，执行名为 `dns` 的程序时使用 `network-exclude -- dns …`。退出交互 shell 后返回原环境。
+
+共用 DNS 由 `site.network.exclude.dns` 声明默认值。`dns set` 替换整个列表并立即应用，设置保存在 `/run`，注销和解析器重启后仍有效，系统重启恢复默认值。地址采用 dnsproxy 语法，例如 `tls://1.1.1.1`、`https://223.6.6.6/dns-query`、`192.168.1.1:53`、`tcp://192.168.1.1`；DoT/DoH 校验证书。带域名的上游使用 `site.network.exclude.bootstrap` 中的 IP 地址解析器完成 bootstrap。
+
+普通排除环境和 `site-direct` 容器使用同一解析器，修改共用 DNS 后随后的查询自动跟随。`--dns` 为本次环境建立独立解析器和缓存，结束后回收；嵌套调用默认沿用当前环境。应用自身缓存按其生命周期更新。解析器与排除连接独立于 sing-box，保留本机 hosts 和 Tailnet 完整域名解析。
+
+`firefox-direct` 和 `google-chrome-direct` 使用独立资料目录并保留 Firejail 保护，可与普通浏览器同时运行；同样接受 `--dns SERVER`。每种排除浏览器由一个入口实例持有，切换其临时 DNS 时先退出该实例。Firefox 的 `direct` profile、Chrome 的 `google-chrome-direct` 资料及缓存由 laptop profile 持久化，登录状态、书签和扩展跨重启保留。
+
+SSH 的 `ProxyCommand`、`ProxyJump` 及应用代理环境变量继续生效。请求若交给已有的代理或后台服务，后续连接采用该服务的网络配置。排除命令能够访问 localhost、局域网和用户会话 socket。
+
+```sh
+systemctl status site-network-exclude-dns
+journalctl -b -u site-network-exclude-dns
+```
 
 ## 私网开发访问与公网入站
 
@@ -258,7 +292,26 @@ sudo tailscale set --exit-node="$exit_node" --accept-dns=true
 
 宿主的构建缓存代理也可通过网桥供容器使用，监听和客户端配置见[缓存指南](cache.md#nixos-主机与容器)。
 
-`site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。启用 IPv6 时，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
+`site-container-network.service` 根据 Docker 网络清单和内核路由同步本地 bridge 的路由表与 DNS 访问规则，监听网络创建、连接、删除及接口变化。启用 IPv6 时，按 Docker 的 IPAM 配置恢复 bridge 的 IPv6 网关，现有容器继续使用原来的网络。宿主访问容器、容器服务名互通和已发布端口使用本地路径，Docker 继续管理端口发布、NAT、内部网络与网络隔离。普通 bridge 的互联网流量在完整组合中进入 sing-box 和 Mullvad Lockdown；DNS-only 与显式代理组合中按宿主原生路由转发，显式代理仍由应用自行选择。
+
+Lockdown 启用时，系统创建 `site-direct` 网络。需要原生出口的容器加入该网络，默认使用 `network-exclude dns` 管理的真实地址解析器。容器内的服务名仍由 Docker 解析，显式 `--dns` 或 Compose `dns` 指定的服务器按原生网络访问。
+
+```sh
+docker run --rm --network site-direct IMAGE COMMAND
+docker run --rm --network site-direct --dns 192.168.1.1 IMAGE COMMAND
+```
+
+```yaml
+services:
+  app:
+    image: IMAGE
+    networks: [site-direct]
+networks:
+  site-direct:
+    external: true
+```
+
+这选择的是容器运行时的网络；镜像拉取和构建由 Docker daemon 的网络环境决定。
 
 路由表 `64500`、规则优先级 `94` 与 `inet site_containers` 防火墙表由同步服务管理，均为运行时状态；Docker 重启后重新读取网络清单。DNS 模块管理 `inet site_dns`，本地访问模块管理 `inet site_local_access`；同步服务更新其中的普通 bridge 集合。带 `org.nixos-config.service` 标签的通知专用网络使用通知模块自己的限制和路由。
 
@@ -381,14 +434,13 @@ OpenVPN 的 `tls.server_name` 使用 `verify-x509-name` 语义，默认精确匹
 }
 ```
 
-`system=true` 使用 sing-box 的接口作用域路由。Lockdown 下，endpoint 连接服务器的外层流量绑定已观察到的物理出口。普通应用仍按共享分流路径运行；显式绑定接口的应用需要由管理员授权进入 Mullvad 排除组，再降回普通用户：
+`system=true` 使用 sing-box 的接口作用域路由。Lockdown 下，endpoint 连接服务器的外层流量绑定已观察到的物理出口。普通应用仍按共享分流路径运行；显式绑定接口的应用通过排除入口启动：
 
 ```sh
-sudo mullvad-exclude setpriv --reuid="$(id -un)" --regid="$(id -gn)" --init-groups \
-  curl --interface foo --max-time 30 https://example.com/
+network-exclude curl --interface foo --max-time 30 https://example.com/
 ```
 
-上述授权限于这次命令及其子进程；系统没有向普通用户安装 setuid 排除入口。网络引擎本身以 `sing-box` 用户运行，持有创建 TUN 和管理该接口所需的网络能力。域名查询仍使用系统 DNS；私有站点的 endpoint 专用 DNS 不在共享策略中声明。
+网络引擎以 `sing-box` 用户运行，持有创建 TUN 和管理该接口所需的网络能力。排除入口提供真实 DNS 地址；需要专用解析器时使用 `--dns` 指定。
 
 
 ## 共享 route 子集
