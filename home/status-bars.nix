@@ -46,6 +46,7 @@ in
           "temperature"
           "battery"
           "clock#local"
+          "clock#la"
           "clock#cn"
           "tray"
         ];
