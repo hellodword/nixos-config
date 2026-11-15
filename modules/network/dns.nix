@@ -108,7 +108,7 @@ in
         }
         chain output {
           type nat hook output priority -105; policy accept;
-          ${lib.optionalString cfg.lockdown.enable ''meta mark 0x6d6f6c65 return''}
+          ${lib.optionalString cfg.lockdown.enable "meta mark 0x6d6f6c65 return"}
           meta l4proto { tcp, udp } th dport 53 jump dns_dnat
         }
         chain prerouting {
