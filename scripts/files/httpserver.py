@@ -81,7 +81,11 @@ pid /tmp/nginx.pid;
 error_log /dev/stderr warn;
 events { worker_connections 128; }
 http {
-    access_log off;
+    log_format files escape=json
+        '{"time":"$time_iso8601","port":%d,"client":"$http_x_forwarded_for",'
+        '"method":"$request_method","url":"$request_uri","path":"$uri","status":$status,'
+        '"request_bytes":$request_length,"response_bytes":$bytes_sent,"seconds":$request_time}';
+    access_log /dev/stdout files;
     include /etc/nginx/mime.types;
     default_type application/octet-stream;
     client_body_temp_path /tmp/body;
@@ -107,7 +111,7 @@ http {
         %s
     }
 }
-""" % "\n        ".join(rules)
+""" % (settings["port"], "\n        ".join(rules))
 
 
 def mount_argument(source, destination, readonly=True, recursive=False):

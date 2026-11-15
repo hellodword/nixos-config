@@ -50,13 +50,13 @@ httpserver ./report.pdf
 httpserver ~/Pictures/trip
 ```
 
-命令在前台显示分享路径和 URL，按 Ctrl+C 结束分享及正在传输的文件。一次只能运行一个分享；传入文件时只分享该文件。空闲的 HTTPS 入口返回 404。
+命令在前台显示分享路径、URL 和请求概要，按 Ctrl+C 结束分享及正在传输的文件。一次只能运行一个分享；传入文件时只分享该文件。空闲的 HTTPS 入口返回 404。
 
 浏览器按文件类型预览图片、PDF 和文本；未知类型按二进制文件处理。HTML 与 SVG 在受限的浏览器环境中显示，临时入口与网页登录状态分离。
 
 传入路径按实际文件系统位置检查，包括持久目录的 bind mount 别名。整个 home 等宽泛根目录需要改为具体子目录；敏感名称与路径由 [`site.files.temporary`](../modules/services/files.nix) 声明，可在主机配置中追加。目录浏览使用 Nginx 原生列表，普通点文件可通过具体 URL 访问。
 
-临时容器以当前用户身份读取选定路径，只读挂载、禁止符号链接穿透，使用无网络的 gVisor 运行时。Nginx 通过专用 Unix socket 转发请求，证书私钥留在 HTTPS 服务内。
+临时容器以当前用户身份读取选定路径，只读挂载、禁止符号链接穿透，使用无网络的 gVisor 运行时。HTTPS 前端通过专用 Unix socket 转发请求，证书私钥留在 HTTPS 服务内。
 
 ## 访问与排查
 
@@ -70,4 +70,22 @@ curl --cacert /var/lib/site-files/ca.crt --user user \
 smbclient //localhost/files -U user --client-protection=encrypt
 ```
 
-服务状态与错误可从 `systemctl status 'site-files-*'` 和 `journalctl -u 'site-files-*'` 查看。Copyparty 通过卷权限区分两个账号，Samba 按认证身份选择共享根目录。文件后端与 HTTPS 服务各有独立的文件系统视图和私有网络空间，主机端口由 systemd 转发，访问来源沿用[本地网络策略](network.md)。
+两个 HTTPS 入口持续记录请求，在请求完成后向 journal 写入一条 JSON：
+
+- 时间、入口端口、真实客户端 IP、method、含查询参数的 URL 和解码后的 path。
+- 请求与响应的 headers，保留重复字段；内容采用 HAProxy 解析后的形式。
+- 未压缩的 `text/*`、JSON、XML、表单等文本请求正文，按原始字节截取前 4096 字节，后续内容继续流式转发。
+- 响应状态码、代理统计的收发字节数、总耗时、后端状态与耗时，以及连接结束状态；耗时单位为毫秒。
+
+日志保留 Authorization、Cookie、Set-Cookie 和文本正文中的原值，按凭据资料保管。`httpserver` 终端显示临时分享后端的请求概要，完整记录在 HTTPS 前端的 journal 中。
+
+实时查看请求及文件后端日志：
+
+```sh
+sudo journalctl -u site-files-web.service --all -f -o cat
+sudo journalctl -u site-files-browser.service -f -o cat
+```
+
+请求日志随系统 journal 持久保存和轮转；空闲临时入口的 404 也会记录。服务状态可从 `systemctl status 'site-files-*'` 查看。
+
+Copyparty 通过卷权限区分两个账号，Samba 按认证身份选择共享根目录。文件后端与 HAProxy HTTPS 前端各有独立的文件系统视图和私有网络空间，主机端口由 systemd 转发；HTTPS 转发使用 PROXY protocol 保留客户端 IP。访问来源沿用[本地网络策略](network.md)。

@@ -93,53 +93,66 @@ let
       accs:
         rwmd.: admin, user
   '';
-  webConfig = pkgs.writeText "site-files-nginx.conf" ''
-    worker_processes 1;
-    pid /run/site-files-web/nginx.pid;
-    error_log stderr warn;
-    events { worker_connections 256; }
-    http {
-      access_log off;
-      server_tokens off;
-      client_max_body_size 0;
-      client_body_temp_path /tmp/body;
-      proxy_temp_path /tmp/proxy;
-      ssl_protocols TLSv1.2 TLSv1.3;
-      ssl_certificate /run/credentials/site-files-web.service/certificate;
-      ssl_certificate_key /run/credentials/site-files-web.service/key;
-      ssl_session_cache shared:files:1m;
-      server {
-        listen unix:/run/site-files-web/files.sock ssl;
-        server_name _;
-        location / {
-          proxy_pass http://unix:/run/site-files-browser/copyparty.sock;
-          proxy_set_header Host $http_host;
-          proxy_set_header X-Forwarded-Host $http_host;
-          proxy_set_header X-Forwarded-Proto https;
-          # Socket bridges retain no client IP; the peer is this local proxy.
-          proxy_set_header X-Forwarded-For 127.0.0.1;
-          proxy_request_buffering off;
-          proxy_buffering off;
-          proxy_read_timeout 300s;
-          add_header X-Content-Type-Options nosniff always;
-        }
-      }
-      server {
-        listen unix:/run/site-files-web/temporary.sock ssl;
-        server_name _;
-        location / {
-          limit_except GET { deny all; }
-          proxy_pass http://unix:/run/site-httpserver/socket/backend.sock;
-          # Browser cookies are shared across ports on the same host.
-          proxy_set_header Cookie "";
-          proxy_set_header Authorization "";
-          proxy_buffering off;
-          proxy_intercept_errors on;
-          error_page 502 504 =404 @idle;
-        }
-        location @idle { return 404; }
-      }
-    }
+  webConfig = pkgs.writeText "site-files-haproxy.conf" ''
+    global
+      nbthread 1
+      maxconn 256
+      log /run/systemd/journal/dev-log len 65535 format local local0
+      ssl-default-bind-options ssl-min-ver TLSv1.2
+
+    defaults
+      mode http
+      log global
+      timeout connect 5s
+      timeout client 300s
+      timeout server 300s
+      timeout http-request 60s
+      timeout http-keep-alive 60s
+      retries 0
+      log-format "%{+json,+utf8}o %(time)trg %(port)fp %(client)ci %(method)HM %(host)[var(txn.host)] %(url)[var(txn.url)] %(path)[var(txn.path)] %(request_headers)[var(txn.request_headers)] %(request_body)[var(txn.request_body)] %(status)ST %(response_headers)[var(txn.response_headers)] %(request_bytes)U %(response_bytes)B %(duration_ms)Ta %(upstream_status)[var(txn.upstream_status)] %(upstream_ms)Tr %(termination)ts"
+
+    crt-store files
+      load crt /run/credentials/site-files-web.service/certificate key /run/credentials/site-files-web.service/key alias server
+
+    frontend https
+      bind /run/site-files-web/files.sock mode 660 accept-proxy ssl crt @files/server
+      bind /run/site-files-web/temporary.sock mode 660 accept-proxy ssl crt @files/server
+      acl temporary dst_port ${toString cfg.temporaryPort}
+      acl text_body req.hdr(Content-Type),field(1,;),lower -m reg ^text/ ^application/(.*[+])?(json|xml)$ ^application/(x-www-form-urlencoded|javascript|x-javascript|graphql|yaml|x-yaml|toml|x-ndjson)$
+      acl encoded_body req.hdr(Content-Encoding) -m found
+      acl plain_body req.hdr(Content-Encoding) -i identity
+
+      # Capture the client's headers before adding forwarding metadata.
+      http-request set-var(txn.host) req.hdr(Host)
+      http-request set-var(txn.url) url
+      http-request set-var(txn.path) path,url_dec
+      http-request set-var(txn.request_headers) req.hdrs
+      # Wait for at most this prefix (or end of body), then stream the remainder.
+      http-request wait-for-body time 60s at-least 4096 if text_body !encoded_body or text_body plain_body
+      http-request set-var(txn.request_body) req.body,bytes(0,4096) if text_body !encoded_body or text_body plain_body
+      http-request deny deny_status 403 if temporary !METH_GET
+      http-request set-header X-Forwarded-For %[src]
+      http-request set-header X-Forwarded-Host %[req.hdr(Host)]
+      http-request set-header X-Forwarded-Proto https
+
+      http-response set-var(txn.upstream_status) status
+      http-after-response set-header X-Content-Type-Options nosniff
+      http-after-response set-var(txn.response_headers) res.hdrs
+      use_backend temporary if temporary
+      default_backend browser
+
+    backend browser
+      server browser /run/site-files-browser/copyparty.sock
+
+    backend temporary
+      # Browser cookies are shared across ports on the same host.
+      http-request del-header Cookie
+      http-request del-header Authorization
+      http-error status 502 content-type text/plain string "Not Found"
+      http-error status 503 content-type text/plain string "Not Found"
+      http-error status 504 content-type text/plain string "Not Found"
+      http-after-response set-status 404 if { status 502 503 504 }
+      server temporary /run/site-httpserver/socket/backend.sock
   '';
   isolated = hardening // {
     DynamicUser = false;
@@ -161,19 +174,26 @@ let
     Restart = "on-failure";
     RestartSec = "5s";
   };
-  ingress = name: backend: destination: {
-    description = "File service ${name} connection bridge";
-    requires = [ "${backend}.service" ];
-    after = [ "${backend}.service" ];
-    partOf = [ "${backend}.service" ];
-    serviceConfig = hardening // {
-      ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd --connections-max=64 ${destination}";
-      Type = "notify";
-      PrivateNetwork = true;
-      SupplementaryGroups = [ "site-files-web" ];
-      Slice = "site-files.slice";
+  ingress =
+    {
+      name,
+      backend,
+      destination,
+      proxyProtocol ? false,
+    }:
+    {
+      description = "File service ${name} connection bridge";
+      requires = [ "${backend}.service" ];
+      after = [ "${backend}.service" ];
+      partOf = [ "${backend}.service" ];
+      serviceConfig = hardening // {
+        ExecStart = "${pkgs.systemd}/lib/systemd/systemd-socket-proxyd --connections-max=64 ${lib.optionalString proxyProtocol "--proxy-protocol=v1 "}${destination}";
+        Type = "notify";
+        PrivateNetwork = true;
+        SupplementaryGroups = [ "site-files-web" ];
+        Slice = "site-files.slice";
+      };
     };
-  };
 in
 {
   options.site.files = {
@@ -413,12 +433,13 @@ in
           BindReadOnlyPaths = isolated.BindReadOnlyPaths ++ [
             "/run/site-files-browser"
             "/run/site-httpserver/socket"
+            "/run/systemd/journal/dev-log"
           ];
           LoadCredential = [
             "certificate:${state}/server.crt"
             "key:${state}/private/server.key"
           ];
-          ExecStart = "${pkgs.nginx}/bin/nginx -e stderr -c ${webConfig} -g 'daemon off;'";
+          ExecStart = "${pkgs.haproxy}/sbin/haproxy -db -f ${webConfig}";
         };
       };
       site-files-smb = {
@@ -457,13 +478,27 @@ in
           Type = "notify";
         };
       };
-      site-files-https = ingress "HTTPS" "site-files-web" "/run/site-files-web/files.sock";
-      site-files-temporary =
-        ingress "temporary HTTPS" "site-files-web"
-          "/run/site-files-web/temporary.sock";
-      site-files-smb-proxy = (ingress "SMB" "site-files-smb" "127.0.0.1:445") // {
-        unitConfig.JoinsNamespaceOf = [ "site-files-smb.service" ];
+      site-files-https = ingress {
+        name = "HTTPS";
+        backend = "site-files-web";
+        destination = "/run/site-files-web/files.sock";
+        proxyProtocol = true;
       };
+      site-files-temporary = ingress {
+        name = "temporary HTTPS";
+        backend = "site-files-web";
+        destination = "/run/site-files-web/temporary.sock";
+        proxyProtocol = true;
+      };
+      site-files-smb-proxy =
+        (ingress {
+          name = "SMB";
+          backend = "site-files-smb";
+          destination = "127.0.0.1:445";
+        })
+        // {
+          unitConfig.JoinsNamespaceOf = [ "site-files-smb.service" ];
+        };
     };
     systemd.sockets =
       lib.mapAttrs
