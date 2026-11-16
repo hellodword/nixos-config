@@ -31,6 +31,9 @@ in
       runtimeInputs = [
         pkgs.python3
         pkgs.docker
+        pkgs.iproute2
+        pkgs.openssl
+        pkgs.qrencode
       ];
       text = ''
         exec python3 ${../scripts/files/httpserver.py} \
@@ -41,12 +44,24 @@ in
                 // {
                   image = "${image.imageName}:${image.imageTag}";
                   imageFile = toString image;
+                  loginPage = "${../scripts/files/share-login.html}";
                 }
               )
             )
           } "$@"
       '';
     };
+  client = pkgs.writeShellApplication {
+    name = "site-files-client";
+    runtimeInputs = [
+      pkgs.python3
+      pkgs.openssl
+      pkgs.systemd
+    ];
+    text = ''
+      exec python3 ${../scripts/files/client.py} "$@"
+    '';
+  };
   certificate =
     configFile:
     pkgs.writeShellApplication {

@@ -109,15 +109,50 @@ let
       timeout http-request 60s
       timeout http-keep-alive 60s
       retries 0
-      log-format "%{+json,+utf8}o %(time)trg %(port)fp %(client)ci %(method)HM %(host)[var(txn.host)] %(url)[var(txn.url)] %(path)[var(txn.path)] %(request_headers)[var(txn.request_headers)] %(request_body)[var(txn.request_body)] %(status)ST %(response_headers)[var(txn.response_headers)] %(request_bytes)U %(response_bytes)B %(duration_ms)Ta %(upstream_status)[var(txn.upstream_status)] %(upstream_ms)Tr %(termination)ts"
 
     crt-store files
       load crt /run/credentials/site-files-web.service/certificate key /run/credentials/site-files-web.service/key alias server
 
+    frontend transport
+      mode tcp
+      no log
+      bind /run/site-files-web/files.sock mode 660 accept-proxy
+      bind /run/site-files-web/temporary.sock mode 660 accept-proxy
+      tcp-request inspect-delay 5s
+      tcp-request content accept if { req.ssl_hello_type 1 }
+      tcp-request content accept if HTTP
+      use_backend temporary_tls if { req.ssl_hello_type 1 } { dst_port ${toString cfg.temporaryPort} }
+      use_backend files_tls if { req.ssl_hello_type 1 }
+      default_backend plaintext
+
+    backend files_tls
+      mode tcp
+      server files /run/site-files-web/files-tls.sock send-proxy-v2
+
+    backend temporary_tls
+      mode tcp
+      server temporary /run/site-files-web/temporary-tls.sock send-proxy-v2
+
+    backend plaintext
+      mode tcp
+      server redirect /run/site-files-web/redirect.sock send-proxy-v2
+
+    frontend redirect
+      option httplog
+      bind /run/site-files-web/redirect.sock mode 660 accept-proxy
+      http-request deny deny_status 405 unless METH_GET
+      acl valid_host req.hdr(Host) -m reg ^([A-Za-z0-9.-]+|\[[A-Fa-f0-9:]+\])(:[0-9]+)?$
+      http-request deny deny_status 400 unless valid_host
+      http-request redirect location https://%[req.hdr(Host),regsub(:[0-9]+$,\"\")]:%[dst_port]%[url] code 308
+
     frontend https
-      bind /run/site-files-web/files.sock mode 660 accept-proxy ssl crt @files/server
-      bind /run/site-files-web/temporary.sock mode 660 accept-proxy ssl crt @files/server
+      log-format "%{+json,+utf8}o %(time)trg %(port)fp %(client)ci %(method)HM %(host)[var(txn.host)] %(url)[var(txn.url)] %(path)[var(txn.path)] %(request_headers)[var(txn.request_headers)] %(request_body)[var(txn.request_body)] %(status)ST %(response_headers)[var(txn.response_headers)] %(request_bytes)U %(response_bytes)B %(duration_ms)Ta %(upstream_status)[var(txn.upstream_status)] %(upstream_ms)Tr %(termination)ts"
+      bind /run/site-files-web/files-tls.sock mode 660 accept-proxy ssl crt @files/server verify required ca-file /run/credentials/site-files-web.service/client-ca
+      bind /run/site-files-web/temporary-tls.sock mode 660 accept-proxy ssl crt @files/server verify none
       acl temporary dst_port ${toString cfg.temporaryPort}
+      acl device_present ssl_c_used
+      acl device_verified ssl_c_verify 0
+      acl device_allowed ssl_c_der,sha2(256),hex -m str -f /run/credentials/site-files-web.service/devices
       acl text_body req.hdr(Content-Type),field(1,;),lower -m reg ^text/ ^application/(.*[+])?(json|xml)$ ^application/(x-www-form-urlencoded|javascript|x-javascript|graphql|yaml|x-yaml|toml|x-ndjson)$
       acl encoded_body req.hdr(Content-Encoding) -m found
       acl plain_body req.hdr(Content-Encoding) -i identity
@@ -130,7 +165,9 @@ let
       # Wait for at most this prefix (or end of body), then stream the remainder.
       http-request wait-for-body time 60s at-least 4096 if text_body !encoded_body or text_body plain_body
       http-request set-var(txn.request_body) req.body,bytes(0,4096) if text_body !encoded_body or text_body plain_body
-      http-request deny deny_status 403 if temporary !METH_GET
+      http-request deny deny_status 403 if !temporary !device_present
+      http-request deny deny_status 403 if !temporary !device_verified
+      http-request deny deny_status 403 if !temporary !device_allowed
       http-request set-header X-Forwarded-For %[src]
       http-request set-header X-Forwarded-Host %[req.hdr(Host)]
       http-request set-header X-Forwarded-Proto https
@@ -146,8 +183,10 @@ let
 
     backend temporary
       # Browser cookies are shared across ports on the same host.
+      http-request set-var(txn.share_session) req.cook(site_share)
       http-request del-header Cookie
       http-request del-header Authorization
+      http-request set-header X-Share-Session %[var(txn.share_session)]
       http-error status 502 content-type text/plain string "Not Found"
       http-error status 503 content-type text/plain string "Not Found"
       http-error status 504 content-type text/plain string "Not Found"
@@ -308,6 +347,7 @@ in
       };
     };
     environment.systemPackages = [
+      tools.client
       (tools.certificate cfg.certificateConfigFile)
       (tools.httpserver {
         inherit (cfg) user;
@@ -422,7 +462,11 @@ in
         description = "File-service HTTPS endpoints";
         wantedBy = [ "multi-user.target" ];
         wants = [ "site-files-browser.service" ];
-        after = [ "site-files-browser.service" ];
+        requires = [ "site-files-client-authority.service" ];
+        after = [
+          "site-files-browser.service"
+          "site-files-client-authority.service"
+        ];
         unitConfig.ConditionPathExists = "${state}/server.crt";
         serviceConfig = isolated // {
           User = "site-files-web";
@@ -438,8 +482,22 @@ in
           LoadCredential = [
             "certificate:${state}/server.crt"
             "key:${state}/private/server.key"
+            "client-ca:${state}/private/clients/ca.crt"
+            "devices:${state}/private/clients/authorized"
           ];
-          ExecStart = "${pkgs.haproxy}/sbin/haproxy -db -f ${webConfig}";
+          ExecStart = "${pkgs.tini}/bin/tini -e 143 -- ${pkgs.haproxy}/sbin/haproxy -db -f ${webConfig}";
+        };
+      };
+      site-files-client-authority = {
+        description = "Prepare file-service device certificate authority";
+        serviceConfig = hardening // {
+          DynamicUser = false;
+          PrivateNetwork = true;
+          ReadWritePaths = [ "${state}/private" ];
+          Type = "oneshot";
+          RemainAfterExit = true;
+          UMask = "0077";
+          ExecStart = "${tools.client}/bin/site-files-client init";
         };
       };
       site-files-smb = {

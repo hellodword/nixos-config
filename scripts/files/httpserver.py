@@ -1,16 +1,23 @@
 """Run a foreground, read-only Nginx share in the configured gVisor runtime."""
 
 import argparse
+import base64
 import csv
 import fcntl
 import fnmatch
+import hashlib
 import io
+import ipaddress
 import json
+import mimetypes
 import os
 from pathlib import Path
 import pwd
 import re
+import secrets
 import signal
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -69,12 +76,74 @@ def selection(raw, settings):
     return source, denied
 
 
-def configuration(settings, denied):
+def configuration(settings, denied, source, code, session):
     patterns = [fnmatch.translate(name).removesuffix(r"\z").removesuffix(r"\Z")
                 for name in settings["blockedNames"]]
     rules = [f"location ~ {nginx_quote('(?:^|/)(?:' + '|'.join(patterns) + ')(?:/|$)')} {{ return 404; }}"]
     rules += [f"location ~ {nginx_quote('^/' + re.escape(path) + '(?:/|$)')} {{ return 404; }}"
               for path in denied]
+    auth_maps = auth_locations = guard = ""
+    if code is not None:
+        page = Path(settings["loginPage"]).read_text()
+        script = re.search(r"<script>(.*?)</script>", page, re.S)[1]
+        digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
+        auth_maps = f"""
+    map $http_x_share_session $share_authorized {{
+        default 0;
+        ~^{session}$ 1;
+    }}
+    map $http_x_share_code $login_file {{
+        default /denied;
+        ~^{code.encode().hex()}$ /accepted;
+    }}
+    map $login_file $login_cookie {{
+        default "";
+        /accepted "site_share={session}; Path=/; Secure; HttpOnly; SameSite=Lax";
+    }}
+    limit_req_zone $http_x_forwarded_for zone=login:1m rate=1r/s;
+"""
+        guard = 'if ($share_authorized = 0) { return 401; }'
+        auth_locations = f"""
+        error_page 401 =200 @login;
+        location @login {{
+            root /login;
+            add_header Cache-Control "no-store" always;
+            add_header Content-Security-Policy "default-src 'none'; script-src 'sha256-{digest}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" always;
+            try_files /index.html =404;
+        }}
+        location = /_share/login {{
+            limit_except POST {{ deny all; }}
+            limit_req zone=login burst=5 nodelay;
+            limit_req_status 429;
+            root /login;
+            default_type text/plain;
+            # A valid static target rejects POST after access/limit checks.
+            error_page 405 = @accepted;
+            try_files $login_file =403;
+        }}
+        location @accepted {{
+            add_header Set-Cookie $login_cookie;
+            add_header Cache-Control "no-store" always;
+            return 204;
+        }}
+"""
+    single = ""
+    if source.is_file():
+        content_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
+        single = f"""
+        location = / {{
+            {guard}
+            limit_except GET {{ deny all; }}
+            try_files /item =404;
+            types {{ }}
+            default_type {content_type};
+            add_header Content-Disposition "inline; filename*=UTF-8''{quote(source.name, safe='')}";
+            add_header X-Content-Type-Options nosniff always;
+            add_header Content-Security-Policy $file_csp always;
+            add_header Cache-Control "no-store" always;
+        }}
+"""
+    listing = "return 404;" if source.is_file() else "try_files $uri $uri/ =404; autoindex on; autoindex_localtime off;"
     return """
 worker_processes 1;
 pid /tmp/nginx.pid;
@@ -94,6 +163,7 @@ http {
         default "sandbox allow-downloads";
         application/pdf "";
     }
+    %s
     server {
         listen unix:/socket/backend.sock;
         server_name _;
@@ -101,17 +171,91 @@ http {
         disable_symlinks on;
         add_header X-Content-Type-Options nosniff always;
         add_header Content-Security-Policy $file_csp always;
+        add_header Cache-Control "no-store" always;
+        %s
+        %s
         location / {
+            %s
             limit_except GET { deny all; }
             # try_files checks symlinks before the autoindex content handler.
-            try_files $uri $uri/ =404;
-            autoindex on;
-            autoindex_localtime off;
+            %s
         }
         %s
     }
 }
-""" % (settings["port"], "\n        ".join(rules))
+""" % (settings["port"], auth_maps, auth_locations, single, guard, listing, "\n        ".join(rules))
+
+
+def lan_addresses():
+    links = json.loads(subprocess.check_output(["ip", "-j", "-d", "link", "show"]))
+    by_name = {link["ifname"]: link for link in links}
+    by_index = {link["ifindex"]: link for link in links}
+
+    def physical(link, visited):
+        name = link["ifname"]
+        if name in visited:
+            return False
+        if Path(f"/sys/class/net/{name}/device").exists():
+            return True
+        kind = link.get("linkinfo", {}).get("info_kind")
+        visited = visited | {name}
+        if kind == "vlan":
+            parent = by_index.get(link.get("link_index")) or by_name.get(link.get("link"))
+            return parent is not None and physical(parent, visited)
+        if kind in ("bridge", "bond"):
+            return any(physical(member, visited) for member in links
+                       if member.get("master") in (name, link["ifindex"]))
+        return False
+
+    addresses = []
+    for interface in json.loads(subprocess.check_output(["ip", "-j", "address", "show", "up"])):
+        link = by_name.get(interface["ifname"])
+        if not link or link.get("operstate") not in ("UP", "UNKNOWN") or not physical(link, set()):
+            continue
+        for item in interface.get("addr_info", []):
+            address = ipaddress.ip_address(item["local"])
+            if item["scope"] != "global" or item.get("tentative") or item.get("deprecated"):
+                continue
+            if not address.is_loopback and not address.is_link_local:
+                addresses.append((interface["ifname"], str(address)))
+    return sorted(set(addresses))
+
+
+def certificate_description(label, der):
+    details = subprocess.check_output(
+        ["openssl", "x509", "-inform", "DER", "-noout", "-subject", "-enddate"], input=der).decode().strip()
+    digest = hashlib.sha256(der).hexdigest().upper()
+    print(f"{label}\n{details}\nSHA-256: {':'.join(digest[i:i + 2] for i in range(0, len(digest), 2))}", flush=True)
+
+
+def describe_share(source, settings, code):
+    ca_file = Path("/var/lib/site-files/ca.crt")
+    context = ssl.create_default_context(cafile=ca_file)
+    # Inspect the certificate actually served by 8444, independently of its SAN.
+    context.check_hostname = False
+    with socket.create_connection(("127.0.0.1", settings["port"]), timeout=10) as connection:
+        with context.wrap_socket(connection, server_hostname="localhost") as tls:
+            der = tls.getpeercert(binary_form=True)
+            names = tls.getpeercert().get("subjectAltName", ())
+    print(f"Sharing {source}", flush=True)
+    certificate_description("8444 server certificate — compare in the browser before entering the code:", der)
+    certificate_description("Server CA — trust when installing:", ssl.PEM_cert_to_DER_cert(ca_file.read_text()))
+    addresses = lan_addresses()
+    if not addresses:
+        print("No active LAN interface address; showing localhost.", file=sys.stderr)
+        addresses = [("local", "localhost")]
+    for interface, address in addresses:
+        covered = ("DNS", address) in names if address == "localhost" else any(
+            kind == "IP Address" and ipaddress.ip_address(value) == ipaddress.ip_address(address)
+            for kind, value in names)
+        host = f"[{address}]" if ":" in address else address
+        url = f"https://{host}:{settings['port']}/"
+        print(f"\n{interface}: {url}", flush=True)
+        if not covered:
+            print(f"SAN missing: {address}. Add it to files.certificateNames in SOPS, deploy, then run sudo site-files-certificate.", file=sys.stderr)
+        subprocess.run(["qrencode", "--type=ANSIUTF8", "--", url], check=True)
+    if code is not None:
+        print(f"\nAccess code: {code}", flush=True)
 
 
 def mount_argument(source, destination, readonly=True, recursive=False):
@@ -125,7 +269,7 @@ def mount_argument(source, destination, readonly=True, recursive=False):
     return out.getvalue()
 
 
-def share(source, denied, settings):
+def share(source, denied, settings, code):
     runtime = Path("/run/site-httpserver")
     with (runtime / "lock").open("w") as lock:
         try:
@@ -138,12 +282,17 @@ def share(source, denied, settings):
         with tempfile.TemporaryDirectory(prefix="share-", dir=runtime) as directory:
             work = Path(directory)
             config = work / "nginx.conf"
-            config.write_text(configuration(settings, denied))
+            config.write_text(configuration(settings, denied, source, code, secrets.token_hex(32)))
+            config.chmod(0o600)
+            login = work / "login"
+            login.mkdir()
+            (login / "index.html").write_text(Path(settings["loginPage"]).read_text())
+            (login / "accepted").touch()
             cidfile = work / "container-id"
             socket_directory = runtime / "socket"
             socket = socket_directory / "backend.sock"
             socket.unlink(missing_ok=True)
-            target = "/share" if source.is_dir() else f"/share/{source.name}"
+            target = "/share" if source.is_dir() else "/share/item"
             command = [
                 "docker", "run", "--cidfile", str(cidfile),
                 "--runtime=runsc-files", "--network=none", "--read-only",
@@ -153,6 +302,7 @@ def share(source, denied, settings):
                 "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777",
                 "--mount", mount_argument(source, target),
                 "--mount", mount_argument(config, "/etc/nginx/nginx.conf"),
+                "--mount", mount_argument(login, "/login"),
                 "--mount", mount_argument(socket_directory, "/socket", readonly=False),
             ]
             for group in os.getgroups():
@@ -168,8 +318,7 @@ def share(source, denied, settings):
                     if time.monotonic() >= deadline:
                         raise RuntimeError("The sharing socket was not ready within 30 seconds")
                     time.sleep(0.1)
-                suffix = "/" if source.is_dir() else "/" + quote(source.name)
-                print(f"Sharing {source}\nhttps://{settings['hostname']}:{settings['port']}{suffix}", flush=True)
+                describe_share(source, settings, code)
                 print("Press Ctrl+C to stop sharing.", file=sys.stderr)
                 if process.wait() != 0:
                     raise RuntimeError("The sharing container stopped unexpectedly")
@@ -187,7 +336,15 @@ def main():
     settings = json.loads(Path(sys.argv[1]).read_text())
     parser = argparse.ArgumentParser(prog="httpserver", description=__doc__)
     parser.add_argument("source", nargs="?", default=".", help="file or directory (default: current directory)")
+    access = parser.add_mutually_exclusive_group()
+    access.add_argument("--code", help="require this access code for the current share")
+    access.add_argument("--random-code", action="store_true", help="generate a 16-character access code")
     args = parser.parse_args(sys.argv[2:])
+    code = args.code
+    if args.random_code:
+        code = "".join(secrets.choice("23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz") for _ in range(16))
+    if code is not None and (not code or len(code.encode()) > 256 or any(ord(c) < 32 for c in code)):
+        parser.error("Use a nonempty access code, at most 256 UTF-8 bytes, without control characters")
     if os.getuid() != pwd.getpwnam(settings["user"]).pw_uid:
         parser.error(f"Run as {settings['user']}, the configured sharing user")
     try:
@@ -199,7 +356,7 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, interrupted)
     try:
-        share(source, denied, settings)
+        share(source, denied, settings, code)
     except KeyboardInterrupt:
         return 0
     except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:

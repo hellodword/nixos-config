@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>访问分享</title>
+<style>
+  :root { color-scheme: light dark; font: 17px system-ui, sans-serif; }
+  body { max-width: 22rem; margin: 18vh auto; padding: 1.5rem; }
+  form { display: grid; gap: 1rem; }
+  input, button { font: inherit; padding: .8rem; border: 1px solid #888; border-radius: .4rem; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid #3985de; outline-offset: 3px; }
+  p { min-height: 1.5em; }
+</style>
+<form>
+  <label for="code">访问码</label>
+  <input id="code" name="code" type="password" autocomplete="one-time-code" required autofocus>
+  <button type="submit">打开分享</button>
+</form>
+<p role="status" aria-live="polite"></p>
+<script>
+const form = document.querySelector('form');
+const button = document.querySelector('button');
+const status = document.querySelector('[role=status]');
+form.addEventListener('submit', async event => {
+  event.preventDefault();
+  button.disabled = true;
+  status.textContent = '正在打开…';
+  try {
+    const code = Array.from(new TextEncoder().encode(form.elements.code.value), byte => byte.toString(16).padStart(2, '0')).join('');
+    const response = await fetch('/_share/login', { method: 'POST', headers: { 'X-Share-Code': code }, credentials: 'same-origin' });
+    if (response.ok) {
+      status.textContent = '';
+      location.reload();
+    } else {
+      status.textContent = response.status === 429 ? '尝试过于频繁，请稍后重试。' : '访问码不正确。';
+    }
+  } catch {
+    status.textContent = '连接失败，请重试。';
+  } finally {
+    button.disabled = false;
+  }
+});
+</script>
+</html>

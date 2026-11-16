@@ -89,5 +89,5 @@ mv -f "$state/private/server.key.new" "$state/private/server.key"
 mv -f "$state/server.crt.new" "$state/server.crt"
 # systemd loads a matching certificate/key pair when the service starts.
 systemctl restart site-files-web.service
-printf 'Client CA certificate: %s/ca.crt\n' "$state"
+printf 'Server CA certificate: %s/ca.crt\n' "$state"
 openssl x509 -in "$state/server.crt" -noout -dates
