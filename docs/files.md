@@ -48,11 +48,19 @@ sudo site-files-certificate
 
 ```sh
 sudo site-files-client issue iphone
-sudo site-files-client export iphone --output ./iphone.zip
-httpserver --random-code ./iphone.zip
+sudo site-files-client export iphone --output-dir ./iphone
+httpserver --random-code ./iphone
 ```
 
-`export` 交互询问 P12 密码，ZIP 仅调用用户可读，包含服务端 CA、加密的设备 P12 和 iOS 安装描述文件。描述文件包含同一份加密身份，安装时仍需输入 P12 密码。导出路径必须是新文件。
+`export` 创建仅调用用户可访问的新目录，一次生成三个文件：
+
+| 文件 | 用途 |
+| --- | --- |
+| `iphone.mobileconfig` | iOS 描述文件，包含服务端 CA 和加密的设备身份 |
+| `iphone.p12` | Android、Windows 的加密设备身份 |
+| `server-ca.cer` | Android、Windows 的服务端信任根 |
+
+命令交互询问 P12 密码，安装身份时输入同一密码。目录权限为 `0700`，文件权限为 `0600`。
 
 终端会显示局域网地址、二维码、访问码，以及实际由 8444 提供的服务端证书和服务端 CA 的完整 SHA-256 指纹。
 
@@ -60,31 +68,31 @@ httpserver --random-code ./iphone.zip
 
 1. 用设备扫描二维码，打开 8444。尚未安装 CA 时浏览器会提示证书不受信任；进入浏览器自身的连接安全详情，选择当前站点的**服务端证书**。
 2. 将其完整 SHA-256 指纹与 laptop 终端中 `8444 server certificate` 的值逐项比较。核对的是浏览器实际收到的 TLS 证书；网页正文显示的指纹不能用来确认连接身份。
-3. 指纹一致后，在网页输入访问码并下载 ZIP。解压，按下述平台步骤安装。P12 密码只在系统导入身份时输入。
+3. 指纹一致后，在网页输入访问码，从文件列表选择本平台需要的文件。P12 密码在系统导入身份时输入。
 4. 打开 `https://<地址>:8443/`，选择设备身份，再使用 `admin` 或 `user` 登录。
-5. 在 laptop 按 Ctrl+C 结束分享，删除两端已用完的导出包和解压文件。
+5. 在 laptop 按 Ctrl+C 结束分享，删除两端已用完的导出文件。
 
 这次人工核对用于防止证书交付过程被中间人替换。比较叶证书时使用终端的 `8444 server certificate` 指纹；安装信任根时使用 `Server CA` 指纹。指纹不一致或浏览器无法显示完整指纹时，先停止输入访问码并核对连接地址。
 
 ### iOS 27 / Safari
 
-Safari 网页下方菜单 → **Privacy & Security → Connection Security Details → Details**。在证书链中选站点叶证书，查看 SHA-256，按上面的顺序核对并下载。
+Safari 网页下方菜单 → **Privacy & Security → Connection Security Details → Details**。在证书链中选站点叶证书，查看 SHA-256，按上面的顺序核对。
 
-在“文件”中解压 ZIP，打开其中的 `.mobileconfig`。到“设置 → 已下载描述文件”完成安装，输入设备解锁密码及导出时设置的 P12 密码。再到“设置 → 通用 → 关于本机 → 证书信任设置”，开启对 `Private file sharing CA` 的完全信任。该描述文件同时安装服务端 CA 与设备身份；单独的 `.p12` 留给其他平台导入。
+在文件列表点击 `iphone.mobileconfig`，允许 Safari 下载描述文件。到“设置 → 已下载描述文件”安装，输入设备解锁密码及 P12 密码；再到“设置 → 通用 → 关于本机 → 证书信任设置”，开启对 `Private file sharing CA` 的完全信任。
 
-安装步骤及手动根证书信任见 [Apple 描述文件说明](https://support.apple.com/en-us/102400)和 [Apple 证书信任说明](https://support.apple.com/en-us/102390)。
+网页分发、安装及手动根证书信任见 [Apple 分发说明](https://support.apple.com/en-in/guide/profile-manager/pmdbd71ebc9/mac)、[描述文件安装说明](https://support.apple.com/en-us/102400)和[证书信任说明](https://support.apple.com/en-us/102390)。
 
 ### Windows / Edge、Chrome
 
 从地址栏的连接信息打开证书查看器，选择站点叶证书并查看 SHA-256；也可用开发者工具的 **Security → View certificate**，[Edge 操作说明](https://learn.microsoft.com/en-us/microsoft-edge/devtools/security/)。
 
-下载并解压后，将 `server-ca.cer` 导入“当前用户 → 受信任的根证书颁发机构”，将设备 `.p12` 导入“当前用户 → 个人”，输入 P12 密码。随后访问 8443 并选择设备证书。
+下载 `server-ca.cer` 和 `iphone.p12`。将前者导入“当前用户 → 受信任的根证书颁发机构”，后者导入“当前用户 → 个人”，输入 P12 密码。
 
 ### Android / Chrome
 
 从地址栏连接信息进入证书详情，选择站点叶证书并核对 SHA-256。
 
-下载并解压后，在系统设置的“安全 → 加密与凭据 → 安装证书”中，将 `server-ca.cer` 作为 CA 证书安装，再将设备 `.p12` 作为“VPN 和应用”用户证书安装，输入 P12 密码。不同厂商的菜单名称略有区别；访问 8443 时由 Chrome 调起系统身份选择器。
+下载 `server-ca.cer` 和 `iphone.p12`。在系统设置的“安全 → 加密与凭据 → 安装证书”中，将前者作为 CA 证书安装，后者作为“VPN 和应用”用户证书安装，输入 P12 密码。不同厂商的菜单名称略有区别。
 
 ## 管理设备与状态
 
@@ -105,7 +113,7 @@ sudo site-files-client revoke iphone
 httpserver
 httpserver ./report.pdf
 httpserver ~/Pictures/trip
-httpserver --random-code ./iphone.zip
+httpserver --random-code ./iphone
 httpserver --code '自行指定的访问码' ./directory
 ```
 
@@ -113,7 +121,9 @@ httpserver --code '自行指定的访问码' ./directory
 
 命令为活动的局域网网卡地址分别打印 URL 和二维码，包括由实际网卡承载的 bridge 或 VLAN；找不到这样的地址时显示 localhost。每个地址都会检查证书 SAN，缺少的地址仍会显示，并提示添加到 SOPS 的 `files.certificateNames`。将常用地址一次加入数组、部署并重新签发，之后保留该配置即可。
 
-访问码可自行指定或随机生成。它只用于当前分享；浏览器通过验证后持有 Secure、HttpOnly、SameSite=Lax 会话 Cookie。新分享生成新会话，二维码只包含地址。命令在前台显示请求概要，按 Ctrl+C 结束分享及正在传输的文件，一次只能运行一个分享；空闲入口返回 404。
+`--random-code` 生成 12 位大写字母和数字，终端与网页输入框均以 `XXXX-XXXX-XXXX` 显示。输入框自动大写、分组，也可粘贴带或不带连字符的访问码。`--code` 使用自行指定的原值。
+
+访问码只用于当前分享；浏览器通过验证后持有 Secure、HttpOnly、SameSite=Lax 会话 Cookie。新分享生成新会话，二维码只包含地址。命令在前台显示请求概要，按 Ctrl+C 结束分享及正在传输的文件，一次只能运行一个分享；空闲入口返回 404。
 
 传入路径按实际文件系统位置检查，包括持久目录的 bind mount 别名。整个 home 等宽泛根目录需要改为具体子目录；敏感名称与路径由 [`site.files.temporary`](../modules/services/files.nix) 声明，可在主机配置中追加。目录浏览使用 Nginx 原生列表，普通点文件可通过具体 URL 访问。
 
@@ -121,12 +131,12 @@ httpserver --code '自行指定的访问码' ./directory
 
 ## 访问与排查
 
-Linux 上从自己的导出包解压 P12 后，可以验证证书并读写文件；curl 会交互询问 P12 密码和账号密码：
+Linux 上可使用自己导出目录中的 P12 验证证书并读写文件；curl 会交互询问 P12 密码和账号密码：
 
 ```sh
-curl --cacert /var/lib/site-files/ca.crt --cert-type P12 --cert ./linux.p12 \
+curl --cacert /var/lib/site-files/ca.crt --cert-type P12 --cert ./linux/linux.p12 \
   --user admin --upload-file ./report.pdf https://localhost:8443/user/report.pdf
-curl --cacert /var/lib/site-files/ca.crt --cert-type P12 --cert ./linux.p12 \
+curl --cacert /var/lib/site-files/ca.crt --cert-type P12 --cert ./linux/linux.p12 \
   --user user https://localhost:8443/user/report.pdf
 smbclient //localhost/files -U user --client-protection=encrypt
 ```

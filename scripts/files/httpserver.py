@@ -25,6 +25,10 @@ import time
 from urllib.parse import quote
 
 
+PROFILE_TYPE = "application/x-apple-aspen-config"
+mimetypes.add_type(PROFILE_TYPE, ".mobileconfig")
+
+
 def nginx_quote(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -76,7 +80,14 @@ def selection(raw, settings):
     return source, denied
 
 
-def configuration(settings, denied, source, code, session):
+def login_page(settings, source, grouped_code):
+    profile_url = "/" + quote(source.name, safe="") if source.is_file() and source.suffix.lower() == ".mobileconfig" else ""
+    return (Path(settings["loginPage"]).read_text()
+            .replace("@PROFILE_URL@", profile_url)
+            .replace("@GROUPED_CODE@", "true" if grouped_code else "false"))
+
+
+def configuration(settings, denied, source, code, session, grouped_code):
     patterns = [fnmatch.translate(name).removesuffix(r"\z").removesuffix(r"\Z")
                 for name in settings["blockedNames"]]
     rules = [f"location ~ {nginx_quote('(?:^|/)(?:' + '|'.join(patterns) + ')(?:/|$)')} {{ return 404; }}"]
@@ -84,7 +95,7 @@ def configuration(settings, denied, source, code, session):
               for path in denied]
     auth_maps = auth_locations = guard = ""
     if code is not None:
-        page = Path(settings["loginPage"]).read_text()
+        page = login_page(settings, source, grouped_code)
         script = re.search(r"<script>(.*?)</script>", page, re.S)[1]
         digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
         auth_maps = f"""
@@ -130,14 +141,17 @@ def configuration(settings, denied, source, code, session):
     single = ""
     if source.is_file():
         content_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
-        single = f"""
-        location = / {{
+        filename = re.sub(r"[^A-Za-z0-9_.-]", "_", source.name)
+        disposition = nginx_quote(f'inline; filename="{filename}"; filename*=UTF-8\'\'{quote(source.name, safe="")}')
+        for path in ("/", "/" + source.name):
+            single += f"""
+        location = {nginx_quote(path)} {{
             {guard}
             limit_except GET {{ deny all; }}
             try_files /item =404;
             types {{ }}
             default_type {content_type};
-            add_header Content-Disposition "inline; filename*=UTF-8''{quote(source.name, safe='')}";
+            add_header Content-Disposition {disposition};
             add_header X-Content-Type-Options nosniff always;
             add_header Content-Security-Policy $file_csp always;
             add_header Cache-Control "no-store" always;
@@ -156,12 +170,14 @@ http {
         '"request_bytes":$request_length,"response_bytes":$bytes_sent,"seconds":$request_time}';
     access_log /dev/stdout files;
     include /etc/nginx/mime.types;
+    types { %s mobileconfig; }
     default_type application/octet-stream;
     client_body_temp_path /tmp/body;
-    # HTML and SVG need an isolated origin; PDF viewers need their native context.
+    # HTML and SVG need isolation; PDFs and profiles use native browser handling.
     map $sent_http_content_type $file_csp {
         default "sandbox allow-downloads";
         application/pdf "";
+        %s "";
     }
     %s
     server {
@@ -183,7 +199,7 @@ http {
         %s
     }
 }
-""" % (settings["port"], auth_maps, auth_locations, single, guard, listing, "\n        ".join(rules))
+""" % (settings["port"], PROFILE_TYPE, PROFILE_TYPE, auth_maps, auth_locations, single, guard, listing, "\n        ".join(rules))
 
 
 def lan_addresses():
@@ -269,7 +285,7 @@ def mount_argument(source, destination, readonly=True, recursive=False):
     return out.getvalue()
 
 
-def share(source, denied, settings, code):
+def share(source, denied, settings, code, grouped_code):
     runtime = Path("/run/site-httpserver")
     with (runtime / "lock").open("w") as lock:
         try:
@@ -282,11 +298,11 @@ def share(source, denied, settings, code):
         with tempfile.TemporaryDirectory(prefix="share-", dir=runtime) as directory:
             work = Path(directory)
             config = work / "nginx.conf"
-            config.write_text(configuration(settings, denied, source, code, secrets.token_hex(32)))
+            config.write_text(configuration(settings, denied, source, code, secrets.token_hex(32), grouped_code))
             config.chmod(0o600)
             login = work / "login"
             login.mkdir()
-            (login / "index.html").write_text(Path(settings["loginPage"]).read_text())
+            (login / "index.html").write_text(login_page(settings, source, grouped_code))
             (login / "accepted").touch()
             cidfile = work / "container-id"
             socket_directory = runtime / "socket"
@@ -338,11 +354,12 @@ def main():
     parser.add_argument("source", nargs="?", default=".", help="file or directory (default: current directory)")
     access = parser.add_mutually_exclusive_group()
     access.add_argument("--code", help="require this access code for the current share")
-    access.add_argument("--random-code", action="store_true", help="generate a 16-character access code")
+    access.add_argument("--random-code", action="store_true", help="generate a 12-character access code displayed as XXXX-XXXX-XXXX")
     args = parser.parse_args(sys.argv[2:])
     code = args.code
     if args.random_code:
-        code = "".join(secrets.choice("23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz") for _ in range(16))
+        raw = "".join(secrets.choice("23456789ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(12))
+        code = "-".join(raw[start:start + 4] for start in range(0, 12, 4))
     if code is not None and (not code or len(code.encode()) > 256 or any(ord(c) < 32 for c in code)):
         parser.error("Use a nonempty access code, at most 256 UTF-8 bytes, without control characters")
     if os.getuid() != pwd.getpwnam(settings["user"]).pw_uid:
@@ -356,7 +373,7 @@ def main():
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, interrupted)
     try:
-        share(source, denied, settings, code)
+        share(source, denied, settings, code, args.random_code)
     except KeyboardInterrupt:
         return 0
     except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:

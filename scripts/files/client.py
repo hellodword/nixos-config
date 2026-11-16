@@ -4,7 +4,6 @@ import argparse
 import fcntl
 import getpass
 import hashlib
-import io
 import os
 from pathlib import Path
 import plistlib
@@ -14,7 +13,6 @@ import subprocess
 import sys
 import tempfile
 import uuid
-import zipfile
 
 
 STATE = Path("/var/lib/site-files")
@@ -85,7 +83,7 @@ def payload(kind, name, **values):
             "PayloadIdentifier": "site.files." + identifier, "PayloadDisplayName": name, **values}
 
 
-def export(name, output):
+def export(name, output_dir):
     device = AUTHORITY / "devices" / name
     if (device / "revoked").exists():
         raise ValueError("This identity has been revoked; issue a replacement under a new name")
@@ -106,16 +104,15 @@ def export(name, output):
         payload("com.apple.security.root", "File sharing server CA", PayloadContent=ca),
         payload("com.apple.security.pkcs12", name, PayloadContent=identity),
     ])
-    archive = io.BytesIO()
-    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
-        bundle.writestr("server-ca.cer", ca)
-        bundle.writestr(f"{name}.p12", identity)
-        bundle.writestr(f"{name}.mobileconfig", plistlib.dumps(profile))
-    # Exclusive creation preserves existing exports. Only the invoking user can read it.
-    with open(os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as handle:
-        handle.write(archive.getvalue())
-        os.fchown(handle.fileno(), int(os.environ.get("SUDO_UID", "0")), int(os.environ.get("SUDO_GID", "0")))
-    print(f"Exported {output}")
+    owner = int(os.environ.get("SUDO_UID", "0")), int(os.environ.get("SUDO_GID", "0"))
+    output_dir.mkdir(mode=0o700)
+    for filename, content in (("server-ca.cer", ca), (f"{name}.p12", identity),
+                              (f"{name}.mobileconfig", plistlib.dumps(profile))):
+        with open(os.open(output_dir / filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb") as handle:
+            handle.write(content)
+            os.fchown(handle.fileno(), *owner)
+    os.chown(output_dir, *owner)
+    print(f"Exported {output_dir}")
 
 
 def main():
@@ -127,7 +124,7 @@ def main():
         sub = commands.add_parser(command)
         sub.add_argument("name", help="device name: letters, numbers, dot, underscore or hyphen")
         if command == "export":
-            sub.add_argument("--output", required=True, type=Path, help="new ZIP bundle path")
+            sub.add_argument("--output-dir", required=True, type=Path, help="new directory for iOS, Android and Windows certificate files")
     args = parser.parse_args()
     if hasattr(args, "name") and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", args.name):
         parser.error("Use a device name starting with a letter or number, at most 64 characters")
@@ -142,7 +139,7 @@ def main():
             if args.command == "issue":
                 issue(args.name)
             elif args.command == "export":
-                export(args.name, args.output)
+                export(args.name, args.output_dir)
             elif args.command == "revoke":
                 device = AUTHORITY / "devices" / args.name
                 (device / "revoked").touch()

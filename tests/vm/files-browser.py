@@ -1,4 +1,4 @@
-"""Enroll a device through the temporary share, then use its identity on 8443."""
+"""Fetch a profile through browser navigation, then use its identity on 8443."""
 
 import base64
 import http.client
@@ -7,9 +7,8 @@ import plistlib
 import ssl
 import subprocess
 import sys
-import zipfile
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 with sync_playwright() as playwright:
@@ -19,27 +18,56 @@ with sync_playwright() as playwright:
     context = browser.new_context(ignore_https_errors=True, accept_downloads=True)
     page = context.new_page()
     page.goto("https://files.test:8444/")
-    page.get_by_label("访问码").fill("wrong-code")
+    code = page.get_by_label("访问码")
+    expect(code).to_have_attribute("type", "text")
+    code.fill("wrong-code")
     page.get_by_role("button", name="打开分享").click()
     page.get_by_role("status").filter(has_text="访问码不正确").wait_for()
-    page.get_by_label("访问码").fill("Enrollment-42")
-    with page.expect_download() as transfer:
-        page.get_by_role("button", name="打开分享").click()
+    access_code = sys.argv[2]
+    code.fill(access_code.lower())
+    expect(code).to_have_value(access_code)
+    code.fill("")
+    code.press_sequentially(access_code.replace("-", "").lower())
+    expect(code).to_have_value(access_code)
+    # Editing across a separator removes the adjacent character in one keystroke.
+    code.press("Home")
+    for _ in range(5):
+        code.press("ArrowRight")
+    code.press("Backspace")
+    code.press(access_code[3])
+    expect(code).to_have_value(access_code)
+    page.get_by_role("button", name="打开分享").click()
+    # Chromium verifies the HTTP handoff. The native installation prompt belongs to iOS.
+    with page.expect_download() as transfer, page.expect_request("**/phone.mobileconfig") as navigation:
+        page.get_by_role("link", name="phone.mobileconfig", exact=True).click()
+    assert navigation.value.is_navigation_request() and navigation.value.method == "GET"
     download = transfer.value
-    assert download.suggested_filename == "phone.zip", download.suggested_filename
-    download.save_as("/tmp/phone.zip")
+    assert download.suggested_filename == "phone.mobileconfig", download.suggested_filename
+    download.save_as("/tmp/phone.mobileconfig")
+    response = context.request.get(download.url)
+    assert response.status == 200, response.status
+    assert response.headers["content-type"] == "application/x-apple-aspen-config", response.headers
+    assert response.headers["cache-control"] == "no-store", response.headers
+    assert "sandbox" not in response.headers.get("content-security-policy", ""), response.headers
+    assert response.body() == Path("/tmp/phone.mobileconfig").read_bytes()
+    for filename in ("phone.p12", "server-ca.cer"):
+        response = context.request.get("https://files.test:8444/" + filename)
+        assert response.status == 200, response.status
+        Path("/tmp", filename).write_bytes(response.body())
     cookies = [cookie for cookie in context.cookies() if cookie["name"] == "site_share"]
     assert len(cookies) == 1 and cookies[0]["secure"] and cookies[0]["httpOnly"], cookies
     browser.close()
 
-with zipfile.ZipFile("/tmp/phone.zip") as bundle:
-    profile = plistlib.loads(bundle.read("phone.mobileconfig"))
-    identities = [item for item in profile["PayloadContent"] if item["PayloadType"] == "com.apple.security.pkcs12"]
-    assert len(identities) == 1 and "Password" not in identities[0]
-    assert identities[0]["PayloadContent"] == bundle.read("phone.p12")
-    Path("/tmp/phone.p12").write_bytes(bundle.read("phone.p12"))
-    assert bundle.read("server-ca.cer") == subprocess.check_output(
-        ["openssl", "x509", "-in", "/tmp/ca.crt", "-outform", "DER"])
+profile_bytes = Path("/tmp/phone.mobileconfig").read_bytes()
+assert profile_bytes == Path("/tmp/single.mobileconfig").read_bytes()
+profile = plistlib.loads(profile_bytes)
+identities = [item for item in profile["PayloadContent"] if item["PayloadType"] == "com.apple.security.pkcs12"]
+roots = [item for item in profile["PayloadContent"] if item["PayloadType"] == "com.apple.security.root"]
+assert len(identities) == 1 and "Password" not in identities[0]
+assert Path("/tmp/phone.p12").read_bytes() == identities[0]["PayloadContent"]
+ca = subprocess.check_output(["openssl", "x509", "-in", "/tmp/ca.crt", "-outform", "DER"])
+assert len(roots) == 1 and roots[0]["PayloadContent"] == ca
+assert Path("/tmp/server-ca.cer").read_bytes() == ca
 
 result = subprocess.check_output([
     "curl", "--fail", "--silent", "--show-error", "--cacert", "/tmp/ca.crt",

@@ -7,21 +7,49 @@
   :root { color-scheme: light dark; font: 17px system-ui, sans-serif; }
   body { max-width: 22rem; margin: 18vh auto; padding: 1.5rem; }
   form { display: grid; gap: 1rem; }
+  [hidden] { display: none; }
   input, button { font: inherit; padding: .8rem; border: 1px solid #888; border-radius: .4rem; }
+  input[data-grouped="true"] { font-family: monospace; letter-spacing: .08em; }
   button { cursor: pointer; }
   :focus-visible { outline: 3px solid #3985de; outline-offset: 3px; }
   p { min-height: 1.5em; }
 </style>
 <form>
   <label for="code">访问码</label>
-  <input id="code" name="code" type="password" autocomplete="one-time-code" required autofocus>
+  <input id="code" name="code" type="password" data-grouped="@GROUPED_CODE@" autocomplete="one-time-code" required autofocus>
   <button type="submit">打开分享</button>
 </form>
+<a id="install" data-profile="@PROFILE_URL@" hidden>安装描述文件</a>
 <p role="status" aria-live="polite"></p>
 <script>
 const form = document.querySelector('form');
 const button = document.querySelector('button');
 const status = document.querySelector('[role=status]');
+const install = document.querySelector('#install');
+const input = form.elements.code;
+if (input.dataset.grouped === 'true') {
+  input.type = 'text';
+  input.placeholder = 'XXXX-XXXX-XXXX';
+  input.autocapitalize = 'characters';
+  input.spellcheck = false;
+  const characters = value => value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  input.addEventListener('beforeinput', event => {
+    const start = input.selectionStart;
+    if (start !== input.selectionEnd) return;
+    if (event.inputType === 'deleteContentBackward' && input.value[start - 1] === '-') {
+      input.setSelectionRange(start - 2, start);
+    } else if (event.inputType === 'deleteContentForward' && input.value[start] === '-') {
+      input.setSelectionRange(start, start + 2);
+    }
+  });
+  input.addEventListener('input', () => {
+    const position = characters(input.value.slice(0, input.selectionStart)).length;
+    const raw = characters(input.value).slice(0, 12);
+    input.value = (raw.match(/.{1,4}/g) || []).join('-');
+    const caret = Math.min(position + Math.floor(Math.max(0, position - 1) / 4), input.value.length);
+    input.setSelectionRange(caret, caret);
+  });
+}
 form.addEventListener('submit', async event => {
   event.preventDefault();
   button.disabled = true;
@@ -31,7 +59,15 @@ form.addEventListener('submit', async event => {
     const response = await fetch('/_share/login', { method: 'POST', headers: { 'X-Share-Code': code }, credentials: 'same-origin' });
     if (response.ok) {
       status.textContent = '';
-      location.reload();
+      const profile = install.dataset.profile;
+      if (profile || location.pathname.toLowerCase().endsWith('.mobileconfig')) {
+        install.href = profile || location.href;
+        form.hidden = true;
+        install.hidden = false;
+        install.focus();
+      } else {
+        location.reload();
+      }
     } else {
       status.textContent = response.status === 429 ? '尝试过于频繁，请稍后重试。' : '访问码不正确。';
     }

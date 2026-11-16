@@ -60,6 +60,7 @@ in
         (client, "client", "ls -l /tmp; ip address; ip route; journalctl -b -u files-enrollment --no-pager -n 80"),
     ]):
         import json
+        import re
         import shlex
 
         start_all()
@@ -155,14 +156,22 @@ in
                     assert "content-type: image/png" in request("-I", "/image.png", 8444).lower()
                 stop_share(container)
 
-        with subtest("browser enrollment downloads an encrypted device bundle"):
+        with subtest("browser navigation delivers a device profile for certificate authentication"):
             server.succeed("site-files-client issue phone")
-            server.succeed("printf 'export-test-password\\nexport-test-password\\n' | setsid --fork --wait env SUDO_UID=$(id -u developer) SUDO_GID=$(id -g developer) site-files-client export phone --output /home/developer/share/phone.zip", timeout=30)
-            container = share("--code Enrollment-42 /home/developer/share/phone.zip")
-            client.succeed("systemd-run --unit=files-enrollment --setenv=PATH=/run/current-system/sw/bin python3 ${./files-browser.py} ${pkgs.chromium}/bin/chromium")
+            server.succeed("printf 'export-test-password\\nexport-test-password\\n' | setsid --fork --wait env SUDO_UID=$(id -u developer) SUDO_GID=$(id -g developer) site-files-client export phone --output-dir /home/developer/share/phone", timeout=30)
+            container = share("--code Enrollment-42 /home/developer/share/phone/phone.mobileconfig")
+            request("-c /tmp/share.cookies -X POST -H 'X-Share-Code: " + "Enrollment-42".encode().hex() + "'", "/_share/login", 8444)
+            for path in ("/", "/phone.mobileconfig"):
+                assert "content-type: application/x-apple-aspen-config" in request("-b /tmp/share.cookies -I", path, 8444).lower()
+            request("-b /tmp/share.cookies -o /tmp/single.mobileconfig", "/", 8444)
+            stop_share(container)
+            container = share("--random-code /home/developer/share/phone")
+            server.wait_until_succeeds("journalctl -u files-share --all -o cat --no-pager | grep -E 'Access code: ([A-Z2-9]{4}-){2}[A-Z2-9]{4}'")
+            output = server.succeed("journalctl -u files-share --all -o cat --no-pager")
+            code = re.findall(r"Access code: ([A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4})", output)[-1]
+            client.succeed("systemd-run --unit=files-enrollment --setenv=PATH=/run/current-system/sw/bin python3 ${./files-browser.py} ${pkgs.chromium}/bin/chromium " + shlex.quote(code))
             client.wait_until_succeeds("test -e /tmp/device-connection-ready || ! systemctl is-active --quiet files-enrollment", timeout=90)
             client.succeed("test -e /tmp/device-connection-ready")
-            output = server.succeed("journalctl -u files-share --all -o cat --no-pager")
             assert "https://192.168.1.2:8444/" in output, output
             fingerprint = server.succeed("${pkgs.openssl}/bin/openssl x509 -in /var/lib/site-files/server.crt -noout -sha256 -fingerprint").strip().split("=", 1)[1]
             assert fingerprint in output, output
