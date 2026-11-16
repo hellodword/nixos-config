@@ -147,7 +147,8 @@ def purpose_paths(args, templates):
                     ("wetv.qq.com", "east"),
                     ("baidu.com", "cn"), ("qq.com", "cn"), ("weixin.qq.com", "cn"),
                     ("foo.weixin.qq.com", "cn"), ("jd.com", "cn"), ("taobao.com", "cn"),
-                    ("tencent.com", "cn"), ("unclassified-fixture.example.cn", "west"),
+                    ("tencent.com", "cn"), ("mmbiz.qpic.cn", "cn"), ("imap.wo.cn", "cn"),
+                    ("unclassified-fixture.example.cn", "cn"),
                     ("unclassified-fixture.example.org", "west"),
                 ]
                 for domain, expected in cases:

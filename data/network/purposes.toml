@@ -320,7 +320,13 @@ rule_set = ["geosite-geolocation-!cn"]
 action = "route"
 outbound = "proxy"
 
-# 已收录的国内站点直连。
+# 国内兜底先匹配 .cn，再匹配各客户端的国内域名集合。
+[[rules]]
+scope = "domain"
+domain_suffix = ["cn"]
+action = "route"
+outbound = "direct"
+
 [[rules]]
 scope = "domain"
 rule_set = ["geosite-geolocation-cn"]
@@ -619,7 +625,7 @@ shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/me
 
 [rule_sets."geosite-geolocation-cn"]
 url = "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-geolocation-cn.srs"
-shadowrocket = ["DOMAIN-SET,https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Shadowrocket/China/China_Domain.list"]
+shadowrocket = ["DOMAIN-SET,https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Shadowrocket/ChinaMax/ChinaMax_Domain.list"]
 seed = { url = "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@f845ad54a708500aa9c76be84cfaa04cc7141edd/geosite-geolocation-cn.srs", hash = "sha256-+5Mqkte4DU68g2RSaA1J1B46C/C5rCDis2jRsDCzFFo=" }
 
 [rule_sets."geoip-telegram"]
