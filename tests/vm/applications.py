@@ -25,6 +25,24 @@ ARTIFACTS = ROOT / "artifacts"
 VAULT_URL = "https://vault.test.nix"
 EMAIL = "desktop@example.test"
 PASSWORD = "Synthetic-vault-passphrase-2026!"
+STARTED = time.monotonic()
+RUN = {"phases": []}
+
+
+def phase(name, **details):
+    RUN.update(details, phase=name, seconds=time.monotonic() - STARTED)
+    RUN["phases"].append({"phase": name, "seconds": RUN["seconds"]})
+    path = ARTIFACTS / (RUN["application"] + "-state.json")
+    pending = path.with_suffix(".pending")
+    pending.write_text(json.dumps(RUN, ensure_ascii=False, indent=2) + "\n")
+    pending.replace(path)
+    print(json.dumps({"application": RUN["application"], "phase": name,
+                      "seconds": RUN["seconds"], **details}, ensure_ascii=False), flush=True)
+
+
+def failure(error):
+    RUN.setdefault("failure", {"phase": RUN.get("phase"),
+                               "type": type(error).__name__, "message": str(error)})
 
 
 @contextmanager
@@ -69,15 +87,64 @@ def application(name, arguments):
                     process.wait(timeout=10)
 
 
-def attach(playwright, port, process):
+def attach(playwright, port, check_alive):
+    last_error = None
     def connect():
-        if process.poll() not in (None, 0):
-            raise AssertionError(f"Application exited with {process.returncode}")
+        nonlocal last_error
+        check_alive()
         try:
             return playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}", timeout=3000)
-        except Exception:
+        except PlaywrightError as error:
+            if not isinstance(error, PlaywrightTimeoutError) and not any(
+                reason in str(error) for reason in ("ECONNREFUSED", "ECONNRESET", "socket hang up")
+            ):
+                raise
+            last_error = error
             return None
-    return wait_for(connect, "application debugging endpoint")
+    try:
+        return wait_for(connect, "application debugging endpoint")
+    except AssertionError as error:
+        if last_error:
+            error.add_note("Last CDP connection error: " + str(last_error))
+        raise
+
+
+def gui_pids(name, port, namespace_pid=None):
+    """Find this debuggee across desktop scopes and sandbox PID namespaces."""
+    executable = "code" if name == "vscode" else "bitwarden"
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            # Electron can rewrite argv into one space-separated process title.
+            arguments = (entry / "cmdline").read_bytes().replace(b"\0", b" ").split()
+            if f"--remote-debugging-port={port}".encode() not in arguments:
+                continue
+            if any(arg.startswith(b"--type=") for arg in arguments):
+                continue
+            if namespace_pid is not None:
+                # CDP reports the PID inside the application's sandbox.
+                ids = next(line.split()[1:] for line in (entry / "status").read_text().splitlines()
+                           if line.startswith("NSpid:"))
+                if ids[-1] != str(namespace_pid):
+                    continue
+            else:
+                if Path(os.fsdecode(arguments[0])).name.lstrip(".") not in (executable, executable + "-wrapped", "electron"):
+                    continue
+                if b"ELECTRON_RUN_AS_NODE=1" in (entry / "environ").read_bytes().split(b"\0"):
+                    continue
+            yield int(entry.name)
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+
+
+def retain_windows(name):
+    desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower().split(":")
+    wm = "swaymsg" if "sway" in desktop else "i3-msg" if "i3" in desktop else None
+    if wm:
+        tree = subprocess.run([wm, "-t", "get_tree"], check=True, capture_output=True,
+                              text=True, timeout=5).stdout
+        (ARTIFACTS / (name + "-windows.json")).write_text(tree)
 
 
 @contextmanager
@@ -85,56 +152,111 @@ def electron(playwright, name, arguments, port):
     network_log = (Path.home() / ".config/Bitwarden/e2e-network.json"
                    if name == "bitwarden" else ARTIFACTS / (name + "-network.json"))
     network_log.parent.mkdir(parents=True, exist_ok=True)
+    phase("launch", command=arguments, executable=shutil.which(arguments[0]),
+          session=os.environ.get("XDG_CURRENT_DESKTOP"),
+          sessionType=os.environ.get("XDG_SESSION_TYPE"))
     with application(name, [*arguments, f"--remote-debugging-port={port}",
                             f"--log-net-log={network_log}"]) as process:
-        browser = attach(playwright, port, process)
-        def application_page():
-            for context in browser.contexts:
-                for candidate in context.pages:
-                    if ("index.html" if name == "bitwarden" else "workbench") in candidate.url:
-                        return candidate
-            # Synchronous Playwright dispatches page/navigation events during API
-            # calls; sleeping while reading cached page lists misses new windows.
+        browser = page = gui_process = None
+
+        def watch_gui(pid):
+            nonlocal gui_process
+            group = next(line[3:] for line in Path(f"/proc/{pid}/cgroup").read_text().splitlines()
+                         if line.startswith("0::"))
+            RUN["guiUnit"] = next(part for part in reversed(Path(group).parts)
+                                  if part.endswith((".scope", ".service")))
+            if RUN.get("guiPid") == pid:
+                return
+            descriptor = os.pidfd_open(pid)
+            if gui_process is not None:
+                os.close(gui_process)
+            gui_process = descriptor
+            RUN["guiPid"] = pid
+            RUN["guiCommand"] = Path(f"/proc/{pid}/cmdline").read_text().rstrip("\0").split("\0")
             try:
-                browser.contexts[0].wait_for_event("page", timeout=500)
-            except PlaywrightTimeoutError:
-                pass
-            return None
-        page = wait_for(application_page, "application window")
-        page.set_default_timeout(30000)
-        page.on("requestfailed", lambda request: print(
-            name + " request failed:", request.url.partition("?")[0], request.failure, flush=True,
-        ))
-        # Code's CLI can finish when its window reopens in a container. Track
-        # the GUI process so the test service waits for its shutdown as well.
-        gui_process = None
-        if name == "vscode":
-            processes = browser.new_browser_cdp_session().send("SystemInfo.getProcessInfo")
-            gui_pid = next(int(item["id"]) for item in processes["processInfo"] if item["type"] == "browser")
-            gui_process = os.pidfd_open(gui_pid)
+                environment = dict(item.split("=", 1) for item in Path(f"/proc/{pid}/environ").read_text().split("\0") if "=" in item)
+                RUN["guiEnvironment"] = {key: environment.get(key) for key in (
+                    "NIXOS_OZONE_WL", "GTK_IM_MODULE", "GTK_IM_MODULE_FILE",
+                )}
+            except PermissionError as error:
+                RUN["guiEnvironmentError"] = str(error)
+
+        def alive():
+            if gui_process is None:
+                pid = next(gui_pids(name, port), None)
+                if pid is not None:
+                    watch_gui(pid)
+            if gui_process is not None and select.select([gui_process], [], [], 0)[0]:
+                raise AssertionError(f"{name} GUI process {RUN['guiPid']} exited during {RUN['phase']}")
+            if process.poll() not in (None, 0):
+                raise AssertionError(f"{name} launcher exited with {process.returncode}")
+            if browser is not None and not browser.is_connected():
+                raise AssertionError(f"{name} debugging connection closed during {RUN['phase']}")
+
         try:
+            phase("debugging-endpoint", launcherPid=process.pid)
+            browser = attach(playwright, port, alive)
+            session = browser.new_browser_cdp_session()
+            processes = session.send("SystemInfo.getProcessInfo")
+            RUN["debuggerPid"] = next(int(item["id"]) for item in processes["processInfo"] if item["type"] == "browser")
+            candidates = list(gui_pids(name, port, RUN["debuggerPid"]))
+            assert len(candidates) == 1, f"Cannot identify {name} GUI in this execution: {candidates}"
+            watch_gui(candidates[0])
+            phase("window", runtime=session.send("Browser.getVersion"), guiPid=RUN["guiPid"])
+
+            def application_page():
+                alive()
+                for context in browser.contexts:
+                    for candidate in context.pages:
+                        if ("index.html" if name == "bitwarden" else "workbench") in candidate.url:
+                            return candidate
+                # Dispatch navigation events while waiting for the workbench.
+                if browser.contexts:
+                    try:
+                        browser.contexts[0].wait_for_event("page", timeout=500)
+                    except PlaywrightTimeoutError:
+                        pass
+                return None
+
+            page = wait_for(application_page, "application window")
+            page.set_default_timeout(30000)
+            page.on("requestfailed", lambda request: print(
+                name + " request failed:", request.url.partition("?")[0], request.failure, flush=True,
+            ))
+            phase("window-ready", userAgent=page.evaluate("navigator.userAgent"))
+            retain_windows(name)
             yield page
+            retain_windows(name)
             page.screenshot(path=str(ARTIFACTS / (name + ".png")))
-        except Exception:
-            with cleanup(name + " text"):
-                (ARTIFACTS / (name + "-failure.txt")).write_text(page.locator("body").inner_text(timeout=5000))
-            with cleanup(name + " accessibility"):
-                accessibility = page.locator("body").aria_snapshot(timeout=5000)
-                (ARTIFACTS / (name + "-accessibility.txt")).write_text(accessibility)
-                print(name + " window at failure:\n" + accessibility, flush=True)
-            with cleanup(name + " screenshot"):
-                page.screenshot(path=str(ARTIFACTS / (name + "-failure.png")), timeout=5000)
-            with cleanup(name + " logs"):
-                if name == "vscode":
-                    for log in sorted((Path.home() / ".config/Code/logs").rglob("*.log")):
-                        if "remote-containers" in str(log).lower() or "dev containers" in str(log).lower():
-                            print(str(log), "\n".join(log.read_text(errors="replace").splitlines()[-100:]), flush=True)
+        except Exception as error:
+            failure(error)
+            if page is not None:
+                with cleanup(name + " text"):
+                    (ARTIFACTS / (name + "-failure.txt")).write_text(page.locator("body").inner_text(timeout=5000))
+                with cleanup(name + " accessibility"):
+                    accessibility = page.locator("body").aria_snapshot(timeout=5000)
+                    (ARTIFACTS / (name + "-accessibility.txt")).write_text(accessibility)
+                    print(name + " window at failure:\n" + accessibility, flush=True)
+                with cleanup(name + " screenshot"):
+                    page.screenshot(path=str(ARTIFACTS / (name + "-failure.png")), timeout=5000)
+            with cleanup(name + " windows"):
+                retain_windows(name)
             raise
         finally:
-            # Close the window before the process-group fallback. Terminating
-            # Electron and all renderers together can itself produce a dump.
+            with cleanup(name + " process discovery"):
+                if gui_process is None:
+                    pid = next(gui_pids(name, port), None)
+                    if pid is not None:
+                        watch_gui(pid)
+            # Retain main/renderer/extension logs even when no window was created.
+            with cleanup(name + " logs"):
+                if name == "vscode" and (Path.home() / ".config/Code/logs").exists():
+                    subprocess.run(["cp", "-a", str(Path.home() / ".config/Code/logs"),
+                                    str(ARTIFACTS / "vscode-logs")], check=True, timeout=10)
+            phase("closing", launcherExit=process.poll())
+            # Close the window before signalling Electron and its renderers.
             try:
-                if not page.is_closed():
+                if page is not None and not page.is_closed():
                     page.close(run_before_unload=True)
             except PlaywrightError:
                 pass
@@ -146,11 +268,13 @@ def electron(playwright, name, arguments, port):
                 except ProcessLookupError:
                     pass
                 finally:
+                    RUN["guiStopped"] = bool(select.select([gui_process], [], [], 0)[0])
                     os.close(gui_process)
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 pass
+            phase("closed", launcherExit=process.poll())
             if name == "bitwarden" and network_log.exists():
                 with cleanup("retaining Bitwarden network log"):
                     shutil.copyfile(network_log, ARTIFACTS / "bitwarden-network.json")
@@ -266,85 +390,83 @@ def vscode(*, full):
             "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/project,type=bind",
             "updateRemoteUserUID": False,
         }))
-    container_id = None
-    try:
-        with sync_playwright() as playwright:
-            print("VS Code: opening the configured workspace", flush=True)
-            with electron(playwright, "vscode", ["code", "--wait", "--skip-welcome", "--disable-workspace-trust", "--new-window", str(workspace)], 9223) as page:
-                page.locator(".monaco-workbench").wait_for()
-                if full:
-                    page.get_by_role("button", name="Reopen in Container", exact=True).click(timeout=60000)
-                    print("VS Code: entering the development container", flush=True)
-                    container_id = wait_for(lambda: subprocess.run(
-                        ["docker", "ps", "-q", "--filter", f"label=devcontainer.local_folder={workspace}"],
-                        capture_output=True, text=True, check=True, timeout=15,
-                    ).stdout.strip(), "development container", timeout=180)
-                    deadline = time.monotonic() + 180
-                    while time.monotonic() < deadline:
-                        try:
-                            page.locator(".monaco-workbench").wait_for(timeout=5000)
-                            remote = page.locator('.statusbar-item[id="status.host"]')
-                            if "Dev Container: Application workspace" in remote.inner_text(timeout=5000):
-                                break
-                        except Exception:
-                            pass
-                        time.sleep(1)
-                    else:
-                        raise AssertionError("VS Code did not connect to its development container")
-                # Wait for the Explorer file provider before opening the document.
-                page.get_by_role("tree", name="Files Explorer").get_by_role("treeitem", name="example.txt", exact=True).dblclick(timeout=90000)
-                page.get_by_role("tab", name="example.txt", exact=True).click()
-                page.bring_to_front()
-                editor_input = page.locator(".monaco-editor:visible").get_by_role("textbox")
-                editor_input.focus()
-                expect(editor_input).to_be_focused(timeout=30000)
-                print("VS Code: document opened; editing with Fcitx", flush=True)
-                ui_input({"key": "ctrl-end"}, {"text": "Edited: "}, window="code")
-                committed = input_observer(editor_input.evaluate)
-                def editor_received(stage):
-                    state = committed(stage)
-                    state["document"] = page.locator(".monaco-editor:visible .view-lines").inner_text(timeout=5000).replace("\u00a0", " ")
-                    if stage == "committed":
-                        state["ready"] = state["ready"] and "Edited: 你好" in state["document"]
-                    return state
-                ui_input({"pinyin": "nihao"}, window="code", observe=editor_received)
-                ui_input({"key": "ctrl-s"}, window="code")
-                wait_for(lambda: "Edited: 你好" in (workspace / "example.txt").read_text(),
-                         "saving Chinese text in the editor")
-                page.screenshot(path=str(ARTIFACTS / "vscode-editor.png"))
-                print("VS Code: executing commands with Chinese input in the integrated terminal", flush=True)
-                page.keyboard.press("Control+Shift+Backquote")
-                terminal_input = page.get_by_role("textbox", name=re.compile(r"^Terminal \d+,"))
-                terminal_input.wait_for()
-                terminal_input.focus()
-                expect(terminal_input).to_be_focused(timeout=30000)
-                terminal_root = "/workspaces/project" if full else str(workspace)
-                context_command = "pwd > " + terminal_root + "/terminal-location.txt"
-                context_results = {"terminal-location.txt": terminal_root + "\n"}
-                if full:
-                    context_command += "; test -f /.dockerenv && printf container > " + terminal_root + "/terminal-context.txt"
-                    context_results["terminal-context.txt"] = "container"
-                # A completed command confirms that the focused terminal's shell is ready.
-                ui_input({"text": context_command + "\n"}, window="code")
-                wait_for(lambda: all(
-                    (workspace / name).exists() and (workspace / name).read_text() == expected
-                    for name, expected in context_results.items()
-                ), "integrated shell ready in " + terminal_root)
-                ui_input({"text": "printf '"}, window="code")
-                committed = input_observer(terminal_input.evaluate)
-                ui_input({"pinyin": "nihao"}, window="code", observe=committed)
-                ui_input({"text": "\\n' > " + terminal_root + "/terminal.txt\n"}, window="code")
-                terminal = workspace / "terminal.txt"
-                wait_for(lambda: terminal.exists() and terminal.read_text() == "你好\n",
-                         "Chinese input and command execution in the integrated terminal")
-                page.screenshot(path=str(ARTIFACTS / "vscode-terminal.png"))
-                ui_input({"text": "exit\n"}, window="code")
-                ui_input({"powerGuard": "VS Code"}, window="code")
-    finally:
-        if container_id:
-            # Complete network teardown before the next application starts.
-            with cleanup("stopping development container"):
-                subprocess.run(["docker", "stop", container_id], check=True, capture_output=True, timeout=45)
+    with sync_playwright() as playwright:
+        print("VS Code: opening the configured workspace", flush=True)
+        with electron(playwright, "vscode", ["code", "--wait", "--skip-welcome", "--disable-workspace-trust", "--new-window", str(workspace)], 9223) as page:
+            phase("workbench")
+            page.locator(".monaco-workbench").wait_for()
+            if full:
+                phase("dev-container")
+                page.get_by_role("button", name="Reopen in Container", exact=True).click(timeout=60000)
+                print("VS Code: entering the development container", flush=True)
+                wait_for(lambda: subprocess.run(
+                    ["docker", "ps", "-q", "--filter", f"label=devcontainer.local_folder={workspace}"],
+                    capture_output=True, text=True, check=True, timeout=15,
+                ).stdout.strip(), "development container", timeout=180)
+                deadline = time.monotonic() + 180
+                while time.monotonic() < deadline:
+                    try:
+                        page.locator(".monaco-workbench").wait_for(timeout=5000)
+                        remote = page.locator('.statusbar-item[id="status.host"]')
+                        if "Dev Container: Application workspace" in remote.inner_text(timeout=5000):
+                            break
+                    except Exception:
+                        pass
+                    time.sleep(1)
+                else:
+                    raise AssertionError("VS Code did not connect to its development container")
+            # Wait for the Explorer file provider before opening the document.
+            phase("editor")
+            page.get_by_role("tree", name="Files Explorer").get_by_role("treeitem", name="example.txt", exact=True).dblclick(timeout=90000)
+            page.get_by_role("tab", name="example.txt", exact=True).click()
+            page.bring_to_front()
+            editor_input = page.locator(".monaco-editor:visible").get_by_role("textbox")
+            editor_input.focus()
+            expect(editor_input).to_be_focused(timeout=30000)
+            print("VS Code: document opened; editing with Fcitx", flush=True)
+            ui_input({"key": "ctrl-end"}, {"text": "Edited: "}, window="code")
+            committed = input_observer(editor_input.evaluate)
+            def editor_received(stage):
+                state = committed(stage)
+                state["document"] = page.locator(".monaco-editor:visible .view-lines").inner_text(timeout=5000).replace("\u00a0", " ")
+                if stage == "committed":
+                    state["ready"] = state["ready"] and "Edited: 你好" in state["document"]
+                return state
+            ui_input({"pinyin": "nihao"}, window="code", observe=editor_received)
+            ui_input({"key": "ctrl-s"}, window="code")
+            wait_for(lambda: "Edited: 你好" in (workspace / "example.txt").read_text(),
+                     "saving Chinese text in the editor")
+            page.screenshot(path=str(ARTIFACTS / "vscode-editor.png"))
+            print("VS Code: executing commands with Chinese input in the integrated terminal", flush=True)
+            phase("terminal")
+            page.keyboard.press("Control+Shift+Backquote")
+            terminal_input = page.get_by_role("textbox", name=re.compile(r"^Terminal \d+,"))
+            terminal_input.wait_for()
+            terminal_input.focus()
+            expect(terminal_input).to_be_focused(timeout=30000)
+            terminal_root = "/workspaces/project" if full else str(workspace)
+            context_command = "pwd > " + terminal_root + "/terminal-location.txt"
+            context_results = {"terminal-location.txt": terminal_root + "\n"}
+            if full:
+                context_command += "; test -f /.dockerenv && printf container > " + terminal_root + "/terminal-context.txt"
+                context_results["terminal-context.txt"] = "container"
+            # A completed command confirms that the focused terminal's shell is ready.
+            ui_input({"text": context_command + "\n"}, window="code")
+            wait_for(lambda: all(
+                (workspace / name).exists() and (workspace / name).read_text() == expected
+                for name, expected in context_results.items()
+            ), "integrated shell ready in " + terminal_root)
+            ui_input({"text": "printf '"}, window="code")
+            committed = input_observer(terminal_input.evaluate)
+            ui_input({"pinyin": "nihao"}, window="code", observe=committed)
+            ui_input({"text": "\\n' > " + terminal_root + "/terminal.txt\n"}, window="code")
+            terminal = workspace / "terminal.txt"
+            wait_for(lambda: terminal.exists() and terminal.read_text() == "你好\n",
+                     "Chinese input and command execution in the integrated terminal")
+            page.screenshot(path=str(ARTIFACTS / "vscode-terminal.png"))
+            ui_input({"text": "exit\n"}, window="code")
+            phase("exit-reminder")
+            ui_input({"powerGuard": "VS Code"}, window="code")
     return {"workspace": "container" if full else "local", "editor": "你好", "terminal": "你好"}
 
 
@@ -355,6 +477,7 @@ def firefox(*, full):
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     profile = Path.home() / ".config/mozilla/firefox/default"
+    phase("launch", executable=shutil.which("firefox"), session=os.environ.get("XDG_CURRENT_DESKTOP"))
     with application("firefox", ["firefox", "--no-remote", "--profile", str(profile), "--marionette"]) as process:
         wait_for(lambda: process.poll() is not None or (profile / "lock").is_symlink(), "Firefox profile lock")
         options = Options()
@@ -362,6 +485,7 @@ def firefox(*, full):
         service = Service(executable_path=shutil.which("geckodriver"), service_args=["--connect-existing", "--marionette-port", "2828"], log_output=str(ARTIFACTS / "geckodriver.log"))
         browser = webdriver.Firefox(options=options, service=service)
         try:
+            phase("page")
             browser.get("http://127.0.0.1:8765/")
             assert "浏览器工作区" in browser.find_element(By.TAG_NAME, "h1").text
             WebDriverWait(browser, 30).until(lambda driver: driver.find_element(By.ID, "ready").text == "Page loaded")
@@ -423,6 +547,7 @@ def bitwarden(*, full):
         register_vault()
     with sync_playwright() as playwright:
         with electron(playwright, "bitwarden", ["bitwarden"], 9224) as page:
+            phase("vault-login" if full else "login-input")
             if full:
                 page.get_by_role("button", name="bitwarden.com", exact=True).click()
                 page.get_by_text("self-hosted", exact=True).click()
@@ -452,9 +577,18 @@ def main():
     parser.add_argument("--full", action="store_true", help="exercise shared container and vault workflows")
     args = parser.parse_args()
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
+    RUN.update(application=args.application, started=time.time(), result="running")
+    phase("starting")
     try:
         result = globals()[args.application](full=args.full)
+        RUN.update(result="passed", outcome=result)
+    except Exception as error:
+        failure(error)
+        RUN.update(result="failed", notes=getattr(error, "__notes__", []))
+        raise
     finally:
+        phase("finished")
+        (ARTIFACTS / (args.application + "-result.json")).write_text(json.dumps(RUN, ensure_ascii=False, indent=2) + "\n")
         network_log = ARTIFACTS / (args.application + "-network.json")
         if network_log.exists():
             errors = []
@@ -472,7 +606,6 @@ def main():
                         "net_error": parameters["net_error"],
                     })
             print(args.application + " network errors:", json.dumps(errors[-30:]), flush=True)
-    (ARTIFACTS / (args.application + "-result.json")).write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps({"application": args.application, "result": "passed"}))
 
 

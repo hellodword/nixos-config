@@ -139,6 +139,7 @@
     import shlex
     import tempfile
     import struct
+    import sys
     import time
     import traceback
     import uuid
@@ -260,39 +261,98 @@
                 destination = Path(machine.out_dir) / (machine.name + "-input-" + (request_id or str(time.monotonic_ns())) + ".json")
                 destination.write_text(json.dumps(events, ensure_ascii=False, indent=2))
 
+    cleanup_failures: dict[str, str] = {}
+
     def exercise_application(machine, application, full=False):
         root = "/home/desktop/application-workspace"
         execution = application + "-" + uuid.uuid4().hex
         exit_file = root + "/artifacts/" + execution + ".json"
         unit = "application-" + execution
+        started = machine.succeed("date +%s", timeout=10).strip()
         user(machine, "rm -f " + " ".join(root + "/input-" + name + ".json" for name in ("request", "observed", "progress")) + " " + root + "/input-complete")
         command = "application-e2e " + application + (" --full" if full else "") + "; result=$?; printf "
         command += shlex.quote('{"id":"' + execution + '","status":%s}\n') + ' "$result" > ' + exit_file + ".pending; mv " + exit_file + ".pending " + exit_file
-        user(machine, "systemd-run --user --collect --unit=" + unit + " sh -c " + shlex.quote(command))
-        deadline = time.monotonic() + 600
-        handled = None
-        while time.monotonic() < deadline:
-            status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file, timeout=min(30, max(1, deadline - time.monotonic())))
-            if status == 0:
-                assert json.loads(result) == {"id": execution, "status": 0}, application + " failed: " + result
-                return
-            active, state = machine.execute(user_status("systemctl --user is-active " + unit + ".service"), timeout=min(30, max(1, deadline - time.monotonic())))
-            if active != 0:
+
+        def completed(result):
+            receipt = json.loads(result)
+            assert receipt["id"] == execution, "Application result belongs to another execution: " + result
+            if receipt["status"]:
+                status, state = machine.execute("cat " + root + "/artifacts/" + application + "-state.json", timeout=10)
+                detail = json.loads(state).get("failure") if status == 0 else None
+                raise AssertionError(application + " failed: " + json.dumps(detail or receipt, ensure_ascii=False))
+
+        try:
+            user(machine, "systemd-run --user --collect --property=RemainAfterExit=yes --property=TimeoutStopSec=15s --property=RuntimeMaxSec=660s --unit=" + unit + " sh -c " + shlex.quote(command))
+            deadline = time.monotonic() + 600
+            handled = None
+            while time.monotonic() < deadline:
                 status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file, timeout=min(30, max(1, deadline - time.monotonic())))
                 if status == 0:
-                    assert json.loads(result) == {"id": execution, "status": 0}, application + " failed: " + result
+                    completed(result)
                     return
-                print(machine.execute(user_status("journalctl --user -u " + unit + ".service -n 60 --no-pager"), timeout=10)[1])
-                raise AssertionError(application + " stopped before producing its result: " + state.strip())
-            status, request = machine.execute("test -f " + root + "/input-request.json && cat " + root + "/input-request.json", timeout=min(30, max(1, deadline - time.monotonic())))
-            if status == 0:
-                request = json.loads(request)
-                if request["id"] != handled:
-                    if input_actions(machine, request["actions"], request["window"], request_id=request["id"]):
-                        machine.succeed("printf '%s' " + shlex.quote(request["id"]) + " > " + root + "/input-complete.pending; mv " + root + "/input-complete.pending " + root + "/input-complete", timeout=10)
-                    handled = request["id"]
-            time.sleep(0.5)
-        raise AssertionError(application + " workflow timed out")
+                active, state = machine.execute(user_status("systemctl --user is-active " + unit + ".service"), timeout=min(30, max(1, deadline - time.monotonic())))
+                if active != 0:
+                    status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file, timeout=10)
+                    if status == 0:
+                        completed(result)
+                        return
+                    raise AssertionError(application + " stopped before producing its result: " + state.strip())
+                status, request = machine.execute("test -f " + root + "/input-request.json && cat " + root + "/input-request.json", timeout=min(30, max(1, deadline - time.monotonic())))
+                if status == 0:
+                    request = json.loads(request)
+                    if request["id"] != handled:
+                        if input_actions(machine, request["actions"], request["window"], request_id=request["id"]):
+                            machine.succeed("printf '%s' " + shlex.quote(request["id"]) + " > " + root + "/input-complete.pending; mv " + root + "/input-complete.pending " + root + "/input-complete", timeout=10)
+                        handled = request["id"]
+                time.sleep(0.5)
+            raise AssertionError(application + " workflow timed out")
+        except Exception as error:
+            try:
+                status, state = machine.execute("cat " + root + "/artifacts/" + application + "-state.json", timeout=10)
+                if status == 0:
+                    error.add_note("Application state: " + state)
+                    print(state)
+            except Exception as capture_error:
+                error.add_note("Reading application state: " + str(capture_error))
+            # Electron can move into a desktop scope; coredumps use a system service.
+            runtime["collect_failure"](error, [
+                (machine, execution + "-journal", "journalctl -b --no-pager -o short-precise --since=@" + started + " _UID=1000 + COREDUMP_UID=1000"),
+                (machine, execution + "-core", "coredumpctl --no-pager --since=@" + started + " info COREDUMP_UID=1000"),
+                (machine, execution + "-kernel", "journalctl -b -k --no-pager --since=@" + started),
+                (machine, execution + "-processes", "ps -u desktop -o pid,ppid,stat,etimes,cgroup,args"),
+            ] + ([(machine, execution + "-vault", "journalctl -b -u nginx -u vaultwarden --no-pager --since=@" + started)] if application == "bitwarden" and full else []))
+            try:
+                machine.screenshot(machine.name + "-" + execution + "-failure", timeout=20)
+            except Exception as capture_error:
+                error.add_note("Application screenshot: " + str(capture_error))
+            raise
+        finally:
+            original = sys.exception()
+            try:
+                print("Cleaning application execution " + execution, flush=True)
+                units = [unit + ".service"]
+                status, state = machine.execute("cat " + root + "/artifacts/" + application + "-state.json", timeout=10)
+                gui_unit = json.loads(state).get("guiUnit") if status == 0 else None
+                if gui_unit and gui_unit not in units:
+                    units.insert(0, gui_unit)
+                for name in units:
+                    status, loaded = machine.execute(user_status("systemctl --user show " + shlex.quote(name) + " -p LoadState --value"), timeout=10)
+                    if loaded.strip() != "not-found":
+                        assert status == 0, "Reading application unit: " + loaded
+                        user(machine, "systemctl --user stop " + shlex.quote(name), timeout=30)
+                if full:
+                    # The container may exist even when Code never reported attachment.
+                    label = shlex.quote("label=devcontainer.local_folder=" + root + "/project")
+                    containers = user(machine, "docker ps -q --filter " + label, timeout=10).split()
+                    if containers:
+                        user(machine, "docker stop " + " ".join(containers), timeout=45)
+                    assert not user(machine, "docker ps -q --filter " + label, timeout=10).strip(), "Development container is still running"
+            except Exception as error:
+                cleanup_failures[machine.name] = str(error)
+                if original is not None:
+                    original.add_note("Application cleanup: " + str(error))
+                else:
+                    raise
 
     def exercise_launchers(machine, session):
         if session != "KDE":
@@ -341,6 +401,7 @@
                     user(machine, "systemctl --user stop rofi-command-clipboard.service")
 
     failures = []
+    outcomes = []
     for machine, session in ((i3, "i3"), (plasma, "KDE"), (sway, "sway")):
         machine = gui["Desktop"](machine)
         try:
@@ -365,29 +426,37 @@
             machine.inhibit_idle()
             if session == "sway":
                 user(machine, "docker load -i /etc/application-fixtures/container.tar.gz", timeout=300)
+            blocked = None
             for name, action in (
                 ("rofi-kitty", lambda: exercise_launchers(machine, session)),
                 ("firefox", lambda: exercise_application(machine, "firefox")),
                 ("vscode", lambda: exercise_application(machine, "vscode", full=session == "sway")),
                 ("bitwarden", lambda: exercise_application(machine, "bitwarden", full=session == "sway")),
             ):
+                if blocked:
+                    outcomes.append({"session": session, "application": name, "result": "not-run", "reason": blocked})
+                    continue
                 try:
                     with subtest(session + ": " + name):
                         action()
                         machine.screenshot(machine.name + "-" + name)
+                    outcomes.append({"session": session, "application": name, "result": "passed"})
                 except Exception as error:
                     failures.append((session, name, str(error)))
+                    outcomes.append({"session": session, "application": name, "result": "failed", "error": str(error), "notes": getattr(error, "__notes__", [])})
                     traceback.print_exc()
-                    runtime["collect_failure"](error, [
-                        (machine, "services", "journalctl -b -u nginx -u vaultwarden -n 40 --no-pager"),
-                        (machine, "session", "journalctl _UID=1000 -n 50 --no-pager"),
-                        (machine, "application", "tail -n 50 /home/desktop/application-workspace/artifacts/*.log /home/desktop/application-workspace/artifacts/*-failure.txt"),
-                    ], [machine])
-                    break
+                    if name == "rofi-kitty":
+                        runtime["collect_failure"](error, [
+                            (machine, "launchers", "journalctl -b _UID=1000 -n 100 --no-pager"),
+                        ], [machine])
+                        blocked = "Desktop launcher setup failed: " + str(error)
+                    elif machine.name in cleanup_failures:
+                        blocked = "Application cleanup failed: " + cleanup_failures[machine.name]
                 finally:
                     machine.execute("pkill -u 1000 -x rofi", timeout=10)
         except Exception as error:
             failures.append((session, "session", str(error)))
+            outcomes.append({"session": session, "result": "failed", "error": str(error), "remainingApplications": "not-run"})
             traceback.print_exc()
             runtime["collect_failure"](error, [
                 (machine, "login", "journalctl -b -u display-manager -n 60 --no-pager"),
@@ -406,8 +475,8 @@
                     machine.shutdown()
                 except Exception as error:
                     failures.append((session, "shutdown", str(error)))
-        if failures:
-            break
+        (Path(machine.out_dir) / "application-results.json").write_text(json.dumps(outcomes, ensure_ascii=False, indent=2))
+    print(json.dumps(outcomes, ensure_ascii=False), flush=True)
     assert not failures, failures
   '';
 }

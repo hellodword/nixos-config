@@ -96,6 +96,23 @@ in
     };
     programs.vscode = {
       enable = true;
+      package = pkgs.vscode.overrideAttrs (old: {
+        # Sway uses XWayland and the system Fcitx GTK module until Code's bundled
+        # Electron contains this fix and native Wayland passes the application VM:
+        # https://github.com/chromium/chromium/commit/564344ab9eb89b305366e60b4b4f8ab2f70e791c
+        preFixup = (old.preFixup or "") + ''
+          gappsWrapperArgs+=(--run ${lib.escapeShellArg ''
+            case ":''${XDG_CURRENT_DESKTOP:-}:" in
+              *:sway:*)
+                unset NIXOS_OZONE_WL
+                export GTK_IM_MODULE=fcitx
+                export GTK_IM_MODULE_FILE=/run/current-system/sw/etc/gtk-3.0/immodules.cache
+                set -- --ozone-platform=x11 "$@"
+                ;;
+            esac
+          ''})
+        '';
+      });
       argvSettings = {
         password-store = "gnome-libsecret";
         enable-crash-reporter = false;
