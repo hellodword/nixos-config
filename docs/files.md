@@ -66,9 +66,9 @@ httpserver --random-code ./iphone
 
 首次访问的顺序如下：
 
-1. 用设备扫描二维码，打开 8444。尚未安装 CA 时浏览器会提示证书不受信任；进入浏览器自身的连接安全详情，选择当前站点的**服务端证书**。
+1. 用设备扫描二维码，打开 8444。尚未安装 CA 时浏览器会提示证书不受信任；临时允许这次证书错误并继续访问，再进入浏览器自身的连接安全详情，选择当前站点的**服务端证书**。
 2. 将其完整 SHA-256 指纹与 laptop 终端中 `8444 server certificate` 的值逐项比较。核对的是浏览器实际收到的 TLS 证书；网页正文显示的指纹不能用来确认连接身份。
-3. 指纹一致后，在网页输入访问码，从文件列表选择本平台需要的文件。P12 密码在系统导入身份时输入。
+3. 指纹一致后，在网页输入访问码，从文件列表下载本平台需要的文件，按下面的平台说明安装。P12 密码在系统导入身份时输入。
 4. 打开 `https://<地址>:8443/`，选择设备身份，再使用 `admin` 或 `user` 登录。
 5. 在 laptop 按 Ctrl+C 结束分享，删除两端已用完的导出文件。
 
@@ -76,9 +76,13 @@ httpserver --random-code ./iphone
 
 ### iOS 27 / Safari
 
+使用 Safari 下载描述文件并访问 8443。描述文件安装的设备身份保存在 Apple 应用可访问的钥匙串组，Safari 可直接使用；第三方应用需要自行实现身份导入，见 [Apple 身份访问说明](https://developer.apple.com/library/archive/qa/qa1745/_index.html)。
+
 Safari 网页下方菜单 → **Privacy & Security → Connection Security Details → Details**。在证书链中选站点叶证书，查看 SHA-256，按上面的顺序核对。
 
-在文件列表点击 `iphone.mobileconfig`，允许 Safari 下载描述文件。到“设置 → 已下载描述文件”安装，输入设备解锁密码及 P12 密码；再到“设置 → 通用 → 关于本机 → 证书信任设置”，开启对 `Private file sharing CA` 的完全信任。
+在文件列表点击 `iphone.mobileconfig`，允许 Safari 下载描述文件。到“设置 → 已下载描述文件”安装，输入设备解锁密码及 P12 密码。安装器会将描述文件标为“未签名”；这是描述文件本身的签名状态，文件来源通过前述 HTTPS 连接的指纹核对确认。
+
+安装后，到“设置 → 通用 → 关于本机 → 证书信任设置”，开启对 `Private file sharing CA` 的完全信任。
 
 网页分发、安装及手动根证书信任见 [Apple 分发说明](https://support.apple.com/en-in/guide/profile-manager/pmdbd71ebc9/mac)、[描述文件安装说明](https://support.apple.com/en-us/102400)和[证书信任说明](https://support.apple.com/en-us/102390)。
 
@@ -88,11 +92,16 @@ Safari 网页下方菜单 → **Privacy & Security → Connection Security Detai
 
 下载 `server-ca.cer` 和 `iphone.p12`。将前者导入“当前用户 → 受信任的根证书颁发机构”，后者导入“当前用户 → 个人”，输入 P12 密码。
 
-### Android / Chrome
+### Android 15 / Chrome
 
 从地址栏连接信息进入证书详情，选择站点叶证书并核对 SHA-256。
 
-下载 `server-ca.cer` 和 `iphone.p12`。在系统设置的“安全 → 加密与凭据 → 安装证书”中，将前者作为 CA 证书安装，后者作为“VPN 和应用”用户证书安装，输入 P12 密码。不同厂商的菜单名称略有区别。
+下载 `server-ca.cer` 和 `iphone.p12`，分别安装：
+
+1. 在系统设置中打开 **Security & privacy → More security & privacy → Encryption & credentials → Install a certificate → CA certificate**，选择 `server-ca.cer`。
+2. 安装 `iphone.p12` 时，在 **Choose a certificate type** 中选择 **VPN & app user certificate**，输入导出时设置的 P12 密码。
+
+安装完成后，在系统的 Chrome 应用信息中选择“强行停止”，再重新打开 Chrome，访问完整的 `https://<地址>:8443/`。选择设备证书后，连接详情应显示安全，再使用 `admin` 或 `user` 登录。
 
 ## 管理设备与状态
 
