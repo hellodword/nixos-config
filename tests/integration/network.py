@@ -8,7 +8,6 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import ipaddress
 from pathlib import Path
-import socket
 import subprocess
 import sys
 import tempfile
@@ -355,7 +354,10 @@ def main():
                         raise AssertionError("blocked connection reached an origin")
                 assert dns_test.marker(dns_test.query(front, "route.proxy.test")) == "127.0.0.1"
                 assert dns_test.marker(dns_test.query(front, "sf.race.proxy.test")) == "127.0.0.1"
-                time.sleep(0.15)
+                deadline = time.monotonic() + 8
+                while not all(("127.0.0.1", port) in proxy_calls for port in global_ports):
+                    assert time.monotonic() < deadline, "both TLS legs must cross proxy"
+                    time.sleep(0.05)
                 assert all(("127.0.0.1", port) in proxy_calls for port in global_ports), "both TLS legs must cross proxy"
                 cn_ports = {u["port"] for u in groups["cn"]["upstreams"]}
                 assert not any(port in cn_ports for _, port in proxy_calls), "CN transport must stay direct"

@@ -116,12 +116,15 @@ def electron(playwright, name, arguments, port):
             yield page
             page.screenshot(path=str(ARTIFACTS / (name + ".png")))
         except Exception:
-            with cleanup(name + " diagnostics"):
+            with cleanup(name + " text"):
                 (ARTIFACTS / (name + "-failure.txt")).write_text(page.locator("body").inner_text(timeout=5000))
+            with cleanup(name + " accessibility"):
                 accessibility = page.locator("body").aria_snapshot(timeout=5000)
                 (ARTIFACTS / (name + "-accessibility.txt")).write_text(accessibility)
                 print(name + " window at failure:\n" + accessibility, flush=True)
+            with cleanup(name + " screenshot"):
                 page.screenshot(path=str(ARTIFACTS / (name + "-failure.png")), timeout=5000)
+            with cleanup(name + " logs"):
                 if name == "vscode":
                     for log in sorted((Path.home() / ".config/Code/logs").rglob("*.log")):
                         if "remote-containers" in str(log).lower() or "dev containers" in str(log).lower():
@@ -212,7 +215,7 @@ def ui_input(*actions, window, observe=None):
     started = time.monotonic()
     # The driver has 90 seconds for input, then captures Fcitx and the window
     # before reporting failure. Keep the application open for those diagnostics.
-    deadline = started + 135
+    deadline = started + 165
     history, last = [], None
     input_json(request.name, {"id": request_id, "actions": actions, "window": window})
     try:
@@ -301,7 +304,8 @@ def vscode(*, full):
                 def editor_received(stage):
                     state = committed(stage)
                     state["document"] = page.locator(".monaco-editor:visible .view-lines").inner_text(timeout=5000).replace("\u00a0", " ")
-                    state["ready"] = state["ready"] and "Edited: 你好" in state["document"]
+                    if stage == "committed":
+                        state["ready"] = state["ready"] and "Edited: 你好" in state["document"]
                     return state
                 ui_input({"pinyin": "nihao"}, window="code", observe=editor_received)
                 ui_input({"key": "ctrl-s"}, window="code")

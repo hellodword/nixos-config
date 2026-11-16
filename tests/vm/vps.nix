@@ -361,206 +361,220 @@ in
     };
   };
   testScript = ''
-    import datetime
-    import json
-    from pathlib import Path
-    import re
-    import shlex
-    import subprocess
+    import runpy
+    runtime = runpy.run_path("${./runtime.py}")
+    with runtime["scenario"]([controller, edge, west], lambda: [
+        (controller, "stream", "systemctl status vps-client vps-stream --no-pager; cat /run/stream-request /run/stream-response; journalctl -b -u vps-stream -u vps-client -n 100 --no-pager"),
+        (controller, "edge", "ssh -n -o BatchMode=yes -o ConnectTimeout=3 ${metadata.nodes.edge.sshHost} 'systemctl --failed --no-pager; journalctl -b -u site-vps-proxy -n 100 --no-pager'"),
+        (controller, "west", "ssh -n -o BatchMode=yes -o ConnectTimeout=3 ${metadata.nodes.west.sshHost} 'systemctl --failed --no-pager; journalctl -b -u site-vps-proxy -n 100 --no-pager'"),
+    ]):
+        import datetime
+        import json
+        from pathlib import Path
+        import re
+        import shlex
+        import subprocess
+        import textwrap
 
-    controller.start()
-    controller.wait_for_unit("dnsmasq.service")
-    controller.wait_for_open_port(853, addr="192.0.2.30", timeout=30)
-    controller.wait_for_open_port(4460, addr="192.0.2.30", timeout=30)
-    controller.wait_for_open_port(1080, addr="192.0.2.30", timeout=30)
-    controller.succeed("mkdir -m 700 -p /root/.ssh /run/vps; cp -r ${credentials}/. /run/vps/; chmod -R u+w /run/vps; install -m 600 ${keys}/ssh /root/.ssh/vps-deploy; install -m 600 ${sshConfig} /root/.ssh/config")
-    addresses = {"edge": "192.0.2.10", "west": "192.0.2.11"}
-    ssh_hosts = ${builtins.toJSON (lib.mapAttrs (_: node: node.sshHost) metadata.nodes)}
-    ssh_ports = ${builtins.toJSON (lib.mapAttrs (_: node: node.sshServer.port) metadata.nodes)}
-    images = ${builtins.toJSON (lib.mapAttrs (_: image: "${image}/nixos.img") images)}
+        controller.start()
+        controller.wait_for_unit("dnsmasq.service")
+        controller.wait_for_open_port(853, addr="192.0.2.30", timeout=30)
+        controller.wait_for_open_port(4460, addr="192.0.2.30", timeout=30)
+        controller.wait_for_open_port(1080, addr="192.0.2.30", timeout=30)
+        controller.succeed("mkdir -m 700 -p /root/.ssh /run/vps; cp -r ${credentials}/. /run/vps/; chmod -R u+w /run/vps; install -m 600 ${keys}/ssh /root/.ssh/vps-deploy; install -m 600 ${sshConfig} /root/.ssh/config")
+        addresses = {"edge": "192.0.2.10", "west": "192.0.2.11"}
+        ssh_hosts = ${builtins.toJSON (lib.mapAttrs (_: node: node.sshHost) metadata.nodes)}
+        ssh_ports = ${builtins.toJSON (lib.mapAttrs (_: node: node.sshServer.port) metadata.nodes)}
+        images = ${builtins.toJSON (lib.mapAttrs (_: image: "${image}/nixos.img") images)}
 
-    def remote(machine, command):
-        return f"ssh -n -o BatchMode=yes -o ConnectTimeout=3 {ssh_hosts[machine.name]} " + shlex.quote("set -euo pipefail; " + command)
+        def remote(machine, command):
+            return f"ssh -n -o BatchMode=yes -o ConnectTimeout=3 {ssh_hosts[machine.name]} " + shlex.quote("set -euo pipefail; " + command)
 
-    def succeed(machine, command, timeout=60):
-        return controller.succeed(remote(machine, command), timeout=timeout)
+        def succeed(machine, command, timeout=60):
+            return controller.succeed(remote(machine, command), timeout=timeout)
 
-    def wait_unit(machine, unit):
-        controller.wait_until_succeeds(remote(machine, "systemctl is-active " + unit), timeout=120)
+        def wait_unit(machine, unit):
+            controller.wait_until_succeeds(remote(machine, "systemctl is-active " + unit), timeout=120)
 
-    def poweroff(machine):
-        # Return the SSH acknowledgement before shutdown closes its connection.
-        succeed(machine, "systemd-run --unit=vps-test-poweroff --on-active=2s --timer-property=AccuracySec=100ms systemctl poweroff")
-        machine.wait_for_shutdown(timeout=datetime.timedelta(seconds=60))
+        def poweroff(machine):
+            # Return the SSH acknowledgement before shutdown closes its connection.
+            succeed(machine, "systemd-run --unit=vps-test-poweroff --on-active=2s --timer-property=AccuracySec=100ms systemctl poweroff")
+            machine.wait_for_shutdown(timeout=datetime.timedelta(seconds=60))
 
-    def powercycle(machine):
-        poweroff(machine)
-        machine.start()
-        wait_unit(machine, "sshd.service")
-
-    with subtest("BIOS and UEFI bootstrap images start at 512 MiB with a grown root and disk swap"):
-        for machine in (edge, west):
-            image = images[machine.name]
-            print(f"{machine.name}: raw image {Path(image).stat().st_size} bytes")
-            subprocess.run(["${pkgs.qemu_test}/bin/qemu-img", "create", "-f", "qcow2", "-F", "raw", "-b", image,
-                            str(machine.state_dir / "root.qcow2"), "10G"], check=True)
+        def powercycle(machine):
+            poweroff(machine)
             machine.start()
-            address = addresses[machine.name]
-            scan = f"ssh-keyscan -p {ssh_ports[machine.name]} -t ed25519 {address} > /root/.ssh/{machine.name}.pub"
-            controller.wait_until_succeeds(scan, timeout=120)
-            fingerprint = controller.succeed(f"ssh-keygen -lf /root/.ssh/{machine.name}.pub").split()[1]
-            machine.wait_for_console_text(re.escape(fingerprint), timeout=30)
-            controller.succeed(f"cat /root/.ssh/{machine.name}.pub >> /root/.ssh/known_hosts")
-            wait_unit(machine, "multi-user.target")
-            succeed(machine, "swapon --show --noheadings | grep /var/lib/swapfile")
-            root_bytes = int(succeed(machine, "df --output=size -B1 / | tail -n 1"))
-            assert root_bytes > 9 * 1024**3, (machine.name, root_bytes)
-            print(succeed(machine, "free -m; lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINTS; df -h / /boot; ip -4 address show eth0"))
-    with subtest("System DNS uses cached DoT and time is authenticated with NTS"):
-        for machine in (edge, west):
-            controller.wait_until_succeeds(remote(machine, "chronyc -n ntpdata 192.0.2.30 | grep -Eq '^Authenticated *: Yes$'"), timeout=90)
-            print(succeed(machine, "chronyc -n sources; chronyc -n authdata; resolvectl status"))
-            succeed(machine, "getent ahostsv4 cached-" + machine.name + ".fixture.example")
-            count = controller.succeed("cat /run/vps-dns-*.jsonl | grep -c cached-" + machine.name)
-            succeed(machine, "getent ahostsv4 cached-" + machine.name + ".fixture.example")
-            repeated = controller.succeed("cat /run/vps-dns-*.jsonl | grep -c cached-" + machine.name)
-            assert repeated == count, (
-                controller.succeed("cat /run/vps-dns-*.jsonl"),
-                succeed(machine, "resolvectl statistics; resolvectl show-cache"),
-            )
-        controller.succeed("systemctl stop vps-dns-0.service")
-        for machine in (edge, west):
-            controller.wait_until_succeeds(remote(machine, "getent ahostsv4 dot-failover.fixture.example"), timeout=45)
-        controller.succeed("grep dot-failover /run/vps-dns-1.jsonl; systemctl start vps-dns-0.service")
-    with subtest("Wrangler bundles both Workers with isolated files and persistent account state"):
-        controller.succeed("runuser -u publisher -- ${python}/bin/python3 ${source}/tests/integration/wrangler.py", timeout=120)
-    def deploy(release, goal, target="edge,west"):
-        for name in target.split(","):
-            status, output = controller.execute(f"VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute < /dev/null", timeout=300)
-            if status:
-                for command in ("free -m; df -h / /nix/store; journalctl -b -u nix-daemon -u systemd-oomd --no-pager; dmesg | tail -n 40",
-                                remote({"edge": edge, "west": west}[name], "journalctl -b -u site-vps-proxy -u site-vps-certificate -u nginx --no-pager -n 80")):
-                    try:
-                        print(controller.execute(command, timeout=10)[1])
-                    except Exception as error:
-                        print("Deployment diagnostics:", error)
-                raise RuntimeError(f"{name}: Colmena {goal} exited {status}: {output}")
-    with subtest("Colmena deploys through SSH aliases, identities, ports and a SOCKS proxy"):
-        deploy("v1", "switch")
-    for machine in (edge, west):
-        wait_unit(machine, "site-vps-proxy.service")
-        succeed(machine, "test $(stat -c %a /var/lib/site-vps/releases/v1/proxy.json) = 600")
-    provider = json.loads(controller.succeed("cat /run/vps/provider-v1.json"))
-    wait_unit(west, "nginx.service")
-    assert controller.succeed("curl --fail --cacert ${tls.ca.cert} --resolve app.test.nix:443:192.0.2.11 https://app.test.nix").strip() == "vps application"
-    def request(path, expected, domain="origin.fixture.example"):
-        config = {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": 11080}], "outbounds": [path]}
-        config["outbounds"][0]["tls"]["certificate_path"] = "${tls.ca.cert}"
-        controller.succeed("printf %s " + shlex.quote(json.dumps(config)) + " > /run/client.json")
-        controller.succeed("systemctl stop vps-client.service || true; systemd-run --unit=vps-client --collect sing-box run -c /run/client.json")
-        controller.wait_for_open_port(11080)
-        result = controller.succeed("curl --retry 5 --retry-all-errors --retry-delay 1 --max-time 10 --fail -sS --socks5-hostname 127.0.0.1:11080 http://" + domain + ":18080/").strip()
-        assert result == expected, (path["tag"], result, expected)
-    with subtest("Each entry reaches native and userspace exits through both protocols"):
-        expected = {"edge-native": "192.0.2.10", "west-native": "192.0.2.11", "us": "198.51.100.30", "west-wg": "10.88.0.2", "west-openvpn": "10.89.0.2"}
-        for entry in ("edge", "west"):
-            for exit_id, address in expected.items():
-                carriers = ["edge", "west"] if exit_id == "us" else ["edge" if exit_id == "edge-native" else "west"]
-                for carrier in carriers:
-                    for protocol in ("trojan", "hysteria2"):
-                        paths = provider["exits"][exit_id]["paths"]
-                        path = next(p for p in provider["outbounds"] if p["tag"] in paths and p["type"] == protocol
-                                    and p["server"] == addresses[entry]
-                                    and p["tls"]["server_name"] == f"{carrier}.test.nix")
-                        request(path, address)
-    with subtest("Exit DNS survives an unavailable resolver and a resolver returning SERVFAIL"):
-        path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · [us] · Trojan")
-        controller.succeed("systemctl stop vps-dns-0.service")
-        request(path, "198.51.100.30", "transport.fixture.example")
-        controller.succeed("systemctl start vps-dns-0.service")
-        request(path, "198.51.100.30", "sf.fixture.example")
-        controller.succeed("grep sf.fixture.example /run/vps-dns-1.jsonl")
-    with subtest("Path selection preserves healthy connections and survives carrier loss in auto mode"):
-        controller.succeed("systemctl stop vps-client.service")
-        controller.succeed("systemd-run --unit=vps-client --collect sing-box run -c /run/vps/failover.json")
-        controller.wait_for_open_port(19090)
+            wait_unit(machine, "sshd.service")
 
-        def select_path(name):
-            controller.succeed("curl --fail -sS -X PUT -H 'Content-Type: application/json' --data " +
-                               shlex.quote(json.dumps({"name": name})) + " http://127.0.0.1:19090/proxies/exit-us")
+        with subtest("BIOS and UEFI bootstrap images start at 512 MiB with a grown root and disk swap"):
+            for machine in (edge, west):
+                image = images[machine.name]
+                print(f"{machine.name}: raw image {Path(image).stat().st_size} bytes")
+                subprocess.run(["${pkgs.qemu_test}/bin/qemu-img", "create", "-f", "qcow2", "-F", "raw", "-b", image,
+                                str(machine.state_dir / "root.qcow2"), "10G"], check=True)
+                machine.start()
+                address = addresses[machine.name]
+                scan = f"ssh-keyscan -p {ssh_ports[machine.name]} -t ed25519 {address} > /root/.ssh/{machine.name}.pub"
+                controller.wait_until_succeeds(scan, timeout=120)
+                fingerprint = controller.succeed(f"ssh-keygen -lf /root/.ssh/{machine.name}.pub").split()[1]
+                machine.wait_for_console_text(re.escape(fingerprint), timeout=30)
+                controller.succeed(f"cat /root/.ssh/{machine.name}.pub >> /root/.ssh/known_hosts")
+                wait_unit(machine, "multi-user.target")
+                succeed(machine, "swapon --show --noheadings | grep /var/lib/swapfile")
+                root_bytes = int(succeed(machine, "df --output=size -B1 / | tail -n 1"))
+                assert root_bytes > 9 * 1024**3, (machine.name, root_bytes)
+                print(succeed(machine, "free -m; lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINTS; df -h / /boot; ip -4 address show eth0"))
+        with subtest("System DNS uses cached DoT and time is authenticated with NTS"):
+            for machine in (edge, west):
+                controller.wait_until_succeeds(remote(machine, "chronyc -n ntpdata 192.0.2.30 | grep -Eq '^Authenticated *: Yes$'"), timeout=90)
+                print(succeed(machine, "chronyc -n sources; chronyc -n authdata; resolvectl status"))
+                succeed(machine, "getent ahostsv4 cached-" + machine.name + ".fixture.example")
+                count = controller.succeed("cat /run/vps-dns-*.jsonl | grep -c cached-" + machine.name)
+                succeed(machine, "getent ahostsv4 cached-" + machine.name + ".fixture.example")
+                repeated = controller.succeed("cat /run/vps-dns-*.jsonl | grep -c cached-" + machine.name)
+                assert repeated == count, (
+                    controller.succeed("cat /run/vps-dns-*.jsonl"),
+                    succeed(machine, "resolvectl statistics; resolvectl show-cache"),
+                )
+            controller.succeed("systemctl stop vps-dns-0.service")
+            for machine in (edge, west):
+                controller.wait_until_succeeds(remote(machine, "getent ahostsv4 dot-failover.fixture.example"), timeout=45)
+            controller.succeed("grep dot-failover /run/vps-dns-1.jsonl; systemctl start vps-dns-0.service")
+        with subtest("Wrangler bundles both Workers with isolated files and persistent account state"):
+            controller.succeed("runuser -u publisher -- ${python}/bin/python3 ${source}/tests/integration/wrangler.py", timeout=120)
+        def deploy(release, goal, target="edge,west"):
+            for name in target.split(","):
+                status, output = controller.execute(f"VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute < /dev/null", timeout=300)
+                if status:
+                    for command in ("free -m; df -h / /nix/store; journalctl -b -u nix-daemon -u systemd-oomd --no-pager; dmesg | tail -n 40",
+                                    remote({"edge": edge, "west": west}[name], "journalctl -b -u site-vps-proxy -u site-vps-certificate -u nginx --no-pager -n 80")):
+                        try:
+                            print(controller.execute(command, timeout=10)[1])
+                        except Exception as error:
+                            print("Deployment diagnostics:", error)
+                    raise RuntimeError(f"{name}: Colmena {goal} exited {status}: {output}")
+        with subtest("Colmena deploys through SSH aliases, identities, ports and a SOCKS proxy"):
+            deploy("v1", "switch")
+        for machine in (edge, west):
+            wait_unit(machine, "site-vps-proxy.service")
+            succeed(machine, "test $(stat -c %a /var/lib/site-vps/releases/v1/proxy.json) = 600")
+        provider = json.loads(controller.succeed("cat /run/vps/provider-v1.json"))
+        wait_unit(west, "nginx.service")
+        assert controller.succeed("curl --fail --cacert ${tls.ca.cert} --resolve app.test.nix:443:192.0.2.11 https://app.test.nix").strip() == "vps application"
+        def request(path, expected, domain="origin.fixture.example"):
+            config = {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": 11080}], "outbounds": [path]}
+            config["outbounds"][0]["tls"]["certificate_path"] = "${tls.ca.cert}"
+            controller.succeed("printf %s " + shlex.quote(json.dumps(config)) + " > /run/client.json")
+            controller.succeed("systemctl stop vps-client.service || true; systemd-run --unit=vps-client --collect sing-box run -c /run/client.json")
+            controller.wait_for_open_port(11080)
+            result = controller.succeed("curl --retry 5 --retry-all-errors --retry-delay 1 --max-time 10 --fail -sS --socks5-hostname 127.0.0.1:11080 http://" + domain + ":18080/").strip()
+            assert result == expected, (path["tag"], result, expected)
+        with subtest("Each entry reaches native and userspace exits through both protocols"):
+            expected = {"edge-native": "192.0.2.10", "west-native": "192.0.2.11", "us": "198.51.100.30", "west-wg": "10.88.0.2", "west-openvpn": "10.89.0.2"}
+            for entry in ("edge", "west"):
+                for exit_id, address in expected.items():
+                    carriers = ["edge", "west"] if exit_id == "us" else ["edge" if exit_id == "edge-native" else "west"]
+                    for carrier in carriers:
+                        for protocol in ("trojan", "hysteria2"):
+                            paths = provider["exits"][exit_id]["paths"]
+                            path = next(p for p in provider["outbounds"] if p["tag"] in paths and p["type"] == protocol
+                                        and p["server"] == addresses[entry]
+                                        and p["tls"]["server_name"] == f"{carrier}.test.nix")
+                            request(path, address)
+        with subtest("Exit DNS survives an unavailable resolver and a resolver returning SERVFAIL"):
+            path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · [us] · Trojan")
+            controller.succeed("systemctl stop vps-dns-0.service")
+            request(path, "198.51.100.30", "transport.fixture.example")
+            controller.succeed("systemctl start vps-dns-0.service")
+            request(path, "198.51.100.30", "sf.fixture.example")
+            controller.succeed("grep sf.fixture.example /run/vps-dns-1.jsonl")
+        with subtest("Path selection preserves healthy connections and survives carrier loss in auto mode"):
+            controller.succeed("systemctl stop vps-client.service")
+            controller.succeed("systemd-run --unit=vps-client --collect sing-box run -c /run/vps/failover.json")
+            controller.wait_for_open_port(19090)
 
-        select_path("west · [us] · Trojan")
-        stream = """
-    import json, socket, time
-    from pathlib import Path
-    from tests.fixtures.network_fixture import read_exact
-    with socket.create_connection(('127.0.0.1', 11080), timeout=3) as connection:
-        connection.sendall(bytes.fromhex('050100'))
-        assert read_exact(connection, 2) == bytes.fromhex('0500')
-        connection.sendall(bytes.fromhex('05010001c633641e46a2'))
-        assert read_exact(connection, 4) == bytes.fromhex('05000001')
-        read_exact(connection, 6)
-        for count in range(1000):
-            connection.sendall(b'keepalive\\n')
-            assert connection.recv(100).strip() == b'198.51.100.30'
-            Path('/run/stream-next').write_text(str(count))
-            Path('/run/stream-next').replace('/run/stream-count')
-            time.sleep(0.1)
-    """
-        controller.succeed("printf %s " + shlex.quote(stream) + " > /run/stream.py")
-        controller.succeed("systemd-run --unit=vps-stream --collect ${fixture} /run/stream.py")
-        controller.wait_until_succeeds("test -s /run/stream-count")
-        count = int(controller.succeed("cat /run/stream-count"))
-        select_path("edge · [us] · Trojan")
-        controller.wait_until_succeeds(f"test $(cat /run/stream-count) -gt {count + 3}")
-        controller.succeed("systemctl stop vps-stream.service")
-        select_path("west · [us] · Trojan")
-        poweroff(west)
-        controller.fail("curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/")
-        selected = json.loads(controller.succeed("curl --fail -sS http://127.0.0.1:19090/proxies/exit-us"))
-        assert selected["now"] == "west · [us] · Trojan", selected
-        select_path("exit-us-auto")
-        controller.wait_until_succeeds("test \"$(curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/)\" = 198.51.100.30", timeout=45)
-        west.start()
-        wait_unit(west, "site-vps-proxy.service")
-    with subtest("A failed certificate refresh retains the active pair"):
-        previous = succeed(west, "readlink /var/lib/site-vps-certificate/fixture/current")
-        controller.succeed("touch /run/certificate-unavailable")
-        try:
-            status, output = controller.execute(remote(west, "systemctl start site-vps-certificate.service"), timeout=150)
-            assert status == 1, (status, output)
-            state = succeed(west, "systemctl show site-vps-certificate.service -p Result -p ExecMainStatus")
-            assert set(state.splitlines()) == {"Result=exit-code", "ExecMainStatus=1"}, state
-            assert succeed(west, "readlink /var/lib/site-vps-certificate/fixture/current") == previous
-        except Exception:
+            def select_path(name):
+                controller.succeed("curl --max-time 10 --fail -sS -X PUT -H 'Content-Type: application/json' --data " +
+                                   shlex.quote(json.dumps({"name": name})) + " http://127.0.0.1:19090/proxies/exit-us")
+                selected = json.loads(controller.succeed("curl --max-time 10 --fail -sS http://127.0.0.1:19090/proxies/exit-us"))
+                assert selected["now"] == name, selected
+
+            select_path("west · [us] · Trojan")
+            stream = """
+        import json, socket, time
+        from pathlib import Path
+        from tests.fixtures.network_fixture import read_exact
+        with socket.create_connection(('127.0.0.1', 11080), timeout=3) as connection:
+            connection.sendall(bytes.fromhex('050100'))
+            assert read_exact(connection, 2) == bytes.fromhex('0500')
+            connection.sendall(bytes.fromhex('05010001c633641e46a2'))
+            assert read_exact(connection, 4) == bytes.fromhex('05000001')
+            read_exact(connection, 6)
+            connection.settimeout(30)
+            with connection.makefile('rb') as reader:
+                while True:
+                    request = Path('/run/stream-request').read_text()
+                    connection.sendall((request + '\\n').encode())
+                    assert reader.readline(100).strip() == b'198.51.100.30'
+                    Path('/run/stream-next').write_text(request)
+                    Path('/run/stream-next').replace('/run/stream-response')
+                    time.sleep(0.1)
+        """
+            controller.succeed("printf %s " + shlex.quote(textwrap.dedent(stream)) + " > /run/stream.py")
+            controller.succeed("printf before-selection > /run/stream-request")
+            controller.succeed("systemd-run --unit=vps-stream --collect ${fixture} /run/stream.py")
+            controller.wait_until_succeeds("grep -Fx before-selection /run/stream-response")
+            select_path("edge · [us] · Trojan")
+            controller.succeed("printf after-selection > /run/stream-request.pending; mv /run/stream-request.pending /run/stream-request")
+            controller.wait_until_succeeds("systemctl is-active vps-stream && grep -Fx after-selection /run/stream-response")
+            controller.succeed("systemctl stop vps-stream.service")
+            select_path("west · [us] · Trojan")
+            poweroff(west)
+            controller.fail("curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/")
+            selected = json.loads(controller.succeed("curl --fail -sS http://127.0.0.1:19090/proxies/exit-us"))
+            assert selected["now"] == "west · [us] · Trojan", selected
+            select_path("exit-us-auto")
+            controller.wait_until_succeeds("test \"$(curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/)\" = 198.51.100.30", timeout=45)
+            west.start()
+            wait_unit(west, "site-vps-proxy.service")
+        with subtest("A failed certificate refresh retains the active pair"):
+            previous = succeed(west, "readlink /var/lib/site-vps-certificate/fixture/current")
+            controller.succeed("touch /run/certificate-unavailable")
             try:
-                print(controller.execute(remote(west, "systemctl show site-vps-certificate.service; journalctl -b -u site-vps-certificate.service --no-pager -n 40"), timeout=10)[1])
-            except Exception as error:
-                print("Certificate diagnostics:", error)
-            raise
-        controller.succeed("rm /run/certificate-unavailable", timeout=10)
-    with subtest("Test, switch, reboot and rollback retain the required credentials"):
-        deploy("v2", "test", "west")
-        wait_unit(west, "site-vps-proxy.service")
-        assert succeed(west, "cat /etc/vps-generation") == "v2"
-        assert succeed(west, "cat /nix/var/nix/profiles/system/etc/vps-generation") == "v1"
-        next_provider = json.loads(controller.succeed("cat /run/vps/provider-v2.json"))
-        next_path = next(p for p in next_provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
-        request(next_path, "192.0.2.11")
-        deploy("v2", "switch", "west")
-        powercycle(west)
-        wait_unit(west, "site-vps-proxy.service")
-        request(next_path, "192.0.2.11")
-        succeed(west, "nix-env -p /nix/var/nix/profiles/system --rollback; /nix/var/nix/profiles/system/bin/switch-to-configuration switch")
-        wait_unit(west, "site-vps-proxy.service")
-        assert succeed(west, "cat /etc/vps-generation") == "v1"
-        old_path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
-        request(old_path, "192.0.2.11")
-        succeed(west, "test -f /var/lib/site-vps/releases/v1/proxy.json; test -f /var/lib/site-vps/releases/v2/proxy.json")
-    powercycle(edge)
-    wait_unit(edge, "site-vps-proxy.service")
-    for machine in (edge, west):
-        print(succeed(machine, "df -h / /boot; swapon --show"))
-        poweroff(machine)
+                status, output = controller.execute(remote(west, "systemctl start site-vps-certificate.service"), timeout=150)
+                assert status == 1, (status, output)
+                state = succeed(west, "systemctl show site-vps-certificate.service -p Result -p ExecMainStatus")
+                assert set(state.splitlines()) == {"Result=exit-code", "ExecMainStatus=1"}, state
+                assert succeed(west, "readlink /var/lib/site-vps-certificate/fixture/current") == previous
+            except Exception:
+                try:
+                    print(controller.execute(remote(west, "systemctl show site-vps-certificate.service; journalctl -b -u site-vps-certificate.service --no-pager -n 40"), timeout=10)[1])
+                except Exception as error:
+                    print("Certificate diagnostics:", error)
+                raise
+            controller.succeed("rm /run/certificate-unavailable", timeout=10)
+        with subtest("Test, switch, reboot and rollback retain the required credentials"):
+            deploy("v2", "test", "west")
+            wait_unit(west, "site-vps-proxy.service")
+            assert succeed(west, "cat /etc/vps-generation") == "v2"
+            assert succeed(west, "cat /nix/var/nix/profiles/system/etc/vps-generation") == "v1"
+            next_provider = json.loads(controller.succeed("cat /run/vps/provider-v2.json"))
+            next_path = next(p for p in next_provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
+            request(next_path, "192.0.2.11")
+            deploy("v2", "switch", "west")
+            powercycle(west)
+            wait_unit(west, "site-vps-proxy.service")
+            request(next_path, "192.0.2.11")
+            succeed(west, "nix-env -p /nix/var/nix/profiles/system --rollback; /nix/var/nix/profiles/system/bin/switch-to-configuration switch")
+            wait_unit(west, "site-vps-proxy.service")
+            assert succeed(west, "cat /etc/vps-generation") == "v1"
+            old_path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
+            request(old_path, "192.0.2.11")
+            succeed(west, "test -f /var/lib/site-vps/releases/v1/proxy.json; test -f /var/lib/site-vps/releases/v2/proxy.json")
+        powercycle(edge)
+        wait_unit(edge, "site-vps-proxy.service")
+        for machine in (edge, west):
+            print(succeed(machine, "df -h / /boot; swapon --show"))
+            poweroff(machine)
   '';
 }

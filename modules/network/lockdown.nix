@@ -67,6 +67,12 @@ in
     networking.nftables.tables.site-source-guard = {
       family = "inet";
       content = ''
+        chain output {
+          type filter hook output priority -1; policy accept;
+          # UDP sockets can reuse a tuple whose conntrack entry outlives its
+          # excluded sender. Authorize each original packet by its current mark.
+          meta l4proto udp ct direction original ct mark 0xf41 meta mark != 0x6d6f6c65 ct mark set 0
+        }
         chain postrouting {
           type filter hook postrouting priority 200; policy accept;
           oifname != { "lo", "wg0-mullvad" } ip saddr 10.67.0.2 counter drop

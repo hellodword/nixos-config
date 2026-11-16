@@ -141,12 +141,14 @@
     import struct
     import time
     import traceback
+    import uuid
     from datetime import timedelta
     from pathlib import Path
 
 
     key_delay = timedelta(milliseconds=150)
     gui = runpy.run_path("${./gui.py}")
+    runtime = runpy.run_path("${./runtime.py}")
     visible, login = gui["visible"], gui["login"]
     power_menu = runpy.run_path("${./power_menu.py}")
 
@@ -163,7 +165,7 @@
     def input_json(machine, name, value):
         path = "/home/desktop/application-workspace/" + name
         machine.succeed("printf '%s' " + shlex.quote(json.dumps(value, ensure_ascii=False))
-                        + " > " + path + ".pending && mv " + path + ".pending " + path)
+                        + " > " + path + ".pending && mv " + path + ".pending " + path, timeout=10)
 
     def input_actions(machine, actions, window, request_id=None, observe=None):
         started = time.monotonic()
@@ -202,50 +204,55 @@
 
         with machine.input_lock:
             try:
-                while time.monotonic() < deadline:
-                    focused: str = gui["focused_window"](machine, user_command)
-                    last = focused
-                    if re.search(window, focused, re.I):
-                        break
-                    time.sleep(0.1)
-                else:
-                    raise AssertionError(f"Window focus timed out: {last!r}")
-                event("focused", window=last)
-                for index, action in enumerate(actions):
-                    if "powerGuard" in action:
-                        power_menu["blocked"](machine, user, visible, "Log out", action["powerGuard"])
-                    elif "pinyin" in action:
-                        event("activating", action=index)
-                        state = gui["input_method"](machine, user_command, True, deadline)
-                        event("activated", **state)
-                        machine.send_chars(action["pinyin"], delay=key_delay)
-                        if "candidateScreenshot" in action:
-                            received(index, "preedit")
-                            machine.screenshot(machine.name + "-" + action["candidateScreenshot"])
-                        machine.send_chars(" ", delay=key_delay)
-                        received(index, "committed")
-                        event("deactivating")
-                        state = gui["input_method"](machine, user_command, False, deadline)
-                        event("deactivated", **state)
+                with machine.action(deadline):
+                    while time.monotonic() < deadline:
+                        focused: str = gui["focused_window"](machine, user_command, deadline)
+                        last = focused
+                        if re.search(window, focused, re.I):
+                            break
+                        time.sleep(0.1)
                     else:
-                        event("english", action=index)
-                        gui["input_method"](machine, user_command, False, deadline)
-                        if "key" in action:
-                            machine.send_key(action["key"], delay=key_delay)
+                        raise AssertionError(f"Window focus timed out: {last!r}")
+                    event("focused", window=last)
+                    for index, action in enumerate(actions):
+                        if "powerGuard" in action:
+                            power_menu["blocked"](machine, user, visible, "Log out", action["powerGuard"])
+                        elif "pinyin" in action:
+                            event("activating", action=index)
+                            state = gui["input_method"](machine, user_command, True, deadline)
+                            event("activated", **state)
+                            machine.send_chars(action["pinyin"], delay=key_delay)
+                            if observe is None:
+                                received(index, "preedit")
+                            if "candidateScreenshot" in action:
+                                machine.screenshot(machine.name + "-" + action["candidateScreenshot"])
+                            machine.send_chars(" ", delay=key_delay)
+                            received(index, "committed")
+                            event("deactivating")
+                            state = gui["input_method"](machine, user_command, False, deadline)
+                            event("deactivated", **state)
                         else:
-                            machine.send_chars(action["text"], delay=key_delay)
-                event("complete")
-                return True
+                            event("english", action=index)
+                            gui["input_method"](machine, user_command, False, deadline)
+                            if "key" in action:
+                                machine.send_key(action["key"], delay=key_delay)
+                            else:
+                                machine.send_chars(action["text"], delay=key_delay)
+                    event("complete")
+                    return True
             except Exception as error:
                 failed_phase = phase
                 details = {"observed": last}
+                with machine.action(time.monotonic() + 60):
+                    runtime["collect_failure"](error, [
+                        (machine, "input-context", user_status("busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 DebugInfo")),
+                        (machine, "input-journal", "journalctl _UID=1000 -n 60 --no-pager"),
+                    ], [machine])
                 try:
-                    details["fcitx"] = user(machine, "busctl --user call org.fcitx.Fcitx5 /controller org.fcitx.Fcitx.Controller1 DebugInfo", timeout=10)
-                    details["window"] = gui["focused_window"](machine, user_command)
-                    machine.screenshot(machine.name + "-input-failure")
-                except Exception as diagnostic_error:
-                    details["diagnosticError"] = str(diagnostic_error)
-                event("error", error=f"Input {failed_phase}: {error}", **details)
+                    event("error", error=f"Input {failed_phase}: {error}", **details)
+                except Exception as reporting_error:
+                    error.add_note("Publishing input failure: " + str(reporting_error))
+                    raise error
                 if request_id:
                     return False
                 raise
@@ -255,30 +262,34 @@
 
     def exercise_application(machine, application, full=False):
         root = "/home/desktop/application-workspace"
-        exit_file = root + "/artifacts/" + application + ".exit"
-        command = "application-e2e " + application + (" --full" if full else "") + "; result=$?; printf '%s' \"$result\" > " + exit_file
-        user(machine, "systemd-run --user --collect --unit=application-" + application + " sh -c " + shlex.quote(command))
+        execution = application + "-" + uuid.uuid4().hex
+        exit_file = root + "/artifacts/" + execution + ".json"
+        unit = "application-" + execution
+        user(machine, "rm -f " + " ".join(root + "/input-" + name + ".json" for name in ("request", "observed", "progress")) + " " + root + "/input-complete")
+        command = "application-e2e " + application + (" --full" if full else "") + "; result=$?; printf "
+        command += shlex.quote('{"id":"' + execution + '","status":%s}\n') + ' "$result" > ' + exit_file + ".pending; mv " + exit_file + ".pending " + exit_file
+        user(machine, "systemd-run --user --collect --unit=" + unit + " sh -c " + shlex.quote(command))
         deadline = time.monotonic() + 600
         handled = None
         while time.monotonic() < deadline:
             status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file, timeout=min(30, max(1, deadline - time.monotonic())))
             if status == 0:
-                assert result.strip() == "0", application + " failed: " + result
+                assert json.loads(result) == {"id": execution, "status": 0}, application + " failed: " + result
                 return
-            active, state = machine.execute(user_status("systemctl --user is-active application-" + application + ".service"), timeout=min(30, max(1, deadline - time.monotonic())))
+            active, state = machine.execute(user_status("systemctl --user is-active " + unit + ".service"), timeout=min(30, max(1, deadline - time.monotonic())))
             if active != 0:
                 status, result = machine.execute("test -f " + exit_file + " && cat " + exit_file, timeout=min(30, max(1, deadline - time.monotonic())))
                 if status == 0:
-                    assert result.strip() == "0", application + " failed: " + result
+                    assert json.loads(result) == {"id": execution, "status": 0}, application + " failed: " + result
                     return
-                print(machine.execute(user_status("journalctl --user -u application-" + application + ".service -n 60 --no-pager"))[1])
+                print(machine.execute(user_status("journalctl --user -u " + unit + ".service -n 60 --no-pager"), timeout=10)[1])
                 raise AssertionError(application + " stopped before producing its result: " + state.strip())
             status, request = machine.execute("test -f " + root + "/input-request.json && cat " + root + "/input-request.json", timeout=min(30, max(1, deadline - time.monotonic())))
             if status == 0:
                 request = json.loads(request)
                 if request["id"] != handled:
                     if input_actions(machine, request["actions"], request["window"], request_id=request["id"]):
-                        machine.succeed("printf '%s' " + shlex.quote(request["id"]) + " > " + root + "/input-complete")
+                        machine.succeed("printf '%s' " + shlex.quote(request["id"]) + " > " + root + "/input-complete.pending; mv " + root + "/input-complete.pending " + root + "/input-complete", timeout=10)
                     handled = request["id"]
             time.sleep(0.5)
         raise AssertionError(application + " workflow timed out")
@@ -350,9 +361,8 @@
                 frame = Path(directory) / "resolution.png"
                 machine.screenshot(str(frame))
                 assert struct.unpack(">II", frame.read_bytes()[16:24]) == (1920, 1080), "Application tests require a 1920x1080 desktop"
-            # GUI automation is active use. Keep the session awake while the
-            # desktop lifecycle suite separately exercises the one-minute lock.
-            machine.keep_awake()
+            # Hold native idle inhibition while keyboard workflows are active.
+            machine.inhibit_idle()
             if session == "sway":
                 user(machine, "docker load -i /etc/application-fixtures/container.tar.gz", timeout=300)
             for name, action in (
@@ -368,26 +378,25 @@
                 except Exception as error:
                     failures.append((session, name, str(error)))
                     traceback.print_exc()
-                    print(machine.execute("journalctl -b -u nginx -u vaultwarden -n 40 --no-pager")[1])
-                    print(machine.execute("journalctl _UID=1000 -n 50 --no-pager")[1])
-                    print(machine.execute("tail -n 50 /home/desktop/application-workspace/artifacts/*.log /home/desktop/application-workspace/artifacts/*-failure.txt")[1])
-                    machine.screenshot(machine.name + "-" + name + "-failure")
+                    runtime["collect_failure"](error, [
+                        (machine, "services", "journalctl -b -u nginx -u vaultwarden -n 40 --no-pager"),
+                        (machine, "session", "journalctl _UID=1000 -n 50 --no-pager"),
+                        (machine, "application", "tail -n 50 /home/desktop/application-workspace/artifacts/*.log /home/desktop/application-workspace/artifacts/*-failure.txt"),
+                    ], [machine])
                     break
                 finally:
-                    machine.execute("pkill -u 1000 -x rofi")
+                    machine.execute("pkill -u 1000 -x rofi", timeout=10)
         except Exception as error:
             failures.append((session, "session", str(error)))
             traceback.print_exc()
-            try:
-                machine.screenshot(machine.name + "-session-failure")
-                print(machine.execute("journalctl -b -u display-manager -n 60 --no-pager")[1])
-            except Exception as diagnostic_error:
-                print("Could not collect session diagnostics:", diagnostic_error)
+            runtime["collect_failure"](error, [
+                (machine, "login", "journalctl -b -u display-manager -n 60 --no-pager"),
+            ], [machine])
         finally:
             try:
-                machine.stop_activity()
+                machine.resume_idle()
             except Exception as error:
-                failures.append((session, "activity", str(error)))
+                failures.append((session, "idle control", str(error)))
             try:
                 machine.copy_from_machine("/home/desktop/application-workspace/artifacts", "applications-" + machine.name)
             except Exception as error:

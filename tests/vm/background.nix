@@ -1,5 +1,10 @@
 { scenario }:
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   backup = config.site.backup.enable or false;
   network =
@@ -13,6 +18,21 @@ let
     });
 in
 {
+  environment.sessionVariables = lib.mkIf desktop {
+    QT_LOGGING_RULES = "qt.quick.focus=true";
+  };
+  services.displayManager.sddm.settings.General.GreeterEnvironment =
+    lib.mkIf desktop "QT_LOGGING_RULES=qt.quick.focus=true";
+  environment.systemPackages = lib.optionals desktop [
+    (pkgs.writeShellScriptBin "vm-idle-inhibit" ''
+      exec ${
+        pkgs.python3.withPackages (p: [
+          p.dbus-python
+          p.pygobject3
+        ])
+      }/bin/python3 ${../fixtures/idle_inhibit.py}
+    '')
+  ];
   # The VPS scenario supplies the authenticated time source.
   systemd.services = deferred (
     lib.optional (scenario != "vps" && config.services.chrony.enable) "chronyd"
@@ -33,6 +53,7 @@ in
     ++ lib.optional (
       scenario == "vps" && config.systemd.services ? site-vps-certificate
     ) "site-vps-certificate"
+    ++ lib.optional (config.virtualisation.docker.autoPrune.enable or false) "docker-prune"
   );
 
   # Application workflows use the local background. The desktop scenario owns

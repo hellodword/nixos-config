@@ -329,6 +329,8 @@ systemctl status site-dns site-dns-race-cn site-dns-race-global sing-box
 
 `disconnect` 保持 Lockdown，停止代理并断开本地 WG。正常运行时 `direct` 是策略允许的出口；代理失效时 GLOBAL 保持阻断，分流服务整体停止时普通应用也被阻断。控制命令通过 sudo 操作。
 
+本机发起的 UDP，其排除权限按当前数据包的标记核对。连接跟踪记录可在 socket 关闭后继续存在；普通进程复用相同地址和端口时，仍按自身权限处理。服务回复和显式排除进程保留各自的访问规则。
+
 ## 规则文件与节点
 
 | 入口 | 内容 |

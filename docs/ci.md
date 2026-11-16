@@ -83,7 +83,7 @@ Nix 获取 GitHub inputs、缓存读取和发布使用当前 job 自动提供的
 | `publisher.log`、`cache/status.json`、`published-paths.json` | 定位上传进程错误，核对退出状态和本轮成功发布的路径 |
 | `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘、内存上限触发、socket 内存限流及 OOM 记录判断资源瓶颈 |
 | `oranc.log`、`monitor.log` | 按 UTC 时间对照缓存请求与 manifest 重试，排查缓存代理及资源采集故障 |
-| `vm/<pass>/<check>/<attempt>/` | 测试脚本写出的截图、OCR 记录、网络观察快照及应用工作流文件；summary 的 VM evidence 列出实际收集的文件数量与目录 |
+| `vm/<pass>/<check>/<attempt>/` | 测试脚本写出的截图、OCR 与输入阶段记录、分阶段流量观察、应用工作流文件及失败诊断；summary 的 VM evidence 列出实际收集的文件数量与目录 |
 
 VM 判定使用当前清单的 derivation 和输出路径，并且只采用该组最新一次已开始的执行。中断或失败的重跑会留下对应状态，较早的成功不会代替它；每次执行的证据保存在独立目录。summary 保留各次构建耗时，VM 表展示当前判定。
 

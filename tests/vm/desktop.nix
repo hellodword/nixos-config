@@ -1,6 +1,23 @@
 { inputs }:
 { pkgs, lib, ... }:
 let
+  qtInput =
+    pkgs.runCommandCC "qt-input-fixture"
+      {
+        nativeBuildInputs = [
+          pkgs.pkg-config
+          pkgs.qt6.wrapQtAppsHook
+        ];
+        buildInputs = [
+          pkgs.qt6.qtbase
+          pkgs.qt6.qtwayland
+        ];
+      }
+      ''
+        mkdir -p "$out/bin"
+        $CXX ${../fixtures/qt_input.cpp} $(pkg-config --cflags --libs Qt6Widgets) -o "$out/bin/qt-input-fixture"
+        wrapQtApp "$out/bin/qt-input-fixture"
+      '';
   identityDirectory = "/home/desktop/.local/state/identity-fixture";
   identitySource = "/persist/home/desktop/.local/state/identity-fixture/identity.yaml";
   identityFixture = "${
@@ -38,6 +55,24 @@ in
   node.pkgsReadOnly = false;
   node.specialArgs = { inherit inputs; };
   defaults = {
+    nixpkgs.overlays = [
+      (
+        _: prev:
+        lib.genAttrs [ "swaylock" "i3lock" ] (
+          name:
+          prev.symlinkJoin {
+            name = "${name}-observed";
+            paths = [ prev.${name} ];
+            nativeBuildInputs = [ prev.makeWrapper ];
+            postBuild = ''
+              mv "$out/bin/${name}" "$out/bin/.${name}-wrapped"
+              makeWrapper ${prev.python3}/bin/python3 "$out/bin/${name}" \
+                --add-flags "${../fixtures/lock_ready.py} ${name} $out/bin/.${name}-wrapped"
+            '';
+          }
+        )
+      )
+    ];
     imports = [
       (import ./background.nix { scenario = "desktop"; })
       inputs.impermanence.nixosModules.impermanence
@@ -101,15 +136,33 @@ in
       wantedBy = [ "multi-user.target" ];
       serviceConfig.ExecStart = "${pkgs.python3}/bin/python3 ${pkgs.writeText "wallpaper-feed.py" ''
         import time
+        import select
+        import socket
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from pathlib import Path
 
         class Feed(BaseHTTPRequestHandler):
             def do_GET(self):
+                hold = Path('/run/wallpaper-hold')
+
+                def holding():
+                    try:
+                        return hold.read_text().strip()
+                    except FileNotFoundError:
+                        return None
+
+                operation = holding()
                 with Path('/run/wallpaper-requests').open('a') as requests:
-                    requests.write('feed\n')
-                deadline = time.monotonic() + 30
-                while Path('/run/wallpaper-hold').exists() and time.monotonic() < deadline:
+                    requests.write('feed ' + (operation or 'scheduled') + '\n')
+                if operation is not None:
+                    Path('/run/wallpaper-held').write_text(operation)
+                deadline = time.monotonic() + 120
+                while operation is not None and holding() == operation:
+                    if time.monotonic() >= deadline:
+                        self.send_error(504, 'wallpaper response was not released')
+                        return
+                    if select.select([self.connection], [], [], 0)[0] and not self.connection.recv(1, socket.MSG_PEEK):
+                        return
                     time.sleep(0.05)
                 body = Path('${wallpaperImages}/feed.json').read_bytes()
                 self.send_response(200)
@@ -146,6 +199,7 @@ in
       pkgs.pipewire
       pkgs.kdePackages.kconfig
       pkgs.kdePackages.kdialog
+      qtInput
     ];
   };
   nodes = {
@@ -266,9 +320,11 @@ in
     def preferred_layout(machine):
         try:
             machine.wait_until_succeeds(user_command("xrandr --query | grep -E ' connected[^[:cntrl:]]*1280x800\\+0\\+0'"), timeout=30)
-        except Exception:
-            print(user(machine, "xrandr --query"))
-            print(user(machine, "journalctl --user -u autorandr.service -n 60 --no-pager"))
+        except Exception as error:
+            runtime["collect_failure"](error, [
+                (machine, "layout", user_command("xrandr --query")),
+                (machine, "layout-journal", user_command("journalctl --user -u autorandr.service -n 60 --no-pager")),
+            ])
             raise
 
     def reconnect_i3_display(machine, output):
@@ -283,6 +339,7 @@ in
         return "pgrep -u 1000 -f " + shlex.quote(r"^([^ ]*/)?\.?" + re.escape(name) + r"(-wrapped)?( |$)")
 
     gui = runpy.run_path("${./gui.py}")
+    runtime = runpy.run_path("${./runtime.py}")
     visible, login = gui["visible"], gui["login"]
     power_menu = runpy.run_path("${./power_menu.py}")
 
@@ -302,13 +359,11 @@ in
                     visible(machine, r"\d{1,2}:\d{2}", timeout=30, region=(0.2, 0.02, 0.6, 0.36))
                     machine.send_key("ctrl")
                     visible(machine, "Switch User", timeout=30, region=(0.2, 0.25, 0.6, 0.7))
-                    # Breeze hides the password controls after ten idle seconds.
-                    # OCR can outlast that interval; wake them again and let the
-                    # authentication prompt regain focus before typing.
                     machine.send_key("ctrl", delay=timedelta(milliseconds=150))
-                    machine.sleep(1)
+                    pid = machine.succeed(process(locker)).strip().splitlines()[-1]
+                    gui["qt_password_focus"](machine, pid, time.monotonic() + 30)
                 else:
-                    machine.sleep(1)
+                    machine.wait_until_succeeds("jq -e '.phase == \"ready\"' /run/user/1000/" + locker + "-ready.json", timeout=30)
                 # Capture after the native lock surface has had time to paint,
                 # immediately before entering the password, not on process spawn.
                 if screenshot:
@@ -321,7 +376,7 @@ in
                 machine.wait_until_fails(process(locker), timeout=30)
 
     def stop_session(machine, compositor, menu=False, health_busy=False):
-        machine.stop_activity()
+        machine.resume_idle()
         # Finish the synthetic terminal workload before asking the desktop to
         # log out, so Kitty's running-command confirmation needs no response.
         machine.execute(user_command("systemctl --user stop desktop-fixture.service"), timeout=30)
@@ -348,6 +403,7 @@ in
             status, output = machine.execute(user_command(command), timeout=30)
             if status:
                 print("Session logout command:", status, output)
+        failure = None
         try:
             for unit in ("graphical-session.target", "desktop-health.timer", "site-sway.target", "site-i3.target", "site-wallpaper.timer", "site-wallpaper-fetch@*.timer"):
                 machine.wait_until_fails(user_command("systemctl --user is-active " + shlex.quote(unit)), timeout=60)
@@ -361,18 +417,25 @@ in
             # new user manager and resets its service restart counters.
             crashes = machine.succeed("journalctl -b COREDUMP_COMM=pipewire --no-pager -q -o cat")
             assert not crashes.strip(), crashes
-        except Exception:
-            for command in ("loginctl list-sessions", "ps -u 1000 -o pid,ppid,comm",
-                            user_command("systemctl --user status 'site-session-watch@*.service' graphical-session.target"),
-                            user_command("systemctl --user list-jobs --no-pager; "
-                                         "systemctl --user list-timers --all 'desktop-health*' 'site-wallpaper*' --no-pager; "
-                                         "systemctl --user show desktop-health.service site-wallpaper-fetch.service "
-                                         "-p Id -p ActiveState -p SubState -p Result -p Job"),
-                            "journalctl _UID=1000 -n 120 --no-pager -o short-precise"):
-                print(command, machine.execute(command)[1])
+        except Exception as error:
+            failure = error
+            runtime["collect_failure"](error, [
+                (machine, "logout-processes", "loginctl list-sessions; ps -u 1000 -o pid,ppid,comm"),
+                (machine, "logout-units", user_command("systemctl --user status 'site-session-watch@*.service' graphical-session.target")),
+                (machine, "logout-schedule", user_command("systemctl --user list-jobs --no-pager; "
+                     "systemctl --user list-timers --all 'desktop-health*' 'site-wallpaper*' --no-pager; "
+                     "systemctl --user show desktop-health.service site-wallpaper-fetch.service "
+                     "-p Id -p ActiveState -p SubState -p Result -p Job")),
+                (machine, "logout-journal", "journalctl _UID=1000 -n 120 --no-pager -o short-precise"),
+            ])
             raise
         finally:
-            machine.execute("rm -f /run/user/1000/vm-health-gate /run/user/1000/vm-health-started")
+            try:
+                machine.execute("rm -f /run/user/1000/vm-health-gate /run/user/1000/vm-health-started", timeout=10)
+            except Exception as error:
+                if failure is None:
+                    raise
+                failure.add_note("Releasing session health gate: " + str(error))
 
     def power_workloads(machine):
         # A real paused VM process belongs to another user. System power actions
@@ -427,7 +490,7 @@ in
         if session == "KDE":
             machine.wait_until_succeeds(user_command("systemctl --user is-active plasma-plasmashell.service"), timeout=60)
             machine.wait_until_fails(process("ksplashqml"), timeout=90)
-        machine.keep_awake()
+        machine.inhibit_idle()
     layout_query = '[.[] | select(.active) | {key: .name, value: {active, scale, rect, current_mode, transform}}] | from_entries'
 
     def display_layout(machine):
@@ -515,7 +578,7 @@ in
         output = json.loads(user(machine, "swaymsg -t get_outputs"))[0]
         original = output["current_mode"]
         user(machine, "swaymsg output " + output["name"] + " mode 1920x1080")
-        visible(machine, "Native desktop", timeout=30)
+        machine.wait_until_succeeds(user_command("swaymsg -t get_outputs | jq -e 'any(.[]; .current_mode.width == 1920 and .current_mode.height == 1080)'"), timeout=30)
         with tempfile.TemporaryDirectory() as temporary:
             frame, raw = Path(temporary) / "bar.png", Path(temporary) / "bar.ppm"
             width, height, pixels = bar_pixels(machine, frame, raw)
@@ -554,9 +617,9 @@ in
             assert wallpaper_fetch_state(machine) == saved_fetch
             machine.succeed("test ! -e /run/wallpaper-requests")
             # Hold the HTTPS response while observing the restored local background.
-            machine.succeed("touch /run/wallpaper-hold")
+            machine.succeed("printf restore-background > /run/wallpaper-hold")
             previous_attempt = wallpaper_due(machine)
-            machine.wait_until_succeeds("test -s /run/wallpaper-requests", timeout=20)
+            machine.wait_until_succeeds("grep -Fx restore-background /run/wallpaper-held", timeout=60)
             assert wallpaper_visible(machine, session) == "personal.png"
             machine.succeed("rm /run/wallpaper-hold")
             wallpaper_attempt_finished(machine, previous_attempt, "new")
@@ -620,11 +683,16 @@ in
             machine.succeed("tr '\\0' '\\n' < /proc/" + im_pid + "/environ | grep '^WAYLAND_SOCKET='")
             # Exercise the real Qt Wayland text-input path through KWin/Fcitx,
             # not a pre-rendered CJK string or a D-Bus name alone.
-            user(machine, "systemd-run --user --collect --unit=ime-fixture sh -c 'QT_QPA_PLATFORM=wayland kdialog --title Native-input-check --inputbox \"Input method check\" > /run/user/1000/ime-result'")
-            visible(machine, "Input method check", region=(0.3, 0.25, 0.4, 0.5))
-            with machine.input_lock:
-                gui["input_method"](machine, user_command, True, time.monotonic() + 60)
-                machine.send_chars("nihao ")
+            user(machine, "rm -f /run/user/1000/ime-state.json /run/user/1000/ime-result; systemd-run --user --collect --unit=ime-fixture sh -c 'QT_QPA_PLATFORM=wayland qt-input-fixture > /run/user/1000/ime-result'")
+            deadline = time.monotonic() + 90
+            with machine.input_lock, machine.action(deadline):
+                machine.wait_until_succeeds("jq -e .focused /run/user/1000/ime-state.json", timeout=gui["remaining"](deadline))
+                machine.screenshot(machine.name + "-input-ready")
+                gui["input_method"](machine, user_command, True, deadline)
+                machine.send_chars("nihao")
+                machine.wait_until_succeeds("jq -e '.preedit | test(\"^ni.?hao$|^你好$\")' /run/user/1000/ime-state.json", timeout=gui["remaining"](deadline))
+                machine.send_chars(" ")
+                machine.wait_until_succeeds("jq -e '.text == \"你好\" and .preedit == \"\"' /run/user/1000/ime-state.json", timeout=gui["remaining"](deadline))
                 machine.send_key("ret")
                 machine.wait_until_succeeds(user_command("test -s /run/user/1000/ime-result"), timeout=30)
                 entered = user(machine, "cat /run/user/1000/ime-result").strip()
@@ -682,7 +750,9 @@ in
         # the production service sandbox, then return to the active desktop.
         machine.wait_until_succeeds(user_command("systemctl --user is-active safeeyes.service"), timeout=60)
         machine.wait_until_succeeds(user_command("busctl --user status io.github.slgobinath.SafeEyes"), timeout=60)
-        machine.wait_until_succeeds(user_command("timeout 10 safeeyes --status | grep 'Next break at'"), timeout=60)
+        # Smart Pause resumes on user activity, independently of screen locking.
+        machine.move_pointer(80, 80, 100, 100)
+        machine.wait_until_succeeds(user_command("timeout 10 safeeyes --status | tee /run/user/1000/safeeyes-status | grep 'Next break at'"), timeout=60)
         user(machine, "safeeyes --take-break")
         visible(machine, "Skip", timeout=30)
         user(machine, "safeeyes --disable")
@@ -698,9 +768,9 @@ in
             user(machine, "desktop-shot screen save; test -s ~/Pictures/$(ls -t ~/Pictures | head -n1)")
         # Each session's one-minute timeout must invoke a working PAM lock.
         if session == "sway":
-            with machine.pause_activity():
+            with machine.allow_idle():
                 hover_status(machine)
-        machine.stop_activity()
+        machine.resume_idle()
         if session == "sway":
             click_eye(machine, "2d3436", "ecf0f1")
             machine.sleep(65)
@@ -719,7 +789,7 @@ in
             machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
             machine.wait_until_succeeds(process(locker), timeout=30)
             unlock(machine, session, screenshot="desktop-" + session + "-manual-lock")
-        machine.keep_awake()
+        machine.inhibit_idle()
         # Exercise D-Bus activation after the WM's notifier has stopped, not
         # merely the explicit startup path. Plasma must own its native name.
         notifier = {"sway": "mako", "i3": "dunst", "KDE": "plasmashell"}[session]
@@ -814,12 +884,10 @@ in
         if session == "sway":
             # The server acknowledges the request while the real downloader
             # waits for its response. Log out through Sway during that transfer.
-            machine.succeed("touch /run/wallpaper-hold")
+            machine.succeed("printf logout-download > /run/wallpaper-hold")
             try:
                 wallpaper_due(machine)
-                request_count = len(requests.splitlines())
-                machine.wait_until_succeeds(
-                    f"test $(wc -l < /run/wallpaper-requests) -gt {request_count}", timeout=20)
+                machine.wait_until_succeeds("grep -Fx logout-download /run/wallpaper-held", timeout=60)
                 downloading = wallpaper_fetch_state(machine)
                 assert downloading["result"] == "running", downloading
                 stop_session(machine, compositor)
@@ -852,16 +920,18 @@ in
             else:
                 try:
                     machine.wait_until_succeeds(user_command("autorandr --current | grep vm-preference"), timeout=60)
-                except Exception:
-                    print(user(machine, "autorandr --debug --detected; autorandr --fingerprint; cat ~/.config/autorandr/vm-preference/setup ~/.config/autorandr/vm-preference/config"))
-                    print(user(machine, "journalctl --user -u autorandr.service --no-pager"))
-                    print(user(machine, "xrandr --query"))
+                except Exception as error:
+                    runtime["collect_failure"](error, [
+                        (machine, "restored-layout", user_command("autorandr --debug --detected; autorandr --fingerprint; cat ~/.config/autorandr/vm-preference/setup ~/.config/autorandr/vm-preference/config")),
+                        (machine, "restored-layout-journal", user_command("journalctl --user -u autorandr.service --no-pager")),
+                        (machine, "restored-outputs", user_command("xrandr --query")),
+                    ])
                     raise
                 outputs = user(machine, "xrandr --query")
                 assert re.search(r"^" + re.escape(i3_output) + r" connected[^\n]* left ", outputs, re.MULTILINE), outputs
             # Use the same native lock after restoring a multi-output or
             # rotated layout, then authenticate through its actual PAM UI.
-            with machine.pause_activity():
+            with machine.allow_idle():
                 machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
                 machine.wait_until_succeeds(process(locker), timeout=30)
                 unlock(machine, session, screenshot="desktop-" + session + "-layout-lock")
@@ -909,27 +979,20 @@ in
         except Exception as error:
             traceback.print_exc()
             failures.append((session, str(error)))
-            try:
-                machine.screenshot("desktop-" + session + "-failure")
-                # A failure at the disk-unlock screen has no guest shell yet.
-                # Its framebuffer and serial log remain available to the driver.
-                if machine.connected:
-                    print(machine.execute("journalctl -b -u home-manager-desktop.service -n 80 --no-pager")[1])
-                    print(machine.execute("journalctl _UID=1000 -n 60 --no-pager")[1])
-                    if session == "KDE":
-                        print(machine.execute("journalctl -u site-identity.service -u sshd.service -n 80 --no-pager")[1])
-                        print(machine.execute(user_command("systemctl --user status site-gpg-ssh-identities.service site-gpg-ssh-identities.path; journalctl --user -u site-gpg-ssh-identities.service -n 80 --no-pager"))[1])
-                    print(machine.execute("tail -n 80 /run/user/1000/safeeyes/safeeyes.log")[1])
-                    print(machine.execute(user_command("systemctl --user show-environment | grep -E '^(DISPLAY|WAYLAND_DISPLAY|SWAYSOCK|I3SOCK|XDG_SESSION_ID|XDG_SESSION_TYPE)='"))[1])
-                    if session == "i3":
-                        print(machine.execute("pid=$(pgrep -u 1000 -x xss-lock); tr '\\0' '\\n' < /proc/$pid/environ | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XDG_SESSION_ID|XDG_SESSION_TYPE)='")[1])
-            except Exception as diagnostic_error:
-                print("Could not collect desktop diagnostics:", diagnostic_error)
+            captures = [
+                (machine, "home", "journalctl -b -u home-manager-desktop.service -n 80 --no-pager"),
+                (machine, "session", "journalctl _UID=1000 -n 100 --no-pager"),
+                (machine, "identity", "journalctl -b -u site-identity -u sshd -n 80 --no-pager; " + user_command("systemctl --user status site-gpg-ssh-identities.service site-gpg-ssh-identities.path; journalctl --user -u site-gpg-ssh-identities.service -n 80 --no-pager")),
+                (machine, "idle", user_command("systemctl --user status swayidle xss-lock vm-idle-inhibit; xset q")),
+                (machine, "environment", user_command("systemctl --user show-environment") + "; cat /run/user/1000/safeeyes-status; journalctl _SYSTEMD_USER_UNIT=safeeyes.service -b -n 80 --no-pager"),
+                (machine, "wallpaper", "cat /run/wallpaper-requests /run/wallpaper-held; cat /home/desktop/.local/state/site-wallpaper/fetch.json; journalctl -u wallpaper-feed -n 50 --no-pager"),
+            ]
+            runtime["collect_failure"](error, captures, [machine])
         finally:
             try:
-                machine.stop_activity()
+                machine.resume_idle()
             except Exception as error:
-                failures.append((session, "activity: " + str(error)))
+                failures.append((session, "idle control: " + str(error)))
             try:
                 machine.shutdown()
             except Exception as error:

@@ -24,14 +24,7 @@ print(response.status_code, response.text)
 
 
 def capture_notification_diagnostics(error, captures):
-    for guest, name, command in captures:
-        try:
-            path = "/tmp/notification-" + name + ".log"
-            status, _ = guest.execute("(" + command + ") > " + path + " 2>&1", timeout=40)
-            guest.copy_from_machine(path, "notifications")
-            print(f"Notification diagnostics: {name}, exit {status}, {guest.out_dir}/notifications")
-        except Exception as diagnostic_error:
-            error.add_note(f"Collecting notification {name}: {diagnostic_error}")
+    runtime["collect_failure"](error, captures)
 
 
 def exercise_notifications(machine, upstream, python):

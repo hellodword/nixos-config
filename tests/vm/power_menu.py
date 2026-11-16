@@ -69,7 +69,6 @@ def ready(machine, visible, prompt, choices=(), *, typed=None, unique=False):
 
 
 def open_action(machine, user, visible, action, *, shortcut=False):
-    user(machine, "fcitx5-remote -c")
     # Clear bar tooltips before driving the menu with the keyboard.
     machine.move_pointer(90, 90, 100, 100)
     if shortcut:
@@ -77,6 +76,11 @@ def open_action(machine, user, visible, action, *, shortcut=False):
     else:
         user(machine, "systemd-run --user --collect --unit=power-menu-fixture desktop-power")
     ready(machine, visible, "Session", ("Log out", "Reboot", "Power off"))
+    user(machine, "fcitx5-remote -c")
+    # Rofi can receive keyboard events without creating an input-method context.
+    machine.wait_until_succeeds(machine.session_command(
+        'state=$(fcitx5-remote --check) && case "$state" in 0|1) true;; *) false;; esac'
+    ), timeout=30)
     machine.send_chars(action, delay=KEY_DELAY)
     ready(machine, visible, "Session", typed=action, unique=True)
     machine.send_key("ret", delay=KEY_DELAY)
@@ -88,10 +92,13 @@ def blocked(machine, user, visible, action, label, *, shortcut=False):
         try:
             visible(machine, re.escape(action) + r"\s+is waiting for:.*" + re.escape(label),
                     timeout=30, region=REGION, layout="block")
-        except Exception:
+        except Exception as error:
             # These guests contain only synthetic workloads. Retain process
             # identity when a real application's guard fails, including wrappers.
-            print(machine.execute("ps -u 1000 -o pid,ppid,ruid,euid,comm,args")[1])
+            try:
+                print(machine.execute("ps -u 1000 -o pid,ppid,ruid,euid,comm,args", timeout=10)[1])
+            except Exception as collection_error:
+                error.add_note("Collecting power guard processes: " + str(collection_error))
             raise
         machine.screenshot(machine.name + "-power-block-" + re.sub(r"\W+", "-", label))
         user(machine, "systemctl --user is-active graphical-session.target")
@@ -103,6 +110,6 @@ def confirm(machine, user, visible, action, *, shortcut=False):
     with machine.input_lock:
         open_action(machine, user, visible, action, shortcut=shortcut)
         ready(machine, visible, action, ("Cancel", re.escape(action)))
-        machine.stop_activity()
+        machine.resume_idle()
         machine.send_key("down", delay=KEY_DELAY)
         machine.send_key("ret", delay=KEY_DELAY)

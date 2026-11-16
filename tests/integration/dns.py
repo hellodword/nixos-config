@@ -4,12 +4,10 @@ import argparse
 import contextlib
 import json
 from pathlib import Path
-import subprocess
 import tempfile
 import time
 import threading
-
-import dns.rcode
+from concurrent.futures import ThreadPoolExecutor
 
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port, plain_server
 
@@ -69,6 +67,33 @@ def main():
             assert condition, description
             assertions += 1
 
+        def ordered_query(name, tcp, invalid=False):
+            gates = [(threading.Event(), threading.Event()) for _ in range(2)]
+            for resolver, gate in zip(resolvers["cn"], gates):
+                resolver.gates[name.lower() + "."] = gate
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                result = executor.submit(query, port, name, tcp=tcp, timeout=20)
+                try:
+                    for arrived, _ in gates:
+                        check(arrived.wait(8), f"upstream received {name}")
+                    gates[0][1].set()
+                    if invalid:
+                        deadline = time.monotonic() + 8
+                        while True:
+                            replies = read_events(root / "first/events.jsonl")
+                            if any(e["name"] == name.lower() and e["identity"] == "dnsdist-leg"
+                                   and e["message"].flags & 0x8000 and e["message"].rcode() != 0
+                                   for e in replies):
+                                break
+                            assert time.monotonic() < deadline, f"first upstream response missing: {name}"
+                            time.sleep(0.05)
+                        check(not result.done(), f"discarded response waits for the other upstream: {name}")
+                        gates[1][1].set()
+                    return result.result(timeout=8)
+                finally:
+                    for _, release in gates:
+                        release.set()
+
         with processes(args, config, root / "first"):
             cases = {"foo-123.test": 11, "FOO-234.TEST.": 11, "foo-abc.test": 22,
                      "www.foo-123.test": 22, "foox123.test": 22, "ordered-123.test": 22,
@@ -83,18 +108,17 @@ def main():
                     reply = query(port, "types.cn.test", kind, tcp=tcp)
                     check(reply.rcode() == 0 and bool(reply.answer), f"{kind} routing")
                 for rcode in ("sf", "refused", "formerr", "badvers"):
-                    reply = query(port, f"{rcode}.{tcp}.cn.test", tcp=tcp)
+                    reply = ordered_query(f"{rcode}.{tcp}.cn.test", tcp, invalid=True)
                     check(marker(reply) == "192.0.2.11", f"fast {rcode} must not win")
-                check(query(port, f"nx.{tcp}.cn.test", tcp=tcp).rcode() == 3, "NXDOMAIN qualifies")
-                reply = query(port, f"nodata.{tcp}.cn.test", tcp=tcp)
+                check(ordered_query(f"nx.{tcp}.cn.test", tcp).rcode() == 3, "NXDOMAIN qualifies")
+                reply = ordered_query(f"nodata.{tcp}.cn.test", tcp)
                 check(reply.rcode() == 0 and not reply.answer, "NODATA qualifies")
                 check(query(port, f"allfail-{tcp}.cn.test", tcp=tcp).rcode() == 2, "all fail -> SERVFAIL")
             check(marker(query(port, "dual.cn.test", "AAAA", address="::1")) == "2001:db8::11", "IPv6 listener")
             for domain in ("private.home.arpa", "1.0.0.10.in-addr.arpa", "blocked.test"):
-                before = sum(len(r.calls) for group in resolvers.values() for r in group)
                 check(query(port, domain).rcode() == 3, "private or blocked name")
-                time.sleep(0.1)
-                check(sum(len(r.calls) for group in resolvers.values() for r in group) == before, "private name leaked")
+                check(not any(c["name"] == domain + "." for group in resolvers.values()
+                              for r in group for c in r.calls), "private name leaked")
             check(marker(query(port, "machine.ts.net")) == "192.0.2.33", "Tailnet binding")
             check(query(port, "ecs.cn.test", ecs=True).rcode() == 5, "client ECS refused")
             barrier = threading.Barrier(2, timeout=4)
@@ -106,7 +130,6 @@ def main():
             check(not barrier.broken, "both upstream branches start before either responds")
             check(all(c[0]["ecs"] == ["ECS 0.0.0.0/0 scope/0"] for c in arrivals), "fixed ECS /0")
             query(port, "fanout.cn.test")
-            time.sleep(0.12)
             check(all(len([c for c in r.calls if c["name"] == "fanout.cn.test."]) == 1 for r in resolvers["cn"]), "cache avoids new fanout")
             check(marker(query(port, "isolation.test")) == "192.0.2.22", "global cache view")
             check(marker(query(config["bootstrapPort"], "isolation.test")) == "192.0.2.11", "CN cache isolated")
@@ -133,6 +156,13 @@ def main():
                         check([rr.to_text() for rr in getattr(selected[0]["message"], field)] == [rr.to_text() for rr in getattr(expected, field)], "full response " + field)
                 elif name == "large.cn.test":
                     check(selected[0]["message"].answer == large_reply.answer, "complete large response logged")
+            # The stack has completed later queries and published its response
+            # records; inspect the specific names rather than unrelated totals.
+            for domain in ("private.home.arpa", "1.0.0.10.in-addr.arpa", "blocked.test"):
+                check(not any(c["name"] == domain + "." for group in resolvers.values()
+                              for r in group for c in r.calls), "private name leaked")
+            check(all(len([c for c in r.calls if c["name"] == "fanout.cn.test."]) == 1
+                      for r in resolvers["cn"]), "cache avoids new fanout")
             failed = [e for e in responses if e["identity"] == "dnsdist-leg" and e["name"] == "sf.false.cn.test"]
             check({e["message"].rcode() for e in failed} == {0, 2}, "both successful and discarded upstream replies logged")
             check({e["policy"]["upstream"]["protocol"] for e in failed} == {"tls", "https"}, "real upstream transports logged")

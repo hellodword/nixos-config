@@ -21,35 +21,67 @@ def record(kind, peer, data):
         # The final snapshot takes a shared lock on this same file. Each
         # writer opens its own descriptor, so this also serializes threads.
         fcntl.flock(handle, fcntl.LOCK_EX)
-        handle.write(json.dumps({"kind": kind, "peer": str(ipaddress.ip_address(peer)),
+        handle.write(json.dumps({"kind": kind, "peer": str(ipaddress.ip_address(peer[0])), "peerPort": peer[1],
                                  "data": data.decode(errors="replace"), "time": time.monotonic()}) + "\n")
         handle.flush()
 
 
-def continuous(host, policy, protocol, instance):
+def continuous(host, policy, protocol, instance, state):
     family = socket.AF_INET6 if ":" in host else socket.AF_INET
     label = f"{policy}/{6 if family == socket.AF_INET6 else 4}/{protocol}"
-    connection = sequence = 0
+    connection = sequence = attempts = received = 0
+    local = None
+    phase = "boot"
+    status = state / (label.replace("/", "-") + ".json")
+
+    def begin():
+        nonlocal phase, attempts, received
+        current = (state / "phase").read_text().strip() if (state / "phase").exists() else "boot"
+        if phase != current:
+            phase, attempts, received = current, 0, 0
+
+    def progress(success=False):
+        nonlocal attempts, received
+        attempts += 1
+        received += success
+        pending = status.with_suffix(".pending")
+        pending.write_text(json.dumps({"instance": instance, "phase": phase, "flow": label,
+                                       "attempts": attempts, "received": received, "sequence": sequence,
+                                       "connection": connection, "local": local}) + "\n")
+        pending.replace(status)
     while True:
         connection += 1
+        local = None
+        begin()
+        connected = False
         try:
-            with socket.socket(family, socket.SOCK_STREAM if protocol == "tcp" else socket.SOCK_DGRAM) as sock:
+            with socket.socket(family, socket.SOCK_STREAM if protocol == "tcp" else socket.SOCK_DGRAM) as sock, contextlib.ExitStack() as resources:
                 sock.settimeout(0.5)
                 if protocol == "tcp":
                     sock.connect((host, 18082))
+                connected = True
+                reader = resources.enter_context(sock.makefile("rb")) if protocol == "tcp" else None
                 while True:
+                    begin()
                     sequence += 1
-                    data = f"/continuous/{label}/{instance}/{connection}/{sequence}\n".encode()
-                    if protocol == "tcp":
-                        sock.sendall(data)
-                        if not sock.recv(100):
-                            break
-                    else:
-                        sock.sendto(data, (host, 18081))
-                        sock.recv(100)
+                    data = f"/continuous/{label}/{instance}/{connection}/{phase}/{sequence}\n".encode()
+                    success = False
+                    try:
+                        if protocol == "tcp":
+                            sock.sendall(data)
+                            if not reader.readline(100):
+                                break
+                        else:
+                            sock.sendto(data, (host, 18081))
+                            sock.recv(100)
+                        success = True
+                    finally:
+                        local = sock.getsockname()
+                        progress(success)
                     time.sleep(0.1)
         except OSError:
-            pass
+            if not connected:
+                progress()
         time.sleep(0.1)
 
 
@@ -62,12 +94,18 @@ def main():
     args = parser.parse_args()
     if args.mode == "continuous":
         instance = f"{args.origin}-{uuid.uuid4().hex}"
+        state = Path("/run/continuous")
+        state.mkdir(exist_ok=True)
+        threads = []
         for host, policy in (("192.0.2.30", "direct"), ("2001:db8:1::30", "direct"),
                              ("198.51.100.30", "proxy"), ("2001:db8:2::30", "proxy")):
             for protocol in ("tcp", "udp"):
-                threading.Thread(target=continuous, args=(host, policy, protocol, instance), daemon=True).start()
-        signal.pause()
-        return
+                worker = threading.Thread(target=continuous, args=(host, policy, protocol, instance, state), daemon=True)
+                worker.start()
+                threads.append(worker)
+        while all(worker.is_alive() for worker in threads):
+            time.sleep(0.1)
+        raise RuntimeError("continuous traffic worker exited unexpectedly")
     with contextlib.ExitStack() as stack:
         if args.mode == "dns":
             # Hysteria server's own resolver, reachable only inside the fixture.
@@ -86,7 +124,7 @@ def main():
                     self.request.settimeout(3)
                     try:
                         data = self.request.recv(4096)
-                        record("tcp", self.client_address[0], data)
+                        record("tcp", self.client_address, data)
                         body = self.client_address[0].encode()
                         self.request.sendall(b"HTTP/1.0 200 OK\r\nContent-Length: " + str(len(body)).encode() + b"\r\n\r\n" + body)
                     except OSError:
@@ -94,14 +132,14 @@ def main():
             class UDP(socketserver.BaseRequestHandler):
                 def handle(self):
                     data, sock = self.request
-                    record("udp", self.client_address[0], data)
+                    record("udp", self.client_address, data)
                     sock.sendto(self.client_address[0].encode(), self.client_address)
             class PersistentTCP(socketserver.StreamRequestHandler):
                 def handle(self):
-                    self.request.settimeout(3)
+                    self.request.settimeout(60)
                     try:
                         while data := self.rfile.readline(4096):
-                            record("tcp", self.client_address[0], data)
+                            record("tcp", self.client_address, data)
                             self.wfile.write(self.client_address[0].encode() + b"\n")
                     except OSError:
                         pass

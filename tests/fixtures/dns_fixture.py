@@ -5,7 +5,6 @@ import socketserver
 import ssl
 import struct
 import subprocess
-import threading
 import time
 
 import dns.edns
@@ -39,7 +38,7 @@ class Resolver:
     def __init__(self, group, branch):
         self.group, self.branch, self.calls = group, branch, []
         self.barriers = {}
-        self.delay = 0.01 if branch == 0 else 0.09
+        self.gates = {}
         marker = 11 if group == "cn" else 22
         self.ipv4, self.ipv6 = f"192.0.2.{marker}", f"2001:db8::{marker}"
         self.ipv4_by_name = {}
@@ -51,7 +50,11 @@ class Resolver:
                            "time": time.monotonic(), "ecs": [str(o) for o in query.options if o.otype == 8]})
         if name in self.barriers:
             self.barriers[name].wait()
-        time.sleep(self.delay)
+        if name in self.gates:
+            arrived, release = self.gates[name]
+            arrived.set()
+            if not release.wait(30):
+                raise TimeoutError(f"DNS response was not released: {self.group}/{self.branch}/{name}")
         reply = dns.message.make_response(query)
         reply.use_edns(edns=0, payload=1232)
         first = name.split(".")[0]

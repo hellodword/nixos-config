@@ -9,6 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 import re
 import shutil
+import shlex
 import struct
 import subprocess
 import tempfile
@@ -17,29 +18,45 @@ import time
 
 
 class Desktop:
-    """One owner for a guest's monitor, native input and activity worker."""
+    """One owner for a guest's monitor, native input and idle inhibition."""
 
     def __init__(self, machine):
         self.machine = machine
         self.input_lock = threading.RLock()
-        self.finished = threading.Event()
-        self.ticker = None
-        self.activity_error = None
+        self.idle_inhibited = False
+        self.deadline = None
+        self.input_error = None
 
     def __getattr__(self, name):
         return getattr(self.machine, name)
 
-    def monitor(self, method, *args, timeout=10, **kwargs):
+    @contextmanager
+    def action(self, deadline):
+        previous = self.deadline
+        self.deadline = min(deadline, previous) if previous is not None else deadline
+        try:
+            yield
+        finally:
+            self.deadline = previous
+
+    def monitor(self, method, *args, timeout=None, **kwargs):
         with self.input_lock:
+            if self.input_error is not None:
+                raise RuntimeError("monitor delivery is unconfirmed") from self.input_error
+            budget = remaining(self.deadline) if self.deadline is not None else 30
+            timeout = min(timeout, budget) if timeout is not None else budget
             sock = self.machine.monitor
             previous = sock.gettimeout()
             sock.settimeout(timeout)
             try:
                 return getattr(self.machine, method)(*args, **kwargs)
+            except (TimeoutError, OSError) as error:
+                self.input_error = error
+                raise
             finally:
                 sock.settimeout(previous)
 
-    def send_monitor_command(self, command, timeout=10):
+    def send_monitor_command(self, command, timeout=None):
         return self.monitor("send_monitor_command", command, timeout=timeout)
 
     def send_key(self, *args, **kwargs):
@@ -70,10 +87,11 @@ class Desktop:
                 assert client.results.empty(), "QMP command still pending"
                 client.writer.write(json.dumps({"execute": "input-send-event", "arguments": {"events": events}}) + "\n")
                 client.writer.flush()
-                deadline = time.monotonic() + 10
+                deadline = self.deadline or time.monotonic() + 30
                 while client.results.empty():
                     if time.monotonic() >= deadline:
-                        raise TimeoutError("QMP input response deadline reached")
+                        self.input_error = TimeoutError("QMP input response deadline reached")
+                        raise self.input_error
                     client.read_pending_messages()
                     time.sleep(0.01)
                 return client.results.get_nowait()
@@ -84,8 +102,10 @@ class Desktop:
                 time.sleep(0.15)
                 send([{"type": "btn", "data": {"button": "left", "down": False}}])
 
-    def screenshot(self, filename, timeout=15):
-        deadline = time.monotonic() + timeout
+    def screenshot(self, filename, timeout=None):
+        deadline = self.deadline or time.monotonic() + 30
+        if timeout is not None:
+            deadline = min(deadline, time.monotonic() + timeout)
         destination = Path(filename if "." in filename else filename + ".png")
         if not destination.is_absolute():
             destination = Path(self.machine.out_dir) / destination
@@ -96,42 +116,48 @@ class Desktop:
                 subprocess.run(["pnmtopng", str(raw)], stdout=stream, stderr=subprocess.PIPE,
                                check=True, timeout=remaining(deadline))
 
-    def keep_awake(self):
-        if self.ticker is not None:
-            return
-        self.finished.clear()
-        def activity():
-            try:
-                while not self.finished.wait(15):
-                    if self.input_lock.acquire(blocking=False):
-                        try:
-                            if not self.finished.is_set():
-                                self.send_key("ctrl", delay=timedelta(milliseconds=150))
-                        finally:
-                            self.input_lock.release()
-            except Exception as error:
-                self.activity_error = error
-        self.ticker = threading.Thread(target=activity, name=f"activity-{self.name}", daemon=True)
-        self.ticker.start()
+    def session_command(self, command):
+        return ("runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
+                "systemd-run --user --quiet --wait --pipe --collect --property=RuntimeMaxSec=30s sh -c " + shlex.quote(command))
 
-    def stop_activity(self):
-        self.finished.set()
-        if self.ticker is not None:
-            self.ticker.join(timeout=15)
-            assert not self.ticker.is_alive(), "desktop activity worker did not exit"
-            self.ticker = None
-        if self.activity_error:
-            raise RuntimeError("desktop activity input failed") from self.activity_error
+    def inhibit_idle(self):
+        if self.idle_inhibited:
+            return
+        self.session = self.machine.succeed(self.session_command('printf %s "$XDG_CURRENT_DESKTOP"'), timeout=30)
+        if "sway" in self.session:
+            command = "systemctl --user stop swayidle.service"
+        elif "i3" in self.session:
+            settings = self.machine.succeed(self.session_command("xset q"), timeout=30)
+            self.screensaver = re.search(r"timeout:\s+(\d+)\s+cycle:\s+(\d+)", settings).groups()
+            command = "xset s off"
+        else:
+            command = "systemd-run --user --collect --unit=vm-idle-inhibit vm-idle-inhibit"
+        self.machine.succeed(self.session_command(command), timeout=30)
+        if "KDE" in self.session:
+            self.machine.wait_until_succeeds("test -f /run/user/1000/vm-idle-inhibited", timeout=30)
+        self.idle_inhibited = True
+
+    def resume_idle(self):
+        if not self.idle_inhibited:
+            return
+        if "sway" in self.session:
+            command = "systemctl --user start swayidle.service"
+        elif "i3" in self.session:
+            command = "xset s " + " ".join(self.screensaver) + "; xset s reset"
+        else:
+            command = "systemctl --user stop vm-idle-inhibit.service"
+        self.machine.succeed(self.session_command(command), timeout=30)
+        self.idle_inhibited = False
 
     @contextmanager
-    def pause_activity(self):
-        running = self.ticker is not None
-        self.stop_activity()
+    def allow_idle(self):
+        running = self.idle_inhibited
+        self.resume_idle()
         try:
             yield
         finally:
             if running:
-                self.keep_awake()
+                self.inhibit_idle()
 
     def shutdown(self):
         if not self.machine.booted:
@@ -164,8 +190,14 @@ class Desktop:
                 error.add_note("Releasing desktop VM: " + str(cleanup))
             raise
 
+    def crash(self):
+        if self.machine.booted:
+            self.send_monitor_command("quit")
+            self.machine.wait_for_shutdown(timeout=timedelta(seconds=10))
+            self.idle_inhibited = False
+
     def reboot(self):
-        self.stop_activity()
+        self.resume_idle()
         # Request a real reboot from the guest; a graphical greeter may handle
         # Ctrl+Alt+Delete as an interface shortcut rather than rebooting.
         self.machine.succeed("systemctl reboot --no-block", timeout=timedelta(seconds=10))
@@ -176,7 +208,7 @@ def remaining(deadline):
     value = deadline - time.monotonic()
     if value <= 0:
         raise TimeoutError("desktop operation deadline reached")
-    return min(15, value)
+    return value
 
 
 def input_method(machine, user_command, active, deadline):
@@ -196,7 +228,7 @@ def input_method(machine, user_command, active, deadline):
     raise AssertionError(f"Fcitx {'activation' if active else 'deactivation'} timed out: {last!r}")
 
 
-def focused_window(machine, user_command):
+def focused_window(machine, user_command, deadline=None):
     query = '''case "$XDG_CURRENT_DESKTOP" in
       *sway*) wm=swaymsg ;;
       *i3*) wm=i3-msg ;;
@@ -204,7 +236,7 @@ def focused_window(machine, user_command):
     esac
     "$wm" -t get_tree | jq -c 'first(.. | objects | select(.focused? == true) | {app_id, window_properties, name, pid})'
     '''
-    return machine.succeed(user_command(query), timeout=timedelta(seconds=15)).strip()
+    return machine.succeed(user_command(query), timeout=timedelta(seconds=remaining(deadline) if deadline else 30)).strip()
 
 
 def wait_for_session(machine, session, user_command):
@@ -219,22 +251,30 @@ def wait_for_session(machine, session, user_command):
 
 
 def ocr_lines(tsv, scale=2):
-    """Keep word positions in crop pixels and join words on the same baseline."""
-    words = []
+    """Preserve recognized text lines and join aligned fragments across a row."""
+    fragments = {}
     for row in csv.DictReader(io.StringIO(tsv), delimiter="\t", quoting=csv.QUOTE_NONE):
         if row["level"] != "5" or not row["text"].strip():
             continue
-        words.append({"text": row["text"].strip(), "confidence": float(row["conf"]),
-                      **{key: int(row[key]) / scale for key in ("left", "top", "width", "height")}})
+        key = tuple(row[field] for field in ("page_num", "block_num", "par_num", "line_num"))
+        fragments.setdefault(key, []).append({
+            "text": row["text"].strip(), "confidence": float(row["conf"]),
+            **{field: int(row[field]) / scale for field in ("left", "top", "width", "height")},
+        })
+    rows = []
+    for words in fragments.values():
+        top = min(word["top"] for word in words)
+        bottom = max(word["top"] + word["height"] for word in words)
+        rows.append({"center": (top + bottom) / 2, "height": bottom - top, "words": words})
     lines = []
-    for word in sorted(words, key=lambda item: (item["top"], item["left"])):
-        center = word["top"] + word["height"] / 2
-        line = next((line for line in lines
-                     if abs(center - line["center"]) < max(word["height"], line["height"]) / 2), None)
+    for row in sorted(rows, key=lambda item: item["center"]):
+        line = min((line for line in lines
+                    if abs(row["center"] - line["center"]) < min(row["height"], line["height"]) / 2),
+                   key=lambda line: abs(row["center"] - line["center"]), default=None)
         if line is None:
-            line = {"center": center, "height": word["height"], "words": []}
-            lines.append(line)
-        line["words"].append(word)
+            lines.append(row)
+        else:
+            line["words"].extend(row["words"])
     for line in lines:
         line["words"].sort(key=lambda item: item["left"])
         line["text"] = " ".join(word["text"] for word in line["words"])
@@ -247,6 +287,8 @@ def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sp
     with machine.nested("waiting for visible text: " + pattern), tempfile.TemporaryDirectory() as directory:
         started = time.monotonic()
         deadline = started + timeout
+        if machine.deadline is not None:
+            deadline = min(deadline, machine.deadline)
         frame = Path(directory) / "frame.png"
         raw = Path(directory) / "frame.ppm"
         cropped = Path(directory) / "region.ppm"
@@ -341,6 +383,20 @@ def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sp
             raise
 
 
+def qt_password_focus(machine, pid, deadline):
+    last = ""
+    while time.monotonic() < deadline:
+        text = machine.succeed("journalctl -b _PID=" + pid + " --no-pager -o cat", timeout=remaining(deadline))
+        changes = [line for line in text.splitlines() if "activeFocusItem" in line
+                   and (" -> " in line or " remains " in line)]
+        if changes:
+            last = re.split(r" -> | remains ", changes[-1])[-1]
+            if re.search(r"(?:Password|Text)(?:Field|Input)", last):
+                return
+        time.sleep(0.1)
+    raise AssertionError("Password control has no active focus: " + last)
+
+
 def login(machine):
     """Authenticate through SDDM so the real PAM wallet lifecycle runs."""
     from datetime import timedelta
@@ -357,7 +413,10 @@ def login(machine):
     # The selected account stays legible across greeter sizes; the password
     # placeholder is small and low contrast in Breeze.
     visible(machine, r"(?i)\bdesktop\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7))
-    with machine.input_lock:
+    deadline = time.monotonic() + 60
+    with machine.input_lock, machine.action(deadline):
+        pid = machine.succeed("pgrep -u sddm -n -f sddm-greeter", timeout=remaining(deadline)).strip()
+        qt_password_focus(machine, pid, deadline)
         delay = timedelta(milliseconds=150)
         machine.send_key("ctrl-u", delay=delay)
         machine.send_chars("synthetic-fixture-only", delay=delay)
