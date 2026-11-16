@@ -144,7 +144,10 @@ def purpose_paths(args, templates):
                     ("youtube.com", "media"), ("google.com", "google"), ("tv.apple.com", "media"),
                     ("push.apple.com", "push"), ("apple.com", "apple"), ("binance.com", chosen),
                     ("paypal.com", "east"), ("alipay.hk", "east"), ("biliintl.com", "east"),
-                    ("baidu.com", "cn"), ("unclassified-fixture.example.cn", "west"),
+                    ("wetv.qq.com", "east"),
+                    ("baidu.com", "cn"), ("qq.com", "cn"), ("weixin.qq.com", "cn"),
+                    ("foo.weixin.qq.com", "cn"), ("jd.com", "cn"), ("taobao.com", "cn"),
+                    ("tencent.com", "cn"), ("unclassified-fixture.example.cn", "west"),
                     ("unclassified-fixture.example.org", "west"),
                 ]
                 for domain, expected in cases:

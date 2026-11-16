@@ -4,8 +4,8 @@
 final = "hideme"
 
 [seeds]
-sing-box-geosite = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/"
-sing-box-geoip = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/"
+sing-box-geosite = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/"
+sing-box-geoip = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geoip/"
 
 [rule_set_defaults]
 type = "remote"
@@ -301,6 +301,7 @@ rule_set = [
   "geosite-huaweicloud@!cn",
   "geosite-jd@!cn",
   "geosite-qcloud@!cn",
+  "geosite-tencent@!cn",
   "geosite-tiktok@!cn",
   "geosite-xiaomi@!cn",
 ]
@@ -381,261 +382,266 @@ outbound = "direct"
 # Shadowrocket 的域名源仅含域名条件，IP 源集中用于末尾的连接规则。
 
 [rule_sets."pcdn"]
-url = "https://raw.githubusercontent.com/DDCHlsq/sing-ruleset/master/pcdn.json"
+url = "https://cdn.jsdelivr.net/gh/DDCHlsq/sing-ruleset@master/pcdn.json"
 format = "source"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/ifflagged/Miami/main/Rulesets/Shadowrocket/zirawell/PCDN-Filter.list"]
-seed = { url = "https://raw.githubusercontent.com/DDCHlsq/sing-ruleset/c2c1e652acc950982b92d1006ad29151ceabd438/pcdn.json", hash = "sha256-9q+gl55dYKc+UKoHrN5FAqtcxkhEuvLTjxissQMPq7A=" }
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/ifflagged/Miami@main/Rulesets/Shadowrocket/zirawell/PCDN-Filter.list"]
+seed = { url = "https://cdn.jsdelivr.net/gh/DDCHlsq/sing-ruleset@c2c1e652acc950982b92d1006ad29151ceabd438/pcdn.json", hash = "sha256-9q+gl55dYKc+UKoHrN5FAqtcxkhEuvLTjxissQMPq7A=" }
 
 [rule_sets."geosite-docker"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-docker.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/docker.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-docker.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/docker.conf"]
 
 [rule_sets."geosite-apple-update"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-apple-update.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/apple-update.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-apple-update.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/apple-update.conf"]
 
 [rule_sets."geosite-f-droid"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-f-droid.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/f-droid.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-f-droid.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/f-droid.conf"]
 
 [rule_sets."geosite-category-doh"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-category-doh.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/category-doh.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-category-doh.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/category-doh.conf"]
 
 [rule_sets."geosite-category-cryptocurrency"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-category-cryptocurrency.srs"
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-category-cryptocurrency.srs"
 shadowrocket = [
-  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Cryptocurrency/Cryptocurrency.list",
-  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Binance/Binance.list",
-  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/OKX/OKX.list",
-  "RULE-SET,https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Shadowrocket/Crypto/Crypto.list",
-  "RULE-SET,https://raw.githubusercontent.com/LeiyuG/Surge/main/rules/Binancenew.list",
+  "RULE-SET,https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Shadowrocket/Cryptocurrency/Cryptocurrency.list",
+  "RULE-SET,https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Shadowrocket/Binance/Binance.list",
+  "RULE-SET,https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Shadowrocket/OKX/OKX.list",
+  "RULE-SET,https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Shadowrocket/Crypto/Crypto.list",
+  "RULE-SET,https://cdn.jsdelivr.net/gh/LeiyuG/Surge@main/rules/Binancenew.list",
 ]
 
 [rule_sets."geosite-openai"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-openai.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/openai.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-openai.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/openai.conf"]
 
 [rule_sets."geosite-anthropic"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-anthropic.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/anthropic.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-anthropic.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/anthropic.conf"]
 
 [rule_sets."geosite-paypal"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-paypal.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/paypal.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-paypal.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/paypal.conf"]
 
 [rule_sets."geosite-stripe"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-stripe.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/stripe.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-stripe.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/stripe.conf"]
 
 [rule_sets."geosite-giffgaff"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-giffgaff.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/giffgaff.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-giffgaff.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/giffgaff.conf"]
 
 [rule_sets."geosite-linuxdo"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-linuxdo.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/linuxdo.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-linuxdo.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/linuxdo.conf"]
 
 [rule_sets."geosite-netflix"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-netflix.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/netflix.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-netflix.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/netflix.conf"]
 
 [rule_sets."geosite-hulu"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-hulu.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/hulu.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-hulu.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/hulu.conf"]
 
 [rule_sets."geosite-hbo"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-hbo.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/hbo.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-hbo.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/hbo.conf"]
 
 [rule_sets."geosite-disney"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-disney.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/disney.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-disney.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/disney.conf"]
 
 [rule_sets."geosite-spotify"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-spotify.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/spotify.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-spotify.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/spotify.conf"]
 
 [rule_sets."geosite-primevideo"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-primevideo.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/primevideo.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-primevideo.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/primevideo.conf"]
 
 [rule_sets."geosite-youtube"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-youtube.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/youtube.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-youtube.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/youtube.conf"]
 
 [rule_sets."geosite-apple-tvplus"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-apple-tvplus.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/apple-tvplus.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-apple-tvplus.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/apple-tvplus.conf"]
 
 [rule_sets."geosite-twitch"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-twitch.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/twitch.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-twitch.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/twitch.conf"]
 
 [rule_sets."geosite-imgur"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-imgur.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/imgur.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-imgur.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/imgur.conf"]
 
 [rule_sets."geosite-reddit"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-reddit.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/reddit.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-reddit.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/reddit.conf"]
 
 [rule_sets."geosite-facebook"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-facebook.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/facebook.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-facebook.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/facebook.conf"]
 
 [rule_sets."geosite-twitter"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-twitter.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/twitter.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-twitter.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/twitter.conf"]
 
 [rule_sets."geosite-linkedin"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-linkedin.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/linkedin.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-linkedin.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/linkedin.conf"]
 
 [rule_sets."geosite-discord"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-discord.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/discord.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-discord.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/discord.conf"]
 
 [rule_sets."geosite-tumblr"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tumblr.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tumblr.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-tumblr.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/tumblr.conf"]
 
 [rule_sets."geosite-4chan"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-4chan.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/4chan.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-4chan.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/4chan.conf"]
 
 [rule_sets."geosite-pixiv"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-pixiv.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/pixiv.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-pixiv.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/pixiv.conf"]
 
 [rule_sets."geosite-protonmail"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-protonmail.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/protonmail.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-protonmail.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/protonmail.conf"]
 
 [rule_sets."geosite-telegram"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-telegram.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/telegram.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-telegram.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/telegram.conf"]
 
 [rule_sets."geosite-tor"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tor.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tor.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-tor.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/tor.conf"]
 
 [rule_sets."geosite-torproject"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-torproject.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/torproject.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-torproject.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/torproject.conf"]
 
 [rule_sets."geosite-category-porn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-category-porn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/category-porn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-category-porn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/category-porn.conf"]
 
 [rule_sets."geosite-github"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-github.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/github.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-github.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/github.conf"]
 
 [rule_sets."geosite-gitlab"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-gitlab.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/gitlab.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-gitlab.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/gitlab.conf"]
 
 [rule_sets."geosite-xda"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-xda.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/xda.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-xda.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/xda.conf"]
 
 [rule_sets."geosite-tiktok"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tiktok.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tiktok.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-tiktok.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/tiktok.conf"]
 
 [rule_sets."geosite-google"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-google.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/google.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-google.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/google.conf"]
 
 [rule_sets."geosite-microsoft"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-microsoft.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/microsoft.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-microsoft.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/microsoft.conf"]
 
 [rule_sets."geosite-apple"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-apple.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/apple.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-apple.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/apple.conf"]
 
 [rule_sets."geosite-alibaba@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-alibaba@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/alibaba@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-alibaba@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/alibaba@!cn.conf"]
 
 [rule_sets."geosite-alibabacloud@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-alibabacloud@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/alibabacloud@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-alibabacloud@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/alibabacloud@!cn.conf"]
 
 [rule_sets."geosite-aliyun@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-aliyun@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/aliyun@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-aliyun@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/aliyun@!cn.conf"]
 
 [rule_sets."geosite-bilibili@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-bilibili@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/bilibili@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-bilibili@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/bilibili@!cn.conf"]
 
 [rule_sets."geosite-bytedance@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-bytedance@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/bytedance@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-bytedance@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/bytedance@!cn.conf"]
 
 [rule_sets."geosite-huawei@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-huawei@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/huawei@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-huawei@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/huawei@!cn.conf"]
 
 [rule_sets."geosite-huaweicloud@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-huaweicloud@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/huaweicloud@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-huaweicloud@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/huaweicloud@!cn.conf"]
 
 [rule_sets."geosite-jd@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-jd@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/jd@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-jd@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/jd@!cn.conf"]
 
 [rule_sets."geosite-qcloud@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-qcloud@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/qcloud@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-qcloud@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/qcloud@!cn.conf"]
+
+[rule_sets."geosite-tencent@!cn"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-tencent@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/tencent@!cn.conf"]
 
 [rule_sets."geosite-tiktok@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-tiktok@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/tiktok@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-tiktok@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/tiktok@!cn.conf"]
 
 [rule_sets."geosite-xiaomi@!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-xiaomi@!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/xiaomi@!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-xiaomi@!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/xiaomi@!cn.conf"]
 
 [rule_sets."geosite-cloudflare"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-cloudflare.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/cloudflare.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-cloudflare.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/cloudflare.conf"]
 
 [rule_sets."geosite-fastly"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-fastly.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/fastly.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-fastly.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/fastly.conf"]
 
 [rule_sets."geosite-geolocation-!cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-geolocation-!cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/geolocation-!cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-geolocation-!cn.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/hoobnn/fly-rule@release/metacubex/geosite/surge/geolocation-!cn.conf"]
 
 [rule_sets."geosite-geolocation-cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geosite/geosite-geolocation-cn.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/hoobnn/fly-rule/release/metacubex/geosite/surge/geolocation-cn.conf"]
+url = "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@rule-set/geosite-geolocation-cn.srs"
+shadowrocket = ["DOMAIN-SET,https://cdn.jsdelivr.net/gh/blackmatrix7/ios_rule_script@master/rule/Shadowrocket/China/China_Domain.list"]
+seed = { url = "https://cdn.jsdelivr.net/gh/SagerNet/sing-geosite@f845ad54a708500aa9c76be84cfaa04cc7141edd/geosite-geolocation-cn.srs", hash = "sha256-+5Mqkte4DU68g2RSaA1J1B46C/C5rCDis2jRsDCzFFo=" }
 
 [rule_sets."geoip-telegram"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-telegram.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/telegram.txt"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geoip/geoip-telegram.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/surge/telegram.txt"]
 
 [rule_sets."geoip-tor"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-tor.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/tor.txt"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geoip/geoip-tor.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/surge/tor.txt"]
 
 [rule_sets."geoip-netflix"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-netflix.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/netflix.txt"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geoip/geoip-netflix.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/surge/netflix.txt"]
 
 [rule_sets."geoip-facebook"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-facebook.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/facebook.txt"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geoip/geoip-facebook.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/surge/facebook.txt"]
 
 [rule_sets."geoip-twitter"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-twitter.srs"
-shadowrocket = ["RULE-SET,https://raw.githubusercontent.com/Loyalsoldier/geoip/release/surge/twitter.txt"]
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geoip/geoip-twitter.srs"
+shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/Loyalsoldier/geoip@release/surge/twitter.txt"]
 
 [rule_sets."geoip-cn"]
-url = "https://raw.githubusercontent.com/lyc8503/sing-box-rules/rule-set-geoip/geoip-cn.srs"
+url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geoip/geoip-cn.srs"
 shadowrocket = ["GEOIP,CN"]
