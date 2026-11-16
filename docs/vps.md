@@ -1,26 +1,125 @@
 # VPS 与代理出口
 
-VPS 使用独立锁定的 `nixpkgs-remote` 和轻量 profile：持久 ext4 根分区、首次启动扩容、磁盘 swap、SSH 公钥登录。BIOS 和 UEFI 由 inventory 的 `uefi` 选择。构建在维护机完成，Colmena 通过 SSH 复制闭包并激活，适合内存较小的 VPS。
+VPS 使用独立锁定的 `nixpkgs-remote` 和轻量 profile：持久 ext4 根分区、首次启动扩容、磁盘 swap、SSH 公钥登录。BIOS 和 UEFI 由 inventory 的 `uefi` 选择。构建在维护机完成，Colmena 通过 SSH 部署系统与凭据，适合内存较小的 VPS。
 
 VPS 的状态随根磁盘保留。这里采用普通持久系统，便于保留 SSH host key、服务数据、证书和可回滚的凭据。应用使用原生 NixOS 模块；每个节点的 `modules` 数组列出仓库相对路径，为完整系统组合不同服务。网络、磁盘和 SSH 服务端来自同一份基础配置，bootstrap 与完整系统共用。
 
-## 日常更新的范围
+- [初次部署](#初次部署)：准备 inventory、安装 bootstrap、部署完整系统。
+- [更新已有 VPS](#更新已有-vps)：准备新系统，逐台重启并确认服务。
+- [仅更新订阅](#仅更新订阅)：发布客户端规则、用途选择或订阅显示设置。
 
-编辑声明后重新准备材料，再根据变化选择部署对象。`prepare.py` 的错误包含字段路径；YAML 语法错误提供行列号。对照 [vps.example.yaml](../data/secrets/vps.example.yaml) 修正对应项后重新生成。
+## 更新已有 VPS
+
+已运行本项目完整系统的 VPS 使用 Colmena 更新。每台依次完成部署、重启和请求验证，再处理下一台。维护机的代理与 SSH 连接应使用本轮正在重启的节点之外的可用路径。
+
+### 日常更新的范围
+
+根据变化选择部署对象；仅涉及客户端内容时，使用[仅更新订阅](#仅更新订阅)流程。
 
 | 变化 | 应用步骤 |
 | --- | --- |
 | 用途规则、默认出口、路径显示名、客户端 DNS | 重新生成并发布订阅 Worker，客户端更新对应订阅或配置 |
 | 订阅地址或名称 | 发布订阅 Worker，使用新地址或更新客户端备注/配置 |
-| 订阅密钥、授权出口、撤销订阅 | 部署涉及的 VPS 认证配置，再发布订阅 Worker 并更新客户端 |
-| 节点入口、出口承载或上游连接参数 | 构建并部署涉及的 VPS；路径或客户端参数变化时同步发布订阅 |
-| 系统模块、SSH 服务端设置 | 构建受影响节点，依次 `test`、验证连接、`switch` |
+| 订阅密钥、授权出口、撤销订阅 | 部署并重启涉及的 VPS，使认证配置生效，再发布订阅 Worker 并更新客户端 |
+| 节点入口、出口承载或上游连接参数 | 部署、重启并验证涉及的 VPS；路径或客户端参数变化时同步发布订阅 |
+| 系统模块、SSH 服务端设置、VPS 包集 | 对受影响节点执行 `boot`，重启后验证运行系统与服务 |
 | `sshHost` 或维护机的 SSH 配置 | 更新 Colmena 的连接选择与维护机 SSH 配置 |
-| 证书 Worker 凭据或访问令牌 | 发布证书 Worker；令牌变化时部署对应节点的取证配置 |
+| 证书 Worker 凭据或访问令牌 | 先发布证书 Worker 并验证取证；令牌变化时部署并重启对应节点 |
 
-既有节点更新沿用下文的 `test`、请求验证、`switch` 顺序。更换订阅密钥时，服务端与客户端应在同一维护窗口更新。
+更换订阅密钥时，服务端与客户端在同一维护窗口更新。发布包含新认证参数的订阅前，先确认有关节点已经启用对应配置。
 
-## 建立私有 inventory
+### 准备本轮更新
+
+在仓库根目录进入维护环境，设置本次要更新的节点和用于验证的订阅，名称与 inventory 中的键一致：
+
+```sh
+nix develop .#vps
+```
+
+```sh
+node=edge
+subscription=primary
+```
+
+需要修改节点或订阅声明时编辑 inventory；系统模块直接编辑仓库中的对应文件，依赖升级见[更新 VPS 包集](#更新-vps-包集)。
+
+```sh
+sops secrets/vps.sops.yaml
+```
+
+按[准备部署材料](#准备部署材料)生成当前代码与 inventory 对应的文件。证书 Worker 或其凭据有变化时，先按[发布证书 Worker](#发布证书-worker)完成发布和取证验证。
+
+### 部署与重启
+
+`node` 是 Colmena 的节点选择；实际连接使用该节点的 `sshHost`，地址、端口、用户和密钥来自维护机的 SSH 配置。部署前连接并记录当前运行系统路径、启动默认代次和代次列表，供[回退系统](#回退系统)时选择：
+
+```sh
+ssh_host=$(jq -r --arg node "$node" '.nodes[$node].sshHost' tmp/vps/metadata.json)
+ssh "$ssh_host" '
+  readlink -f /run/current-system
+  readlink /nix/var/nix/profiles/system
+  nix-env -p /nix/var/nix/profiles/system --list-generations
+'
+```
+
+执行部署并记录下次启动的系统路径：
+
+```sh
+colmena apply boot --impure --on "$node" --parallel 1 --no-substitute &&
+expected_system=$(ssh "$ssh_host" 'readlink -f /nix/var/nix/profiles/system') &&
+printf '下次启动系统：%s\n' "$expected_system"
+```
+
+Colmena 在维护机构建完整系统，通过 SSH 复制系统闭包和本节点凭据，并设置启动默认代次。`--no-substitute` 使复制阶段由维护机提供闭包；维护机构建仍使用自己的缓存配置。`boot` 完成后，当前服务继续使用原配置，新系统在下次启动时启用。
+
+在选定的维护时机重启该节点：
+
+```sh
+ssh "$ssh_host" 'systemctl reboot'
+```
+
+等待 SSH 恢复后，在维护机的同一 shell 中确认运行系统与刚才记录的路径一致，并检查服务。若本轮修改了 SSH 端口、地址或登录密钥，重连使用新参数，保留原参数供回退使用。
+
+```sh
+running_system=$(ssh "$ssh_host" 'readlink -f /run/current-system')
+printf '预期系统：%s\n运行系统：%s\n' "$expected_system" "$running_system"
+test "$running_system" = "$expected_system" &&
+ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
+```
+
+按[验证代理请求](#验证代理请求)检查该节点的 Trojan、HY2 和受影响的跨节点路径。完成后可设置 `node=west`，从本节的 SSH 连接与代次记录开始处理下一台，继续使用本轮生成的材料。
+
+需要同步客户端参数时，在有关节点重启、验证完成后[发布订阅并切换客户端](#发布订阅并切换客户端)。本轮部署与发布全部完成后[清理部署材料](#清理部署材料)。
+
+需要立即试运行时，Colmena 的 `test` 目标会启用新配置并保留原启动默认代次，随后可直接执行代理验证；`switch` 同时启用新配置并设置启动默认代次。目标含义见 [Colmena 命令说明](https://colmena.cli.rs/unstable/reference/cli.html#colmena-apply)。
+
+### 更新 VPS 包集
+
+```sh
+nix flake update nixpkgs-remote
+```
+
+VPS 与 laptop 分别跟踪 nixos-unstable；上面的命令只推进 VPS 的锁定版本。验证使用公开合成节点，从实际 bootstrap 镜像启动，覆盖低内存安装和 Colmena 部署；真实节点仍在维护机单独构建。具体命令见[验证指南](validation.md)，定时更新和合并条件见[CI](ci.md#入口和候选提交)。
+
+## 仅更新订阅
+
+用途规则、默认出口、路径显示名、客户端 DNS、订阅名称或地址的更新，按以下流程发布。服务端认证和连接参数的变化按[日常更新的范围](#日常更新的范围)处理。
+
+在仓库根目录进入维护环境，选择订阅：
+
+```sh
+nix develop .#vps
+```
+
+```sh
+subscription=primary
+```
+
+编辑 inventory 或客户端规则文件后，依次完成[准备部署材料](#准备部署材料)、[发布订阅并切换客户端](#发布订阅并切换客户端)中的发布和下载核对。客户端更新相应订阅或配置，确认用途选择后[清理部署材料](#清理部署材料)。
+
+## 初次部署
+
+### 建立私有 inventory
 
 分批安装时，在 inventory 中声明本轮准备上线的节点。以下以两台为例，逐台完成安装和请求验证。重装前将维护机切换到其他可用出口，供构建、Cloudflare 登录和 SSH 使用。与其他部署并存时，为证书和订阅 Worker 选择独立名称及路由前缀。
 
@@ -49,23 +148,9 @@ mkdir -p secrets
 sops secrets/vps.sops.yaml
 ```
 
-## 准备部署材料
+完成编辑后，按[准备部署材料](#准备部署材料)生成本轮文件，再确认以下安装参数。
 
-一次解密生成本轮部署所需的文件，生成、构建和部署由当前用户执行。
-
-```sh
-set -o pipefail
-sops decrypt secrets/vps.sops.yaml |
-  python3 scripts/vps/prepare.py
-```
-
-输出保存在被 Git 忽略的 `tmp/vps/`：`metadata.json` 用于系统求值，`nodes/` 保存各节点凭据，`subscriptions/` 保存客户端文件，`workers/` 包含两个可独立发布的 Worker 目录。目录权限为 `0700`，文件权限为 `0600`。准备脚本只生成材料，完成后可分别检查、构建和部署；重新准备前先清理上一轮输出。
-
-下文的 Nix 和 Colmena 命令从仓库根目录执行，通过 `--impure` 读取 `tmp/vps/metadata.json`。密码、隧道私钥和证书获取 token 由 Colmena 从绝对路径读取并单独下发，留在 Nix store 之外。拓扑、SSH 公钥和服务声明会进入系统闭包，因此私有系统在维护机本地构建和分发。
-
-每台 VPS 只收到属于自身的代理服务配置和证书请求凭据，保存于 `/var/lib/site-vps/releases/<代次>/`。客户端只收到被授权的代理路径。age 身份和上游出口凭据不随订阅交付；Porkbun API 凭据只交给证书 Worker。
-
-## 确认 SSH 与安装参数
+### 确认 SSH 与安装参数
 
 节点名用于系统主机名、出口关系和 Colmena 的 `--on` 选择；节点的 `sshHost` 指定维护机连接时使用的 SSH 别名。例如，`edge.sshHost: foo` 对应 `colmena ... --on edge` 经 `foo` 连接。维护机的 `identity.sops.yaml` 中，`ssh.hosts` 管理 `HostName`、`Port`、`User`、`IdentityFile` 和代理；本流程在其中声明 `User root`。填写方式见[身份示例](../data/secrets/identity.example.yaml)，身份发布与激活见[身份管理](secrets.md#gpgssh-与-git-身份)。已有可用定义可直接沿用。
 
@@ -87,7 +172,7 @@ ssh-add -L
 
 在供应商控制台为两台 VPS 放行实际 SSH TCP 端口、TCP 443 和 UDP 20000–29999，并确认救援启动和控制台可用。节点间转发的说明见[入口、出口与端口](#入口出口与端口)。
 
-## 构建系统
+### 构建系统
 
 在维护机先完成两台的 bootstrap 镜像和完整系统构建。镜像仅含基础系统和登录公钥，完整系统的运行凭据在后续部署时下发。
 
@@ -102,50 +187,9 @@ ssh-add -L
 )
 ```
 
-## 发布证书 Worker
+按[发布证书 Worker](#发布证书-worker)完成发布和路由配置，再分别设置 `node=$first`、`node=$second`，执行其中的证书获取命令。确认两台的证书请求均通过后，开始安装。
 
-Wrangler 读取当前 Worker 的发布目录，使用 host 的网络、DNS 和代理。登录状态保存在项目根目录 `.wrangler/`，两个 Worker 共用这份状态；文件访问与缓存位置见[开发环境](validation.md#开发环境)。在仓库根目录登录，浏览器打开终端给出的设备授权地址并输入代码：
-
-```sh
-wrangler login --device --browser=false \
-  --scopes account:read \
-  --scopes user:read \
-  --scopes workers_scripts:write \
-  --scopes workers_routes:write \
-  --scopes zone:read
-```
-
-已有项目登录状态时可直接发布。参数见 [Wrangler 登录文档](https://developers.cloudflare.com/workers/wrangler/commands/general/#login)。
-
-```sh
-(
-  cd tmp/vps/workers/certificates
-  wrangler deploy && wrangler secret bulk secrets.json
-)
-```
-
-在新证书 Worker 的 **Settings → Domains & Routes → Add → Route** 中选择 zone，填写 `https://example.com/<certificate-route-uuid>*`。域名需要启用代理的 DNS 记录；路由前缀与 inventory 的 `workers.certificates.url` 对应。控制台操作见 [Cloudflare Routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)。后续发布保留这些路由。
-
-用节点将要使用的请求配置获取证书，确认 token、Porkbun 凭据、证书域名及有效期都可用：
-
-```sh
-(
-  set -e
-  for node in "$first" "$second"; do
-    release=$(jq -r --arg node "$node" '.nodes[$node].release' tmp/vps/metadata.json)
-    python3 scripts/vps/certificate.py \
-      --request "tmp/vps/nodes/$node/$release/certificate.json" \
-      --state "tmp/vps/certificates/$node" \
-      --ca-file /etc/ssl/certs/ca-certificates.crt
-  done
-)
-```
-
-取回的证书与私钥保存在 `tmp/vps/certificates/`，部署材料清理时一并删除。节点后续独立获取和更新证书，见[证书更新](#证书更新)。
-
-## 逐台安装与部署
-
-先设置 `node=$first`。完成该节点的安装、代理验证和重启后，再设置 `node=$second`，用第二台的救援参数重复本节。维护机上的命令在 `nix develop .#vps` 的 Bash 中执行；进入救援环境时，按下文标明的位置操作。
+先设置 `node=$first`，依次完成下面的救援、写盘和首次启动步骤。该节点部署、验证完成后，再设置 `node=$second`，用第二台的救援参数重复这些步骤。维护机上的命令在 `nix develop .#vps` 的 Bash 中执行；进入救援环境时，按下文标明的位置操作。
 
 ```sh
 node=$first
@@ -344,7 +388,104 @@ colmena apply test --impure --on "$node" --parallel 1 --no-substitute
 ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
 ```
 
-接着验证当前节点自身承载的出口。列出可选路径，`probe_path` 选择本台入口、本台承载的路径；下例对应示例 inventory 的原生出口：
+按[验证代理请求](#验证代理请求)确认本台入口、出口的 Trojan 和 HY2 路径。随后保存为默认启动代次，并确认重启后的服务：
+
+```sh
+colmena apply switch --impure --on "$node" --parallel 1 --no-substitute
+ssh "$ssh_host" 'systemctl reboot'
+# 等待机器启动后执行。
+ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
+```
+
+第二台使用 `node=$second`，从[进入救援环境](#进入救援环境)开始，填写该台的临时连接参数并选择目标盘，重复安装与部署。两台均上线后，再选择 `${first} → ${second} · native · Trojan` 等跨节点路径，以两个方向、两种协议完成实际请求。
+
+各路径验证完成后，[发布订阅并切换客户端](#发布订阅并切换客户端)，再[清理部署材料](#清理部署材料)。部署异常时按[回退系统](#回退系统)恢复。
+
+## 准备部署材料
+
+从仓库根目录、`nix develop .#vps` 环境中执行。若已有上一轮的 `tmp/vps/`，确认该轮部署和发布已经完成，再按[清理部署材料](#清理部署材料)删除旧输出。一次解密生成本轮所需文件，生成、构建和部署由当前用户执行：
+
+```sh
+set -o pipefail
+sops decrypt secrets/vps.sops.yaml |
+  python3 scripts/vps/prepare.py
+```
+
+输出保存在被 Git 忽略的 `tmp/vps/`：`metadata.json` 用于系统求值，`nodes/` 保存各节点凭据，`subscriptions/` 保存客户端文件，`workers/` 包含两个可独立发布的 Worker 目录。目录权限为 `0700`，文件权限为 `0600`。本轮各节点和 Worker 共用这次生成结果，分别构建和部署。
+
+`prepare.py` 的声明错误包含字段路径，YAML 语法错误提供行列号；对照 [vps.example.yaml](../data/secrets/vps.example.yaml) 修正后重新生成。
+
+Nix 和 Colmena 命令通过 `--impure` 读取 `tmp/vps/metadata.json`。密码、隧道私钥和证书获取 token 由 Colmena 从绝对路径读取并单独下发，留在 Nix store 之外。拓扑、SSH 公钥和服务声明会进入系统闭包，因此私有系统在维护机本地构建和分发。
+
+每台 VPS 只收到属于自身的代理服务配置和证书请求凭据，保存于 `/var/lib/site-vps/releases/<代次>/`。客户端只收到被授权的代理路径。age 身份和上游出口凭据不随订阅交付；Porkbun API 凭据只交给证书 Worker。
+
+## 发布证书 Worker
+
+Wrangler 读取当前 Worker 的发布目录，使用 host 的网络、DNS 和代理。登录状态保存在项目根目录 `.wrangler/`，两个 Worker 共用这份状态；文件访问与缓存位置见[开发环境](validation.md#开发环境)。在仓库根目录登录，浏览器打开终端给出的设备授权地址并输入代码：
+
+```sh
+wrangler login --device --browser=false \
+  --scopes account:read \
+  --scopes user:read \
+  --scopes workers_scripts:write \
+  --scopes workers_routes:write \
+  --scopes zone:read
+```
+
+已有项目登录状态时可直接发布。参数见 [Wrangler 登录文档](https://developers.cloudflare.com/workers/wrangler/commands/general/#login)。
+
+```sh
+(
+  cd tmp/vps/workers/certificates
+  wrangler deploy && wrangler secret bulk secrets.json
+)
+```
+
+在新证书 Worker 的 **Settings → Domains & Routes → Add → Route** 中选择 zone，填写 `https://example.com/<certificate-route-uuid>*`。域名需要启用代理的 DNS 记录；路由前缀与 inventory 的 `workers.certificates.url` 对应。控制台操作见 [Cloudflare Routes](https://developers.cloudflare.com/workers/configuration/routing/routes/)。后续发布保留这些路由。
+
+将 `node` 设为本轮要部署的节点，用其请求配置获取证书，确认 token、Porkbun 凭据、证书域名及有效期都可用。多个节点逐台执行：
+
+```sh
+(
+  set -e
+  release=$(jq -r --arg node "$node" '.nodes[$node].release' tmp/vps/metadata.json)
+  python3 scripts/vps/certificate.py \
+    --request "tmp/vps/nodes/$node/$release/certificate.json" \
+    --state "tmp/vps/certificates/$node" \
+    --ca-file /etc/ssl/certs/ca-certificates.crt
+)
+```
+
+取回的证书与私钥保存在 `tmp/vps/certificates/`，部署材料清理时一并删除。节点后续独立获取和更新证书，见[证书更新](#证书更新)。
+
+## 发布订阅并切换客户端
+
+从仓库根目录发布本轮生成的订阅 Worker：
+
+```sh
+(
+  cd tmp/vps/workers/subscriptions
+  wrangler deploy
+)
+```
+
+首次发布时，在该 Worker 的 **Settings → Domains & Routes → Add → Route** 中配置 `https://example.com/<subscription-route-uuid>*`，后续发布沿用该路由。完整订阅 URL 是这个前缀拼接 `subscriptions.<名称>.path`，客户端识别方式见[订阅与分流](#订阅与分流)。使用本轮选择的 `subscription`，在本机验证下载内容与准备的文件一致：
+
+```sh
+read -r -s -p '订阅的完整 HTTPS 地址：' subscription_url
+printf '\n'
+curl --fail --show-error "${subscription_url}?client=linux" \
+  --output "tmp/vps/subscriptions/$subscription/downloaded-linux.json"
+cmp "tmp/vps/subscriptions/$subscription/linux.json" \
+  "tmp/vps/subscriptions/$subscription/downloaded-linux.json"
+unset subscription_url
+```
+
+官方 sing-box 可直接导入完整 URL；Shadowrocket 可导入[完整配置或分开的节点订阅与分流配置](#shadowrocket-导入)。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
+
+## 验证代理请求
+
+在维护机的 `vps` 开发环境中执行，`node` 和 `subscription` 使用本轮选择的节点和订阅。先验证当前节点自身承载的出口：列出可选路径，`probe_path` 选择本台入口、本台承载的路径；下例对应示例 inventory 的原生出口：
 
 ```sh
 provider="tmp/vps/subscriptions/$subscription/linux.json"
@@ -371,50 +512,54 @@ curl --fail --show-error --max-time 20 \
   --socks5-hostname 127.0.0.1:11080 https://www.cloudflare.com/cdn-cgi/trace
 ```
 
-用 Ctrl-C 停下探测。把 `probe_path` 末尾的 `Trojan` 改为 `HY2`，重新生成配置并执行同一请求，确认 UDP 入口也可用。随后保存为默认启动代次，并确认重启后的服务：
+用 Ctrl-C 停下探测。把 `probe_path` 末尾的 `Trojan` 改为 `HY2`，重新生成配置并执行同一请求，确认 UDP 入口也可用。
+
+涉及节点间转发时，从路径列表选择对应的跨节点路径，例如 `edge → west · native · Trojan`，按两个方向、两种协议验证实际请求。
+
+## 回退系统
+
+通过维护机的 SSH 别名连接目标 VPS；连接不可用时，通过供应商控制台选择旧启动项。以下命令在目标 VPS 的 root shell 中执行：
 
 ```sh
-colmena apply switch --impure --on "$node" --parallel 1 --no-substitute
-ssh "$ssh_host" 'systemctl reboot'
-# 等待机器启动后执行。
-ssh "$ssh_host" 'systemctl is-active site-vps-proxy.service haproxy.service'
+nix-env -p /nix/var/nix/profiles/system --list-generations
 ```
 
-第二台使用 `node=$second`，从[进入救援环境](#进入救援环境)开始，填写该台的临时连接参数并选择目标盘，重复安装与部署。两台均上线后，再选择 `${first} → ${second} · native · Trojan` 等跨节点路径，以两个方向、两种协议完成实际请求。
-
-`test` 只改变当前运行系统，重启回到原来的启动默认代次；`switch` 同时设置启动默认代次。后续更新先重新准备材料并构建受影响系统，再按相同的 `test`、请求验证、`switch` 顺序部署。连接失效时通过供应商控制台选择旧启动项；系统内回退可用：
+将 `generation` 设置为更新前记录的代次编号，确认其系统路径与记录一致：
 
 ```sh
-sudo nix-env -p /nix/var/nix/profiles/system --rollback
-sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch
+generation=42
+readlink -f "/nix/var/nix/profiles/system-${generation}-link"
 ```
+
+选择该代次作为启动默认值并更新启动项：
+
+```sh
+nix-env -p /nix/var/nix/profiles/system --switch-generation "$generation" &&
+/nix/var/nix/profiles/system/bin/switch-to-configuration boot
+```
+
+成功后，若当前已经运行新系统，重启进入所选代次：
+
+```sh
+systemctl reboot
+```
+
+若只是取消尚未重启的更新，设置回原启动默认值即可。仅执行过 `test` 时，原启动默认代次保持不变，可重启恢复。重新连接后确认运行系统路径、服务和代理请求。
 
 旧凭据目录和证书对保留，供旧代次使用。清理旧系统代次后，再删除已确认没有系统引用的旧凭据目录。应用数据和运行凭据还需按各自恢复要求备份；系统重建不能代替数据恢复。
 
-## 发布订阅并切换客户端
+## 清理部署材料
 
-两台 VPS 的路径均可用后，发布新订阅 Worker：
-
-```sh
-(
-  cd tmp/vps/workers/subscriptions
-  wrangler deploy
-)
-```
-
-在该 Worker 的 **Settings → Domains & Routes → Add → Route** 中配置另一条 `https://example.com/<subscription-route-uuid>*`。完整订阅 URL 是这个前缀拼接 `subscriptions.<名称>.path`，客户端识别方式见[订阅与分流](#订阅与分流)。在本机验证下载内容与准备的文件一致：
+本轮 VPS 部署和 Worker 发布全部完成、手动代理探测停止后，在仓库根目录删除部署材料及探测配置。Wrangler 登录状态独立保留，后续可直接重新准备和发布；需要撤销维护机登录时运行 `wrangler logout`。
 
 ```sh
-read -r -s -p '新订阅的完整 HTTPS 地址：' subscription_url
-printf '\n'
-curl --fail --show-error "${subscription_url}?client=linux" \
-  --output "tmp/vps/subscriptions/$subscription/downloaded-linux.json"
-cmp "tmp/vps/subscriptions/$subscription/linux.json" \
-  "tmp/vps/subscriptions/$subscription/downloaded-linux.json"
-unset subscription_url
+rm -r -- tmp/vps
+rm -f -- tmp/devtools/network/vps-probe.json
 ```
 
-官方 sing-box 可直接导入完整 URL；Shadowrocket 可导入[完整配置或分开的节点订阅与分流配置](#shadowrocket-导入)。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
+## 撤销订阅
+
+更换订阅地址时生成新的 UUID，更新 `path` 并重新发布订阅 Worker，再把新地址交给使用者。撤销整份订阅时删除对应条目，按[更新已有 VPS](#更新已有-vps)使相关节点的新认证配置生效，再发布订阅 Worker，使已有代理凭据和下载入口均失效。
 
 ## 入口、出口与端口
 
@@ -472,9 +617,9 @@ OpenVPN 的 `tls.server_name` 默认精确匹配服务端证书的 CN，填写�
 
 排障时，在 `exit-us` 中固定具体路径，便可单独观察某个入口、承载 VPS 和协议。固定路径失效时仍保留这一选择，恢复自动切换需要重新选择 `exit-us-auto`。逻辑出口之间的切换由用户决定，例如全部 `us` 路径不可用时，可将用途改为 `uk`。
 
-增加出口时，在顶层 `exits` 声明出站方式和承载 VPS，将名称加入订阅的 `exits`，再加入相应用途组。部署涉及的 VPS 并发布订阅后，客户端获得新的路径。
+增加出口时，在顶层 `exits` 声明出站方式和承载 VPS，将名称加入订阅的 `exits`，再加入相应用途组。涉及的 VPS 启用新配置并完成请求验证后，发布订阅，客户端获得新的路径。
 
-更换订阅 `key` 会同时更换该订阅所有出口、所有协议的密码。准备新部署材料后，先部署涉及的 VPS，再发布订阅 Worker，最后让客户端更新订阅；期间旧客户端会暂时无法连接。订阅地址可以保持原值。
+更换订阅 `key` 会同时更换该订阅所有出口、所有协议的密码。准备新部署材料后，按[更新已有 VPS](#更新已有-vps)使有关节点启用新配置，再发布订阅 Worker，最后让客户端更新订阅；期间旧客户端会暂时无法连接。订阅地址可以保持原值。
 
 Linux provider、官方移动 sing-box 和 Shadowrocket 共用这些关系和用途顺序。各客户端使用自己的原生远程规则格式及更新机制；规则来源和覆盖范围因此可能有差异。laptop 的接入与持久选择见[用途出口](network.md#用途出口)。VPS 的 `native` 指远端 VPS 原生网络，客户端 `direct` 指客户端自己的网络。
 
@@ -555,24 +700,3 @@ journalctl -b -u systemd-resolved -u site-vps-proxy
 证书 Worker 从 Porkbun 获取声明域名的证书和私钥，节点通过自己的 bearer token 获取。每台 VPS 首次启用时获取一次，此后每日带随机延迟检查；证书链、域名、剩余有效期和密钥匹配全部通过后，原子切换整对证书并重启使用它的服务。下载或验证失败时继续使用现有证书。状态保存在 `/var/lib/site-vps-certificate/`。
 
 同一通配符证书的私钥由使用它的 VPS 共享；任一这些节点失陷都需要按这个信任范围轮换证书。Porkbun API 凭据只存在证书 Worker 的 secret binding 中，节点仅持有取证 token。
-
-## 清理部署材料
-
-本轮 VPS 部署和 Worker 发布全部完成、手动代理探测停止后，在仓库根目录删除部署材料及探测配置。Wrangler 登录状态独立保留，后续可直接重新准备和发布；需要撤销维护机登录时运行 `wrangler logout`。
-
-```sh
-rm -r -- tmp/vps
-rm -- tmp/devtools/network/vps-probe.json
-```
-
-## 撤销订阅
-
-更换订阅地址时生成新的 UUID，更新 `path` 并重新发布订阅 Worker，再把新地址交给使用者。撤销整份订阅时删除对应条目，发布订阅 Worker 并部署相关 VPS，使下载入口和已有代理凭据一并失效。
-
-## 更新 VPS 包集
-
-```sh
-nix flake update nixpkgs-remote
-```
-
-VPS 与 laptop 分别跟踪 nixos-unstable；上面的命令只推进 VPS 的锁定版本。验证使用公开合成节点，从实际 bootstrap 镜像启动，覆盖低内存安装和 Colmena 部署；真实节点仍在维护机单独构建。具体命令见[验证指南](validation.md)，定时更新和合并条件见[CI](ci.md#入口和候选提交)。

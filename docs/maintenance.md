@@ -35,7 +35,7 @@ nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 
 依赖升级或跨领域修改按[完整验收流程](validation.md#完整验收与计时)验证后再部署。
 
-自动更新的输入分组由[候选工作流](../.github/workflows/update-inputs.yml)维护。VPS 的包集与部署步骤见 [VPS 维护](vps.md#更新-vps-包集)。单独更新一个 input 使用 `nix flake update <名称>`，例如输入法主题：
+自动更新的输入分组由[候选工作流](../.github/workflows/update-inputs.yml)维护。VPS 的包集与部署步骤见[更新已有 VPS](vps.md#更新已有-vps)。单独更新一个 input 使用 `nix flake update <名称>`，例如输入法主题：
 
 ```sh
 nix flake update catppuccin-fcitx5
