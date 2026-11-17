@@ -194,16 +194,19 @@ rescue_ssh=(
 )
 
 ssh "${rescue_ssh[@]}" 'bash -se' <<'RESCUE'
-for tool in gzip dd head sha256sum blockdev lsblk swapon sync; do
+for tool in gzip dd head sha256sum blockdev lsblk swapon findmnt sync; do
   command -v "$tool"
 done
 dd --version
-lsblk -b -o NAME,PATH,SIZE,TYPE,MODEL,MOUNTPOINTS
+lsblk -b -p -o NAME,SIZE,TYPE,MODEL,MOUNTPOINT
 swapon --show
+findmnt -rn -o SOURCE,TARGET
 RESCUE
 ```
 
-结合磁盘容量、型号与供应商控制台选择目标整盘，填写救援系统显示的路径，例如 `/dev/vdb`：
+`lsblk` 显示完整设备路径、容量与分区关系，`findmnt` 列出全部挂载。通过挂载到 `/` 的来源确认救援根文件系统所在设备。`swapon --show` 列出启用的 swap，无输出表示当前未启用 swap。
+
+结合磁盘容量、型号与供应商控制台选择要重装的目标整盘，保留救援系统使用的磁盘。设备路径以本次救援环境的输出为准，在维护机输入：
 
 ```sh
 read -r -p '救援环境中的目标整盘：' rescue_disk
@@ -226,7 +229,7 @@ compressed="$PWD/tmp/vps/install/$node.img.gz"
 )
 ```
 
-**写盘会覆盖目标磁盘。** 保存所需数据并确认恢复方式，核对 `rescue_disk`、容量、挂载及 swap 使用情况，卸载该盘的分区并停用该盘上的 swap 后，执行下面的写入与校验。远端流式解压，内存只需少量缓冲。
+**写盘会覆盖目标磁盘。** 保存所需数据并确认恢复方式，核对 `rescue_disk` 与容量。目标盘的所有分区应处于未挂载状态，该盘上的 swap 应已停用；确认后执行下面的写入与校验。远端流式解压，内存只需少量缓冲。
 
 ```sh
 (
