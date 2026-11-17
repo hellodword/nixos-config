@@ -312,7 +312,7 @@ outbound = "proxy"
 [[rules]]
 scope = "domain"
 domain = ["cdn.jsdelivr.net"]
-domain_suffix = ["aliapp.org", "snssdk.com", "getui.com", "getui.net", "jpush.io"]
+domain_suffix = ["aliapp.org", "snssdk.com", "getui.com", "getui.net", "jpush.io", "cmccaikf.com"]
 action = "route"
 outbound = "direct"
 
