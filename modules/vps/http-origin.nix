@@ -38,7 +38,7 @@ in
       "decrypt"
       "--extract"
       ''["secrets"]["${name}-http-origin-prefix"]''
-      (toString vpsSecretsFile)
+      "${vpsSecretsFile}"
     ];
     destDir = credentialDirectory;
     user = "root";
