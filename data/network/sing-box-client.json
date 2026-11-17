@@ -11,12 +11,6 @@
       },
       {
         "type": "https",
-        "tag": "dns-direct",
-        "server": "223.5.5.5",
-        "path": "/dns-query"
-      },
-      {
-        "type": "https",
         "tag": "dns-proxy",
         "server": "1.1.1.1",
         "path": "/dns-query",
@@ -57,7 +51,6 @@
   ],
   "route": {
     "auto_detect_interface": true,
-    "default_domain_resolver": "dns-direct",
     "rule_set": [],
     "rules": [
       {

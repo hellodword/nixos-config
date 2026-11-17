@@ -678,7 +678,13 @@ PY
 
 移动客户端的基础配置分别位于 [sing-box-client.json](../data/network/sing-box-client.json) 和 [shadowrocket-client.conf](../data/network/shadowrocket-client.conf)。生成器插入订阅授权的路径及用途规则；远程规则的内容由客户端原生机制更新。Linux 的用途分类也读取同一目录，应用方式见[网络规则来源](network.md#规则来源与更新)。
 
-Shadowrocket 的主解析和备用解析均使用配置中声明的加密解析器，由客户端原生机制调度；直连域名使用同一解析配置。解析器使用 IP 地址并校验 TLS 证书，建立连接时无需先解析 DNS 服务的域名。
+客户端的直连解析器统一声明在 [direct-dns.toml](../data/network/direct-dns.toml)，包含 DNSPod 和阿里 DNS 各自的 DoH、DoT。生成配置时读取这份声明，解析器使用固定 IP 并校验 TLS 证书，建立连接时无需引导 DNS。
+
+订阅 sing-box 使用 1.14 起提供的原生 DNS 竞速：直连查询未命中缓存时并发询问四路，最先返回的 NOERROR（包括 NODATA）或 NXDOMAIN 胜出。单路错误留给其他分支继续处理，等待预算为 4 秒，全部失败返回 SERVFAIL。竞速位于共同策略中对应 direct 规则的位置，较早命中的用途仍使用该用途的解析出口。直接连接的域名也先通过 DNS 策略解析，再连接解析地址；本地域名使用专用解析路径。
+
+Shadowrocket 使用同一声明中的两个 DoH 作为主解析、两个 DoT 作为备用解析，由客户端原生机制调度。直连域名使用同一解析配置。
+
+修改直连解析器后，laptop 切换系统配置；移动端重新生成并发布 subscriptions Worker，再更新客户端配置。VPS 服务端的解析器由下面的系统和逻辑出口配置管理。
 
 VPS 有两种 DNS 用途：
 

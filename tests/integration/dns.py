@@ -7,12 +7,14 @@ from pathlib import Path
 import tempfile
 import time
 import threading
+import tomllib
 from concurrent.futures import ThreadPoolExecutor
 
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port, plain_server
 
 
 from tests.fixtures.dns_stack import processes, query, marker, read_events
+from tests.support import ROOT
 
 
 def main():
@@ -29,7 +31,10 @@ def main():
         for group in ("cn", "global"):
             groups[group] = {"upstreams": []}
             resolvers[group] = []
-            for branch, protocol in enumerate(("tls", "https")):
+            upstreams = (tomllib.loads((ROOT / "data/network/direct-dns.toml").read_text())["upstreams"]
+                         if group == "cn" else [{"protocol": protocol} for protocol in ("tls", "https")])
+            for branch, upstream in enumerate(upstreams):
+                protocol = upstream["protocol"]
                 resolver = Resolver(group, branch)
                 port = stack.enter_context(encrypted_server(resolver, protocol, key, cert))
                 groups[group]["upstreams"].append({"protocol": protocol, "address": "127.0.0.1", "port": port, "serverName": "resolver.test"})
@@ -67,8 +72,8 @@ def main():
             assert condition, description
             assertions += 1
 
-        def ordered_query(name, tcp, invalid=False):
-            gates = [(threading.Event(), threading.Event()) for _ in range(2)]
+        def ordered_query(name, tcp, invalid=False, winner=0):
+            gates = [(threading.Event(), threading.Event()) for _ in resolvers["cn"]]
             for resolver, gate in zip(resolvers["cn"], gates):
                 resolver.gates[name.lower() + "."] = gate
             with ThreadPoolExecutor(max_workers=1) as executor:
@@ -76,7 +81,7 @@ def main():
                 try:
                     for arrived, _ in gates:
                         check(arrived.wait(8), f"upstream received {name}")
-                    gates[0][1].set()
+                    gates[0 if invalid else winner][1].set()
                     if invalid:
                         deadline = time.monotonic() + 8
                         while True:
@@ -88,13 +93,19 @@ def main():
                             assert time.monotonic() < deadline, f"first upstream response missing: {name}"
                             time.sleep(0.05)
                         check(not result.done(), f"discarded response waits for the other upstream: {name}")
-                        gates[1][1].set()
+                        gates[-1][1].set()
                     return result.result(timeout=8)
                 finally:
                     for _, release in gates:
                         release.set()
 
         with processes(args, config, root / "first"):
+            for winner in range(len(resolvers["cn"])):
+                name = f"winner-{winner}.cn.test"
+                for branch, resolver in enumerate(resolvers["cn"]):
+                    resolver.ipv4_by_name[name] = f"192.0.2.{50 + branch}"
+                check(marker(ordered_query(name, tcp=False, winner=winner)) == f"192.0.2.{50 + winner}",
+                      f"branch {winner} wins while the other branches are pending")
             cases = {"foo-123.test": 11, "FOO-234.TEST.": 11, "foo-abc.test": 22,
                      "www.foo-123.test": 22, "foox123.test": 22, "ordered-123.test": 22,
                      "override.example.test": 11, "www.example.test": 22,
@@ -121,13 +132,13 @@ def main():
                               for r in group for c in r.calls), "private name leaked")
             check(marker(query(port, "machine.ts.net")) == "192.0.2.33", "Tailnet binding")
             check(query(port, "ecs.cn.test", ecs=True).rcode() == 5, "client ECS refused")
-            barrier = threading.Barrier(2, timeout=4)
+            barrier = threading.Barrier(len(resolvers["cn"]), timeout=4)
             for resolver in resolvers["cn"]:
                 resolver.barriers["fanout.cn.test."] = barrier
             query(port, "fanout.cn.test")
             arrivals = [[c for c in r.calls if c["name"] == "fanout.cn.test."] for r in resolvers["cn"]]
             check(all(len(c) == 1 for c in arrivals), "every branch receives a cache miss")
-            check(not barrier.broken, "both upstream branches start before either responds")
+            check(not barrier.broken, "all upstream branches start before any responds")
             check(all(c[0]["ecs"] == ["ECS 0.0.0.0/0 scope/0"] for c in arrivals), "fixed ECS /0")
             query(port, "fanout.cn.test")
             check(all(len([c for c in r.calls if c["name"] == "fanout.cn.test."]) == 1 for r in resolvers["cn"]), "cache avoids new fanout")

@@ -6,6 +6,14 @@
 }:
 let
   cfg = config.site.network;
+  directDNS = map (
+    upstream:
+    let
+      defaultPort = if upstream.protocol == "https" then 443 else 853;
+      port = lib.optionalString (upstream.port != defaultPort) ":${toString upstream.port}";
+    in
+    "${upstream.protocol}://${upstream.address}${port}${upstream.path or ""}"
+  ) (builtins.fromTOML (builtins.readFile ../../data/network/direct-dns.toml)).upstreams;
   state = "/run/site-network-exclude";
   address = "169.254.53.54";
   policy = pkgs.writeText "network-exclude.json" (
@@ -30,18 +38,12 @@ in
   options.site.network.exclude = {
     dns = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "tls://223.5.5.5"
-        "https://223.6.6.6/dns-query"
-      ];
+      default = directDNS;
       description = "Default real-address DNS upstreams for excluded applications and site-direct containers.";
     };
     bootstrap = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "tls://223.5.5.5"
-        "https://223.6.6.6/dns-query"
-      ];
+      default = directDNS;
       description = "IP-addressed DNS upstreams used to resolve excluded DNS server hostnames.";
     };
   };

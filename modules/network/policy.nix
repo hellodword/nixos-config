@@ -225,21 +225,7 @@ in
       description = "DNS listeners, encrypted upstream groups and ECS settings.";
       default = {
         groups = {
-          cn.upstreams = [
-            {
-              protocol = "tls";
-              address = "223.5.5.5";
-              port = 853;
-              serverName = "dns.alidns.com";
-            }
-            {
-              protocol = "https";
-              address = "223.6.6.6";
-              port = 443;
-              serverName = "dns.alidns.com";
-              path = "/dns-query";
-            }
-          ];
+          cn.upstreams = (builtins.fromTOML (builtins.readFile ../../data/network/direct-dns.toml)).upstreams;
           global.upstreams = [
             {
               protocol = "tls";

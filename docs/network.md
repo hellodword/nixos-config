@@ -120,7 +120,7 @@ network-exclude dns reset
 
 入口通过 sudo 建立排除环境，实际应用以原用户身份运行。命令参数和输入输出原样传递；`--` 明确结束入口参数，执行名为 `dns` 的程序时使用 `network-exclude -- dns …`。退出交互 shell 后返回原环境。
 
-共用 DNS 由 `site.network.exclude.dns` 声明默认值。`dns set` 替换整个列表并立即应用，设置保存在 `/run`，注销和解析器重启后仍有效，系统重启恢复默认值。地址采用 dnsproxy 语法，例如 `tls://1.1.1.1`、`https://223.6.6.6/dns-query`、`192.168.1.1:53`、`tcp://192.168.1.1`；DoT/DoH 校验证书。带域名的上游使用 `site.network.exclude.bootstrap` 中的 IP 地址解析器完成 bootstrap。
+共用 DNS 由 `site.network.exclude.dns` 声明默认值，默认读取[直连解析器](../data/network/direct-dns.toml)，由 dnsproxy 并发查询并缓存结果。`dns set` 替换整个列表并立即应用，设置保存在 `/run`，注销和解析器重启后仍有效，系统重启恢复默认值。地址采用 dnsproxy 语法，例如 `tls://1.1.1.1`、`https://223.6.6.6/dns-query`、`192.168.1.1:53`、`tcp://192.168.1.1`；DoT/DoH 校验证书。带域名的上游使用 `site.network.exclude.bootstrap` 完成 bootstrap，其默认值也来自同一份直连解析器声明。
 
 普通排除环境和 `site-direct` 容器使用同一解析器，修改共用 DNS 后随后的查询自动跟随。`--dns` 为本次环境建立独立解析器和缓存，结束后回收；嵌套调用默认沿用当前环境。应用自身缓存按其生命周期更新。解析器与排除连接独立于 sing-box，保留本机 hosts 和 Tailnet 完整域名解析。
 
@@ -528,11 +528,13 @@ flake 中的 GeoSite、GeoIP 输入提供首次启动可用的初始快照。日
 | 传输或 TLS 身份失败 | 等待其他分支 |
 | 所有分支失败 | 返回 SERVFAIL |
 
-这是首个合格响应策略，NXDOMAIN 可能早于正常答案到达。CN 与 GLOBAL 使用独立缓存，临时错误不缓存；DNS 策略变化会重启分类入口并清空旧缓存。
+这是首个合格响应策略，NXDOMAIN 可能早于正常答案到达。竞速等待预算为 4 秒。CN 与 GLOBAL 使用独立缓存，临时错误不缓存；DNS 策略变化会重启分类入口并清空旧缓存。
 
 ECS 默认 IPv4/IPv6 `/0`，客户端自带 ECS 被拒绝；有明确 CDN 定位需要时可设置固定前缀。公网上游使用认证 TLS，TLS 身份校验与 DNSSEC 是不同机制。
 
-默认 CN 使用 AliDNS 的两个协议入口，GLOBAL 使用 Google DoT 和 Cloudflare DoH。修改 `site.network.dnsPolicy.groups.<name>.upstreams` 时提供字面地址、协议、端口及 TLS 名称。启用 sing-box 时，GLOBAL DNS 走代理，CN DNS 走 direct；节点域名由独立 CN bootstrap 解析，节点名称会暴露给该解析服务。DNS-only 模式的两组上游均直接访问。DNS + sing-box 模式下，代理退出仍可解析 CN，GLOBAL 返回失败。CN 两个入口属于同一提供商，仍有共同故障域。
+默认 CN 读取[直连解析器](../data/network/direct-dns.toml)：DNSPod 和阿里 DNS 各提供一路 DoH、一路 DoT，四路同时参与竞速。每次未命中缓存最多发出四路请求，覆盖两家解析服务。上游使用固定 IP 连接并校验 TLS 身份，建立连接时无需引导 DNS。GLOBAL 使用 Google DoT 和 Cloudflare DoH。
+
+修改 `site.network.dnsPolicy.groups.<name>.upstreams` 时提供字面地址、协议、端口及 TLS 名称。启用 sing-box 时，GLOBAL DNS 走代理，CN DNS 走 direct；节点域名由独立 CN bootstrap 解析，节点名称会暴露给该解析服务。DNS-only 模式的两组上游均直接访问。DNS + sing-box 模式下，代理退出仍可解析 CN，GLOBAL 返回失败。
 
 ## Lockdown 运行与故障定位
 

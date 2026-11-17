@@ -11,13 +11,18 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 import urllib.error
 import urllib.parse
 import urllib.request
 
 import yaml
+import dns.message
+import dns.query
 
 from tests.support import ROOT, load_script
 from tests.fixtures.dns_fixture import Resolver, certificate, encrypted_server, free_port
@@ -33,6 +38,111 @@ class InventoryProtocol(unittest.TestCase):
     def inventory(self):
         return yaml.safe_load((ROOT / "data/secrets/vps.example.yaml").read_text())
 
+    def test_mobile_direct_dns_races_and_routing(self):
+        with tempfile.TemporaryDirectory() as temp, contextlib.ExitStack() as stack:
+            root = Path(temp)
+            key, cert = certificate(root)
+            origin = stack.enter_context(http_server())
+            resolvers, upstreams = [], []
+            for branch, upstream in enumerate(clients.DIRECT_DNS):
+                resolver = Resolver("cn", branch)
+                resolver.ipv4 = f"127.0.0.{branch + 1}"
+                port = free_port()
+                stack.enter_context(encrypted_server(resolver, upstream["protocol"], key, cert,
+                                                    hostname=f"resolver.test:{port}", port=port))
+                resolvers.append(resolver)
+                upstreams.append(upstream | {"address": "127.0.0.1", "port": port, "serverName": "resolver.test"})
+            proxy_dns = Resolver("global", 0)
+            proxy_dns_port = free_port()
+            stack.enter_context(encrypted_server(proxy_dns, "https", key, cert,
+                                                hostname=f"resolver.test:{proxy_dns_port}", port=proxy_dns_port))
+            socks, calls = stack.enter_context(socks_server(proxy_dns_port, origin))
+            provider = {
+                "outbounds": [{"type": "socks", "tag": "fixture-path", "server": "127.0.0.1", "server_port": socks}],
+                "exits": {"fixture": {"paths": ["fixture-path"]}},
+                "groups": {name: {"exits": ["fixture"], "default": "fixture"} for name in ("proxy", "hideme")},
+            }
+            catalog = {"rule_sets": {}, "final": "hideme", "rules": [
+                {"scope": "domain", "domain": "priority.race.test", "action": "route", "outbound": "proxy"},
+                {"scope": "domain", "domain": "blocked.race.test", "action": "reject"},
+                {"scope": "domain", "type": "logical", "mode": "or",
+                 "rules": [{"domain_suffix": "race.test"}, {"domain": "direct.test"}],
+                 "action": "route", "outbound": "direct"},
+            ]}
+            sing_box_policy = clients.purposes.sing_box
+            with patch.object(clients, "DIRECT_DNS", upstreams), patch.object(
+                    clients.purposes, "sing_box", side_effect=lambda groups: sing_box_policy(groups, catalog)):
+                config = clients.mobile(provider)
+            dns_port, socks_port = free_port(), free_port()
+            config["inbounds"] = [
+                {"type": "direct", "tag": "dns-test", "listen": "127.0.0.1", "listen_port": dns_port},
+                {"type": "socks", "tag": "socks-test", "listen": "127.0.0.1", "listen_port": socks_port},
+            ]
+            config["route"]["rules"].insert(0, {"inbound": "dns-test", "action": "hijack-dns"})
+            for server in config["dns"]["servers"]:
+                if server["type"] == "local":
+                    continue
+                if not server["tag"].startswith("dns-direct-"):
+                    server.update(server="127.0.0.1", server_port=proxy_dns_port,
+                                  tls={"enabled": True, "server_name": "resolver.test"})
+                server["tls"]["certificate_path"] = str(cert)
+            config["log"]["level"] = "debug"
+            (root / "network.json").write_text(json.dumps(config))
+
+            def query(name, kind="A"):
+                return dns.query.tcp(dns.message.make_query(name, kind), "127.0.0.1", port=dns_port, timeout=10)
+
+            def race(name, request, winner=0, cached=False):
+                gates = [(threading.Event(), threading.Event()) for _ in resolvers]
+                for resolver, gate in zip(resolvers, gates):
+                    resolver.gates[name + "."] = gate
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    result = executor.submit(request)
+                    try:
+                        for arrived, _ in gates:
+                            self.assertTrue(arrived.wait(8), f"all branches received {name}")
+                        if winner is not None:
+                            gates[winner][1].set()
+                        response = result.result(timeout=8)
+                        if cached:
+                            # A repeat query succeeds even while every upstream response is held.
+                            gates[winner][1].clear()
+                            self.assertEqual(request().answer, response.answer)
+                            self.assertEqual(sum(c["name"] == name + "." for c in resolvers[winner].calls), 1)
+                        return response
+                    finally:
+                        for _, release in gates:
+                            release.set()
+
+            with (root / "sing-box.log").open("w") as log, proxy_process(CLIENT_SING_BOX, root, log, socks_port):
+                try:
+                    for winner in range(len(resolvers)):
+                        name = f"winner-{winner}.race.test"
+                        reply = race(name, lambda: query(name), winner, cached=True)
+                        self.assertEqual(reply.answer[0][0].to_text(), resolvers[winner].ipv4)
+                    self.assertEqual(race("nx.race.test", lambda: query("nx.race.test")).rcode(), 3)
+                    nodata = race("nodata.race.test", lambda: query("nodata.race.test"))
+                    self.assertEqual((nodata.rcode(), nodata.answer), (0, []))
+                    for name in ("sf.race.test", "refused.race.test"):
+                        self.assertEqual(query(name).rcode(), 0)
+                    self.assertEqual(query("allfail.race.test").rcode(), 2)
+                    self.assertEqual(race("timeout.race.test", lambda: query("timeout.race.test"), winner=None).rcode(), 2)
+                    self.assertEqual(query("types.race.test", "TXT").answer[0][0].to_text(), '"cn"')
+                    self.assertEqual(query("priority.race.test").answer[0][0].to_text(), proxy_dns.ipv4)
+                    self.assertEqual(query("outside.test").answer[0][0].to_text(), proxy_dns.ipv4)
+                    self.assertEqual(query("blocked.race.test").rcode(), 3)
+                    self.assertEqual({c["name"] for c in proxy_dns.calls}, {"priority.race.test.", "outside.test."})
+                    # Only the winning DoT response leads to a listening HTTP endpoint.
+                    name = "connection.race.test"
+                    resolvers[-1].ipv4_by_name[name] = "127.0.0.1"
+                    resolvers[0].ipv4_by_name[name] = "127.0.0.2"
+                    self.assertEqual(race(name, lambda: socks_http(socks_port, name, origin), len(resolvers) - 1), "direct")
+                    self.assertEqual(socks_http(socks_port, "priority.race.test", origin), "proxy")
+                    self.assertEqual(calls[-1], ("priority.race.test", origin))
+                except BaseException:
+                    print((root / "sing-box.log").read_text(), file=sys.stderr)
+                    raise
+
     def test_exit_dns_races_and_cache(self):
         with tempfile.TemporaryDirectory() as temp, contextlib.ExitStack() as stack:
             root = Path(temp)
@@ -45,7 +155,7 @@ class InventoryProtocol(unittest.TestCase):
                 resolvers, ports = [], []
                 for branch in range(2):
                     resolver = Resolver(group, branch)
-                    # The first resolver wins ordinary queries, but returns SERVFAIL for sf.*.
+                    # Branch zero returns SERVFAIL for sf.* and NXDOMAIN for nx.*.
                     port = free_port()
                     stack.enter_context(encrypted_server(resolver, "https", key, cert,
                                                         hostname=f"resolver.test:{port}", port=port))
@@ -90,8 +200,14 @@ class InventoryProtocol(unittest.TestCase):
                         self.assertEqual(socks_http(port, "cached.fixture.example", origin), "proxy")
                         self.assertEqual([len(resolver.calls) for resolver in resolvers], counts)
                         for domain in ("nx.fixture.example", "allfail.fixture.example"):
-                            with self.subTest(exit=name, domain=domain), self.assertRaises((OSError, EOFError)):
-                                socks_http(port, domain, origin)
+                            release = threading.Event()
+                            if domain.startswith("nx."):
+                                resolvers[1].gates[domain + "."] = (threading.Event(), release)
+                            try:
+                                with self.subTest(exit=name, domain=domain), self.assertRaises((OSError, EOFError)):
+                                    socks_http(port, domain, origin)
+                            finally:
+                                release.set()
                         for resolver in resolvers:
                             self.assertTrue(any(call["name"] == "sf.fixture.example." for call in resolver.calls))
 

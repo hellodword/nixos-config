@@ -1,0 +1,26 @@
+# 直连解析器。laptop 与 sing-box 并发查询；Shadowrocket 使用 DoH 主解析、DoT 备用解析。
+[[upstreams]]
+protocol = "https"
+address = "120.53.53.53"
+port = 443
+serverName = "doh.pub"
+path = "/dns-query"
+
+[[upstreams]]
+protocol = "https"
+address = "223.5.5.5"
+port = 443
+serverName = "dns.alidns.com"
+path = "/dns-query"
+
+[[upstreams]]
+protocol = "tls"
+address = "120.53.53.53"
+port = 853
+serverName = "dot.pub"
+
+[[upstreams]]
+protocol = "tls"
+address = "223.5.5.5"
+port = 853
+serverName = "dns.alidns.com"
