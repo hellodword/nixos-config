@@ -22,11 +22,11 @@
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
-        "lastModified": 1788925726,
-        "narHash": "sha256-ykWxZZlwhdyLoP3+TDh90HRJJ2ekg4Ve1PTCTgwtzKE=",
+        "lastModified": 1793406515,
+        "narHash": "sha256-5K32F1jWZ3Q29h3ahklmcqS0vudAT9HhuK7DdMUk52g=",
         "owner": "arkenfox",
         "repo": "user.js",
-        "rev": "fb56d7bb4ed07898c9d94ca7ecc89697dd88cc3c",
+        "rev": "06914fb7d2d4904f078995005b65745ec9861bfc",
         "type": "github"
       },
       "original": {
@@ -187,11 +187,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793193205,
-        "narHash": "sha256-X6xa6sGA7RnJQuZGbFMC+K+KToWAlBDCCjJXfTwEPsw=",
+        "lastModified": 1794865930,
+        "narHash": "sha256-a3My+u9CEwEFmuGXb3PV9COj7Gd8o28b19TvtDiKPfg=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "095fef2f265c3c0da4fe315efba8f8a04495ab34",
+        "rev": "9d7ba6bef3904a018d38b92f83132eaf01eb8ef3",
         "type": "github"
       },
       "original": {
@@ -291,11 +291,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1793543282,
-        "narHash": "sha256-PHtGxKYM99f8WhGR5YD7iiCiwemKa2wUD4yVI2oALFg=",
+        "lastModified": 1794739050,
+        "narHash": "sha256-PCGNIyAydZcdUXCxEXTjrS1+wWS+k9E+ENqBkUK2Mpg=",
         "owner": "nix-community",
         "repo": "nix-index-database",
-        "rev": "cee0f879d338cf08f814210fa6c2b280594ade0a",
+        "rev": "9bd074026d6db75b59aae8cd6071b5f2fe27a36c",
         "type": "github"
       },
       "original": {
@@ -309,11 +309,11 @@
         "nixpkgs": "nixpkgs_6"
       },
       "locked": {
-        "lastModified": 1791373788,
-        "narHash": "sha256-c3oMt0QoE+4yiRk6u1m2L9ogjaUw0uTGn9yk808KkgE=",
+        "lastModified": 1794597451,
+        "narHash": "sha256-bUkc9dMpCFiJuuf5Efr7pnCDs5q18aA8zJah+MYZl9w=",
         "owner": "NixOS",
         "repo": "nixos-hardware",
-        "rev": "4bc63156b109ee7b4103e3ec30565c8c92bde435",
+        "rev": "eb3c90bd715f7a9a28719bb014f53d309ccb2fc8",
         "type": "github"
       },
       "original": {
@@ -450,11 +450,11 @@
     },
     "nixpkgs_7": {
       "locked": {
-        "lastModified": 1793540411,
-        "narHash": "sha256-fiPJ88izTVucjeo2EQ3jk4aWmLg03I1D4vxnX2QjEgE=",
+        "lastModified": 1794537146,
+        "narHash": "sha256-Wpz/7x/YWnDIBu7yj6ixe8j6fIMsidd9Y+o1PqPF3iM=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "0bb2eedc20e4739f29e8045034f2828ad7054f8f",
+        "rev": "d5cc6833999746cffdfe0598f7bc801a57b887a9",
         "type": "github"
       },
       "original": {
@@ -568,11 +568,11 @@
         "nixpkgs": "nixpkgs_9"
       },
       "locked": {
-        "lastModified": 1788930113,
-        "narHash": "sha256-e59wLib52muz5KyAx1e7k6NXQoOKv506ZvLiB1N8CtA=",
+        "lastModified": 1793181960,
+        "narHash": "sha256-lzC5KMwvbcq6KdGDvszX++gU3gp3xWqt7z4yxKAywOY=",
         "owner": "hellodword",
         "repo": "reproducible-violentmonkey",
-        "rev": "e59126b4fee6f53e507aff8c84aa3ba7ff58f509",
+        "rev": "d4ed24b92d60449d1e116e30dddc2f8e9101f7e6",
         "type": "github"
       },
       "original": {
@@ -627,11 +627,11 @@
     "sing-box-geoip": {
       "flake": false,
       "locked": {
-        "lastModified": 1793251285,
-        "narHash": "sha256-ctTEF98vYXacTODT4ctuKkIzCbuMdqqvE4Kx/J1RtvI=",
+        "lastModified": 1794808524,
+        "narHash": "sha256-/8HdGWQ4Gppwfi/LUZxHZPX8TTYuUAu5X9mUgGI+99E=",
         "owner": "lyc8503",
         "repo": "sing-box-rules",
-        "rev": "108148e65a2b576b3e70e96c4f50cfea23870741",
+        "rev": "bd4e00987a468c052e21ccc910f0e8e370d8115c",
         "type": "github"
       },
       "original": {
@@ -644,11 +644,11 @@
     "sing-box-geosite": {
       "flake": false,
       "locked": {
-        "lastModified": 1793251289,
-        "narHash": "sha256-UI+HhDZ7CoZGmwQyEHVVgm15OnEy8yT0J4EIfJwgrpU=",
+        "lastModified": 1794808528,
+        "narHash": "sha256-zvkRMh1RLK9Qs8MgW8nAlxRpN+2uCDRQi5J3fxF1MnE=",
         "owner": "lyc8503",
         "repo": "sing-box-rules",
-        "rev": "bf63d6b850039beec1bdd4636531b18b1d8af1d9",
+        "rev": "80a6a8a82de3087079f9af3c923ab1fc6a64794c",
         "type": "github"
       },
       "original": {
