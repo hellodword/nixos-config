@@ -21,6 +21,7 @@ let
         export GOCACHE="$devtools_cache/go/build"
         export GOPATH="$devtools_cache/go"
         export npm_config_cache="$devtools_cache/npm"
+        export EDITOR=vim
         mkdir -p -m 700 "$XDG_CACHE_HOME" "$TMPDIR" "$HOME/.cache/nix"
         case "$(${pkgs.coreutils}/bin/stat -f -c %T "$TMPDIR")" in
           tmpfs|ramfs)
@@ -52,6 +53,7 @@ let
           tools.sing-box
           tools.actionlint
           tools.oranc
+          vim
         ]
         ++ lib.optionals laptop [
           (import ./route-regex.nix { inherit pkgs; })
