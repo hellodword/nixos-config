@@ -51,6 +51,30 @@
         "type": "github"
       }
     },
+    "cloudflare-ips-v4": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-V4dThTb8iw02hjngubVtSJbEeWgOS1e/ODt1fLjLZvk=",
+        "type": "file",
+        "url": "https://www.cloudflare.com/ips-v4"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://www.cloudflare.com/ips-v4"
+      }
+    },
+    "cloudflare-ips-v6": {
+      "flake": false,
+      "locked": {
+        "narHash": "sha256-BgpkXCAh/MmK3GTAElKiGJctCYUN+/UgvpuawqGmitE=",
+        "type": "file",
+        "url": "https://www.cloudflare.com/ips-v6"
+      },
+      "original": {
+        "type": "file",
+        "url": "https://www.cloudflare.com/ips-v6"
+      }
+    },
     "colmena": {
       "inputs": {
         "nix-github-actions": "nix-github-actions",
@@ -586,6 +610,8 @@
         "agents-misc": "agents-misc",
         "arkenfox-userjs": "arkenfox-userjs",
         "catppuccin-fcitx5": "catppuccin-fcitx5",
+        "cloudflare-ips-v4": "cloudflare-ips-v4",
+        "cloudflare-ips-v6": "cloudflare-ips-v6",
         "colmena": "colmena",
         "disko": "disko",
         "home-manager": "home-manager",

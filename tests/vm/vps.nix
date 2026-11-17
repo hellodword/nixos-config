@@ -36,6 +36,7 @@ let
       ../fixtures/vps.py
       ../fixtures/vps_dns.py
       ../fixtures/vps_certificate.py
+      ../fixtures/vps_http_origin.py
       ../fixtures/vm_network_fixture.py
       ../fixtures/dns_fixture.py
       ../fixtures/network_fixture.py
@@ -97,6 +98,16 @@ let
     security.pki.certificateFiles = [ tls.ca.cert ];
     services.chrony.servers = lib.mkForce [ "nts.test.nix" ];
   };
+  originInputs = inputs // {
+    cloudflare-ips-v4 = builtins.toFile "cloudflare-v4-fixture" ''
+      ${builtins.readFile inputs.cloudflare-ips-v4}
+      192.0.2.32/28
+    '';
+    cloudflare-ips-v6 = builtins.toFile "cloudflare-v6-fixture" ''
+      ${builtins.readFile inputs.cloudflare-ips-v6}
+      2001:db8:1::32/128
+    '';
+  };
   bootstrap =
     lib.mapAttrs (_: system: system.extendModules { modules = [ testNetwork ]; })
       (import ../../nix/vps.nix { inherit inputs metadata; }).bootstrap;
@@ -105,9 +116,17 @@ let
     release:
     (inputs.colmena.lib.makeHive (
       (import ../../nix/vps.nix {
-        inherit inputs;
+        inputs = originInputs;
+        vpsSecretsFile = ../fixtures/vps-secrets + "/${release}.sops.yaml";
         metadata = metadata // {
-          nodes = lib.mapAttrs (_: node: node // { inherit release; }) metadata.nodes;
+          nodes = lib.mapAttrs (
+            name: node:
+            node
+            // {
+              inherit release;
+              modules = lib.optional (name == "west") "modules/vps/http-origin.nix";
+            }
+          ) metadata.nodes;
         };
       }).hive
       // {
@@ -117,9 +136,17 @@ let
             (import ./background.nix { scenario = "vps"; })
           ];
           environment.etc."vps-generation".text = release;
+          systemd.network.networks."10-uplink".address = lib.optional (name == "west") "2001:db8:1::11/64";
+          networking.firewall.allowedUDPPorts = lib.optional (name == "west") 443;
           systemd.services.application = lib.mkIf (name == "west") {
             wantedBy = [ "multi-user.target" ];
             serviceConfig.ExecStart = "${python}/bin/python3 -m http.server 18090 --bind 127.0.0.1 --directory ${pkgs.writeTextDir "index.html" "vps application"}";
+          };
+          systemd.services.http-origin-fixture = lib.mkIf (name == "west") {
+            wantedBy = [ "multi-user.target" ];
+            wants = [ "network-online.target" ];
+            after = [ "network-online.target" ];
+            serviceConfig.ExecStart = "${python}/bin/python3 ${../fixtures/vps_http_origin.py}";
           };
         };
       }
@@ -156,12 +183,18 @@ let
   hive = pkgs.writeText "vps-test-hive.nix" ''
     let
       inputs.nixpkgs-remote = { lib = import ${pkgs.path}/lib; legacyPackages.x86_64-linux = import ${pkgs.path} { system = "x86_64-linux"; }; };
+      inputs.cloudflare-ips-v4 = ${originInputs.cloudflare-ips-v4};
+      inputs.cloudflare-ips-v6 = ${originInputs.cloudflare-ips-v6};
       release = builtins.getEnv "VPS_RELEASE";
       metadata = builtins.fromJSON ${builtins.toJSON (builtins.toJSON metadata)};
       vps = import ${source}/nix/vps.nix {
         inherit inputs;
         directory = "/run/vps";
-        metadata = metadata // { nodes = builtins.mapAttrs (_: node: node // { inherit release; }) metadata.nodes; };
+        vpsSecretsFile = ${../fixtures/vps-secrets} + ("/" + release + ".sops.yaml");
+        metadata = metadata // { nodes = builtins.mapAttrs (name: node: node // {
+          inherit release;
+          modules = if name == "west" then [ "modules/vps/http-origin.nix" ] else [];
+        }) metadata.nodes; };
       };
       systems = {
         ${lib.concatStringsSep "\n" (
@@ -275,6 +308,20 @@ in
           address = "192.0.2.31";
           prefixLength = 24;
         }
+        {
+          address = "192.0.2.32";
+          prefixLength = 24;
+        }
+      ];
+      networking.interfaces.eth1.ipv6.addresses = [
+        {
+          address = "2001:db8:1::30";
+          prefixLength = 64;
+        }
+        {
+          address = "2001:db8:1::32";
+          prefixLength = 64;
+        }
       ];
       environment.systemPackages = [
         python
@@ -282,6 +329,7 @@ in
         (import ../../nix/wrangler.nix { inherit pkgs; })
         pkgs.curl
         pkgs.nftables
+        pkgs.sops
         inputs.nixpkgs.legacyPackages.x86_64-linux.sing-box
         pkgs.wireguard-tools
         inputs.colmena.packages.x86_64-linux.default
@@ -444,7 +492,7 @@ in
             controller.succeed("runuser -u publisher -- ${python}/bin/python3 ${source}/tests/integration/wrangler.py", timeout=120)
         def deploy(release, goal, target="edge,west"):
             for name in target.split(","):
-                status, output = controller.execute(f"VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute < /dev/null", timeout=300)
+                status, output = controller.execute(f"SOPS_AGE_KEY_FILE=${../fixtures/vps-secrets/identity.txt} VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute < /dev/null", timeout=300)
                 if status:
                     for command in ("free -m; df -h / /nix/store; journalctl -b -u nix-daemon -u systemd-oomd --no-pager; dmesg | tail -n 40",
                                     remote({"edge": edge, "west": west}[name], "journalctl -b -u site-vps-proxy -u site-vps-certificate -u nginx --no-pager -n 80")):
@@ -461,6 +509,79 @@ in
         provider = json.loads(controller.succeed("cat /run/vps/provider-v1.json"))
         wait_unit(west, "nginx.service")
         assert controller.succeed("curl --fail --cacert ${tls.ca.cert} --resolve app.test.nix:443:192.0.2.11 https://app.test.nix").strip() == "vps application"
+
+        def origin_request(release, suffix="", source="192.0.2.32", target="192.0.2.11", body=None):
+            address = f"[{target}]" if ":" in target else target
+            command = ["curl", "--fail", "--silent", "--show-error", "--noproxy", "*", "--max-time", "5",
+                       "--interface", source, "-H", "Host: app.example:80", "-H", "CF-Connecting-IP: 203.0.113.77",
+                       "-H", "X-Forwarded-For: 203.0.113.99", "-H", "X-Forwarded-Proto: https"]
+            if body is not None:
+                command.extend(["--data-binary", body])
+            command.append(f"http://{address}/fixture-origin-{release}{suffix}")
+            return json.loads(controller.succeed(shlex.join(command)))
+
+        def wait_origin(release):
+            controller.wait_until_succeeds(
+                f"curl --fail --silent --max-time 5 --interface 192.0.2.32 http://192.0.2.11/fixture-origin-{release}",
+                timeout=60,
+            )
+
+        with subtest("Colmena supplies the origin prefix and HTTP forwarding preserves application requests"):
+            wait_unit(west, "http-origin-fixture.service")
+            wait_origin("v1")
+            assert origin_request("v1")["path"] == "/"
+            assert origin_request("v1", "/")["path"] == "/"
+            response = origin_request("v1", "/items?q=one%20two", body="fixture body")
+            assert (response["method"], response["path"], response["body"]) == ("POST", "/items?q=one%20two", "fixture body"), response
+            assert response["headers"]["Host"] == "app.example:80", response
+            for header in ("X-Real-IP", "X-Forwarded-For"):
+                assert response["headers"][header] == "203.0.113.77", response
+            assert response["headers"]["X-Forwarded-Proto"] == "https", response
+            assert origin_request("v1", source="2001:db8:1::32", target="2001:db8:1::11")["path"] == "/"
+            assert json.loads(succeed(west, "curl --fail --silent http://127.0.0.1/fixture-origin-v1"))["path"] == "/"
+            assert controller.succeed("curl --silent --max-time 5 --interface 192.0.2.32 -o /dev/null -w '%{http_code}' http://192.0.2.11/") == "404"
+            websocket = """
+        import socket
+        with socket.create_connection(('192.0.2.11', 80), timeout=5, source_address=('192.0.2.32', 0)) as connection:
+            connection.sendall(b'GET /fixture-origin-v1/socket HTTP/1.1\\r\\nHost: app.example\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Version: 13\\r\\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\\r\\n\\r\\n')
+            reader = connection.makefile('rb')
+            assert b'101' in reader.readline()
+            while True:
+                line = reader.readline()
+                assert line, 'WebSocket upgrade closed before headers completed'
+                if line == b'\\r\\n':
+                    break
+            payload, mask = b'websocket echo', b'1234'
+            connection.sendall(bytes([0x81, 0x80 | len(payload)]) + mask + bytes(v ^ mask[i % 4] for i, v in enumerate(payload)))
+            assert reader.read(2) == bytes([0x81, len(payload)])
+            assert reader.read(len(payload)) == payload
+        """
+            controller.succeed("python3 -c " + shlex.quote(textwrap.dedent(websocket)))
+
+        with subtest("Cloudflare source restrictions cover IPv4 and IPv6 TCP and UDP"):
+            probe = """
+        import socket, sys
+        source, target, protocol, port, allowed = sys.argv[1:]
+        family = socket.AF_INET6 if ':' in target else socket.AF_INET
+        with socket.socket(family, socket.SOCK_STREAM if protocol == 'tcp' else socket.SOCK_DGRAM) as connection:
+            connection.settimeout(3)
+            connection.bind((source, 0))
+            try:
+                connection.connect((target, int(port)))
+                if protocol == 'udp':
+                    connection.send(b'port probe')
+                    assert connection.recv(100) == b'port probe'
+            except TimeoutError:
+                assert allowed == 'false', (source, target, protocol, port)
+            else:
+                assert allowed == 'true', (source, target, protocol, port)
+        """
+            for target, regular, cloudflare in (("192.0.2.11", "192.0.2.30", "192.0.2.32"),
+                                                ("2001:db8:1::11", "2001:db8:1::30", "2001:db8:1::32")):
+                for source, allowed in ((regular, True), (cloudflare, False)):
+                    for protocol, port, expected in (("tcp", 80, not allowed), ("tcp", 443, allowed), ("udp", 443, allowed)):
+                        controller.succeed(shlex.join(["python3", "-c", textwrap.dedent(probe), source, target, protocol, str(port), str(expected).lower()]))
+
         def request(path, expected, domain="origin.fixture.example"):
             config = {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": 11080}], "outbounds": [path]}
             config["outbounds"][0]["tls"]["certificate_path"] = "${tls.ca.cert}"
@@ -553,8 +674,24 @@ in
                     print("Certificate diagnostics:", error)
                 raise
             controller.succeed("rm /run/certificate-unavailable", timeout=10)
+        with subtest("Boot deployment preserves active credentials until reboot"):
+            deploy("v2", "boot", "west")
+            # A restart before reboot still uses the running generation's credential path.
+            succeed(west, "systemctl restart nginx.service")
+            wait_origin("v1")
+            assert origin_request("v1")["path"] == "/"
+            powercycle(west)
+            wait_unit(west, "nginx.service")
+            wait_unit(west, "http-origin-fixture.service")
+            wait_origin("v2")
+            assert origin_request("v2")["path"] == "/"
+            deploy("v1", "switch", "west")
+            wait_origin("v1")
+            assert origin_request("v1")["path"] == "/"
         with subtest("Test, switch, reboot and rollback retain the required credentials"):
             deploy("v2", "test", "west")
+            wait_origin("v2")
+            assert origin_request("v2")["path"] == "/"
             wait_unit(west, "site-vps-proxy.service")
             assert succeed(west, "cat /etc/vps-generation") == "v2"
             assert succeed(west, "cat /nix/var/nix/profiles/system/etc/vps-generation") == "v1"
@@ -568,6 +705,8 @@ in
             succeed(west, "nix-env -p /nix/var/nix/profiles/system --rollback; /nix/var/nix/profiles/system/bin/switch-to-configuration switch")
             wait_unit(west, "site-vps-proxy.service")
             assert succeed(west, "cat /etc/vps-generation") == "v1"
+            wait_origin("v1")
+            assert origin_request("v1")["path"] == "/"
             old_path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
             request(old_path, "192.0.2.11")
             succeed(west, "test -f /var/lib/site-vps/releases/v1/proxy.json; test -f /var/lib/site-vps/releases/v2/proxy.json")

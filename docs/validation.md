@@ -83,7 +83,7 @@ nix develop .#vps --command python3 .github/ci/evaluate.py \
 | `vm-backup` | 实际窗口触发、独立仓库、中断和有界关机、重启恢复、gVisor 通知与补发 |
 | `vm-desktop` | 三会话登录、注销、锁屏、钱包、壁纸、输入法与显示状态，以及加密启动和重启后的恢复 |
 | `vm-applications` | 三会话中的真实应用启动、中文输入与退出提醒；Sway 完成共享的 DevContainer 和 Vaultwarden 全流程 |
-| `vm-vps` | 实际 bootstrap 镜像的 BIOS/UEFI 启动、512 MiB 客体、DHCP/静态网络、扩容与 swap、独立于节点名的 SSH 别名、指定身份、非默认端口及 SOCKS 代理下的 Colmena 凭据下发与 test/switch、跨节点协议转发、多承载出口故障切换、路径选择与连接延续、系统 DoT 与 NTS、用户态隧道出口、重启回滚及 Wrangler 沙箱中的 Worker 打包 |
+| `vm-vps` | 实际 bootstrap 镜像的 BIOS/UEFI 启动、512 MiB 客体、DHCP/静态网络、扩容与 swap、SSH 别名及代理下的 Colmena 凭据交付与 test/boot/switch、HTTP 回源与双栈入口策略、跨节点协议转发、多承载出口故障切换、路径选择与连接延续、系统 DoT 与 NTS、用户态隧道出口、重启回滚及 Wrangler 沙箱中的 Worker 打包 |
 | `vm-files` | 双节点设备证书认证与撤销、HTTPS 登录和会话、WebDAV、加密 SMB、随机访问码输入与描述文件交付、跨平台证书文件导出、临时分享及请求日志 |
 | `e2e` | network、backup、desktop、applications、vps 五项 VM 结果的聚合 |
 

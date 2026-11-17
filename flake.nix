@@ -3,6 +3,14 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-remote.url = "github:NixOS/nixpkgs/nixos-unstable";
+    cloudflare-ips-v4 = {
+      url = "file+https://www.cloudflare.com/ips-v4";
+      flake = false;
+    };
+    cloudflare-ips-v6 = {
+      url = "file+https://www.cloudflare.com/ips-v6";
+      flake = false;
+    };
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";

@@ -1,0 +1,17 @@
+secrets:
+    west-http-origin-prefix: ENC[AES256_GCM,data:zA1tU2PfDo5r9pDKwN9C/WzJ,iv:evwfvgNUegcnWFoK98s7HPoP1FdmGkod6RxXkvZrtGI=,tag:5jecXuI2Bg9G1WSgnRjpcQ==,type:str]
+sops:
+    age:
+        - enc: |
+            -----BEGIN AGE ENCRYPTED FILE-----
+            YWdlLWVuY3J5cHRpb24ub3JnL3YxCi0+IFgyNTUxOSBWY24xR09xTVBlSUlOQk9S
+            eGxjMHQ3NFlRYlVCUWp6M1V1VnRpUUl5NGdZClg1SkFvc0g0NEZ6RWtwc3d2TVNw
+            K1k1czhBQitzS0NYQUNneHZ0Y3YwbEUKLS0tIHpqNDZkQmlmNUhJaUMrV0FzVXFo
+            NWtxOHVRQVBYUXlpd1ZvY29EYURVL0UKEEYIUpNYOxG/vj62eNHPeo2PjhEyZcg4
+            vgtSsYlOKu1a27XEK7EUa1qD2bpHg3d5aowghm+JKuQ3/A4tnNE/mg==
+            -----END AGE ENCRYPTED FILE-----
+          recipient: age1ct5anctcqclpceur6pqghmggs04hkwzz7wajjqyvkxk8xzl6ed5sgqwn4v
+    lastmodified: "2026-11-17T12:08:23Z"
+    mac: ENC[AES256_GCM,data:HBJo1J4xuF2y8QhDscTPaRunieOVKdV8fkO7jSwe8P7Iq5iaykUCKD9CWmCwPvhV7UkIirf8+5XDLLWK5zSw8GBKi/IhmPiuDxSoqbLKeC686ZE39OmOh7/qCIuErls98XJSJKTCwgIwhDGfuXlAshJ4L2Cqy35KXMEKmYsDXhM=,iv:Tq33EJacp+tmL4MN4RkT7mhOIGDF2HKFCd26V+TaeCE=,tag:GuhQJsXNZeTwSo3qDL0Lqg==,type:str]
+    unencrypted_suffix: _unencrypted
+    version: 3.13.3

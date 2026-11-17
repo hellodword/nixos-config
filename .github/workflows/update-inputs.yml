@@ -41,7 +41,7 @@ jobs:
             "$NIX_IMAGE" bash -euo pipefail -c '
               git config --global --add safe.directory /workspace
               if [[ "$SCOPE" == remote ]]; then
-                nix flake update nixpkgs-remote
+                nix flake update nixpkgs-remote cloudflare-ips-v4 cloudflare-ips-v6
               else
                 nix flake update \
                 catppuccin-fcitx5 nixos-hardware plasma-manager sing-box-geosite nixpkgs \

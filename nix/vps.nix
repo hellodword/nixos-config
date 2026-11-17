@@ -6,6 +6,7 @@
     in
     if cwd == "" then "" else cwd + "/tmp/vps",
   metadata ? null,
+  vpsSecretsFile ? ../secrets/vps.sops.yaml,
 }:
 let
   inherit (inputs.nixpkgs-remote) lib;
@@ -37,6 +38,7 @@ let
   ) inventory.nodes;
   hive = {
     meta.nixpkgs = inputs.nixpkgs-remote.legacyPackages.x86_64-linux;
+    meta.specialArgs = { inherit inputs vpsSecretsFile; };
   }
   // lib.mapAttrs (name: node: { ... }: {
     imports =

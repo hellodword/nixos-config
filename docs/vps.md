@@ -48,7 +48,30 @@ sops decrypt secrets/vps.sops.yaml |
 
 Nix 和 Colmena 命令通过 `--impure` 读取 `tmp/vps/metadata.json`。密码、隧道私钥和证书获取 token 由 Colmena 从绝对路径读取并单独下发，留在 Nix store 之外。拓扑、SSH 公钥和服务声明会进入系统闭包，因此私有系统在维护机本地构建和分发。
 
-每台 VPS 只收到属于自身的代理服务配置和证书请求凭据，保存于 `/var/lib/site-vps/releases/<代次>/`。客户端只收到被授权的代理路径。age 身份和上游出口凭据不随订阅交付；Porkbun API 凭据只交给证书 Worker。
+每台 VPS 收到自身服务所需的凭据，其中代理配置和证书请求保存在 `/var/lib/site-vps/releases/<代次>/`。客户端只收到被授权的代理路径。age 身份和上游出口凭据不随订阅交付；Porkbun API 凭据只交给证书 Worker。
+
+### 节点模块与秘密
+
+`nodes.<节点>.modules` 引用仓库内的 NixOS 模块，服务配置和防火墙规则在模块中声明。完整系统的模块可使用 `inputs` 读取锁定的 flake 输入，使用 `vpsSecretsFile` 获取本轮加密 inventory 的路径。
+
+模块通过 Colmena 的 `deployment.keys.keyCommand` 调用维护机上的 `sops decrypt --extract`，从 YAML 的 `secrets` 表提取所需值。部署沿用维护机的 SOPS 身份，节点只接收提取出的文件。服务用 `LoadCredential` 或自身的秘密文件选项读取；需要将秘密嵌入配置时，在启动前生成运行时配置并执行服务自身的配置检查。声明方式见 [HTTP origin 模块](../modules/vps/http-origin.nix)，Colmena 参数见[密钥交付说明](https://colmena.cli.rs/unstable/features/keys.html)。
+
+例如，节点上的应用监听 `127.0.0.1:8080`，通过以下声明提供 HTTP 入口：
+
+```yaml
+nodes:
+  edge:
+    modules:
+      - modules/vps/http-origin.nix
+secrets:
+  edge-http-origin-prefix: /替换为随机UUID
+```
+
+用 `python3 -c 'import uuid; print(uuid.uuid4())'` 生成 UUID，在前面加 `/`，填入 `secrets.<节点>-http-origin-prefix`。路径只包含一个由字母、数字、连字符或下划线组成的段。`/秘密前缀` 和 `/秘密前缀/` 转到应用根路径，`/秘密前缀/path?q=1` 转到 `/path?q=1`；其他路径返回 404。转发保留方法、查询、正文和 Host，支持 WebSocket，并将 Cloudflare 提供的客户端地址和外部协议传给应用。
+
+该模块监听 TCP 80，并在 IPv4、IPv6 上允许 Cloudflare 地址段访问；其他外部来源的 TCP 80，以及 Cloudflare 来源的 TCP/UDP 443 被丢弃。loopback 可用于本机诊断，其余 443 流量沿用节点已有策略。供应商防火墙也需要放行 TCP 80。地址段由锁定的 Cloudflare 输入提供，随 remote 更新、部署生效。来源限制确认的是 Cloudflare 网络，秘密路径用于区分可访问的入口。
+
+前缀文件以 root `0600` 保存到 `/var/lib/site-http-origin/credentials/<密文摘要>/`。每版加密 YAML 使用独立目录，`apply boot` 交付的新前缀在重启后启用，当前代次和回滚继续读取各自的文件。重新保存 YAML 会产生新目录；清理旧系统代次时，可一并清理已无代次引用的凭据目录。
 
 ## 部署 Workers
 
