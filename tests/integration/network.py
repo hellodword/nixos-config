@@ -148,6 +148,11 @@ def purpose_paths(args, templates):
                     ("baidu.com", "cn"), ("qq.com", "cn"), ("weixin.qq.com", "cn"),
                     ("foo.weixin.qq.com", "cn"), ("jd.com", "cn"), ("taobao.com", "cn"),
                     ("tencent.com", "cn"), ("mmbiz.qpic.cn", "cn"), ("imap.wo.cn", "cn"),
+                    ("aliapp.org", "cn"), ("snssdk.com", "cn"), ("fixture.snssdk.com", "cn"),
+                    ("getui.com", "cn"), ("getui.net", "cn"), ("jpush.io", "cn"),
+                    ("cdn.jsdelivr.net", "cn"),
+                    # The general overseas seed also contains this domestic domain.
+                    ("hsbc.com.cn", "cn"),
                     ("unclassified-fixture.example.cn", "cn"),
                     ("unclassified-fixture.example.org", "west"),
                 ]

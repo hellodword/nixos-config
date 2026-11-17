@@ -58,7 +58,7 @@ def shadowrocket(provider, subscription_name=None):
             pattern = "^(?:" + "|".join(re.escape(path) for path in exit_["paths"]) + ")$"
             members = f"{subscription_name}, use=true, policy-regex-filter={pattern}"
         lines.append(f"exit-{name}-auto = url-test, {members}" +
-                     ", url=https://www.gstatic.com/generate_204, interval=180, tolerance=100")
+                     ", url=https://www.gstatic.com/generate_204, interval=600, tolerance=0, timeout=5")
         lines.append(f"exit-{name} = select, exit-{name}-auto, {members}")
     for name, binding in provider["groups"].items():
         choices = [binding["default"], *(e for e in binding["exits"] if e != binding["default"])]

@@ -42,7 +42,9 @@ flowchart TD
 
 下载分类优先。例如 GitHub 页面使用 `hideme`，release 附件使用 `downloads`；`storage.googleapis.com` 及其子域中的文件和应用附件都使用 `downloads`。YouTube 先于 Google，Apple TV 和 APNs 先于 Apple。用途与出口协议相互独立，`downloads` 可绑定到 VPS 的 native 出口。
 
-随后依次处理中国公司海外服务的 `@!cn` 例外、Cloudflare/Fastly 平台域名、一般海外域名，均使用 `proxy`。进入国内兜底后，`.cn` 域名和国内域名列表收录的站点使用 `direct`；`.cn` 即使尚未被列表收录也直连。例如 `mmbiz.qpic.cn`、`imap.wo.cn` 命中 `.cn` 规则，`qq.com`、`weixin.qq.com` 命中国内列表；`wetv.qq.com` 先命中海外服务例外，使用 `proxy`，PCDN 子域先命中拦截规则。剩余带域名的连接使用 `hideme`，即使解析到国内 IP。
+业务用途之后先处理中国公司海外服务的 `@!cn` 例外，再处理策略中明确直连的服务，如国内推送 SDK 和 `cdn.jsdelivr.net`，随后匹配 Cloudflare/Fastly 平台分类。海外服务例外和平台分类使用 `proxy`。
+
+国内兜底先匹配 `.cn`，再匹配各客户端的国内域名列表，随后才匹配一般海外集合。普通站点同时被国内与一般海外列表收录时使用 `direct`，只命中一般海外集合时使用 `proxy`。例如 `mmbiz.qpic.cn`、`imap.wo.cn` 命中 `.cn` 规则，`qq.com`、`weixin.qq.com` 命中国内列表；`wetv.qq.com` 先命中海外服务例外，使用 `proxy`，PCDN 子域先命中拦截规则。剩余带域名的连接使用 `hideme`，即使解析到国内 IP。
 
 没有域名的连接继续匹配服务 IP：Telegram/Tor → `hideme`，Netflix → `streaming`，Facebook/Twitter → `social`，APNs → `apns`；然后国内 IP → `direct`，其余 → `hideme`。Shadowrocket 在前面的 SSH/RDP、infrastructure GEOIP 判断中允许解析域名；这里的末尾 IP 规则使用 `no-resolve`，带域名的请求继续到 `FINAL`。DNS 从同一份域名规则生成分类，未命中时也使用 `hideme`。
 

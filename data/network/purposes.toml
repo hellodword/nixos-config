@@ -308,19 +308,21 @@ rule_set = [
 action = "route"
 outbound = "proxy"
 
+# 国内 SDK、推送服务和 jsDelivr 使用直连。
+[[rules]]
+scope = "domain"
+domain = ["cdn.jsdelivr.net"]
+domain_suffix = ["aliapp.org", "snssdk.com", "getui.com", "getui.net", "jpush.io"]
+action = "route"
+outbound = "direct"
+
 [[rules]]
 scope = "domain"
 rule_set = ["geosite-cloudflare", "geosite-fastly"]
 action = "route"
 outbound = "proxy"
 
-[[rules]]
-scope = "domain"
-rule_set = ["geosite-geolocation-!cn"]
-action = "route"
-outbound = "proxy"
-
-# 国内兜底先匹配 .cn，再匹配各客户端的国内域名集合。
+# 国内兜底先匹配 .cn，再匹配各客户端的国内域名集合，优先于一般海外集合。
 [[rules]]
 scope = "domain"
 domain_suffix = ["cn"]
@@ -332,6 +334,12 @@ scope = "domain"
 rule_set = ["geosite-geolocation-cn"]
 action = "route"
 outbound = "direct"
+
+[[rules]]
+scope = "domain"
+rule_set = ["geosite-geolocation-!cn"]
+action = "route"
+outbound = "proxy"
 
 # 带域名的连接到这里即使用 hideme，解析到国内 IP 也保持此选择。
 # Shadowrocket 的后续 IP 规则使用 no-resolve，带域名的请求由 FINAL 处理。
