@@ -35,6 +35,13 @@ in
         enableSSHSupport = true;
         enableExtraSocket = true;
         pinentryPackage = pkgs.pinentry-qt;
+        settings = {
+          default-cache-ttl = 14400;
+          default-cache-ttl-ssh = 14400;
+          max-cache-ttl = 86400;
+          max-cache-ttl-ssh = 86400;
+          no-allow-external-cache = "";
+        };
       };
       systemd.services.site-identity = lib.mkIf (cfg.identityFile != null) {
         description = "Publish SSH and Git identities from declared OpenPGP subkeys";

@@ -104,6 +104,68 @@ git config --show-origin --get user.signingkey
 git verify-commit HEAD
 ```
 
+### 口令缓存
+
+软件私钥的口令由本人在 Pinentry 中输入，GPG agent 在内存中缓存；Pinentry 的外部口令缓存已关闭。普通 GPG 操作与 SSH 身份的缓存均为空闲 4 小时、最长 24 小时：使用对应缓存会刷新空闲计时，最长时限从该条缓存建立时计算。不同身份可能分别要求输入口令。[GnuPG 的缓存选项](https://www.gnupg.org/documentation/manuals/gnupg/Agent-Options.html)说明了两种时限的含义。
+
+日常时长在 [CLI 模块](../modules/core/cli.nix)中声明。个人 `~/.gnupg/gpg-agent.conf` 在系统配置之后读取，可覆盖这些值；如果仍频繁询问，检查其中的 TTL 和 `ignore-cache-for-signing`，以及旧 `sshcontrol` 中是否为某个 keygrip 指定了单独的 TTL。
+
+切换系统配置后，在自己的用户会话中让已运行的 agent 读取新时长。此命令也用于随时清空 GPG 和 SSH 口令缓存：
+
+```sh
+gpgconf --reload gpg-agent
+```
+
+下一次使用私钥时重新输入口令。重载、退出或重启 agent 都会清空缓存；已建立的 SSH 连接及其连接复用不受影响。
+
+### 临时长缓存
+
+需要长时间工作时，可在自己的用户会话中执行以下命令，将四个时限设为 `2147483647` 秒（约 68 年），实际持续到缓存被清空或 agent 退出。运行时文件只包含配置，口令仍由 Pinentry 手动输入。
+
+```sh
+(
+  umask 077
+  {
+    gpg_home=$(gpgconf --list-dirs homedir)
+    if [ -f "$gpg_home/gpg-agent.conf" ]; then
+      cat "$gpg_home/gpg-agent.conf"
+    fi
+    printf '\n'
+    cat <<'EOF'
+default-cache-ttl 2147483647
+default-cache-ttl-ssh 2147483647
+max-cache-ttl 2147483647
+max-cache-ttl-ssh 2147483647
+EOF
+  } > "$XDG_RUNTIME_DIR/gpg-agent-session.conf"
+)
+
+systemctl --user edit --runtime --stdin \
+  --drop-in=90-cache-session.conf gpg-agent.service <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/run/current-system/sw/bin/gpg-agent --supervised --options %t/gpg-agent-session.conf
+EOF
+systemctl --user restart gpg-agent.service
+```
+
+系统配置仍会读取，个人配置在启用时复制到运行时文件，末尾的四个值决定缓存时长。启用时重启 agent，下一次使用各身份时需要输入口令。此后 `gpgconf --reload gpg-agent` 可清空缓存并保留长缓存策略；运行时策略在重启机器或用户运行时目录被回收后消失。
+
+提前恢复日常策略：
+
+```sh
+rm -f -- "$XDG_RUNTIME_DIR/gpg-agent-session.conf" \
+  "$XDG_RUNTIME_DIR/systemd/user/gpg-agent.service.d/90-cache-session.conf"
+systemctl --user daemon-reload
+systemctl --user restart gpg-agent.service
+```
+
+### 缓存期间的身份权限
+
+延长缓存增加了程序能够使用私钥的时间。能访问用户 agent socket 的进程可以请求签名、SSH 认证或解密，未必需要先获知口令或导出私钥。因此，同用户运行的恶意程序是主要风险；向容器挂载 agent socket 或向远端转发 agent，也会授予相应的身份使用能力。项目默认关闭 SSH agent 转发，单独持有 `/etc/ssh/gpg.*.pub` 文件只提供公钥。
+
+缓存时长不能隔离已取得 root、内核或进程内存访问权的攻击者。磁盘与 swap 加密保护关机后的存储，运行期间仍需信任主机和获准访问 agent 的程序。
+
 ## 声明式 Wi-Fi
 
 SSID 和密码写入 `system.sops.yaml` 的 `wifi/environment`，公开的 Nix 声明通过变量名引用它们。以下 `home` 是 NetworkManager 中显示的连接别名，可以自行改名，与真实 SSID 无关。
