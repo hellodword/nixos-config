@@ -15,6 +15,29 @@ let
     p.dnspython
     p.h2
   ]);
+  dockerImage = pkgs.dockerTools.buildImage {
+    name = "vps-network";
+    tag = "test";
+    copyToRoot = pkgs.buildEnv {
+      name = "vps-network-root";
+      paths = [
+        pkgs.busybox
+        (pkgs.writeTextDir "www/index.html" "vps container")
+      ];
+      pathsToLink = [
+        "/bin"
+        "/www"
+      ];
+    };
+    config.Cmd = [
+      "/bin/httpd"
+      "-f"
+      "-p"
+      "8080"
+      "-h"
+      "/www"
+    ];
+  };
   source = lib.fileset.toSource {
     root = ../..;
     fileset = lib.fileset.unions [
@@ -76,6 +99,8 @@ let
       };
       udpPort = if name == "edge" then 20000 else 20001;
       release = "v1";
+      modules =
+        if name == "edge" then [ "modules/vps/docker.nix" ] else [ "modules/vps/http-origin.nix" ];
       certificateId = "fixture";
       web = lib.optionalAttrs (name == "west") { "app.test.nix" = "http://127.0.0.1:18090"; };
     });
@@ -124,7 +149,6 @@ let
             node
             // {
               inherit release;
-              modules = lib.optional (name == "west") "modules/vps/http-origin.nix";
             }
           ) metadata.nodes;
         };
@@ -193,7 +217,6 @@ let
         vpsSecretsFile = ${../fixtures/vps-secrets} + ("/" + release + ".sops.yaml");
         metadata = metadata // { nodes = builtins.mapAttrs (name: node: node // {
           inherit release;
-          modules = if name == "west" then [ "modules/vps/http-origin.nix" ] else [];
         }) metadata.nodes; };
       };
       systems = {
@@ -265,7 +288,7 @@ in
           interface = "eth1";
           bind-interfaces = true;
           no-resolv = true;
-          port = 0;
+          host-record = "docker.fixture.example,198.51.100.30";
           dhcp-range = "192.0.2.0,static,255.255.255.0";
           dhcp-host = "${
             (import (pkgs.path + "/nixos/lib/qemu-common.nix") { inherit (pkgs) lib stdenv; }).qemuNicMac 1
@@ -283,6 +306,7 @@ in
         pkgs.path
         credentials
         hive
+        dockerImage
       ];
       nix.settings = {
         experimental-features = [
@@ -414,6 +438,7 @@ in
     with runtime["scenario"]([controller, edge, west], lambda: [
         (controller, "stream", "systemctl status vps-client vps-stream --no-pager; cat /run/stream-request /run/stream-response; journalctl -b -u vps-stream -u vps-client -n 100 --no-pager"),
         (controller, "edge", "ssh -n -o BatchMode=yes -o ConnectTimeout=3 ${metadata.nodes.edge.sshHost} 'systemctl --failed --no-pager; journalctl -b -u site-vps-proxy -n 100 --no-pager'"),
+        (controller, "docker", "ssh -n -o BatchMode=yes -o ConnectTimeout=3 ${metadata.nodes.edge.sshHost} 'docker ps -a; docker network ls; nft list ruleset; journalctl -b -u docker --no-pager -n 80'"),
         (controller, "west", "ssh -n -o BatchMode=yes -o ConnectTimeout=3 ${metadata.nodes.west.sshHost} 'systemctl --failed --no-pager; journalctl -b -u site-vps-proxy -n 100 --no-pager'"),
     ]):
         import datetime
@@ -506,6 +531,30 @@ in
         for machine in (edge, west):
             wait_unit(machine, "site-vps-proxy.service")
             succeed(machine, "test $(stat -c %a /var/lib/site-vps/releases/v1/proxy.json) = 600")
+
+        def docker_connectivity():
+            controller.wait_until_succeeds(
+                "test \"$(curl --fail --silent --show-error --max-time 5 http://192.0.2.10:18081/)\" = 'vps container'",
+                timeout=60,
+            )
+            for network in ("bridge", "vps-fixture"):
+                address = succeed(edge, f"docker run --rm --network {network} vps-network:test wget -T 5 -qO- http://docker.fixture.example:18080/")
+                assert address.strip() == "192.0.2.10", (network, address)
+            body = succeed(edge, "docker run --rm --network vps-fixture vps-network:test wget -T 5 -qO- http://fixture-web:8080/")
+            assert body.strip() == "vps container", body
+
+        with subtest("Docker bridges resolve DNS, reach external services and publish container ports"):
+            wait_unit(edge, "docker.service")
+            controller.succeed("ssh -o BatchMode=yes ${metadata.nodes.edge.sshHost} docker load < ${dockerImage}", timeout=120)
+            succeed(edge, "docker network create vps-fixture")
+            succeed(edge, "docker run -d --restart=always --name fixture-web --network vps-fixture -p 18081:8080 vps-network:test")
+            docker_connectivity()
+        with subtest("Docker connectivity survives daemon restart and firewall reload"):
+            succeed(edge, "systemctl restart docker.service")
+            docker_connectivity()
+            succeed(edge, "systemctl reload nftables.service")
+            docker_connectivity()
+
         provider = json.loads(controller.succeed("cat /run/vps/provider-v1.json"))
         wait_unit(west, "nginx.service")
         assert controller.succeed("curl --fail --cacert ${tls.ca.cert} --resolve app.test.nix:443:192.0.2.11 https://app.test.nix").strip() == "vps application"
@@ -712,6 +761,7 @@ in
             succeed(west, "test -f /var/lib/site-vps/releases/v1/proxy.json; test -f /var/lib/site-vps/releases/v2/proxy.json")
         powercycle(edge)
         wait_unit(edge, "site-vps-proxy.service")
+        docker_connectivity()
         for machine in (edge, west):
             print(succeed(machine, "df -h / /boot; swapon --show"))
             poweroff(machine)

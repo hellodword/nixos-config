@@ -43,7 +43,10 @@ let
   // lib.mapAttrs (name: node: { ... }: {
     imports =
       nodeModules name node
-      ++ [ ../modules/vps/proxy.nix ]
+      ++ [
+        ../modules/vps/proxy.nix
+        ../profiles/vps/tools.nix
+      ]
       ++ map (path: ../. + "/${path}") (node.modules or [ ]);
     deployment = {
       targetHost = node.sshHost;

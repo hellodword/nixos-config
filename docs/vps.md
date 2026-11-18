@@ -596,6 +596,14 @@ VPS 使用独立锁定的 `nixpkgs-remote` 和轻量 profile：持久 ext4 根�
 
 VPS 的状态随根磁盘保留。这里采用普通持久系统，便于保留 SSH host key、服务数据、证书和可回滚的凭据。应用使用原生 NixOS 模块；每个节点的 `modules` 数组列出仓库相对路径，为完整系统组合不同服务。网络、磁盘和 SSH 服务端来自同一份基础配置，bootstrap 与完整系统共用。
 
+完整系统提供 Vim、Screen，以及文件传输、网络诊断和进程排查工具，清单见[维护工具配置](../profiles/vps/tools.nix)。Vim 是默认编辑器；交互 shell 提供 `ll`、`la` 和 `..`。这些工具在 Colmena 部署完整系统时安装，bootstrap 保持精简。
+
+### Docker
+
+需要容器的节点在 `modules` 中加入 `modules/vps/docker.nix`。Docker 随系统启动，容器数据保存在 `/var/lib/docker`。系统防火墙允许 `docker0` 和默认命名为 `br-*` 的自定义 bridge 转发；Docker 管理容器 NAT、隔离和端口发布，同时保留 VPS 节点间的代理转发。
+
+容器使用 Docker 原生 DNS：默认 bridge 使用宿主上游解析器地址，自定义 bridge 使用 Docker 内置解析器，并支持同一网络内的容器名。容器向上游发送普通 DNS 查询；VPS 宿主自身仍使用严格 DoT。应用可通过 Docker 的 `--dns` 或 Compose 的 `dns` 设置指定解析器。
+
 ## 撤销订阅
 
 更换订阅地址时生成新的 UUID，更新 `path` 并重新发布订阅 Worker，再把新地址交给使用者。撤销整份订阅时删除对应条目，按[更新已有 VPS](#更新已有-vps)使相关节点的新认证配置生效，再发布订阅 Worker，使已有代理凭据和下载入口均失效。
