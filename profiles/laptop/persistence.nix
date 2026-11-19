@@ -131,6 +131,7 @@ in
         "go"
         ".docker"
         ".codex"
+        ".gemini"
         ".agents-viewer"
         ".cache/nix"
         ".cache/nix-index"
