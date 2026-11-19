@@ -31,8 +31,10 @@ in
   time.timeZone = "America/New_York";
   virtualisation.docker.storageDriver = "btrfs";
   virtualisation.docker.daemon.settings.bip = "${caches.project.listenAddress}/16";
-  # Preserve the tested sleep mode; S3/hibernate changes require hardware validation.
-  systemd.sleep.settings.Sleep.SuspendState = "freeze";
+  systemd.sleep.settings.Sleep = {
+    AllowSuspend = false;
+    AllowHibernation = false;
+  };
 
   boot.kernelPackages = pkgs.linuxPackages_6_18;
   # Make the laptop display available for the graphical LUKS prompt.

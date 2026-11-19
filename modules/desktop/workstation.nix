@@ -75,7 +75,6 @@ in
     services.displayManager.sddm = {
       enable = true;
       wayland.enable = true;
-      theme = if cfg.plasma.enable then "site-breeze" else "";
       settings.Theme = lib.mkIf cfg.plasma.enable {
         CursorTheme = "breeze_cursors";
         CursorSize = 24;
@@ -370,23 +369,21 @@ in
       font=${builtins.head config.fonts.fontconfig.defaultFonts.sansSerif},10,-1,5,50,0,0,0,0,0
       fixed=${builtins.head config.fonts.fontconfig.defaultFonts.monospace},11,-1,5,50,0,0,0,0,0
     '';
-    environment.systemPackages =
-      lib.optional cfg.plasma.enable (import ../../nix/sddm-theme.nix { inherit pkgs; })
-      ++ (with pkgs; [
-        waybar
-        mako
-        dunst
-        pavucontrol
-        libnotify
-        wl-clipboard
-        xclip
-        brightnessctl
-        kdePackages.kwallet
-        kdePackages.kwalletmanager
-        kdePackages.dolphin
-        kdePackages.okular
-        kdePackages.breeze-icons
-        adwaita-icon-theme
-      ]);
+    environment.systemPackages = with pkgs; [
+      waybar
+      mako
+      dunst
+      pavucontrol
+      libnotify
+      wl-clipboard
+      xclip
+      brightnessctl
+      kdePackages.kwallet
+      kdePackages.kwalletmanager
+      kdePackages.dolphin
+      kdePackages.okular
+      kdePackages.breeze-icons
+      adwaita-icon-theme
+    ];
   };
 }

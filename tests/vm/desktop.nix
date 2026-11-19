@@ -482,8 +482,8 @@ in
         machine.screenshot("boot-unlocked-sway")
         stop_session(machine, "sway", menu=True)
 
-    def login_session(machine, session, compositor):
-        login(machine)
+    def login_session(machine, session, compositor, *, screenshot=None):
+        login(machine, screenshot=screenshot)
         machine.wait_until_succeeds(process(compositor), timeout=180)
         gui["wait_for_session"](machine, session, user_command)
         machine.wait_until_succeeds(user_command("systemctl --user is-active graphical-session.target desktop-health.timer"), timeout=60)
@@ -607,9 +607,7 @@ in
                 "printf '%s' /home/desktop/Pictures/wallpaper/personal.png > ~/.local/state/site-wallpaper/current; "
                 "printf '%s' " + shlex.quote(json.dumps(saved_fetch)) + " > ~/.local/state/site-wallpaper/fetch.json"
             ))
-        visible(machine, r"(?i)\bdesktop\b", timeout=90)
-        machine.screenshot("sddm-" + machine.name)
-        login_session(machine, session, compositor)
+        login_session(machine, session, compositor, screenshot="sddm-" + machine.name)
         unlock(machine, session)
         if session in ("sway", "i3"):
             machine.wait_for_unit("nginx.service")

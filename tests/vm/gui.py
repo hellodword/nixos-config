@@ -397,25 +397,28 @@ def qt_password_focus(machine, pid, deadline):
     raise AssertionError("Password control has no active focus: " + last)
 
 
-def login(machine):
+def login(machine, *, screenshot=None):
     """Authenticate through SDDM so the real PAM wallet lifecycle runs."""
     from datetime import timedelta
     machine.wait_for_unit("display-manager.service")
     machine.wait_for_unit("home-manager-desktop.service")
-    # SDDM can render its first frame before registering the view and giving
-    # the password field keyboard focus. Observe the current greeter instance
-    # so this also applies to a fresh login after logout.
-    machine.wait_until_succeeds(
-        "pid=$(pgrep -u sddm -n -f sddm-greeter); "
-        "test -n \"$pid\" && journalctl -b _PID=\"$pid\" --no-pager -o cat | grep -F 'Adding view for'",
+    # SDDM registers a view even when a QML error sends it to the embedded theme.
+    pid = machine.wait_until_succeeds(
+        "pid=$(pgrep -u sddm -n -f sddm-greeter) && "
+        "journalctl -b _PID=\"$pid\" --no-pager -o cat | grep -F 'Adding view for' >/dev/null && "
+        "echo \"$pid\"",
         timeout=60,
-    )
+    ).strip()
+    journal = machine.succeed(f"journalctl -b _PID={pid} --no-pager -o cat", timeout=10)
+    if "Fallback to embedded theme" in journal or not re.search(r"Loading file:.*/breeze/+Main\.qml\b", journal):
+        raise AssertionError(f"SDDM greeter {pid} could not display Breeze:\n{journal}")
     # The selected account stays legible across greeter sizes; the password
     # placeholder is small and low contrast in Breeze.
     visible(machine, r"(?i)\bdesktop\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7))
+    if screenshot is not None:
+        machine.screenshot(screenshot)
     deadline = time.monotonic() + 60
     with machine.input_lock, machine.action(deadline):
-        pid = machine.succeed("pgrep -u sddm -n -f sddm-greeter", timeout=remaining(deadline)).strip()
         qt_password_focus(machine, pid, deadline)
         delay = timedelta(milliseconds=150)
         machine.send_key("ctrl-u", delay=delay)
