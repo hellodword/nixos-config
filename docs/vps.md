@@ -71,6 +71,8 @@ secrets:
 
 该模块监听 TCP 80，并在 IPv4、IPv6 上允许 Cloudflare 地址段访问；其他外部来源的 TCP 80，以及 Cloudflare 来源的 TCP/UDP 443 被丢弃。loopback 可用于本机诊断，其余 443 流量沿用节点已有策略。供应商防火墙也需要放行 TCP 80。地址段由锁定的 Cloudflare 输入提供，随 remote 更新、部署生效。来源限制确认的是 Cloudflare 网络，秘密路径用于区分可访问的入口。
 
+若维护机通过 `sudo` 读取 age 私钥，Colmena 上传前缀时会复用当前终端的 sudo 授权。授权过期时部署直接报错，在同一终端执行 `sudo -v` 后重试原部署命令即可。
+
 前缀文件以 root `0600` 保存到 `/var/lib/site-http-origin/credentials/<密文摘要>/`。每版加密 YAML 使用独立目录，`apply boot` 交付的新前缀在重启后启用，当前代次和回滚继续读取各自的文件。重新保存 YAML 会产生新目录；清理旧系统代次时，可一并清理已无代次引用的凭据目录。
 
 ## 部署 Workers

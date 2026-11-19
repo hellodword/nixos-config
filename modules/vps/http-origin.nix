@@ -34,7 +34,29 @@ in
 
   deployment.keys.http-origin-prefix = {
     keyCommand = [
-      "sops"
+      "python3"
+      "-c"
+      ''
+        import os
+        import shlex
+        import subprocess
+        import sys
+
+        sops = ["sops", *sys.argv[1:]]
+        try:
+            reader = shlex.split(os.environ.get("SOPS_AGE_KEY_CMD", ""))
+        except ValueError:
+            reader = []
+        if not reader or os.path.basename(reader[0]) != "sudo":
+            os.execvp("sops", sops)
+
+        reader.insert(1, "-n")
+        os.environ["SOPS_AGE_KEY_CMD"] = shlex.join(reader)
+        status = subprocess.run(sops).returncode
+        if status:
+            print("If sudo authorization has expired, run 'sudo -v' in the same terminal and retry.", file=sys.stderr)
+        sys.exit(status)
+      ''
       "decrypt"
       "--extract"
       ''["secrets"]["${name}-http-origin-prefix"]''
