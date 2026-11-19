@@ -6,10 +6,8 @@ import sys
 
 import yaml
 
-from scripts.vps.model import Inventory
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts/network'))
-from render import grouped_outbounds
+from scripts.vps.model import Inventory, MODES
+from scripts.network.provider_groups import grouped_outbounds
 
 
 def generate(source, keys, output):
@@ -49,10 +47,11 @@ def generate(source, keys, output):
             directory.mkdir(parents=True)
             (directory / 'proxy.json').write_text(json.dumps(vps.server(node)))
             (directory / 'certificate.json').write_text(json.dumps(vps.certificate_request(node)))
-        (output / f'provider-{generation}.json').write_text(json.dumps(vps.provider('primary')))
-    provider = Inventory(document).provider('primary')
+        for mode in MODES:
+            (output / f'provider-{generation}-{mode}.json').write_text(json.dumps(vps.provider('primary', mode)))
+    provider = Inventory(document).provider('primary', 'trojan')
     paths = [path for path in provider['outbounds']
-             if path['tag'] in provider['exits']['us']['paths'] and path['type'] == 'trojan']
+             if path['tag'] in provider['exits']['us']['paths']]
     for path in paths:
         path['tls']['certificate_path'] = str(keys / 'ca.crt')
     provider = {'outbounds': paths, 'exits': {'us': {'paths': [p['tag'] for p in paths]}},

@@ -9,7 +9,7 @@ import tomllib
 from urllib.parse import quote, urlencode
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "network"))
-from render import grouped_outbounds
+from provider_groups import grouped_outbounds, purpose_group
 import purposes
 
 DATA = Path(__file__).resolve().parents[2] / "data/network"
@@ -35,8 +35,10 @@ def direct_dns_rules(rules, servers):
     return result
 
 
-def mobile(provider):
+def mobile(provider, cache_id=None):
     config = json.loads((DATA / "sing-box-client.json").read_text())
+    if cache_id is not None:
+        config["experimental"]["cache_file"]["cache_id"] = cache_id
     direct_servers = []
     for index, upstream in enumerate(DIRECT_DNS):
         tag = f"dns-direct-{index}"
@@ -49,10 +51,13 @@ def mobile(provider):
         config["dns"]["servers"].append(server)
     config["route"]["default_domain_resolver"] = direct_servers[0]
     prototype = next(server for server in config["dns"]["servers"] if server["tag"] == "dns-proxy")
-    for name in provider["groups"]:
-        if name != "proxy":
+    groups = provider["groups"]
+    primary = purpose_group("proxy", groups)
+    prototype.update(tag="dns-" + primary, detour=primary)
+    for name, binding in groups.items():
+        if isinstance(binding, dict) and name != primary:
             config["dns"]["servers"].append(copy.deepcopy(prototype) | {"tag": "dns-" + name, "detour": name})
-    route, dns = purposes.sing_box(provider["groups"])
+    route, dns = purposes.sing_box(groups)
     config["route"]["rule_set"] = route["rule_set"]
     config["route"]["rules"].extend(route["rules"])
     rules = []
@@ -75,7 +80,12 @@ def shadowrocket_nodes(provider):
     for node in provider["outbounds"]:
         parameters = {"sni": node["tls"]["server_name"]}
         parameters["allowInsecure" if node["type"] == "trojan" else "insecure"] = "0"
-        lines.append(f"{node['type']}://{quote(node['password'], safe='')}@{node['server']}:{node['server_port']}"
+        if "detour" in node:
+            parameters["chain"] = node["detour"]
+        host = node["server"]
+        if ":" in host:
+            host = f"[{host}]"
+        lines.append(f"{node['type']}://{quote(node['password'], safe='')}@{host}:{node['server_port']}"
                      f"/?{urlencode(parameters)}#{quote(node['tag'], safe='')}")
     return base64.b64encode(("\n".join(lines) + "\n").encode()).decode() + "\n"
 
@@ -83,6 +93,8 @@ def shadowrocket_nodes(provider):
 def shadowrocket(provider, subscription_name=None):
     general, _, rules = (DATA / "shadowrocket-client.conf").read_text().partition("[Rule]\n")
     lines = [general.rstrip()]
+    if any("detour" in node for node in provider["outbounds"]):
+        lines.append("close-if-proxy-chain-missing = true")
     for protocol, setting in (("https", "dns-server"), ("tls", "fallback-dns-server")):
         urls = []
         for upstream in DIRECT_DNS:
@@ -93,22 +105,25 @@ def shadowrocket(provider, subscription_name=None):
     if subscription_name is None:
         lines += ["", "[Proxy]"]
         for node in provider["outbounds"]:
+            chain = ", chain=" + node["detour"] if "detour" in node else ""
             lines.append(f"{node['tag']} = {node['type']}, {node['server']}, {node['server_port']}, "
                          f"password={json.dumps(node['password'])}, sni={node['tls']['server_name']}, "
-                         "skip-cert-verify=false, udp-relay=true")
+                         "skip-cert-verify=false, udp-relay=true" + chain)
     lines += ["", "[Proxy Group]"]
-    for name, exit_ in provider["exits"].items():
-        if subscription_name is None:
-            members = ", ".join(exit_["paths"])
+    paths = {node["tag"] for node in provider["outbounds"]}
+    for group in grouped_outbounds(provider):
+        members = group["outbounds"]
+        if subscription_name is not None:
+            pattern = "^(?:" + "|".join(re.escape(tag) for tag in members if tag in paths) + ")$"
+            members = [tag for tag in members if tag not in paths] + [
+                subscription_name, "use=true", "policy-regex-filter=" + pattern]
+        if group["type"] == "urltest":
+            kind = "url-test"
+            options = ["url=" + group["url"], "interval=600", "tolerance=0", "timeout=5", "hidden=1"]
         else:
-            pattern = "^(?:" + "|".join(re.escape(path) for path in exit_["paths"]) + ")$"
-            members = f"{subscription_name}, use=true, policy-regex-filter={pattern}"
-        lines.append(f"exit-{name}-auto = url-test, {members}" +
-                     ", url=https://www.gstatic.com/generate_204, interval=600, tolerance=0, timeout=5")
-        lines.append(f"exit-{name} = select, exit-{name}-auto, {members}")
-    for name, binding in provider["groups"].items():
-        choices = [binding["default"], *(e for e in binding["exits"] if e != binding["default"])]
-        lines.append(f"{name} = select, " + ", ".join("exit-" + e for e in choices))
+            kind = "select"
+            options = ["policy-select-name=" + group["default"]]
+        lines.append(group["tag"] + " = " + ", ".join([kind, *members, *options]))
     lines += ["", "[Rule]", rules.rstrip()]
     lines.extend(purposes.shadowrocket(provider["groups"]))
     return "\n".join([*lines, ""])

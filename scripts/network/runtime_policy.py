@@ -20,6 +20,7 @@ import domain_policy
 import dns_policy as compiler
 import assemble as assembler
 import render as renderer
+from provider_groups import apply_selections
 import ipv6
 import underlay
 import rules as rule_updates
@@ -51,13 +52,16 @@ def read_inputs(args):
     if args.sing_box:
         if args.provider.exists():
             provider_data = domain_policy.read_json(args.provider)
+            if "localChain" in provider_data:
+                raise ValueError("local CHAIN credentials belong in chain.json")
+            if renderer.uses_local_chain(provider_data):
+                chain_file = args.provider.with_name("chain.json")
+                if not chain_file.is_file():
+                    raise ValueError("the chain profile needs chain.json beside the provider")
+                provider_data["localChain"] = domain_policy.read_json(chain_file)
             selection = getattr(args, "selections", None)
             if selection and selection.exists():
-                for purpose, exit_id in json.loads(selection.read_text()).items():
-                    group = provider_data["groups"][purpose]
-                    if exit_id not in group["exits"]:
-                        raise ValueError("selected exit is no longer authorized for this purpose")
-                    group["default"] = exit_id
+                apply_selections(provider_data.get("groups", {}), json.loads(selection.read_text()))
         elif args.bootstrap:
             provider_data = {"outbounds": [{"type": "http", "tag": "schema-check", "server": "192.0.2.1", "server_port": 443}]}
             if policy.get("purposeGroups"):

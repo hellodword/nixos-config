@@ -140,7 +140,10 @@ let
             ++ cfg.policyReadOnlyPaths
             ++ lib.optional (cfg.runtimeRouteDirectory != null) "-${cfg.runtimeRouteDirectory}"
             ++ lib.optional (cfg.runtimeConnectionDirectory != null) "-${cfg.runtimeConnectionDirectory}"
-            ++ lib.optional cfg.singBox.enable "-${cfg.providerFile}"
+            ++ lib.optionals cfg.singBox.enable [
+              "-${cfg.providerFile}"
+              "-${builtins.dirOf cfg.providerFile}/chain.json"
+            ]
             ++ lib.optional (cfg.purposeGroups != [ ]) "-${cfg.selectionsFile}"
             ++ lib.optional (
               cfg.dns.fakeIP.enable && cfg.dns.fakeIP.excludeFile != null

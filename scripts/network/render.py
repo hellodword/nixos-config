@@ -14,18 +14,43 @@ import subprocess
 import tempfile
 
 from domain_policy import read_json
+from provider_groups import grouped_outbounds, purpose_group
+
+
+def uses_local_chain(provider):
+    return "groups" in provider and any(
+        isinstance(node, dict) and node.get("detour") == "CHAIN" for node in provider.get("outbounds", []))
 
 
 def combine(template, provider, wireguard_key=None, wireguard_peer=None):
     result = copy.deepcopy(template)
     purposes = result.pop("_purposeGroups", [])
-    if not isinstance(provider, dict) or set(provider) - {"outbounds", "endpoints", "exits", "groups"}:
+    if not isinstance(provider, dict) or set(provider) - {"outbounds", "endpoints", "exits", "groups", "localChain"}:
         raise ValueError("provider contains native outbounds and optional endpoints arrays")
     nodes = provider.get("outbounds", [])
     endpoints = provider.get("endpoints", [])
     if not isinstance(nodes, list) or not isinstance(endpoints, list) or not nodes + endpoints:
         raise ValueError("provide at least one concrete outbound or endpoint")
     known = {o["tag"] for o in result["outbounds"] + result.get("endpoints", [])}
+    chain = provider.get("localChain", {})
+    if (not isinstance(chain, dict) or set(chain) - {"outbounds", "endpoints"}
+            or not all(isinstance(members, list) for members in chain.values())):
+        raise ValueError("chain.json accepts native outbounds and endpoints")
+    chain_nodes = chain.get("outbounds", []) + chain.get("endpoints", [])
+    if any(not isinstance(node, dict) or not isinstance(node.get("tag"), str) or not node["tag"]
+           for node in chain_nodes):
+        raise ValueError("chain.json requires named proxy nodes")
+    chain_tags = {node["tag"] for node in chain_nodes}
+    if len(chain_tags) != len(chain_nodes) or chain_tags.intersection(known):
+        raise ValueError("chain.json requires distinct local outbound tags")
+    if uses_local_chain(provider) and "CHAIN" not in chain_tags:
+        raise ValueError("provide a local CHAIN outbound or group in chain.json")
+    for node in chain_nodes:
+        if node["type"] in {"direct", "block", "dns"} or not set(node.get("outbounds", [])) <= chain_tags:
+            raise ValueError("CHAIN must use local proxy nodes")
+        if "detour" in node and node["detour"] not in chain_tags:
+            raise ValueError("CHAIN detours must reference local proxy nodes")
+    known.update(chain_tags)
     tags = []
     for node in nodes + endpoints:
         tag = node.get("tag") if isinstance(node, dict) else None
@@ -36,23 +61,36 @@ def combine(template, provider, wireguard_key=None, wireguard_peer=None):
         known.add(tag)
         tags.append(tag)
     if "groups" in provider:
-        generated = grouped_outbounds(provider, known - {"auto", "proxy"}, selected_only=True)
+        groups = provider["groups"]
+        generated = grouped_outbounds(provider, known - {"auto", "proxy"})
         result["outbounds"] = [node for node in result["outbounds"] if node["tag"] not in {"auto", "proxy"}]
         result["outbounds"].extend(generated)
+        destinations = {name: purpose_group(name, groups) for name in [*purposes, *groups, "proxy"]}
+        if (known - {"proxy"}).intersection(destinations):
+            raise ValueError("provider node conflicts with a declared purpose")
+        route = result["route"]
+        for rule in route.get("rules", []):
+            if rule.get("outbound") in destinations:
+                rule["outbound"] = destinations[rule["outbound"]]
+        if route.get("final") in destinations:
+            route["final"] = destinations[route["final"]]
+        for definition in route.get("rule_set", []):
+            http = definition.get("http_client", {})
+            if isinstance(http, dict) and http.get("detour") in destinations:
+                http["detour"] = destinations[http["detour"]]
     else:
         for outbound in result["outbounds"]:
             if outbound["tag"] == "auto":
                 outbound["outbounds"] = tags
             elif outbound["tag"] == "proxy":
                 outbound["outbounds"] = ["auto", *tags]
-    for purpose in purposes:
-        if purpose not in provider.get("groups", {}):
+        for purpose in purposes:
             if purpose in known:
                 raise ValueError("provider node conflicts with a declared purpose")
             result["outbounds"].append({"type": "selector", "tag": purpose,
                                        "outbounds": ["proxy"], "default": "proxy"})
-    result["outbounds"].extend(copy.deepcopy(nodes))
-    result.setdefault("endpoints", []).extend(copy.deepcopy(endpoints))
+    result["outbounds"].extend(copy.deepcopy(nodes + chain.get("outbounds", [])))
+    result.setdefault("endpoints", []).extend(copy.deepcopy(endpoints + chain.get("endpoints", [])))
     for endpoint in result.get("endpoints", []):
         if endpoint.get("tag") == "transparent":
             if not wireguard_key or not wireguard_peer:
@@ -60,37 +98,6 @@ def combine(template, provider, wireguard_key=None, wireguard_peer=None):
             endpoint["private_key"] = wireguard_key.strip()
             endpoint["peers"][0]["public_key"] = wireguard_peer.strip()
     return result
-
-
-def grouped_outbounds(provider, known=(), *, selected_only=False):
-    """Select a logical exit, then either probe or pin its complete paths."""
-    known = set(known)
-    paths = {node["tag"] for node in provider.get("outbounds", []) + provider.get("endpoints", [])}
-    exits = provider["exits"]
-    generated = []
-    for name, exit_ in exits.items():
-        tag = "exit-" + name
-        if {tag, tag + "-auto"} & known or not exit_["paths"] or not set(exit_["paths"]) <= paths:
-            raise ValueError("exit paths must reference concrete provider nodes")
-        known.update((tag, tag + "-auto"))
-        generated.append({"type": "urltest", "tag": tag + "-auto", "outbounds": exit_["paths"],
-                          "url": "https://www.gstatic.com/generate_204", "interval": "3m", "tolerance": 100,
-                          "interrupt_exist_connections": False})
-        generated.append({"type": "selector", "tag": tag, "default": tag + "-auto",
-                          "outbounds": [tag + "-auto", *exit_["paths"]], "interrupt_exist_connections": False})
-    for name, group in provider["groups"].items():
-        if name in known or name in {"direct", "private", "tailnet", "local", "auto", "transparent"}:
-            raise ValueError("purpose group conflicts with another outbound")
-        if not group["exits"] or not set(group["exits"]) <= exits.keys() or group["default"] not in group["exits"]:
-            raise ValueError("purpose group requires an explicit available default exit")
-        known.add(name)
-        choices = [group["default"]] if selected_only else group["exits"]
-        generated.append({"type": "selector", "tag": name,
-                          "outbounds": ["exit-" + value for value in choices],
-                          "default": "exit-" + group["default"]})
-    if "proxy" not in provider["groups"]:
-        raise ValueError("grouped providers require a proxy purpose")
-    return generated
 
 
 def address_family(config):
@@ -105,6 +112,10 @@ def address_family(config):
     config["route"]["default_domain_resolver"] = resolver
     for node in config["outbounds"] + config.get("endpoints", []):
         if node.get("type") in {"selector", "urltest"} or node.get("tag") in {"local", "transparent"}:
+            continue
+        if node.get("detour") == "CHAIN":
+            if only4 and is_ipv6(node.get("server", "")):
+                raise ValueError("the IPv4-only policy requires an IPv4-reachable Trojan entry")
             continue
         default = resolver
         if node.get("tag") not in {"direct", "private", "tailnet"} and any(
@@ -187,6 +198,8 @@ def bind_underlay(config, underlay):
             continue
         if "netns" in outbound or outbound.get("detour") in {"local", "direct"}:
             raise ValueError("provider cannot bypass declared physical bindings")
+        if outbound.get("detour") == "CHAIN":
+            continue
         outbound.update(bind)
         if outbound["tag"] not in {"direct", "private"}:
             resolver = outbound.get("domain_resolver", {})

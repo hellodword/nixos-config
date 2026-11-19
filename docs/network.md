@@ -32,7 +32,9 @@ flowchart TD
 
 ## 用途出口
 
-`site.network.purposeRouting.enable` 使用 [purposes.toml](../data/network/purposes.toml) 中的共同策略，laptop profile 默认启用。通过 [VPS 订阅](vps.md#订阅与分流)的 `?client=linux` 获取 provider，保存在 `site.network.providerFile` 指定的运行时路径。文件含代理密码，应由 root 持有、权限 0600，并纳入持久存储。
+`site.network.purposeRouting.enable` 使用 [purposes.toml](../data/network/purposes.toml) 中的共同策略，laptop profile 默认启用。通过 [VPS 订阅](vps.md#订阅与分流)的 `?client=linux` 获取日常使用的 HY2 provider。用 `&mode=trojan` 或 `&mode=trojan-chain` 下载两份备用 provider。可预先保存三份，切换时将选定的一份放到 `site.network.providerFile`，依次执行 `sudo network-policy check` 和 `sudo network-policy apply`。这些文件含代理密码，应由 root 持有、权限 0600，放在持久存储中。
+
+链式模式从 provider 同目录的 `chain.json` 读取名为 `CHAIN` 的前置节点或组及其成员，写法见 [sing-box 前置代理示例](vps.md#移动-sing-box)。该文件同样使用 root 所有、0600 权限。首次使用三种模式时，先激活包含此网络策略的 laptop 系统代次，之后的模式切换可直接应用。
 
 规则决定用途，provider 的 `groups` 决定用途使用的出口。分组 provider 必须绑定 `proxy`，用于通用海外规则及未绑定的可选用途；建议同时绑定 `hideme`，用于隐私站点和最终兜底。其他用途按需绑定。省略某个用途时，分类仍生效，并使用 `proxy`，例如未绑定 `payment` 时 PayPal 使用 `proxy`。只提供具体节点的 provider 也可使用这份策略，全部代理用途沿用 `proxy` / `auto` 选择。
 
@@ -56,11 +58,9 @@ TOML 的 `[[rules]]` 保持这个顺序：`scope = "domain"` 的条件供 DNS �
 {"proxy": "edge-native", "cryptocurrency": "west-native"}
 ```
 
-出口名称来自订阅 provider 的授权集合。使用 root 权限编辑，执行 `sudo network-policy check`、`sudo network-policy apply`。选择文件覆盖订阅的默认值；删除某个用途的覆盖后恢复订阅默认。这个目录由 laptop profile 持久化。Linux 的用途组将这份选择同时应用于 DNS 和业务连接，跨出口切换由该文件完成；移动客户端使用其原生选择界面。
+出口名称来自该用途在订阅中获准使用的出口。这个文件将用途固定到一个逻辑出口，仍可在此出口的多条路径之间择优。编辑后执行 `sudo network-policy check`、`sudo network-policy apply`，删除某项后恢复订阅默认。若 `payment: hideme`，只需为 `hideme` 写一项，两者一起生效。对同一组指定不同出口时，`/var/lib/site-network/last-prepare.log` 会列出冲突的用途名。这个目录由 laptop profile 持久化。
 
-每个 `exit-<出口名>` selector 默认选择对应的自动组，也可通过原生 Clash API 固定具体路径。多个用途选中同一出口时共享其路径选择。路径命名、探测与故障时的行为见 [VPS 订阅与分流](vps.md#订阅与分流)。
-
-DNS 与连接使用同一实际出口。用途选择相同、解析器配置也相同的组共用 DNS race 进程和缓存；切换用途时一起生成、校验和激活。FakeIP 继续保留同 IP 域名的区别，非 A/AAAA 查询沿共享 DNS 策略处理。
+在原生 Clash API 中选择用途组（如 `hideme`），可固定具体路径或选回“自动”。用途别名共用同一选择，独立用途可以各自固定不同路径。DNS 上游连接也经过对应的用途选择器；共用选择器和解析器配置的用途共用 DNS 竞速进程和缓存。FakeIP 继续区分解析到同一 IP 的域名。路径和探测间隔见 [VPS 订阅与分流](vps.md#订阅与分流)。
 
 ## FakeIP 与域名分流
 

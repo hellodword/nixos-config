@@ -26,9 +26,7 @@ in
             root = ../.;
             fileset = pkgs.lib.fileset.unions [
               ../scripts/vps
-              ../scripts/network/render.py
-              ../scripts/network/domain_policy.py
-              ../scripts/network/rules.py
+              ../scripts/network/provider_groups.py
               ../scripts/network/purposes.py
               ../data/network
               ../workers

@@ -2,6 +2,7 @@
 import copy
 from pathlib import Path
 import tomllib
+from provider_groups import purpose_group
 
 
 CATALOG = tomllib.loads((Path(__file__).resolve().parents[2] / "data/network/purposes.toml").read_text())
@@ -21,7 +22,7 @@ def rule_sets(catalog=CATALOG):
 
 
 def outbound(name, groups):
-    return name if name in {"direct", "proxy"} or name in groups else "proxy"
+    return "direct" if name == "direct" else purpose_group(name, groups)
 
 
 def sing_box(groups, catalog=CATALOG):
@@ -39,7 +40,12 @@ def sing_box(groups, catalog=CATALOG):
                 query.update(action="predefined", rcode="NXDOMAIN")
             dns.append(query)
     final = outbound(catalog["final"], groups)
-    return {"rules": rules, "rule_set": rule_sets(catalog), "final": final}, {"rules": dns, "final": "dns-" + final}
+    definitions = rule_sets(catalog)
+    for definition in definitions:
+        http = definition.get("http_client")
+        if isinstance(http, dict) and http.get("detour") == "proxy":
+            http["detour"] = purpose_group("proxy", groups)
+    return {"rules": rules, "rule_set": definitions, "final": final}, {"rules": dns, "final": "dns-" + final}
 
 
 def logical_match(mode, matches):

@@ -13,7 +13,12 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 UDP_FIRST, UDP_LAST = 20000, 29999
+MODES = {"hy2": "HY2", "trojan": "Trojan", "trojan-chain": "Trojan via CHAIN"}
 DEFAULT_DNS = json.loads((Path(__file__).resolve().parents[2] / "data/network/vps-dns.json").read_text())
+
+
+def profile_name(title, mode):
+    return title if mode == "hy2" else f"{title} · {MODES[mode]}"
 
 
 class DeclarationError(ValueError):
@@ -142,10 +147,12 @@ class Inventory:
             identifier(name, "subscriptions")
             path = f"subscriptions.{name}"
             title = field(subscription, "name", str, path, name)
-            require(title and title == title.strip() and not re.search(r'[\x00-\x1f\x7f,="/\\]', title)
-                    and title.casefold() not in names, path + ".name", "use a distinct single-line client label")
+            require(title and title == title.strip() and not re.search(r'[\x00-\x1f\x7f,="/\\]', title),
+                    path + ".name", "use a single-line client label")
             subscription["name"] = title
-            names.add(title.casefold())
+            titles = {profile_name(title, mode).casefold() for mode in MODES}
+            require(titles.isdisjoint(names), path + ".name", "subscription profile names must be distinct")
+            names.update(titles)
             route = field(subscription, "path", str, path)
             require(re.fullmatch(r"/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}", route)
                     and route not in paths, path + ".path", "use a distinct /UUIDv4 path")
@@ -163,12 +170,13 @@ class Inventory:
                 group_path = path + ".groups." + group
                 require(group not in {"direct", "private", "tailnet", "local", "auto", "transparent", "cn", "global"},
                         group_path, "purpose group conflicts with a local route")
+                if isinstance(binding, str):
+                    require(isinstance(groups.get(binding), dict), group_path, "reference a directly defined purpose")
+                    continue
                 choices = field(binding, "exits", list, group_path)
                 references(choices, exits, group_path + ".exits", distinct=False)
-                if "default" not in binding:
-                    require(len(choices) == 1, group_path + ".default", "select a default when the group has multiple exits")
-                    binding["default"] = choices[0]
-                require(binding["default"] in choices, group_path + ".default", "select an exit from this group")
+                if "default" in binding:
+                    require(binding["default"] in choices, group_path + ".default", "select an exit from this group")
             require("proxy" in groups, path + ".groups.proxy", "a proxy group is required")
 
     def worker(self, name):
@@ -262,28 +270,31 @@ class Inventory:
             "route": {"rules": rules, "auto_detect_interface": True, "default_domain_resolver": "bootstrap"},
         }
 
-    def provider(self, subscription_id):
+    def provider(self, subscription_id, mode="hy2"):
         subscription = self.subscriptions[subscription_id]
+        transport = MODES[mode]
+        protocol = "hysteria2" if mode == "hy2" else "trojan"
         outbounds, exits = [], {}
         entries = subscription.get("entries", list(self.nodes))
         references(entries, self.nodes, f"subscriptions.{subscription_id}.entries", distinct=False)
         for exit_id in subscription["exits"]:
             exit_ = self.exits[exit_id]
             members = []
-            for entry in entries:
+            for entry in dict.fromkeys(entries):
                 for carrier in exit_["nodes"]:
                     hop = entry if entry == carrier else f"{entry} → {carrier}"
                     label = "native" if exit_["type"] == "native" and exit_id == f"{carrier}-native" else f"[{exit_id}]"
-                    for protocol in ("trojan", "hysteria2"):
-                        transport = "Trojan" if protocol == "trojan" else "HY2"
-                        tag = f"{hop} · {label} · {transport}"
-                        members.append(tag)
-                        outbounds.append({
-                            "type": protocol, "tag": tag, "server": self.nodes[entry]["address"],
-                            "server_port": 443 if protocol == "trojan" else self.port(carrier),
-                            "password": self.password(subscription_id, exit_id, protocol),
-                            "tls": {"enabled": True, "server_name": self.nodes[carrier]["serverName"]},
-                        })
+                    tag = f"{hop} · {label} · {transport}"
+                    members.append(tag)
+                    outbound = {
+                        "type": protocol, "tag": tag, "server": self.nodes[entry]["address"],
+                        "server_port": 443 if protocol == "trojan" else self.port(carrier),
+                        "password": self.password(subscription_id, exit_id, protocol),
+                        "tls": {"enabled": True, "server_name": self.nodes[carrier]["serverName"]},
+                    }
+                    if mode == "trojan-chain":
+                        outbound["detour"] = "CHAIN"
+                    outbounds.append(outbound)
             exits[exit_id] = {"paths": members, "udp": exit_.get("udp", True)}
         return {"outbounds": outbounds, "endpoints": [], "exits": exits,
                 "groups": copy.deepcopy(subscription["groups"])}

@@ -7,6 +7,7 @@ import json
 import re
 from pathlib import Path
 import domain_policy
+from provider_groups import purpose_group
 
 
 def lua(value):
@@ -268,7 +269,7 @@ def compile_policy(config, destination, model=None, ipv4_only=False):
 
 
 def bind_groups(config, provider):
-    """Use selected physical exits for both DNS pools and their tunnels."""
+    """Send each DNS tunnel through the same selector as its application's traffic."""
     config = copy.deepcopy(config)
     purposes = config.get("purposeGroups", [])
     if not purposes:
@@ -276,8 +277,7 @@ def bind_groups(config, provider):
     groups = provider.get("groups", {})
     for purpose in ["proxy", *purposes]:
         group = "global" if purpose == "proxy" else purpose
-        binding = groups.get(purpose, groups.get("proxy"))
-        config["groups"][group]["outbound"] = "exit-" + binding["default"] if binding else "proxy"
+        config["groups"][group]["outbound"] = purpose_group(purpose, groups)
     return config
 
 

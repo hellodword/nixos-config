@@ -42,9 +42,7 @@ let
     root = ../..;
     fileset = lib.fileset.unions [
       ../../scripts/vps
-      ../../scripts/network/render.py
-      ../../scripts/network/domain_policy.py
-      ../../scripts/network/rules.py
+      ../../scripts/network/provider_groups.py
       ../../scripts/network/purposes.py
       ../../workers
       ../../data/network
@@ -555,7 +553,8 @@ in
             succeed(edge, "systemctl reload nftables.service")
             docker_connectivity()
 
-        provider = json.loads(controller.succeed("cat /run/vps/provider-v1.json"))
+        providers = {mode: json.loads(controller.succeed(f"cat /run/vps/provider-v1-{mode}.json"))
+                     for mode in ("hy2", "trojan", "trojan-chain")}
         wait_unit(west, "nginx.service")
         assert controller.succeed("curl --fail --cacert ${tls.ca.cert} --resolve app.test.nix:443:192.0.2.11 https://app.test.nix").strip() == "vps application"
 
@@ -631,9 +630,10 @@ in
                     for protocol, port, expected in (("tcp", 80, not allowed), ("tcp", 443, allowed), ("udp", 443, allowed)):
                         controller.succeed(shlex.join(["python3", "-c", textwrap.dedent(probe), source, target, protocol, str(port), str(expected).lower()]))
 
-        def request(path, expected, domain="origin.fixture.example"):
-            config = {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": 11080}], "outbounds": [path]}
-            config["outbounds"][0]["tls"]["certificate_path"] = "${tls.ca.cert}"
+        def request(path, expected, domain="origin.fixture.example", front=None):
+            node = path | {"tls": path["tls"] | {"certificate_path": "${tls.ca.cert}"}}
+            config = {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": 11080}],
+                      "outbounds": [node, front] if front else [node]}
             controller.succeed("printf %s " + shlex.quote(json.dumps(config)) + " > /run/client.json")
             controller.succeed("systemctl stop vps-client.service || true; systemd-run --unit=vps-client --collect sing-box run -c /run/client.json")
             controller.wait_for_open_port(11080)
@@ -645,14 +645,25 @@ in
                 for exit_id, address in expected.items():
                     carriers = ["edge", "west"] if exit_id == "us" else ["edge" if exit_id == "edge-native" else "west"]
                     for carrier in carriers:
-                        for protocol in ("trojan", "hysteria2"):
+                        for mode in ("hy2", "trojan"):
+                            provider = providers[mode]
                             paths = provider["exits"][exit_id]["paths"]
-                            path = next(p for p in provider["outbounds"] if p["tag"] in paths and p["type"] == protocol
+                            path = next(p for p in provider["outbounds"] if p["tag"] in paths
                                         and p["server"] == addresses[entry]
                                         and p["tls"]["server_name"] == f"{carrier}.test.nix")
                             request(path, address)
+        with subtest("Local CHAIN dials the Trojan entry and the carrier supplies the exit"):
+            front = {"inbounds": [{"type": "socks", "tag": "front", "listen": "127.0.0.1", "listen_port": 11081}],
+                     "outbounds": [{"type": "direct", "tag": "direct"}]}
+            controller.succeed("printf %s " + shlex.quote(json.dumps(front)) + " > /run/chain.json")
+            controller.succeed("systemd-run --unit=vps-front sing-box run -c /run/chain.json")
+            controller.wait_for_open_port(11081)
+            path = next(p for p in providers["trojan-chain"]["outbounds"] if p["tag"] == "edge → west · native · Trojan via CHAIN")
+            request(path, addresses["west"], front={"type": "socks", "tag": "CHAIN", "server": "127.0.0.1", "server_port": 11081})
+            controller.wait_until_succeeds("journalctl -b -u vps-front --no-pager | grep -F '192.0.2.10:443'", timeout=10)
+            controller.succeed("systemctl stop vps-front")
         with subtest("Exit DNS survives an unavailable resolver and a resolver returning SERVFAIL"):
-            path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · [us] · Trojan")
+            path = next(p for p in providers["trojan"]["outbounds"] if p["tag"] == "edge → west · [us] · Trojan")
             controller.succeed("systemctl stop vps-dns-0.service")
             request(path, "198.51.100.30", "transport.fixture.example")
             controller.succeed("systemctl start vps-dns-0.service")
@@ -665,8 +676,8 @@ in
 
             def select_path(name):
                 controller.succeed("curl --max-time 10 --fail -sS -X PUT -H 'Content-Type: application/json' --data " +
-                                   shlex.quote(json.dumps({"name": name})) + " http://127.0.0.1:19090/proxies/exit-us")
-                selected = json.loads(controller.succeed("curl --max-time 10 --fail -sS http://127.0.0.1:19090/proxies/exit-us"))
+                                   shlex.quote(json.dumps({"name": name})) + " http://127.0.0.1:19090/proxies/proxy")
+                selected = json.loads(controller.succeed("curl --max-time 10 --fail -sS http://127.0.0.1:19090/proxies/proxy"))
                 assert selected["now"] == name, selected
 
             select_path("west · [us] · Trojan")
@@ -701,9 +712,9 @@ in
             select_path("west · [us] · Trojan")
             poweroff(west)
             controller.fail("curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/")
-            selected = json.loads(controller.succeed("curl --fail -sS http://127.0.0.1:19090/proxies/exit-us"))
+            selected = json.loads(controller.succeed("curl --fail -sS http://127.0.0.1:19090/proxies/proxy"))
             assert selected["now"] == "west · [us] · Trojan", selected
-            select_path("exit-us-auto")
+            select_path("自动 · us")
             controller.wait_until_succeeds("test \"$(curl --max-time 5 --fail -sS --socks5-hostname 127.0.0.1:11080 http://198.51.100.30:18080/)\" = 198.51.100.30", timeout=45)
             west.start()
             wait_unit(west, "site-vps-proxy.service")
@@ -744,7 +755,7 @@ in
             wait_unit(west, "site-vps-proxy.service")
             assert succeed(west, "cat /etc/vps-generation") == "v2"
             assert succeed(west, "cat /nix/var/nix/profiles/system/etc/vps-generation") == "v1"
-            next_provider = json.loads(controller.succeed("cat /run/vps/provider-v2.json"))
+            next_provider = json.loads(controller.succeed("cat /run/vps/provider-v2-trojan.json"))
             next_path = next(p for p in next_provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
             request(next_path, "192.0.2.11")
             deploy("v2", "switch", "west")
@@ -756,7 +767,7 @@ in
             assert succeed(west, "cat /etc/vps-generation") == "v1"
             wait_origin("v1")
             assert origin_request("v1")["path"] == "/fixture-origin-v1"
-            old_path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
+            old_path = next(p for p in providers["trojan"]["outbounds"] if p["tag"] == "edge → west · native · Trojan")
             request(old_path, "192.0.2.11")
             succeed(west, "test -f /var/lib/site-vps/releases/v1/proxy.json; test -f /var/lib/site-vps/releases/v2/proxy.json")
         powercycle(edge)

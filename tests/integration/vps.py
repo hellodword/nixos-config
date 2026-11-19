@@ -183,7 +183,7 @@ class InventoryProtocol(unittest.TestCase):
             (root / "network.json").write_text(json.dumps(server))
             with (root / "sing-box.log").open("w") as log, proxy_process(SERVER_SING_BOX, root, log, ports["trojan"]):
                 for name, (resolvers, calls) in observations.items():
-                    path = next(p for p in vps.provider("primary")["outbounds"]
+                    path = next(p for p in vps.provider("primary", "trojan")["outbounds"]
                                 if p["tag"] == f"edge · [{name}] · Trojan")
                     path.update(server="127.0.0.1", server_port=ports["trojan"],
                                 tls={"enabled": True, "server_name": "resolver.test", "certificate_path": str(cert)})
@@ -214,6 +214,7 @@ class InventoryProtocol(unittest.TestCase):
     def test_prepared_deployments_and_native_clients(self):
         inventory = self.inventory()
         inventory["subscriptions"]["primary"]["name"] = "个人网络 (iPhone)"
+        inventory["subscriptions"]["primary"]["groups"]["hideme"] = {"exits": ["west-native", "edge-native"]}
         vps = model.Inventory(inventory)
 
         # Diagnose a declaration before producing any deployable material.
@@ -232,7 +233,7 @@ class InventoryProtocol(unittest.TestCase):
                 self.assertNotIn("private-unfinished-value", result.stderr)
                 self.assertFalse((Path(temp) / "tmp/vps").exists())
 
-        def check_clients(directory):
+        def check_clients(directory, mode):
             provider = json.loads((directory / "linux.json").read_text())
             title = json.loads((directory / "metadata.json").read_text())["name"]
             tags = {node["tag"] for node in provider["outbounds"]}
@@ -248,10 +249,22 @@ class InventoryProtocol(unittest.TestCase):
                     "password": urllib.parse.unquote(uri.username),
                     "tls": {"enabled": True, "server_name": parameters["sni"][0]},
                 })
+                if mode == "trojan-chain":
+                    self.assertEqual(parameters["chain"], ["CHAIN"])
+                    decoded[-1]["detour"] = "CHAIN"
+            self.assertEqual({node["type"] for node in decoded}, {"hysteria2" if mode == "hy2" else "trojan"})
             self.assertEqual(decoded, provider["outbounds"])
             mobile = json.loads((directory / "sing-box.json").read_text())
             self.assertEqual([node for node in mobile["outbounds"] if node["tag"] in tags], decoded)
-            subprocess.run([CLIENT_SING_BOX, "check", "-c", str(directory / "sing-box.json")], check=True)
+            config = directory / "sing-box.json"
+            if mode == "trojan-chain":
+                local = directory / "chain.json"
+                local.write_text(json.dumps({"outbounds": [{"type": "socks", "tag": "CHAIN",
+                                                            "server": "127.0.0.1", "server_port": 1080}]}))
+                merged = directory / "merged.json"
+                subprocess.run([CLIENT_SING_BOX, "merge", str(merged), "-c", str(config), "-c", str(local)], check=True)
+                config = merged
+            subprocess.run([CLIENT_SING_BOX, "check", "-c", str(config)], check=True)
             full = (directory / "shadowrocket.conf").read_text()
             separate = (directory / "shadowrocket-config.conf").read_text()
             proxy_section = full.partition("[Proxy]\n")[2].partition("\n[Proxy Group]")[0]
@@ -264,26 +277,41 @@ class InventoryProtocol(unittest.TestCase):
                 self.assertEqual(json.loads(options["password"]), node["password"])
                 self.assertEqual(options["sni"], node["tls"]["server_name"])
                 self.assertEqual(options["skip-cert-verify"], "false")
+                self.assertEqual(options.get("chain"), node.get("detour"))
             self.assertEqual(full.partition("[Rule]\n")[2], separate.partition("[Rule]\n")[2])
+            payment = next(rule for rule in mobile["route"]["rules"] if "geosite-paypal" in rule.get("rule_set", []))
+            payment_dns = next(rule for rule in mobile["dns"]["rules"] if "geosite-paypal" in rule.get("rule_set", []))
+            self.assertEqual((payment["outbound"], payment_dns["server"]), ("hideme", "dns-hideme"))
+            self.assertTrue(any(line.endswith("/paypal.conf,hideme") for line in full.splitlines()))
+            native = {n["tag"]: n for n in mobile["outbounds"] if n["type"] in {"selector", "urltest"}}
+            tests = {name: set(n["outbounds"]) for name, n in native.items() if n["type"] == "urltest"}
+            self.assertEqual(len(tests), len(set(map(frozenset, tests.values()))))
+            for name, binding in provider["groups"].items():
+                if isinstance(binding, str):
+                    self.assertNotIn(name, native)
+                    continue
+                allowed = {p for e in binding["exits"] for p in provider["exits"][e]["paths"]}
+                self.assertEqual(set(native[name]["outbounds"]) & tags, allowed)
+                default = native[name]["default"]
+                expected = set(provider["exits"][binding["default"]]["paths"]) if "default" in binding else allowed
+                self.assertEqual(tests.get(default, {default}), expected)
             for config, embedded in ((full, True), (separate, False)):
                 group_section = config.partition("[Proxy Group]\n")[2].partition("\n[Rule]")[0]
                 groups = dict(line.split(" = ", 1) for line in group_section.splitlines() if line)
-                for name, exit_ in provider["exits"].items():
-                    for group in (f"exit-{name}", f"exit-{name}-auto"):
-                        members = groups[group].split(", ")
-                        if embedded:
-                            self.assertEqual(set(members) & tags, set(exit_["paths"]))
-                        else:
-                            self.assertIn(title, members)
-                            self.assertIn("use=true", members)
-                            pattern = next(value.removeprefix("policy-regex-filter=") for value in members
-                                           if value.startswith("policy-regex-filter="))
-                            self.assertEqual({tag for tag in tags if re.fullmatch(pattern, tag)}, set(exit_["paths"]))
-                    self.assertEqual(groups[f"exit-{name}"].split(", ")[:2], ["select", f"exit-{name}-auto"])
-                for name, binding in provider["groups"].items():
+                self.assertEqual(set(groups), set(native))
+                for name, node in native.items():
                     members = groups[name].split(", ")
-                    self.assertEqual(members[1], "exit-" + binding["default"])
-                    self.assertEqual(set(members[1:]), {"exit-" + name for name in binding["exits"]})
+                    expected = set(node["outbounds"]) & tags
+                    if embedded:
+                        self.assertEqual(set(members) & tags, expected)
+                    else:
+                        self.assertIn(title, members)
+                        pattern = next(v.split("=", 1)[1] for v in members if v.startswith("policy-regex-filter="))
+                        self.assertEqual({tag for tag in tags if re.fullmatch(pattern, tag)}, expected)
+                    if name in tests:
+                        self.assertTrue({"interval=600", "timeout=5", "tolerance=0", "hidden=1"} <= set(members))
+                    else:
+                        self.assertIn("policy-select-name=" + node["default"], members)
 
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "tmp/vps"
@@ -303,12 +331,9 @@ class InventoryProtocol(unittest.TestCase):
                 other = "west" if name == "edge" else "edge"
                 for protocol in ("trojan", "hysteria2"):
                     self.assertNotIn(vps.password("primary", f"{other}-native", protocol), server.read_text())
-            mobile_path = root / "subscriptions/primary/sing-box.json"
-            selectors = {node["tag"]: node for node in json.loads(mobile_path.read_text())["outbounds"]
-                         if node["type"] == "selector"}
-            self.assertEqual(selectors["ai"]["default"], "exit-west-native")
-            self.assertEqual(selectors["proxy"]["default"], "exit-edge-native")
-            check_clients(root / "subscriptions/primary")
+            for mode in model.MODES:
+                with self.subTest(mode=mode):
+                    check_clients(root / "subscriptions/primary" / ("" if mode == "hy2" else mode), mode)
 
             # Publishing an additional exit and changing subscription presentation preserve existing passwords.
             revised = copy.deepcopy(inventory)
@@ -324,7 +349,6 @@ class InventoryProtocol(unittest.TestCase):
                 subprocess.run([sys.executable, str(ROOT / "scripts/vps/prepare.py")],
                                input=yaml.safe_dump(revised), text=True, cwd=regenerated, check=True)
                 updated = json.loads((Path(regenerated) / "tmp/vps/subscriptions/personal/linux.json").read_text())
-                check_clients(Path(regenerated) / "tmp/vps/subscriptions/personal")
                 self.assertEqual(json.loads((Path(regenerated) / "tmp/vps/subscriptions/personal/metadata.json").read_text())["name"],
                                  "personal")
                 passwords = {path["tag"]: path["password"] for path in updated["outbounds"]}
@@ -374,16 +398,22 @@ class InventoryProtocol(unittest.TestCase):
                             request = urllib.request.Request(url, headers={"User-Agent": agent})
                             with urllib.request.urlopen(request, timeout=2, context=tls) as response:
                                 self.assertEqual(response.read().decode(), (root / "subscriptions/primary" / filename).read_text())
-                    for client, filename in (("shadowrocket", "shadowrocket.conf"),
-                                             ("shadowrocket-subscribe", "shadowrocket.txt"),
-                                             ("shadowrocket-config", "shadowrocket-config.conf")):
-                        request = urllib.request.Request(url + "?client=" + client, headers={"User-Agent": "SFI (sing-box 1.14)"})
-                        with urllib.request.urlopen(request, timeout=2, context=tls) as response:
-                            self.assertEqual(response.read().decode(), (root / "subscriptions/primary" / filename).read_text())
-                            if client in ("shadowrocket", "shadowrocket-config"):
-                                title = inventory["subscriptions"]["primary"]["name"] + ".conf"
-                                self.assertEqual(response.headers["Content-Disposition"],
-                                                 'attachment; filename="primary.conf"; filename*=UTF-8\'\'' + urllib.parse.quote(title, safe=""))
+                    for mode in model.MODES:
+                        directory = root / "subscriptions/primary" / ("" if mode == "hy2" else mode)
+                        title = json.loads((directory / "metadata.json").read_text())["name"]
+                        for client, filename in (("linux", "linux.json"), ("sing-box", "sing-box.json"),
+                                                 ("shadowrocket", "shadowrocket.conf"),
+                                                 ("shadowrocket-subscribe", "shadowrocket.txt"),
+                                                 ("shadowrocket-config", "shadowrocket-config.conf")):
+                            request = urllib.request.Request(f"{url}?client={client}&mode={mode}", headers={"User-Agent": "SFI"})
+                            with urllib.request.urlopen(request, timeout=2, context=tls) as response:
+                                self.assertEqual(response.read().decode(), (directory / filename).read_text())
+                                if client in {"shadowrocket", "shadowrocket-config", "sing-box"}:
+                                    suffix = Path(filename).suffix
+                                    basename = "primary" if mode == "hy2" else f"primary-{mode}"
+                                    self.assertEqual(response.headers["Content-Disposition"],
+                                                     f'attachment; filename="{basename}{suffix}"; filename*=UTF-8\'\'' +
+                                                     urllib.parse.quote(title + suffix, safe=""))
                     # The static-asset binding is reachable only through the subscription handler.
                     with self.assertRaises(urllib.error.HTTPError) as denied:
                         urllib.request.urlopen(url + "/linux.json", timeout=2, context=tls)
@@ -413,6 +443,7 @@ class InventoryProtocol(unittest.TestCase):
                 "entries": ["edge"], "exits": ["edge-socks"], "groups": {"proxy": {"exits": ["edge-socks"]}},
             }
             ports = {protocol: free_port() for protocol in ("trojan", "hysteria2")}
+            front, front_calls = stack.enter_context(socks_server(ports["trojan"], []))
             server_root = root / "server"
             server_root.mkdir()
             log = stack.enter_context((server_root / "sing-box.log").open("w"))
@@ -426,6 +457,8 @@ class InventoryProtocol(unittest.TestCase):
                                 tls={"enabled": True, "server_name": "resolver.test", "certificate_path": str(cert)})
                 client = {"inbounds": [{"type": "socks", "listen": "127.0.0.1", "listen_port": mixed}],
                           "outbounds": [outbound]}
+                if outbound.get("detour") == "CHAIN":
+                    client["outbounds"].append({"type": "socks", "tag": "CHAIN", "server": "127.0.0.1", "server_port": front})
                 (client_root / "network.json").write_text(json.dumps(client))
                 with (client_root / "sing-box.log").open("w") as client_log, proxy_process(CLIENT_SING_BOX, client_root, client_log, mixed):
                     return socks_http(mixed, "198.51.100.1", origin)
@@ -439,22 +472,24 @@ class InventoryProtocol(unittest.TestCase):
                     inbound.update(listen="127.0.0.1", listen_port=ports[inbound["type"]],
                                    tls={"enabled": True, "certificate_path": str(cert), "key_path": str(key)})
                 (server_root / "network.json").write_text(json.dumps(server))
-                providers = {name: vps.provider(name) for name in inventory["subscriptions"]}
+                providers = {name: {mode: vps.provider(name, mode) for mode in model.MODES} for name in inventory["subscriptions"]}
                 with proxy_process(SERVER_SING_BOX, server_root, log, ports["trojan"]):
                     if previous:
                         # Rotating primary revokes all of its old paths; guest keeps its original subscription.
-                        for path in previous["primary"]["outbounds"]:
-                            with self.subTest(revoked=path["tag"]), self.assertRaises((OSError, EOFError)):
-                                connect(path)
+                        for mode in ("hy2", "trojan"):
+                            for path in previous["primary"][mode]["outbounds"]:
+                                with self.subTest(revoked=path["tag"]), self.assertRaises((OSError, EOFError)):
+                                    connect(path)
                         providers["guest"] = previous["guest"]
                     for name, subscription in inventory["subscriptions"].items():
                         for exit_id in subscription["exits"]:
-                            for protocol in ports:
-                                path = next(p for p in providers[name]["outbounds"]
-                                            if p["tag"] in providers[name]["exits"][exit_id]["paths"] and p["type"] == protocol)
+                            for mode, provider in providers[name].items():
+                                path = next(p for p in provider["outbounds"] if p["tag"] in provider["exits"][exit_id]["paths"])
                                 with self.subTest(subscription=name, path=path["tag"], rotated=previous is not None):
                                     expected = {exit_: len(requests) + (exit_ == exit_id) for exit_, requests in calls.items()}
+                                    front_calls.clear()
                                     self.assertEqual(connect(path), "proxy")
+                                    self.assertEqual(front_calls, [("127.0.0.1", ports["trojan"])] if mode == "trojan-chain" else [])
                                     self.assertEqual({exit_: len(requests) for exit_, requests in calls.items()}, expected)
                                     self.assertEqual(calls[exit_id][-1], ("198.51.100.1", origin))
                 previous = providers

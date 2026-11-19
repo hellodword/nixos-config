@@ -89,14 +89,16 @@ def purpose_paths(args, templates):
         origin = stack.enter_context(http_server())
         exits = {name: stack.enter_context(socks_server(ports, [origin, 22, 222, 2222, 3389, 853]))
                  for name in ("east", "west", "media", "push", "apple", "google", "cn")}
+        relay, relay_calls = stack.enter_context(socks_server([port for port, _ in exits.values()], []))
         provider = {
             "outbounds": [{"type": "socks", "tag": "path-" + name, "server": "127.0.0.1", "server_port": port}
                           for name, (port, _) in exits.items() if name != "cn"],
             "exits": {name: {"paths": ["path-" + name]} for name in exits if name != "cn"},
             "groups": {name: {"exits": [n for n in exits if n != "cn"], "default": default}
-                       for name, default in (("proxy", "east"), ("hideme", "west"), ("downloads", "east"),
+                       for name, default in (("proxy", "east"), ("hideme", "west"),
                                              ("cryptocurrency", "west"), ("streaming", "media"), ("apns", "push"),
-                                             ("apple", "apple"), ("google", "google"))},
+                                             ("apple", "apple"), ("google", "google"))} |
+                      {"downloads": "proxy", "payment": "hideme", "giffgaff": "cryptocurrency"},
         }
         front, bootstrap, mixed = free_port(), free_port(), free_port()
         policy = json.loads(Path(args.purpose_policy).read_text())
@@ -121,7 +123,15 @@ def purpose_paths(args, templates):
             (root / f"{name}.json").write_text(json.dumps(value))
         selection = root / "selections.json"
         for chosen in ("west", "east"):
-            selection.write_text(json.dumps({"cryptocurrency": chosen}))
+            if chosen == "east":
+                for node in provider["outbounds"]:
+                    node["detour"] = "CHAIN"
+                (root / "provider.json").write_text(json.dumps(provider))
+                (root / "chain.json").write_text(json.dumps({"outbounds": [
+                    {"type": "socks", "tag": "front", "server": "127.0.0.1", "server_port": relay},
+                    {"type": "selector", "tag": "CHAIN", "outbounds": ["front"]},
+                ]}))
+            selection.write_text(json.dumps({"giffgaff": chosen}))
             generation = root / chosen
             generation.mkdir()
             dns_test.runtime.prepare(SimpleNamespace(
@@ -133,8 +143,8 @@ def purpose_paths(args, templates):
             bound = compiler.bind_groups(policy, effective)
             renderer.render(generation / "network.json", generation / "provider.json", generation / "network.json", args.sing_box)
             aliases = json.loads((generation / "dns-groups.json").read_text())
-            assert aliases["cryptocurrency"] == aliases["hideme" if chosen == "west" else "global"]
-            assert aliases["payment"] == aliases["global"]
+            assert aliases["giffgaff"] == aliases["cryptocurrency"]
+            assert aliases["payment"] == aliases["hideme"]
             with (generation / "sing-box.log").open("w") as log, \
                     proxy_process(args.sing_box, generation, log, mixed), \
                     dns_test.processes(args, bound, generation / "dns", ipv4_only=True):
@@ -143,7 +153,7 @@ def purpose_paths(args, templates):
                     ("storage.googleapis.com", "east"), ("discord-attachments.storage.googleapis.com", "east"),
                     ("youtube.com", "media"), ("google.com", "google"), ("tv.apple.com", "media"),
                     ("push.apple.com", "push"), ("apple.com", "apple"), ("binance.com", chosen),
-                    ("paypal.com", "east"), ("alipay.hk", "east"), ("biliintl.com", "east"),
+                    ("paypal.com", "west"), ("alipay.hk", "east"), ("biliintl.com", "east"),
                     ("wetv.qq.com", "east"),
                     ("baidu.com", "cn"), ("qq.com", "cn"), ("weixin.qq.com", "cn"),
                     ("foo.weixin.qq.com", "cn"), ("jd.com", "cn"), ("taobao.com", "cn"),
@@ -163,6 +173,8 @@ def purpose_paths(args, templates):
                     assert socks_http(mixed, domain, origin) == "proxy", domain
                     assert ("223.5.5.5", origin) in exits[expected][1], (domain, expected, exits)
                     assert all(("223.5.5.5", origin) not in calls for name, (_, calls) in exits.items() if name != expected)
+                if chosen == "east":
+                    assert ("127.0.0.1", exits[chosen][0]) in relay_calls, relay_calls
                 # Query records identify the selected pool even when DoH/DoT reuses a connection.
                 pools = {"east": "global", "west": "hideme", "media": "streaming", "push": "apns",
                          "apple": "apple", "google": "google", "cn": "cn"}
@@ -170,7 +182,7 @@ def purpose_paths(args, templates):
                 while True:
                     events = dns_test.read_events(generation / "dns/events.jsonl")
                     if all(any(event["name"] == domain and event["identity"] == "dnsdist-client"
-                               and event["policy"]["group"] == pools[expected]
+                               and event["policy"]["group"] == aliases["cryptocurrency" if domain == "binance.com" else pools[expected]]
                                for event in events) for domain, expected in cases):
                         break
                     assert time.monotonic() < deadline, "DNS purpose did not match the connection exit"
@@ -208,7 +220,7 @@ def purpose_paths(args, templates):
                     raise AssertionError("PCDN request reached an exit")
 
         # Concrete-node providers use the same catalog with all purposes following proxy.
-        classic = {"outbounds": provider["outbounds"][:1]}
+        classic = {"outbounds": [{"type": "socks", "tag": "first", "server": "127.0.0.1", "server_port": exits["west"][0]}]}
         network = assembler.assemble(base, policy, ipv4_only=True)
         result = renderer.address_family(renderer.combine(network, classic))
         (root / "classic.json").write_text(json.dumps(result))

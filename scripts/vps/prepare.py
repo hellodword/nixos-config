@@ -9,7 +9,7 @@ import tempfile
 
 import yaml
 
-from model import Inventory, DeclarationError, field
+from model import Inventory, DeclarationError, field, MODES, profile_name
 from clients import mobile, shadowrocket, shadowrocket_nodes
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -44,14 +44,20 @@ def generate(vps, directory):
                                 "html_handling": "none", "not_found_handling": "none"}
         write(location / "wrangler.json", config)
     for subscription_id, subscription in vps.subscriptions.items():
-        provider = vps.provider(subscription_id)
-        for name, value in {"linux.json": provider, "sing-box.json": mobile(provider),
-                            "shadowrocket.txt": shadowrocket_nodes(provider),
-                            "shadowrocket.conf": shadowrocket(provider),
-                            "shadowrocket-config.conf": shadowrocket(provider, subscription["name"]),
-                            "metadata.json": {"id": subscription_id, "name": subscription["name"]}}.items():
-            write(subscription_worker / "assets" / subscription["path"][1:] / name, value)
-            write(directory / "subscriptions" / subscription_id / name, value)
+        for mode in MODES:
+            provider = vps.provider(subscription_id, mode)
+            title = profile_name(subscription["name"], mode)
+            folder = "" if mode == "hy2" else mode
+            for name, value in {
+                "linux.json": provider,
+                "sing-box.json": mobile(provider, f"{subscription_id}/{mode}"),
+                "shadowrocket.txt": shadowrocket_nodes(provider),
+                "shadowrocket.conf": shadowrocket(provider),
+                "shadowrocket-config.conf": shadowrocket(provider, title),
+                "metadata.json": {"id": subscription_id, "name": title},
+            }.items():
+                write(subscription_worker / "assets" / subscription["path"][1:] / folder / name, value)
+                write(directory / "subscriptions" / subscription_id / folder / name, value)
     # Credential bindings are uploaded using Wrangler's native secret command.
     cert_settings = vps.worker("certificates")
     cert_auth = {node: [vps.certificate_request(node)["token"]] for node in vps.nodes}

@@ -456,7 +456,8 @@ systemctl reboot
 在维护机的 `vps` 开发环境中执行，`subscription` 使用本轮选择的订阅。先列出 provider 中的路径名称：
 
 ```sh
-provider="tmp/vps/subscriptions/$subscription/linux.json"
+provider_dir="tmp/vps/subscriptions/$subscription"
+provider="$provider_dir/trojan/linux.json"
 jq -r '.outbounds[].tag' "$provider"
 ```
 
@@ -490,7 +491,7 @@ curl --fail --show-error --max-time 20 \
   --socks5-hostname 127.0.0.1:11080 https://www.cloudflare.com/cdn-cgi/trace
 ```
 
-用 Ctrl-C 停下探测。验证下一条路径时，重新设置 `probe_path`，从生成探测配置开始重复操作；使用 `HY2` 路径可验证 UDP 入口。
+用 Ctrl-C 停下探测。验证 UDP 入口时，设 `provider="$provider_dir/linux.json"`，从该文件选一条 `HY2` 路径。每次更换路径后重新生成探测配置。
 
 ### 本机入口与跨节点路径
 
@@ -509,7 +510,7 @@ curl --fail --show-error --max-time 20 \
 
 相关路径通过验证后，确认[订阅 Worker](#发布订阅-worker)已发布本轮文件，并完成下载核对，再更新客户端。
 
-官方 sing-box 可直接导入完整 URL；Shadowrocket 可导入[完整配置或分开的节点订阅与分流配置](#shadowrocket-导入)。laptop 使用下载的 Linux provider，按[用途出口](network.md#用途出口)保存并执行 `network-policy check`、`network-policy apply`。在客户端确认用途所选的逻辑出口及其自动路径组；旧订阅保留到实际使用稳定后再撤下。
+移动 sing-box 和 Shadowrocket 可预先保存日常及备用配置，按需切换。导入方法见[移动 sing-box](#移动-sing-box)和 [Shadowrocket 导入](#shadowrocket-导入)。在 laptop 上保存所选模式的 Linux provider，再按[用途出口](network.md#用途出口)检查并应用。打开用途组核对当前路径后再撤下旧订阅。
 
 ### 清理部署材料
 
@@ -641,30 +642,32 @@ OpenVPN 的 `tls.server_name` 默认精确匹配服务端证书的 CN，填写�
 
 `subscriptions` 声明独立的订阅，例如 `primary`、`guest`，同一订阅可供多个客户端使用。可选的 `name` 是客户端显示名，省略时使用订阅键名。`exits` 决定授权的逻辑出口，`entries` 决定可选入口，`groups` 把站点用途绑定到出口。
 
-完整路径为“入口 × 承载 VPS × 出口 × 协议”。所有客户端共用以下命名：
+每份订阅有三种连接方式。平时使用默认的 HY2，遇到 UDP 入口不可达时可切换到 Trojan。三者提供相同的入口、承载 VPS 和逻辑出口组合。
+
+| 订阅参数 | 到达入口的方式 | 用途 |
+| --- | --- | --- |
+| `mode=hy2`（默认） | 客户端通过 Hysteria2 连接入口 | 日常使用，只探测 HY2 路径 |
+| `mode=trojan` | 客户端通过 Trojan 连接入口的 TCP 443 | TCP 备用，也可以指定跨 VPS 路径 |
+| `mode=trojan-chain` | 客户端先连接本地配置的 `CHAIN`，再经它访问 Trojan 入口 | 需要另一台代理才能到达入口时使用 |
+
+三份配置可预先保存，故障时直接在客户端切换。测速使用当前配置的路径。路径名从左到右给出入口、承载 VPS、出口和连接方式。
 
 | 路径 | 含义 |
 | --- | --- |
 | `edge → west · [us] · Trojan` | 连接 edge 的 TCP 443，由 west 解密，再从 `us` 上游发出 |
 | `edge → west · native · HY2` | 连接 edge 的 Hysteria2 入口，由 west 解密并使用原生网络出站 |
 | `west · native · Trojan` | 直接连接 west，由 west 原生网络出站 |
+| `edge → west · [us] · Trojan via CHAIN` | 经自己的前置代理连接 edge，再由 west 从 `us` 出站 |
 
 入口与承载 VPS 相同时只显示一次。类型为 `native`、标识为 `<承载 VPS>-native` 的出口显示为 `native`，其他出口显示为 `[出口标识]`，便于区分同机承载的多个出口。首次获得新路径名称后，原先固定的路径需要重新选择。
 
 每份订阅的 `key` 通过 HMAC-SHA256 为各出口、各协议派生密码；同一出口的所有承载 VPS 使用相同订阅身份。VPS 只收到自身承载的身份和上游凭据。调整入口、承载 VPS、订阅名称、订阅路径或用途选择时，已有密码保持稳定；更换密钥或出口标识会改变密码。
 
-选择分为两层：
+用途组同时提供自动和手动选路。例如 `hideme: {exits: [us, uk]}` 默认在两个出口的全部授权路径中择优，两个国家的路径都可能被选中。加入 `default: us` 则从 `us` 的自动选择开始。要固定入口和出口，在 `hideme` 中选择一条完整路径；要恢复择优，选回相应的“自动”项。只有一条候选路径时直接使用它。
 
-| 选择位置 | 作用 | 示例 |
-| --- | --- | --- |
-| 用途组，如 `cryptocurrency` | 选择逻辑出口 | 从 `us` 切到 `uk` |
-| `exit-us` | 自动选择或固定一条完整路径 | `exit-us-auto`，或 `edge → west · [us] · Trojan` |
+`payment: hideme` 让支付规则跟随 `hideme` 当前的选择。将 `payment` 单独写成 `{exits: [us]}` 后，即使它和其他用途使用相同出口，也可单独固定路径。相同的候选路径集合共用一个测速组，不同集合分别探测，各用途保留自己的手动选择。
 
-用途组的 `exits` 是可选出口，`default` 是初始选择；多出口组明确填写，单出口组可省略。客户端已保存的有效选择优先。多个用途选中同一个出口时，共享该出口的路径选择；例如 `hideme` 和 `cryptocurrency` 都使用 `us`，固定 `exit-us` 的路径会同时影响这两个用途。
-
-自动组通过各条完整路径请求测试 URL，在可用路径中选择延迟较低者。sing-box 的探测间隔为三分钟，切换容差为 100 毫秒；Shadowrocket 的探测间隔为十分钟、超时为五秒，切换容差为零。测量覆盖入口连接、跨 VPS 转发和上游出站。入口或承载 VPS 故障后，后续探测将新连接移到仍可用的路径；探测间隔、连接超时和应用重连会影响实际恢复时间。健康的现有连接继续使用原路径，已断开的连接由应用重建。
-
-排障时，在 `exit-us` 中固定具体路径，便可单独观察某个入口、承载 VPS 和协议。固定路径失效时仍保留这一选择，恢复自动切换需要重新选择 `exit-us-auto`。逻辑出口之间的切换由用户决定，例如全部 `us` 路径不可用时，可将用途改为 `uk`。
+探测请求经过入口、跨 VPS 转发和最终出口。sing-box 每三分钟探测一次，切换容差为 100 毫秒。Shadowrocket 每十分钟探测一次，超时五秒，切换容差为零。自动模式下，新连接随探测结果切换；手动固定后，新连接继续使用所选路径，直到重新选择。已建立的连接沿用原路径。
 
 增加出口时，在顶层 `exits` 声明出站方式和承载 VPS，将名称加入订阅的 `exits`，再加入相应用途组。涉及的 VPS 启用新配置并完成请求验证后，发布订阅，客户端获得新的路径。
 
@@ -684,7 +687,27 @@ Worker 根据官方 sing-box 或 Shadowrocket 的 UA 选择内容，也可通过
 | `?client=shadowrocket-subscribe` | Shadowrocket 节点订阅 |
 | `?client=shadowrocket-config` | Shadowrocket 分流配置，通过订阅名称引用节点 |
 
-UA 无法识别时返回 400，提示指定 `client`。本项目下载 provider 时使用 `?client=linux`。Worker 通过 HTTPS 提供内容；完整订阅地址是访问凭据，应保存在私密位置。响应使用 `private, no-store`，Worker 访问日志保持关闭。
+把连接方式追加到任一格式即可，例如 `?client=shadowrocket&mode=trojan`。依靠 UA 识别客户端时可直接用 `?mode=trojan`。只调整模式、用途别名或客户端显示时，重新准备材料并[仅更新订阅](#仅更新订阅)即可。
+
+完整订阅地址是访问凭据，应保存在私密位置。Worker 通过 HTTPS 提供内容，响应使用 `private, no-store`。
+
+### 移动 sing-box
+
+将默认 HY2 和 `?client=sing-box&mode=trojan` 分别导入为配置，在客户端选择要使用的一份。三个模式各自保存用途选择。
+
+使用 `trojan-chain` 时，先下载 `?client=sing-box&mode=trojan-chain` 为 `sing-box.json`，在同目录的 `chain.json` 声明自己的前置代理。在本项目的开发环境中使用 `tmp/devtools/network/` 存放这两个文件，并在该目录执行合并命令。下面的 SOCKS 地址和端口需换成手机实际可达的代理。
+
+```json
+{"outbounds":[{"type":"socks","tag":"CHAIN","server":"192.0.2.30","server_port":1080}]}
+```
+
+也可以把 `CHAIN` 定义为选择器，并在同一文件提供它的成员。合并后，将 `trojan-chain.json` 私下传到手机并作为本地配置导入。订阅更新时，用新下载的文件和已保存的前置配置重新合并。前置凭据只保存在自己的设备上。[sing-box 拨号字段](https://sing-box.sagernet.org/configuration/shared/dial/#detour)
+
+```sh
+umask 077
+sing-box merge trojan-chain.json -c sing-box.json -c chain.json
+sing-box check -c trojan-chain.json
+```
 
 ### Shadowrocket 导入
 
@@ -703,23 +726,26 @@ from pathlib import Path
 import sys
 from urllib.parse import quote
 
-metadata = json.loads((Path("tmp/vps/subscriptions") / sys.argv[1] / "metadata.json").read_text())
+directory = Path("tmp/vps/subscriptions") / sys.argv[1]
 url = getpass.getpass("订阅的完整 HTTPS 地址：").strip()
-print("完整配置（含节点）：")
-print(f"shadowrocket://config/add/{url}?client=shadowrocket")
-nodes = base64.b64encode((url + "?client=shadowrocket-subscribe").encode()).decode()
-print("节点订阅：")
-print(f"shadowrocket://add/sub://{nodes}?remark={quote(metadata['name'], safe='')}")
-print("分流配置：")
-print(f"shadowrocket://config/add/{url}?client=shadowrocket-config")
+for mode in ("hy2", "trojan", "trojan-chain"):
+    folder = directory if mode == "hy2" else directory / mode
+    name = json.loads((folder / "metadata.json").read_text())["name"]
+    print(f"\n{name} ({mode})")
+    print(f"完整配置  shadowrocket://config/add/{url}?client=shadowrocket&mode={mode}")
+    nodes = base64.b64encode(f"{url}?client=shadowrocket-subscribe&mode={mode}".encode()).decode()
+    print(f"节点订阅  shadowrocket://add/sub://{nodes}?remark={quote(name, safe='')}")
+    print(f"分流配置  shadowrocket://config/add/{url}?client=shadowrocket-config&mode={mode}")
 PY
 ```
 
 节点导入链接带入订阅显示名，配置下载使用 `<name>.conf` 文件名。通过 HTTPS 地址手动添加节点订阅时，将备注填写为相同的 `name`；配置中的订阅引用按这个名称查找节点。
 
-采用分开导入时，连接地址或密码调整后更新首页订阅；DNS、用途规则或组设置调整后更新配置。入口、承载 VPS 或逻辑出口变化时，发布 Worker 后更新两者。修改显示名后同步修改首页订阅备注并更新配置。
+在「配置」中启用所需模式，将首页的「全局路由」设为「配置」。点首页的指示牌图标或下拉进入「代理分组」，打开 `hideme` 等用途组。勾选具体节点即可固定路径，勾选“自动 · …”恢复测速择优。支付、社交等别名跟随所指用途组。[Shadowrocket 代理分组](https://github.com/LOWERTOP/Shadowrocket#代理分组)
 
-远程规则来源变化时，更新当前启用的配置并下载其引用的规则集，再从连接记录核对命中的规则与出口。
+链式模式还需在设备上准备名为 `CHAIN` 的前置节点或组。可在 Trojan 节点的「ⓘ → 代理通过」核对第一跳。该模式的分流配置要求在前置丢失时关闭连接；单独导入节点订阅时也要启用配套分流配置才能应用这项设置。[Shadowrocket 代理链](https://github.com/LOWERTOP/Shadowrocket#代理通过代理链)
+
+分开导入时，更新首页节点订阅可刷新地址和密码。要长期保留手动选择，可以使用本地副本作为分流配置，清除副本的远程更新地址，保留节点订阅的自动更新。手动选择也可以写入该用途组的 `policy-select-name`。替换整份远程配置、改名或移除节点后，应核对用途组当前勾选项。调整入口、承载 VPS、逻辑出口或用途时，同步更新节点订阅和分流配置。[Shadowrocket 配置更新](https://github.com/LOWERTOP/Shadowrocket#自动更新)
 
 ## 规则与 DNS
 
