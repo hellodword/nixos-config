@@ -14,10 +14,10 @@ let
   credentialDirectory = "/var/lib/site-http-origin/credentials/${builtins.hashFile "sha256" vpsSecretsFile}";
   locations = pkgs.writeText "http-origin-locations.conf.in" ''
     location = $ORIGIN_PREFIX {
-      proxy_pass http://127.0.0.1:8080/;
+      proxy_pass http://127.0.0.1:8080;
     }
     location ^~ $ORIGIN_PREFIX/ {
-      proxy_pass http://127.0.0.1:8080/;
+      proxy_pass http://127.0.0.1:8080;
     }
     location / {
       return 404;

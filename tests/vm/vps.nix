@@ -578,16 +578,16 @@ in
         with subtest("Colmena supplies the origin prefix and HTTP forwarding preserves application requests"):
             wait_unit(west, "http-origin-fixture.service")
             wait_origin("v1")
-            assert origin_request("v1")["path"] == "/"
-            assert origin_request("v1", "/")["path"] == "/"
+            assert origin_request("v1")["path"] == "/fixture-origin-v1"
+            assert origin_request("v1", "/")["path"] == "/fixture-origin-v1/"
             response = origin_request("v1", "/items?q=one%20two", body="fixture body")
-            assert (response["method"], response["path"], response["body"]) == ("POST", "/items?q=one%20two", "fixture body"), response
+            assert (response["method"], response["path"], response["body"]) == ("POST", "/fixture-origin-v1/items?q=one%20two", "fixture body"), response
             assert response["headers"]["Host"] == "app.example:80", response
             for header in ("X-Real-IP", "X-Forwarded-For"):
                 assert response["headers"][header] == "203.0.113.77", response
             assert response["headers"]["X-Forwarded-Proto"] == "https", response
-            assert origin_request("v1", source="2001:db8:1::32", target="2001:db8:1::11")["path"] == "/"
-            assert json.loads(succeed(west, "curl --fail --silent http://127.0.0.1/fixture-origin-v1"))["path"] == "/"
+            assert origin_request("v1", source="2001:db8:1::32", target="2001:db8:1::11")["path"] == "/fixture-origin-v1"
+            assert json.loads(succeed(west, "curl --fail --silent http://127.0.0.1/fixture-origin-v1"))["path"] == "/fixture-origin-v1"
             assert controller.succeed("curl --silent --max-time 5 --interface 192.0.2.32 -o /dev/null -w '%{http_code}' http://192.0.2.11/") == "404"
             websocket = """
         import socket
@@ -728,19 +728,19 @@ in
             # A restart before reboot still uses the running generation's credential path.
             succeed(west, "systemctl restart nginx.service")
             wait_origin("v1")
-            assert origin_request("v1")["path"] == "/"
+            assert origin_request("v1")["path"] == "/fixture-origin-v1"
             powercycle(west)
             wait_unit(west, "nginx.service")
             wait_unit(west, "http-origin-fixture.service")
             wait_origin("v2")
-            assert origin_request("v2")["path"] == "/"
+            assert origin_request("v2")["path"] == "/fixture-origin-v2"
             deploy("v1", "switch", "west")
             wait_origin("v1")
-            assert origin_request("v1")["path"] == "/"
+            assert origin_request("v1")["path"] == "/fixture-origin-v1"
         with subtest("Test, switch, reboot and rollback retain the required credentials"):
             deploy("v2", "test", "west")
             wait_origin("v2")
-            assert origin_request("v2")["path"] == "/"
+            assert origin_request("v2")["path"] == "/fixture-origin-v2"
             wait_unit(west, "site-vps-proxy.service")
             assert succeed(west, "cat /etc/vps-generation") == "v2"
             assert succeed(west, "cat /nix/var/nix/profiles/system/etc/vps-generation") == "v1"
@@ -755,7 +755,7 @@ in
             wait_unit(west, "site-vps-proxy.service")
             assert succeed(west, "cat /etc/vps-generation") == "v1"
             wait_origin("v1")
-            assert origin_request("v1")["path"] == "/"
+            assert origin_request("v1")["path"] == "/fixture-origin-v1"
             old_path = next(p for p in provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
             request(old_path, "192.0.2.11")
             succeed(west, "test -f /var/lib/site-vps/releases/v1/proxy.json; test -f /var/lib/site-vps/releases/v2/proxy.json")

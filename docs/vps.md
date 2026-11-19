@@ -67,7 +67,7 @@ secrets:
   edge-http-origin-prefix: /替换为随机UUID
 ```
 
-用 `python3 -c 'import uuid; print(uuid.uuid4())'` 生成 UUID，在前面加 `/`，填入 `secrets.<节点>-http-origin-prefix`。路径只包含一个由字母、数字、连字符或下划线组成的段。`/秘密前缀` 和 `/秘密前缀/` 转到应用根路径，`/秘密前缀/path?q=1` 转到 `/path?q=1`；其他路径返回 404。转发保留方法、查询、正文和 Host，支持 WebSocket，并将 Cloudflare 提供的客户端地址和外部协议传给应用。
+用 `python3 -c 'import uuid; print(uuid.uuid4())'` 生成 UUID，在前面加 `/`，填入 `secrets.<节点>-http-origin-prefix`。前缀只包含一个由字母、数字、连字符或下划线组成的路径段。假设前缀为 `/abc`，nginx 将 `/abc`、`/abc/` 及其子路径（如 `/abc/items?q=1`）连同查询参数原样转给应用。其他路径返回 404。转发保留方法、正文和 Host，支持 WebSocket，并将 Cloudflare 提供的客户端地址和外部协议传给应用。
 
 该模块监听 TCP 80，并在 IPv4、IPv6 上允许 Cloudflare 地址段访问；其他外部来源的 TCP 80，以及 Cloudflare 来源的 TCP/UDP 443 被丢弃。loopback 可用于本机诊断，其余 443 流量沿用节点已有策略。供应商防火墙也需要放行 TCP 80。地址段由锁定的 Cloudflare 输入提供，随 remote 更新、部署生效。来源限制确认的是 Cloudflare 网络，秘密路径用于区分可访问的入口。
 
