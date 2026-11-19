@@ -260,10 +260,13 @@ let
       }
       // lib.optionalAttrs proxy {
         exits.fixture.paths = [ "synthetic" ];
-        groups = lib.genAttrs [ "proxy" "hideme" ] (_: {
-          exits = [ "fixture" ];
-          default = "fixture";
-        });
+        groups = {
+          proxy = {
+            exits = [ "fixture" ];
+            default = "fixture";
+          };
+          hideme = "proxy";
+        };
       }
     );
     site.network = {
@@ -893,7 +896,8 @@ in
             node.succeed("su -s /bin/sh sender -c 'bark IPv4网络通知'")
             if node == dnsProxy:
                 node.succeed("curl --proxy socks5h://127.0.0.1:10800 --max-time 8 -sSf http://www.example.org:18080/family")
-                node.succeed("python3 -c 'import json; aliases=json.load(open(\"/run/site-network-policy/current/dns-groups.json\")); assert aliases[\"hideme\"] == aliases[\"global\"]'")
+                aliases = json.loads(node.succeed("cat /run/site-network-policy/current/dns-groups.json"))
+                assert aliases["hideme"] == aliases["global"], aliases
             node.succeed("network-ipv6 on")
             node.succeed("network-ipv6 status")
             node.succeed("dig +short www.example.org AAAA | grep ':'")
