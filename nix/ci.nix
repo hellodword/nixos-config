@@ -44,7 +44,7 @@ let
     if remote then
       {
         dev-shell = flake.devShells.${system}.vps;
-        inherit (flake.packages.${system}) vps-python wrangler;
+        inherit (flake.packages.${system}) wrangler;
       }
     else
       {

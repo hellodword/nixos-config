@@ -3,7 +3,6 @@
   lib,
   userName ? null,
   config,
-  inputs,
   ...
 }:
 let
@@ -38,10 +37,7 @@ in
   config = lib.mkIf siteCfg.enable {
     nixpkgs.config.allowUnfreePackages = [ "Oracle_VirtualBox_Extension_Pack" ];
     users.users.${userName}.extraGroups = [ "vboxusers" ];
-    virtualisation.virtualbox.host = {
-      enable = true;
-      package = (import ../../nix/packages.nix { inherit pkgs inputs; }).virtualbox;
-    };
+    virtualisation.virtualbox.host.enable = true;
     environment.systemPackages = lib.optional (siteCfg.environment != { }) (
       pkgs.lib.hiPrio virtualboxLauncher
     );

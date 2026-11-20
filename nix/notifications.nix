@@ -4,30 +4,19 @@
 }:
 let
   py = pkgs.python3Packages;
-  apprise = py.apprise.overridePythonAttrs (old: {
+  apprise = py.apprise;
+  api = py.buildPythonPackage {
+    pname = "apprise-api";
     version = "2.1.0";
     src = pkgs.fetchFromGitHub {
       owner = "caronc";
-      repo = "apprise";
-      tag = "v2.1.0";
-      hash = "sha256-JgPYySIOyIq/l7ysT/yy69HIdxhdhJMBBTG7Jg4k7uw=";
-    };
-    dependencies = old.dependencies ++ [
-      py.urllib3
-      py.certifi
-    ];
-  });
-  api = py.buildPythonPackage {
-    pname = "apprise-api";
-    version = "2.0.2";
-    src = pkgs.fetchFromGitHub {
-      owner = "caronc";
       repo = "apprise-api";
-      tag = "v2.0.2";
-      hash = "sha256-aRU+Mhoz2fftydl8UhvaBdZ/qhEIs7Pia4hKE1Hx3qQ=";
+      tag = "v2.1.0";
+      hash = "sha256-ZQoI3r5sW4aLZRSynGNI7fPqLDQHyTMBeP3Wi5jFcEs=";
     };
     pyproject = true;
     build-system = [ py.setuptools ];
+    pythonRelaxDeps = [ "apprise" ];
     dependencies = [
       apprise
       py.django

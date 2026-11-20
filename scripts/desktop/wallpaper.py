@@ -144,15 +144,13 @@ def fetch(feed_url, swaymsg, feh):
 
 
 def present(rotate, swaymsg, feh, preferred=None):
-    with locked("lock") as runtime:
+    with locked("lock"):
         images = sorted(p for p in LIBRARY.glob("*") if p.is_file()
                         and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"})
         if not images:
             print("Wallpaper library is empty", flush=True)
             return
         state = STATE / "current"
-        if not state.exists() and (runtime / "current").exists():
-            write_state("current", (runtime / "current").read_text())
         current = Path(state.read_text()) if state.exists() else None
         choices = [p for p in images if p != current] if rotate and len(images) > 1 else images
         random.shuffle(choices)

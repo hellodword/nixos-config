@@ -69,17 +69,6 @@ let
         }
       )
   );
-  bundle = pkgs.runCommand "network-policy" { nativeBuildInputs = [ pkgs.hujsonfmt ]; } ''
-    mkdir -p $out
-    ${lib.optionalString cfg.dns.enable ''
-      ${pkgs.python3}/bin/python3 ${scripts}/dns_policy.py --policy ${policy} --output $out
-      ${pkgs.dnsdist}/bin/dnsdist --check-config -C $out/dnsdist.conf
-    ''}
-    ${lib.optionalString cfg.singBox.enable ''
-      ${pkgs.python3}/bin/python3 ${scripts}/assemble.py --base ${base} --policy ${policy} \
-        ${lib.optionalString cfg.dns.enable "--transports $out/transports.json"} --output $out/network.json
-    ''}
-  '';
   runtimeRoot = "/run/site-network-policy";
   reconcileDirectory = "/run/site-network-ipv6-reconcile";
   reconcilePending = "${reconcileDirectory}/pending";
@@ -274,11 +263,6 @@ in
       default = [ ];
       description = "Additional absolute paths visible read-only during sandboxed policy validation, such as local rule sets or TLS CA files.";
     };
-    generatedPolicy = lib.mkOption {
-      type = lib.types.package;
-      internal = true;
-      readOnly = true;
-    };
     runtimeRouteDirectory = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -385,7 +369,6 @@ in
         }
       );
     };
-    site.network.generatedPolicy = bundle;
     site.network.activePolicy = "${runtimeRoot}/current";
     environment.etc."site-network/ipv6.json".source = json.generate "network-ipv6.json" {
       inherit (cfg.ipv6) enable;

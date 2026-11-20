@@ -1,11 +1,8 @@
-#!/usr/bin/env python3
 """Compile DNS classification, encrypted races and optional transport requests."""
-import argparse
 import copy
 import ipaddress
 import json
 import re
-from pathlib import Path
 import domain_policy
 from provider_groups import purpose_group
 
@@ -279,15 +276,3 @@ def bind_groups(config, provider):
         group = "global" if purpose == "proxy" else purpose
         config["groups"][group]["outbound"] = purpose_group(purpose, groups)
     return config
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--policy", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    args = parser.parse_args()
-    compile_policy(json.loads(args.policy.read_text()), args.output)
-
-
-if __name__ == "__main__":
-    main()
