@@ -6,7 +6,11 @@
   ...
 }:
 let
-  cfg = nixosConfig.site.cli;
+  cfg =
+    nixosConfig.site.cli or {
+      enable = false;
+      identityFile = null;
+    };
   userName = config.home.username;
   buildTmp = nixosConfig.systemd.services.nix-daemon.environment.TMPDIR or "/tmp";
   identityRuntime = "/run/site-identity/${config.home.username}/current";

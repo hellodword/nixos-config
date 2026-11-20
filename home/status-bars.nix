@@ -6,7 +6,12 @@
   ...
 }:
 let
-  cfg = nixosConfig.site.desktop;
+  cfg =
+    nixosConfig.site.desktop or {
+      enable = false;
+      sway.enable = false;
+      i3.enable = false;
+    };
   sans = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.sansSerif;
   tools = import ../nix/desktop-tools.nix {
     inherit pkgs;

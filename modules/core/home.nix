@@ -13,17 +13,17 @@ in
   options.site.home.enable = lib.mkOption {
     type = lib.types.bool;
     default =
-      config.site.core.enable
-      || config.site.cli.enable
-      || config.site.desktop.enable
-      || config.site.apps.enable
-      || config.site.productivity.enable;
+      (config.site.core.enable or false)
+      || (config.site.cli.enable or false)
+      || (config.site.desktop.enable or false)
+      || (config.site.apps.enable or false)
+      || (config.site.productivity.enable or false);
     defaultText = lib.literalExpression ''
-      config.site.core.enable
-      || config.site.cli.enable
-      || config.site.desktop.enable
-      || config.site.apps.enable
-      || config.site.productivity.enable
+      (config.site.core.enable or false)
+      || (config.site.cli.enable or false)
+      || (config.site.desktop.enable or false)
+      || (config.site.apps.enable or false)
+      || (config.site.productivity.enable or false)
     '';
     description = "Whether to enable the Home Manager user environment.";
   };

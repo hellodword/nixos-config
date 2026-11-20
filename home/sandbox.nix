@@ -8,7 +8,7 @@
 let
   profiles = "${pkgs.firejail}/etc/firejail";
   wrap = import ../nix/firejail.nix { inherit pkgs; };
-  apps = nixosConfig.site.apps.enable;
+  apps = nixosConfig.site.apps.enable or false;
   productivity = nixosConfig.site.productivity.enable or false;
   common = extra: ''
     blacklist ${nixosConfig.site.storage.persistRoot}
@@ -38,26 +38,6 @@ let
     package = config.programs.firefox.finalPackage;
     binaries = [ "firefox" ];
     profile = browserProfile;
-  };
-  bitwarden = pkgs.symlinkJoin {
-    name = "${pkgs.bitwarden-desktop.name}-sway";
-    inherit (pkgs.bitwarden-desktop) pname version meta;
-    paths = [ pkgs.bitwarden-desktop ];
-    nativeBuildInputs = [ pkgs.makeWrapper ];
-    # Keep the upstream package and Firejail profile; use XWayland until the
-    # selected Electron includes the XKB fix described in docs/desktop.md.
-    postBuild = ''
-      wrapProgram "$out/bin/bitwarden" --run ${lib.escapeShellArg ''
-        case ":''${XDG_CURRENT_DESKTOP:-}:" in
-          *:sway:*)
-            unset NIXOS_OZONE_WL
-            export GTK_IM_MODULE=fcitx
-            export GTK_IM_MODULE_FILE=/run/current-system/sw/etc/gtk-3.0/immodules.cache
-            set -- --ozone-platform=x11 "$@"
-            ;;
-        esac
-      ''}
-    '';
   };
   chrome = wrap {
     package = pkgs.google-chrome;
@@ -145,7 +125,7 @@ in
         firefox
         chrome
         (wrap {
-          package = bitwarden;
+          package = pkgs.bitwarden-desktop;
           arguments = [ "--password-store=gnome-libsecret" ];
           binaries = [ "bitwarden" ];
           profile = profile "bitwarden" (desktopBus + keyring);

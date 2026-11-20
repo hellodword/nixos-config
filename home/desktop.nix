@@ -7,7 +7,13 @@
   ...
 }:
 let
-  cfg = nixosConfig.site.desktop;
+  cfg =
+    nixosConfig.site.desktop or {
+      enable = false;
+      sway.enable = false;
+      i3.enable = false;
+      plasma.enable = false;
+    };
   c = import ../lib/palette.nix;
   sans = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.sansSerif;
   mono = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.monospace;
