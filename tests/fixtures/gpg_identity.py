@@ -99,7 +99,9 @@ def verify(home, directory, *, retained=(), missing=()):
     offered = subprocess.check_output(["ssh-add", "-L"], env=os.environ | {"SSH_AUTH_SOCK": socket}, text=True)
     actual = {tuple(line.split()[:2]) for line in offered.splitlines()}
     assert actual == expected, f"Agent identities: {len(expected - actual)} missing, {len(actual - expected)} unexpected"
-    trust = lambda value: sorted(line for line in value.splitlines() if line and not line.startswith("#"))
+    def trust(value):
+        return sorted(line for line in value.splitlines() if line and not line.startswith("#"))
+
     assert trust(gpg(home, "--export-ownertrust")) == trust((directory / "ownertrust").read_text())
 
 

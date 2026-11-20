@@ -1,5 +1,4 @@
 """Declared GPG SSH identities through registration, recovery and rotation."""
-import json
 from contextlib import ExitStack
 import os
 from pathlib import Path
@@ -7,8 +6,6 @@ import pwd
 import subprocess
 import tempfile
 import unittest
-
-import yaml
 
 from tests.fixtures import gpg_identity
 

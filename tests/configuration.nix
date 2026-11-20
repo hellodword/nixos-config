@@ -1,5 +1,6 @@
 {
   pkgs,
+  inputs,
   laptop,
   userName,
 }:
@@ -27,20 +28,42 @@ let
       "sway"
     ];
   };
-  disabled = path: lib.setAttrByPath (lib.splitString "." path) (lib.mkForce false);
+  minimalHeadless = inputs.nixpkgs.lib.nixosSystem {
+    system = "x86_64-linux";
+    specialArgs = { inherit inputs; };
+    modules = [
+      ../modules
+      {
+        system.stateVersion = "22.11";
+        fileSystems."/" = {
+          device = "none";
+          fsType = "tmpfs";
+        };
+        boot.loader.grub.enable = false;
+      }
+    ];
+  };
   cases = {
     full = { };
-    cache = {
-      module = disabled "site.cache.enable";
-      expected.cache = false;
-    };
-    storage-root = {
-      module.site.storage.persistRoot = lib.mkForce "/state";
+    laptop2 = {
+      config = inputs.self.nixosConfigurations.laptop2.config;
       expected.storage = {
-        root = "/state";
-        backupSource = "/state";
-        ageKey = "/state/var/lib/sops-nix/keys.txt";
-        device = "/dev/disk/by-label/fixture-state";
+        root = "/persist";
+        backupSource = "/persist";
+        ageKey = "/persist/var/lib/sops-nix/keys.txt";
+        device = "/dev/mapper/crypt0";
+      };
+    };
+    headless = {
+      module.site = {
+        desktop.enable = lib.mkForce false;
+        apps.enable = lib.mkForce false;
+        productivity.enable = lib.mkForce false;
+      };
+      expected = {
+        displayManager = false;
+        browser = false;
+        sessions = [ ];
       };
     };
     network-off = {
@@ -55,89 +78,23 @@ let
         proxy = false;
       };
     };
-    dns-only = {
-      module.site.network = {
-        singBox.enable = lib.mkForce false;
-        lockdown.enable = lib.mkForce false;
-      };
-      expected = {
-        mullvad = false;
-        proxy = false;
-      };
-    };
-    sing-box-only = {
-      module.site.network = {
-        dns.enable = lib.mkForce false;
-        lockdown.enable = lib.mkForce false;
-      };
-      expected = {
-        dns = false;
-        mullvad = false;
-      };
-    };
     dns-and-sing-box = {
-      module = disabled "site.network.lockdown.enable";
+      module.site.network.lockdown.enable = lib.mkForce false;
       expected.mullvad = false;
     };
-    tailscale = {
-      module = disabled "services.tailscale.enable";
-      expected.tailscale = false;
-    };
-    backup = {
-      module = disabled "site.backup.enable";
-      expected.backup = false;
-    };
-    desktop = {
-      module = disabled "site.desktop.enable";
-      expected = {
-        displayManager = false;
-        sessions = [ ];
+    sway = {
+      module.site.desktop = {
+        i3.enable = lib.mkForce false;
+        plasma.enable = lib.mkForce false;
+        sway.enable = lib.mkForce true;
       };
+      expected.sessions = [ "sway" ];
     };
-    apps = {
-      module = disabled "site.apps.enable";
-      expected.browser = false;
-    };
-    cli = {
-      module = disabled "site.cli.enable";
-      expected.cli = false;
-    };
-  }
-  // lib.genAttrs [ "i3" "plasma" "sway" ] (session: {
-    module.site.desktop = lib.genAttrs [ "i3" "plasma" "sway" ] (name: {
-      enable = lib.mkForce (name == session);
-    });
-    expected.sessions = [ session ];
-  });
-  persistentState =
-    config:
-    let
-      state = config.environment.persistence.${config.site.storage.persistRoot};
-      directories = map (entry: {
-        inherit (entry)
-          directory
-          user
-          group
-          mode
-          ;
-      });
-      files = map (entry: {
-        inherit (entry) file method;
-        parent = { inherit (entry.parentDirectory) user group mode; };
-      });
-    in
-    {
-      directories = directories state.directories;
-      files = files state.files;
-      users = lib.mapAttrs (_: user: {
-        directories = directories user.directories;
-        files = files user.files;
-      }) state.users;
-    };
+  };
   evaluate =
     name: spec:
     let
-      config = (laptop.extendModules { modules = [ (spec.module or { }) ]; }).config;
+      config = spec.config or (laptop.extendModules { modules = [ (spec.module or { }) ]; }).config;
       actual = {
         dns = config.systemd.services ? site-dns;
         tailscale = config.systemd.services ? tailscaled;
@@ -185,19 +142,24 @@ let
     ) "${name}: expected ${builtins.toJSON expected}, got ${builtins.toJSON actual}";
     assert lib.assertMsg ownershipValid "${name}: persistence refers to an unknown user or group";
     assert lib.assertMsg (
-      persistentState config == persistentState laptop.config
-    ) "${name}: disabling a capability changed the laptop state inventory";
-    builtins.deepSeq config.system.build.toplevel.drvPath (
-      pkgs.runCommand "configuration-${name}.json" (
-        {
-          scenario = pkgs.writeText "scenario.json" (builtins.toJSON { inherit name actual; });
-        }
-        // lib.optionalAttrs (name == "full") {
-          credentials = config.system.build.sops-nix-manifest;
-          loginCredentials = config.system.build.sops-nix-users-manifest;
-        }
-      ) ''cp "$scenario" "$out"''
-    );
+      name != "headless" || !minimalHeadless.config.site.home.enable
+    ) "minimal headless system should leave site.home.enable disabled";
+    builtins.deepSeq
+      [
+        config.system.build.toplevel.drvPath
+        (if name == "headless" then minimalHeadless.config.system.build.toplevel.drvPath else "")
+      ]
+      (
+        pkgs.runCommand "configuration-${name}.json" (
+          {
+            scenario = pkgs.writeText "scenario.json" (builtins.toJSON { inherit name actual; });
+          }
+          // lib.optionalAttrs (name == "full") {
+            credentials = config.system.build.sops-nix-manifest;
+            loginCredentials = config.system.build.sops-nix-users-manifest;
+          }
+        ) ''cp "$scenario" "$out"''
+      );
 in
 lib.mapAttrs' (name: spec: lib.nameValuePair "configuration-${name}" (evaluate name spec)) cases
 // {

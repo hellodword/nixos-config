@@ -16,6 +16,7 @@ let
     "vm-desktop"
     "vm-applications"
     "vm-backup"
+    "vm-files"
     "vm-vps"
   ];
   vmNames = if remote then [ "vm-vps" ] else lib.remove "vm-vps" allVMs;
@@ -29,7 +30,6 @@ let
           [
             "e2e"
             "lint"
-            "vm-files"
           ]
           ++ allVMs
         ))
@@ -72,6 +72,7 @@ assert lib.assertMsg (lib.elem scope [
     vm-network-backup = lib.optionals (!remote) [
       "vm-network"
       "vm-backup"
+      "vm-files"
     ];
     vm-desktop = lib.optionals (!remote) [ "vm-desktop" ];
     vm-applications = lib.optionals (!remote) [ "vm-applications" ];

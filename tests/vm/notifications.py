@@ -3,7 +3,7 @@ import json
 import shlex
 
 
-def notification_smoke(machine, upstream, python):
+def notification_smoke(machine, upstream, python, runtime):
     try:
         exercise_notifications(machine, upstream, python)
     except Exception as error:
@@ -15,7 +15,7 @@ response = requests.post('http://bark:8080/push', timeout=25,
                          json={'device_key': 'local', 'body': 'diagnostic'})
 print(response.status_code, response.text)
 """
-        capture_notification_diagnostics(error, [
+        capture_notification_diagnostics(runtime, error, [
             (machine, "bark-response", f"docker exec site-apprise {python} -c {shlex.quote(probe)}"),
             (machine, "services", "journalctl -b -u haproxy -u docker-site-bark -u docker-site-apprise --no-pager -o short-precise"),
             (upstream, "simulator", "journalctl -b -u notification-fixture --no-pager -o short-precise"),
@@ -23,7 +23,7 @@ print(response.status_code, response.text)
         raise
 
 
-def capture_notification_diagnostics(error, captures):
+def capture_notification_diagnostics(runtime, error, captures):
     runtime["collect_failure"](error, captures)
 
 

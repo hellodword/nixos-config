@@ -127,6 +127,7 @@ rec {
             vm-applications
             vm-backup
             vm-network
+            vm-files
             vm-vps
             ;
         };
@@ -136,8 +137,16 @@ rec {
         "vm-desktop"
         "vm-applications"
         "vm-backup"
+        "vm-files"
         "vm-vps"
       ]
   );
 }
-// import ../tests/configuration.nix { inherit pkgs laptop userName; }
+// import ../tests/configuration.nix {
+  inherit
+    pkgs
+    inputs
+    laptop
+    userName
+    ;
+}

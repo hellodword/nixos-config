@@ -176,7 +176,6 @@ class NetworkConfiguration(unittest.TestCase):
 
     def test_ipv6_multiline_tunnel_json_and_offline_policy_activation(self):
         from types import SimpleNamespace
-        from unittest.mock import patch
 
         self.assertEqual(ipv6_mod.parse_tunnel_json('{"state":"connected"}'), {"state": "connected"})
         self.assertEqual(

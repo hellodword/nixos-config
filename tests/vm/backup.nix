@@ -132,7 +132,7 @@ in
         upstream.wait_for_open_port(8000)
         machine.start()
         machine.wait_for_unit("multi-user.target")
-        notification_smoke(machine, upstream, "${notificationPackages.python}/bin/python3")
+        notification_smoke(machine, upstream, "${notificationPackages.python}/bin/python3", runtime)
         machine.succeed("mkdir -p /persist/data/Cache; echo important > /persist/data/document; echo disposable > /persist/data/Cache/blob; systemd-tmpfiles --create")
         for target in ("first", "second", "third"):
             machine.succeed(f"RESTIC_PASSWORD_FILE=/etc/backup-test/password restic -r rest:http://192.168.1.2:8000/{target}/ init")
@@ -254,7 +254,7 @@ in
             # and the bounded delivery attempts for the latest persisted results.
             machine.wait_until_succeeds(" && ".join(notification_checks), timeout=480)
         except Exception as error:
-            capture_notification_diagnostics(error, [
+            capture_notification_diagnostics(runtime, error, [
                 (machine, "backup-state", "find /var/lib/site-backup-* -maxdepth 1 -name '*.json' -print -exec cat {} +"),
                 (machine, "backup-timers", "systemctl list-timers --all 'site-backup-*-notify.timer' --no-pager"),
                 (machine, "services", "journalctl -b -u 'site-backup-*-notify.service' -u haproxy -u docker-site-bark -u docker-site-apprise --no-pager -o short-precise"),

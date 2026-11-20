@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 area=${1:-area}
 action=${2:-copy}
 case "$area:$action" in

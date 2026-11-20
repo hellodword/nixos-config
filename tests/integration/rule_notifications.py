@@ -1,3 +1,4 @@
+# ruff: noqa: F722, F821
 """Drive the rule-update dialog through the desktop notification D-Bus protocol."""
 import asyncio
 import json
