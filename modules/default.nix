@@ -1,6 +1,7 @@
 {
   imports = [
     ./core/storage.nix
+    ./core/reserved-ports.nix
     ./core/home.nix
     ./core/base.nix
     ./core/cli.nix

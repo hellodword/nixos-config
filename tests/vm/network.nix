@@ -556,6 +556,7 @@ in
           ExecStart = "${python}/bin/python3 -m http.server 18089 --bind 0.0.0.0 --directory /run/rule-source";
         };
       };
+      boot.kernel.sysctl."net.ipv4.ip_local_reserved_ports" = "51830";
       boot.kernel.sysctl."net.ipv4.ip_forward" = 1;
       # The peer underlay is an IPv4 NAT segment. Tailnet carries both families.
       networking.interfaces.eth2 = {

@@ -20,6 +20,7 @@ let
     ];
 in
 {
+  imports = [ ../core/reserved-ports.nix ];
   options.site.cache = {
     enable = lib.mkEnableOption "signed OCI cache consumption through oranc";
     repository = lib.mkOption {
@@ -52,6 +53,7 @@ in
       nix.settings = if cfg.enable then projectCache.settings else caches.publicSettings;
     }
     (lib.mkIf cfg.enable {
+      site.reservedPorts = [ cfg.port ];
       assertions = [
         {
           assertion = builtins.match "[a-z0-9_.-]+/[a-z0-9_.-]+" cfg.repository != null;

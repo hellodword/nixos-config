@@ -28,9 +28,13 @@ let
       ];
 in
 {
+  imports = [ ../core/reserved-ports.nix ];
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
-      { systemd.services.tailscaled.restartTriggers = [ config.security.pki.caBundle ]; }
+      {
+        site.reservedPorts = lib.optional (cfg.port > 0) cfg.port;
+        systemd.services.tailscaled.restartTriggers = [ config.security.pki.caBundle ];
+      }
       (lib.mkIf config.site.network.lockdown.enable {
         services.tailscale.openFirewall = true;
         networking.nftables.tables.site-tailnet = {

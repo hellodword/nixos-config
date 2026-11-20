@@ -38,8 +38,10 @@ let
   };
 in
 {
+  imports = [ ../core/reserved-ports.nix ];
   options.site.network.lockdown.enable = lib.mkEnableOption "protected transparent networking";
   config = lib.mkIf cfg.lockdown.enable {
+    site.reservedPorts = [ 51820 ];
     networking.firewall = {
       enable = true;
       checkReversePath = "loose";
