@@ -484,10 +484,12 @@ in
 
     def encrypted_boot(machine):
         # This disk is created by the VM test and contains only synthetic state.
-        machine.succeed("install -d -m 0700 /persist/etc/secureboot && ln -sfn /persist/etc/secureboot /etc/secureboot && sbctl create-keys")
+        sbctl_conf = "/run/current-system/specialisation/boot-luks/etc/sbctl/sbctl.conf"
+        machine.succeed(f"install -d -m 0700 /persist/etc/secureboot && ln -sfn /persist/etc/secureboot /etc/secureboot && sbctl --config {sbctl_conf} create-keys")
         machine.succeed("printf synthetic-disk-passphrase | cryptsetup luksFormat -q --iter-time=1 /dev/vdc -")
         machine.succeed("printf synthetic-disk-passphrase | cryptsetup luksOpen --key-file - /dev/vdc cryptroot")
         machine.succeed("mkfs.ext4 /dev/mapper/cryptroot")
+        machine.succeed("nix-env -p /nix/var/nix/profiles/system --set \"$(readlink -f /run/current-system/specialisation/boot-luks)\"")
         # A bootloader VM seeds its Nix database in the original root image;
         # unlike direct boot, its command line has no regInfo to recreate it.
         # Migrate the initialized synthetic root with its database and profile
@@ -496,8 +498,8 @@ in
         machine.succeed("systemctl stop nix-daemon.socket nix-daemon.service")
         machine.succeed("${pkgs.rsync}/bin/rsync -aHAXx --exclude=/mnt --exclude=/tmp / /mnt/encrypted-root/")
         machine.succeed("umount /mnt/encrypted-root")
-        machine.succeed("/run/current-system/specialisation/boot-luks/bin/switch-to-configuration boot")
-        machine.succeed("compgen -G '/boot/EFI/Linux/*.efi' >/dev/null && sbctl verify | grep -F '✓'")
+        machine.succeed("rm -rf /boot/EFI/nixos && /nix/var/nix/profiles/system/bin/switch-to-configuration boot")
+        machine.succeed(f"compgen -G '/boot/EFI/Linux/*.efi' >/dev/null && sbctl --config {sbctl_conf} verify | grep -F '✓'")
         machine.succeed("sync")
         machine.crash()
         machine.start()

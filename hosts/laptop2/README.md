@@ -51,9 +51,11 @@ sudo install -m 0600 -o root -g root /path/to/offline/keys.txt \
 sudo install -m 0600 -o root -g root /path/to/offline/outbounds.json \
   /mnt/persist/usr/local/etc/sing-box/outbounds.json
 
-# 若已有离线备份的 /etc/secureboot 则原样拷入；否则在目标环境创建签名密钥供 Lanzaboote 签发 UKI
+# 若已有离线备份的 /etc/secureboot 则原样拷入；否则预先生成签名密钥供 Lanzaboote 签发 UKI
 sudo mkdir -p /mnt/etc
 sudo ln -sfn /mnt/persist/etc/secureboot /mnt/etc/secureboot
+# 全新初始化无备份时执行：
+# sudo nix shell nixpkgs#sbctl -c sbctl create-keys -e /mnt/persist/etc/secureboot/keys -d /mnt/persist/etc/secureboot/GUID
 ```
 
 若需从 Restic 仓库恢复持久资料，先恢复到独立空目录审阅，再按属主与权限拷入 `/mnt/persist`（覆盖 `/persist/etc/ssh`、`/persist/var/lib/tailscale`、`/persist/home/ubuntu/.gnupg`、KWallet、Fcitx5、Firefox/Bitwarden 等核心路径，详见 [备份恢复演练](../../docs/backup.md#独立恢复演练)）：
