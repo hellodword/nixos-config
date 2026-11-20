@@ -21,25 +21,23 @@ jobs:
       changed: ${{ steps.candidate.outputs.changed }}
       sha: ${{ steps.candidate.outputs.sha }}
       artifact: ${{ steps.candidate.outputs.artifact }}
-    env:
-      NIX_IMAGE: docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f
     steps:
       - uses: actions/checkout@v7
         with:
           ref: master
           fetch-depth: 0
           persist-credentials: false
+      - name: Configure Nix CI environment
+        uses: ./.github/actions/nix-env
       - name: Update tracked inputs
         env:
           SCOPE: ${{ inputs.scope }}
-          NIX_CONFIG: |
-            experimental-features = nix-command flakes
-            access-tokens = github.com=${{ github.token }}
         run: |
-          docker run --rm --ulimit nofile=65536:65536 --env SCOPE --volume "$GITHUB_WORKSPACE:/workspace" --workdir /workspace \
-            --env NIX_CONFIG \
-            "$NIX_IMAGE" bash -euo pipefail -c '
-              git config --global --add safe.directory /workspace
+          bash .github/ci/nix-container.sh --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$NIX_CI_STATE:/ci:ro" \
+            --env SCOPE \
+            -- bash -euo pipefail -c '
               if [[ "$SCOPE" == remote ]]; then
                 nix flake update nixpkgs-remote colmena cloudflare-ips-v4 cloudflare-ips-v6
               else

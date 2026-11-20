@@ -34,7 +34,7 @@ fi
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 render() {
-  nix --extra-experimental-features nix-command eval --raw \
+  nix --extra-experimental-features nix-command eval --store dummy:// --raw \
     --file "$script_dir/../nix/cache-config.nix" "$scope.text"
 }
 if [[ $operation == print ]]; then render; exit; fi

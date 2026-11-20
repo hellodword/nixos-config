@@ -32,9 +32,6 @@ on:
 permissions:
   contents: read
 
-env:
-  NIX_IMAGE: docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f
-
 # One verifier/publisher at a time. GitHub retains only the newest pending run.
 concurrency:
   group: nixos-verify
@@ -54,35 +51,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+      - name: Configure Nix CI environment
+        uses: ./.github/actions/nix-env
       - name: Initialize the GHCR cache package
         env:
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}
-          NIX_CONFIG: |
-            experimental-features = nix-command flakes
-            access-tokens = github.com=${{ github.token }}
         run: |
           # Initialization publishes only nix-cache-info and needs no signing key.
-          # Use the same finite descriptor limit as the verification container.
-          docker run --rm -i --ulimit nofile=65536:65536 --memory=12g --memory-swap=20g \
-            --volume "$GITHUB_WORKSPACE:/workspace:ro" --workdir /workspace \
+          bash .github/ci/nix-container.sh --rm -i --memory=12g --memory-swap=20g \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --volume "$NIX_CI_STATE:/ci:ro" \
             --env ORANC_USERNAME --env ORANC_PASSWORD \
-            --env NIX_USER_CONF_FILES=/tmp/ci-nix.conf \
-            --env NIX_CONFIG \
-            "$NIX_IMAGE" bash -euo pipefail <<'BASH'
-          git config --global --add safe.directory /workspace
-          cat > /tmp/ci-nix.conf <<'CONFIG'
-          sandbox = false
-          accept-flake-config = false
-          max-jobs = 1
-          cores = 0
-          fallback = true
-          max-substitution-jobs = 4
-          http-connections = 8
-          CONFIG
-          bash scripts/nix-cache.sh print --public-only >> /tmp/ci-nix.conf
+            -- bash -euo pipefail <<'BASH'
           oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths .#oranc)
-          repository=$(nix eval --raw --file nix/cache-config.nix project.repository)
+          repository=$(nix eval --store dummy:// --raw --file nix/cache-config.nix project.repository)
           "$oranc_root/bin/oranc" push --repository "$repository" --parallel 1 initialize --priority 41
           BASH
           cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
@@ -135,13 +118,11 @@ jobs:
           git fetch "$RUNNER_TEMP/candidate/candidate.bundle" HEAD
           test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE_SHA"
           git checkout --detach "$CANDIDATE_SHA"
+      - name: Configure Nix CI environment
+        uses: ./.github/actions/nix-env
       - name: Prepare disk, swap, KVM and Nix store
-        env:
-          NIX_CONFIG: |
-            experimental-features = nix-command flakes
-            access-tokens = github.com=${{ github.token }}
         run: |
-          state="$RUNNER_TEMP/nixos-ci"
+          state="$NIX_CI_STATE"
           mkdir -p "$state" "$RUNNER_TEMP/nixos-build"
           date -u +%FT%TZ > "$state/started"
           df -h / /mnt
@@ -157,38 +138,17 @@ jobs:
           test -c /dev/kvm
           sudo chmod 666 /dev/kvm
           docker volume create nixos-ci-store
-          # gawk sizes its pipe table from nofile; near-unlimited defaults can
-          # allocate tens of GiB. Bound both limits for all container processes.
-          docker run --detach --name nixos-ci --device /dev/kvm \
-            --ulimit nofile=65536:65536 \
+          bash .github/ci/nix-container.sh --detach --name nixos-ci --device /dev/kvm \
             --memory=12g --memory-swap=20g \
             --volume nixos-ci-store:/nix \
             --volume "$GITHUB_WORKSPACE:/workspace:ro" \
             --volume "$state:/ci" \
             --volume "$RUNNER_TEMP/nixos-build:/build" \
-            --workdir /workspace --env TMPDIR=/build --env NIX_USER_CONF_FILES=/ci/nix.conf \
-            --env NIX_CONFIG \
-            "$NIX_IMAGE" sleep infinity
-          docker exec nixos-ci git config --global --add safe.directory /workspace
+            --env TMPDIR=/build \
+            -- sleep infinity
           container_pid=$(docker inspect --format '{{.State.Pid}}' nixos-ci)
           python3 .github/ci/report.py monitor --state "$state" --container-pid "$container_pid" \
             > "$state/monitor.log" 2>&1 &
-      - name: Configure public caches
-        run: |
-          docker exec -i nixos-ci bash -euo pipefail <<'BASH'
-          cat > /ci/nix-base.conf <<'CONFIG'
-          sandbox = false
-          accept-flake-config = false
-          system-features = nixos-test benchmark big-parallel kvm
-          max-jobs = 1
-          cores = 0
-          fallback = true
-          max-substitution-jobs = 4
-          http-connections = 8
-          CONFIG
-          cat /ci/nix-base.conf > /ci/nix.conf
-          bash scripts/nix-cache.sh print --public-only >> /ci/nix.conf
-          BASH
       - name: Check source and workflow definitions
         run: |
           docker exec nixos-ci nix build --no-link --print-build-logs \
@@ -351,21 +311,19 @@ jobs:
           ORANC_PASSWORD: ${{ github.token }}
           ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
         run: |
-          docker run --rm -i --ulimit nofile=65536:65536 \
+          bash .github/ci/nix-container.sh --rm -i \
             --volume nixos-ci-store:/nix:ro \
             --volume "$GITHUB_WORKSPACE:/workspace:ro" \
-            --volume "$RUNNER_TEMP/nixos-ci:/ci:ro" \
-            --workdir /workspace --env NIX_USER_CONF_FILES=/ci/nix.conf \
+            --volume "$NIX_CI_STATE:/ci:ro" \
             --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY \
-            "$NIX_IMAGE" bash -euo pipefail <<'BASH'
-          git config --global --add safe.directory /workspace
-          expected=$(nix eval --raw --file nix/cache-config.nix project.publicKey)
+            -- bash -euo pipefail <<'BASH'
+          expected=$(nix eval --store dummy:// --raw --file nix/cache-config.nix project.publicKey)
           actual=$(printf '%s' "$ORANC_SIGNING_KEY" | nix key convert-secret-to-public)
           if [[ "$actual" != "$expected" ]]; then
             echo 'NIX_CACHE_SIGNING_KEY does not match the declared cache public key.' >&2
             exit 1
           fi
-          repository=$(nix eval --raw --file nix/cache-config.nix project.repository)
+          repository=$(nix eval --store dummy:// --raw --file nix/cache-config.nix project.repository)
           # Anonymous reading already succeeded. Rewrite the same index to
           # verify write access to the existing package before expensive work.
           "$(cat /ci/oranc)" push --repository "$repository" --parallel 1 initialize --priority 41
@@ -394,29 +352,20 @@ jobs:
         id: publisher
         if: github.ref == 'refs/heads/master'
         env:
-          NIX_CONFIG: |
-            experimental-features = nix-command flakes
-            access-tokens = github.com=${{ github.token }}
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}
           ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
         run: |
-          state="$RUNNER_TEMP/nixos-ci"
-          docker run --detach --name nixos-ci-publisher \
+          bash .github/ci/nix-container.sh --detach --name nixos-ci-publisher \
             --network container:nixos-ci \
-            --ulimit nofile=65536:65536 \
             --memory=4g --memory-swap=8g \
             --volume nixos-ci-store:/nix \
             --volume "$GITHUB_WORKSPACE:/workspace:ro" \
-            --volume "$state:/ci" \
-            --workdir /workspace \
-            --env NIX_USER_CONF_FILES=/ci/nix.conf \
-            --env NIX_CONFIG \
+            --volume "$NIX_CI_STATE:/ci" \
             --env ORANC_USERNAME \
             --env ORANC_PASSWORD \
             --env ORANC_SIGNING_KEY \
-            "$NIX_IMAGE" sleep infinity
-          docker exec nixos-ci-publisher git config --global --add safe.directory /workspace
+            -- sleep infinity
           docker exec nixos-ci-publisher \
             bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py start --state /ci'
       - name: Build systems, non-VM checks and all VM drivers
@@ -466,7 +415,7 @@ jobs:
       - name: Report timings and resources
         if: always()
         run: |
-          state="$RUNNER_TEMP/nixos-ci"
+          state="${NIX_CI_STATE:-$RUNNER_TEMP/nixos-ci}"
           mkdir -p "$state"
           rm -f -- "$state/oranc.netrc"
           touch "$state/monitor.stop"
