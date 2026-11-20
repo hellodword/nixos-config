@@ -1,23 +1,6 @@
 { pkgs }:
 let
-  # Upstream nixpkgs 1.146 bumped VS Code without updating rev / vscodeServer;
-  # align to 1.146.0's product.json commit and verify commit parity at build time.
-  staleUpstreamRev =
-    pkgs.vscode.version == "1.146" && pkgs.vscode.rev == "2c33b50b16c472efe58357d1d2a8a5414bc23fbf";
-  revision = if staleUpstreamRev then "69047191fc427f2f92828279aae1d90d8eeda7ab" else pkgs.vscode.rev;
-  vscodeServer =
-    if staleUpstreamRev then
-      pkgs.srcOnly {
-        name = "vscode-server-${revision}.tar.gz";
-        src = pkgs.fetchurl {
-          name = "vscode-server-${revision}.tar.gz";
-          url = "https://update.code.visualstudio.com/commit:${revision}/server-linux-x64/stable";
-          hash = "sha256-bCfY80JvKcMhYJ9rSZoySSTKLxcLi7Cy34IV8R6E/ZE=";
-        };
-        stdenv = pkgs.stdenvNoCC;
-      }
-    else
-      pkgs.vscode.vscodeServer;
+  revision = pkgs.vscode.rev;
   tools = pkgs.buildEnv {
     name = "development-container-tools";
     paths = with pkgs; [
@@ -52,7 +35,7 @@ let
     ln -s ${pkgs.glibc}/lib/libc.so.6 $out/lib/libc.so.6
     ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libstdc++.so.6 $out/lib/libstdc++.so.6
     ln -s ${pkgs.stdenv.cc.cc.lib}/lib/libgcc_s.so.1 $out/lib/libgcc_s.so.1
-    cp -r ${vscodeServer} $out/root/.vscode-server/bin/${revision}
+    cp -r ${pkgs.vscode.vscodeServer} $out/root/.vscode-server/bin/${revision}
     printf 'root:x:0:0:root:/root:/bin/bash\n' > $out/etc/passwd
     printf 'root:x:0:\n' > $out/etc/group
     printf 'ID=debian\nVERSION_ID=12\nPRETTY_NAME="Synthetic development workspace"\n' > $out/etc/os-release
@@ -80,8 +63,3 @@ let
   };
 in
 image
-// {
-  passthru = (image.passthru or { }) // {
-    inherit vscodeServer;
-  };
-}

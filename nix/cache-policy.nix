@@ -120,7 +120,6 @@ else
     extraExcluded = [
       pkgs.vscode
       pkgs.vscode.vscodeServer
-      image.passthru.vscodeServer
     ];
     # Image layers embed restricted files. System symlinks and test results do not.
     bundles = [ image.drvPath ];
