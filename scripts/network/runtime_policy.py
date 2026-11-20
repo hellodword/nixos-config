@@ -182,10 +182,13 @@ def ready(generation, units, run, *, wait_binding=False):
             output = run("systemctl", "show", "--property=ActiveState,MainPID,NRestarts,Result,ExecMainStatus", unit,
                          timeout=remaining).stdout.decode()
             state = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
-            if state.get("ActiveState") == "failed" or int(state.get("NRestarts", 0)) > 0:
+            failed = state.get("ActiveState") == "failed"
+            if failed and wait_binding and unit == "sing-box.service" and state.get("Result") == "signal":
+                pending.append(f"{unit}: restarting for physical binding update")
+            elif failed or int(state.get("NRestarts", 0)) > 0:
                 raise ValueError(f"{unit} failed during policy activation: "
                                  f"result={state.get('Result')}, exit={state.get('ExecMainStatus')}")
-            if state.get("ActiveState") != "active" or state.get("MainPID", "0") == "0":
+            elif state.get("ActiveState") != "active" or state.get("MainPID", "0") == "0":
                 pending.append(
                     f"{unit}: state={state.get('ActiveState', 'unknown')}, MainPID={state.get('MainPID', '0')}"
                 )

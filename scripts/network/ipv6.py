@@ -206,6 +206,27 @@ def reconcile(root=ROOT):
         interfaces(True)
 
 
+def wait_dad(timeout=5):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        result = run("ip", "-6", "-j", "address", "show", check=False, timeout=max(0.1, deadline - time.monotonic()))
+        if result.returncode != 0:
+            return
+        try:
+            entries = json.loads(result.stdout)
+        except ValueError:
+            return
+        tentative = any(
+            addr.get("scope") == "global" and addr.get("tentative")
+            for entry in entries
+            if (Path("/sys/class/net") / entry["ifname"] / "device").exists()
+            for addr in entry.get("addr_info", [])
+        )
+        if not tentative:
+            return
+        time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+
+
 def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale=False):
     """Keep external IPv6 blocked while coordinating the transition."""
     import underlay
@@ -226,6 +247,8 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
             run("systemctl", "stop", "tailscaled.service")
         step = "applying interface settings"
         interfaces(only4)
+        if not only4:
+            wait_dad()
         observed = None
         if lockdown:
             observed = underlay.safe_observe(only4)

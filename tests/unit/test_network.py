@@ -252,3 +252,45 @@ class NetworkConfiguration(unittest.TestCase):
         rendered = dns_policy.render_dnsdist(config, model, plan)
         self.assertIn('message:setExtra(\'{"response_source":"\' .. source .. \'"}\')', rendered)
         self.assertNotIn("local metadata = dq:getTag('policy') or '{}'", rendered)
+
+    def test_ready_tolerates_signal_stop_only_during_binding_refresh(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            gen = Path(directory)
+            (gen / "listeners.json").write_text(json.dumps({"sing-box.service": []}))
+            (gen / "activation.json").write_text(json.dumps({"sing-box.service": {"network.json": "a"}}))
+            binding = gen / "underlay.json"
+            binding.write_text(json.dumps({"interface": "eth0", "ipv4": "192.0.2.10"}))
+
+            samples = [
+                b"ActiveState=failed\nMainPID=0\nNRestarts=0\nResult=signal\nExecMainStatus=0\n",
+                b"ActiveState=active\nMainPID=42\nNRestarts=0\nResult=success\nExecMainStatus=0\n",
+                b"ActiveState=active\nMainPID=42\nNRestarts=0\nResult=success\nExecMainStatus=0\n",
+            ]
+            clock = [0.0]
+
+            def fake_monotonic():
+                clock[0] += 1.2
+                return clock[0]
+
+            def fake_run(*_args, **_kwargs):
+                out = samples.pop(0) if len(samples) > 1 else samples[0]
+                return SimpleNamespace(returncode=0, stdout=out)
+
+            with patch.object(runtime_policy, "Path", side_effect=lambda p: binding if str(p).endswith("underlay.json") else Path(p)), \
+                 patch.object(runtime_policy.underlay, "observe", return_value={"interface": "eth0", "ipv4": "192.0.2.10"}), \
+                 patch.object(runtime_policy.time, "monotonic", side_effect=fake_monotonic), \
+                 patch.object(runtime_policy.time, "sleep", side_effect=lambda _: None):
+                runtime_policy.ready(gen, ["sing-box.service"], fake_run, wait_binding=True)
+
+            def fail_run(*_args, **_kwargs):
+                return SimpleNamespace(
+                    returncode=0,
+                    stdout=b"ActiveState=failed\nMainPID=0\nNRestarts=0\nResult=signal\nExecMainStatus=0\n",
+                )
+
+            with self.assertRaises(ValueError):
+                runtime_policy.ready(gen, ["sing-box.service"], fail_run, wait_binding=False)
+

@@ -98,6 +98,7 @@ def stop_proxy():
     stopped = subprocess.run(["systemctl", "stop", "sing-box.service"], timeout=40, check=False)
     if stopped.returncode:
         raise SystemExit("cannot stop proxy for an underlay change")
+    subprocess.run(["systemctl", "reset-failed", "sing-box.service"], timeout=10, check=False)
 
 
 def start_proxy():
