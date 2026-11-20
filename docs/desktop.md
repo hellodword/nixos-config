@@ -16,7 +16,7 @@ SDDM 提供 Sway、i3 和 Plasma，默认 Sway。会话登录时加载用户配�
 
 三个会话共用音频、输入法和桌面密码钱包。GTK/Qt 使用桌面原生外观，Plasma 布局与配色保存在本机。字体选择见[字体与缩放](#字体与缩放)，可写设置的位置见[本机配置](local-state.md)。
 
-下载好的共享网络规则通过桌面通知等待确认，操作与重连影响见[规则来源与更新](network.md#规则来源与更新)。
+下载好的共享网络规则通过桌面通知等待确认，操作与重连影响见[规则来源与更新](network.md#共享-route-子集与规则更新)。
 
 Plasma 的 Baloo 文件索引关闭；Dolphin 按目录浏览文件，KRunner 继续提供应用和命令入口。
 
@@ -32,7 +32,7 @@ Log out 通过当前桌面的原生接口退出：Sway 使用 `swaymsg exit`，i
 
 Plasma 在应用确认退出后停止健康检查的定时触发、正在执行的检查与规则确认通知，再结束图形会话。健康检查和规则通知各有五秒的停止期限。Sway、i3 的后台任务由会话退出统一收尾；壁纸下载中断后保留当前图片与下载时间，下次登录恢复调度。
 
-其他关机入口如何中断备份，以及遗留锁的处理，见[备份退出行为](backup.md#注销关机与锁恢复)。
+其他关机入口如何中断备份，以及遗留锁的处理，见[备份退出行为](backup.md#注销关机保护与陈旧锁恢复)。
 
 ## 锁屏与启动解锁
 
@@ -104,11 +104,11 @@ Sway/i3 的快捷键：
 
 两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。mpv、feh、Emulator、Waydroid 窗口默认浮动。
 
-Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态、本地/中国时间。本地时钟使用主机时区；中国时钟固定 `Asia/Shanghai`。
+Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态及多时区时间：Waybar 同时显示本地时区（`clock#local`）、美西时间（`America/Los_Angeles`、`LA`）与中国时间（`Asia/Shanghai`、`CN`）三个时钟；i3status-rust 显示本地时区与中国时间两个时钟。
 
 Waybar 标题右侧的眼睛按钮可在演示时阻止空闲锁屏，初始关闭；再次点击恢复空闲锁屏。手动锁屏仍然可用。
 
-Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网关和即时流量；Wi-Fi 另显示 SSID 与信号。Tailscale 悬浮显示本机连接状态及 Tailnet 地址。本地时钟悬浮显示日期和月历，中国时钟显示上海日期与时间。电池显示充放电状态、剩余时间和功率；内存、磁盘、音频、亮度及温度也提供对应详情。
+Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网关和即时流量；Wi-Fi 另显示 SSID 与信号。Tailscale 悬浮显示本机连接状态及 Tailnet 地址。本地时钟悬浮显示日期和月历，美西与中国时钟悬浮分别显示对应时区的星期、日期与时间。电池显示充放电状态、剩余时间和功率；内存、磁盘、音频、亮度及温度也提供对应详情。
 
 `Failed 0/0` 表示上次采样时系统和用户均无失败单元，采样间隔一分钟；`?` 表示尚无结果，悬浮可查看系统和用户的失败单元名称。电量降至 60% 和 50% 时分别提醒，恢复充电后重新计次。温度、亮度及电池的时间和功率由设备支持情况决定。
 
@@ -118,7 +118,7 @@ Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网�
 
 Sway 下的 VS Code 和 Bitwarden Desktop 通过共享包装器 [nix/sway-xwayland.nix](../nix/sway-xwayland.nix) 以 XWayland 模式运行（`unset NIXOS_OZONE_WL` 并注入 `--ozone-platform=x11`），同时显式设置 `GTK_IM_MODULE=fcitx` 与 `GTK_IM_MODULE_FILE=/run/current-system/sw/etc/gtk-3.0/immodules.cache`。由于 Sway 会话默认清空 `GTK_IM_MODULE` 以供原生 Wayland 应用使用 `zwp_text_input_v3`，切换至 XWayland 的 Electron 进程必须附带上述 GTK3 模块配置才能在普通环境与 Firejail 沙箱内正常加载 Fcitx5 中文输入（覆盖 VS Code 编辑器、集成终端、Dev Container 及 Bitwarden 搜索框）。
 
-该 XWayland 分支用于规避 Chromium `< 158.0.8106.0` 在 Sway + Fcitx5 下的原生 Wayland 启动崩溃竞态：窗口首次获得焦点时，Fcitx5 发送的输入法激活事件可能早于 Sway 下发的首份 XKB keymap 到达，导致 `XkbKeyboardLayoutEngine::UpdateModifiers()` / `GetDomCodeByKeysym()` 解引用空的 `xkb_state_` 并在 `xkb_state_update_mask()` 触发 `SIGSEGV`（[Chromium commit `564344ab9eb8`](https://github.com/chromium/chromium/commit/564344ab9eb89b305366e60b4b4f8ab2f70e791c)，自 `158.0.8106.0` 起包含修复；当前锁定的 Electron 43 内置 `Chrome/150.0.7871.250`）。后续升级时通过编译产物的 `Chrome/<version>` 字符串确认达到 `158.0.8106.0`（或确认 nixpkgs 已回移该补丁）并通过 `vm-applications` Sway 全流程后，方可移除对应包装。
+该 XWayland 分支用于规避 Chromium `< 158.0.8106.0` 在 Sway + Fcitx5 下的原生 Wayland 启动竞态：窗口首次获得焦点时，Fcitx5 发送的输入法激活事件可能早于 Sway 下发的首份 XKB keymap 到达，触发 `xkb_state_update_mask()` 空指针崩溃（[Chromium commit `564344ab9eb8`](https://github.com/chromium/chromium/commit/564344ab9eb89b305366e60b4b4f8ab2f70e791c)，自 `158.0.8106.0` 起包含修复；当前锁定的 Electron 43 内置 `Chrome/150.0.7871.250`）。待两个应用的内置 Chromium 升级至 `158.0.8106.0` 及以上后可切回原生 Wayland。
 
 ## 音频与触控板
 
@@ -172,7 +172,7 @@ journalctl -b -u "home-manager-${login_user}.service"
 systemctl --user status site-sway.target site-i3.target
 ```
 
-激活报告用户文件冲突时，按[主机维护](maintenance.md#回退与激活故障)中的步骤保留和合并原文件。输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
+激活报告用户文件冲突时，按[主机维护](maintenance.md#回退与激活故障处理)中的步骤保留和合并原文件。输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
 
 桌面检查与三会话 VM 的范围见[验证指南](validation.md)。首次设备验收包括正常注销、屏幕锁、portal 共享和外接显示器。
 
@@ -206,7 +206,7 @@ Shell 便利入口见 [home/cli.nix](../home/cli.nix)。其中 `nixos-rebuild-bo
 | feh | 可查看工作目录、共享目录及个人图片，也可打开 `~/.codex/generated_images` 中的生成图片 |
 | SQLite Browser | 应用配置和文档目录 |
 | Anytype | 自身配置与文档、下载目录 |
-| Remmina | 自身配置、SSH 与下载目录；SSH 用于远程连接认证 |
+| Remmina | 自身配置、只读 `~/.ssh` 与下载目录；SSH 公私钥用于远程连接认证 |
 
 Chrome、feh 和 mpv 都能读取 `~/dev`，在沙箱内该目录为只读；需要保存修改时，可另存到 `~/share` 或下载目录。feh 对生成图片目录同样只读。`~/share` 可用于临时交接其他位置的文件。命令行接受白名单内的相对路径和绝对路径，含空格的路径用引号包裹；桌面入口使用同一访问范围。
 

@@ -1,59 +1,58 @@
 # 主机维护
 
-主机在 `flake.nix` 的 `nixosConfigurations` 中明确注册。以下命令在仓库根目录运行，先选择要维护的机器：
+主机在 `flake.nix` 的 `nixosConfigurations` 中注册。以下命令在仓库根目录运行，先指定目标主机：
 
 ```sh
 host=laptop2  # 换成要维护的主机
 nix eval --json .#nixosConfigurations --apply builtins.attrNames
 ```
 
-## 构建与切换
+## 日常构建、切换与重启升级
 
 ```sh
 nix build --out-link result ".#nixosConfigurations.${host}.config.system.build.toplevel"
 sudo nixos-rebuild switch --flake ".#${host}"
 ```
 
-构建包含系统软件、服务和所有 Home Manager 用户的激活配置。Home Manager 使用 NixOS 模块，由系统负责激活。凭据绑定和填写方法见[凭据指南](secrets.md)；构建本身不解密 SOPS 文件。
+系统闭包同时包含 NixOS 服务与 Home Manager 用户配置；构建阶段不解密 SOPS 密文，凭据在目标机激活时由 `sops-nix` 解密（见 [凭据指南](secrets.md)）。
 
-涉及持久挂载、物理网络、启动配置或 Lockdown 能力组合时，安排重启应用：
+涉及内核、initrd、持久挂载、物理网络或 Lockdown 组合调整时，安装下次启动代次并重启切换：
 
 ```sh
 sudo nixos-rebuild boot --flake ".#${host}"
+sudo bootctl list
 ```
 
-重启后检查 `systemctl --failed`、`systemctl --user --failed`、`backup-status`，并确认常用应用和网络正常。构建缓存的持久设置见[缓存](cache.md)。
+重启后检查 `sudo sbctl status`、`systemctl --failed`、`systemctl --user --failed`、`sudo network-ipv6 status` 与 `backup-status`。构建缓存的持久配置见 [构建缓存](cache.md)。
 
-## 更新与验证
+## Flake 输入与依赖更新
 
-日常依赖更新可由 [GitHub Actions](ci.md)完成。本地更新时，通过 Nix 写入锁文件，更新后按[验证指南](validation.md#配置求值)完成所选范围的清单求值，再构建系统并选择行为测试。更新和构建命令分别为：
+仓库共声明 **20 个 Flake 输入**，按更新节奏与影响边界分为三组（自动更新工作流定义见 [update-inputs.yml](../.github/workflows/update-inputs.yml)）：
 
-```sh
-nix flake update nixpkgs home-manager plasma-manager
-nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
-```
+| 分组 | 包含输入 | 更新方式 |
+| --- | --- | --- |
+| `laptop` 自动更新（10 个） | `nixpkgs`、`home-manager`、`plasma-manager`、`nixos-hardware`、`nix-index-database`、`arkenfox-userjs`、`catppuccin-fcitx5`、`reproducible-violentmonkey`、`sing-box-geosite`、`sing-box-geoip` | 定时或手动运行 `Update flake inputs`（`laptop`），本地可用 `nix flake update nixpkgs home-manager plasma-manager` |
+| `remote` 自动更新（4 个） | `nixpkgs-remote`、`colmena`、`cloudflare-ips-v4`、`cloudflare-ips-v6` | 定时或手动运行 `Update flake inputs`（`remote`），推进 VPS 包集、部署器与 Cloudflare 回源白名单 |
+| 按需手动更新（6 个） | `disko`、`impermanence`、`lanzaboote`、`sops-nix`、`oranc`、`agents-misc` | 执行 `nix flake update <名称>` 独立升级并做针对性验证；其中前四项涉及分区、持久挂载、Secure Boot 与凭据激活，`oranc` 保持独立依赖锁以稳定 CI 启动缓存键 |
 
-依赖升级或跨领域修改按[完整验收流程](validation.md#完整验收与计时)验证后再部署。
-
-自动更新的输入分组由[候选工作流](../.github/workflows/update-inputs.yml)维护。VPS 的包集与部署步骤见[更新已有 VPS](vps.md#更新已有-vps)。单独更新一个 input 使用 `nix flake update <名称>`，例如输入法主题：
+锁文件仅通过 `nix flake update` 更新。本地推进依赖后，按 [验证指南](validation.md#配置求值) 执行对应范围的清单求值与行为检查：
 
 ```sh
 nix flake update catppuccin-fcitx5
+nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 ```
 
-网络规则、缓存代理和可选 VM 客户端的升级要求分别见[网络](network.md#规则来源与更新)、[缓存](cache.md#项目-oci-缓存)和[VM 工具说明](../tools/vm-test-mcp/README.md)。
+## 回退与激活故障处理
 
-## 回退与激活故障
-
-可从启动菜单选择旧代次，或在适合立即切换时运行：
+可从 UEFI 启动菜单选择上一代次，或在运行中立即回退：
 
 ```sh
 sudo nixos-rebuild switch --rollback
 ```
 
-系统回退选择旧程序和声明，应用数据库、钱包与本机偏好仍使用当前持久数据。需要恢复数据时，先恢复到单独目录并审阅，见[备份](backup.md)。
+系统回退切换程序与服务声明，`/persist` 中的应用数据库、钱包与本机偏好保持当前状态；如需回退应用数据，先将备份快照恢复到独立目录审阅（见 [备份与恢复](backup.md)）。
 
-在受影响用户的会话中查看 Home Manager 激活记录：
+排查 Home Manager 激活冲突：
 
 ```sh
 login_user=$(id -un)
@@ -61,11 +60,23 @@ systemctl status "home-manager-${login_user}.service"
 journalctl -b -u "home-manager-${login_user}.service"
 ```
 
-对日志指出的冲突文件，先停止所属应用，用 `findmnt -T <路径>` 确认是否涉及持久挂载，再将文件保存到选定的持久目录并逐项合并。挂载点按其持久化声明处理；完成后重启对应服务。不要把整个用户配置目录删除后重试。
+若日志指出普通文件阻挡了声明式链接，先退出对应应用，用 `findmnt -T <路径>` 确认挂载归属，将该文件备份移开或合并至本机可写入口，再执行 `sudo systemctl restart "home-manager-${login_user}.service"`。
+
+## 裸机安装与离线引导恢复
+
+使用 tmpfs 根与持久化子卷的笔记本按以下顺序完成裸机初始化或灾难恢复（完整命令实例见 [laptop2 裸机安装与恢复](../hosts/laptop2/README.md#裸机安装与离线引导恢复)）：
+
+1. **LUKS2 分区与口令注册**：若 `disko.nix` 使用临时密钥文件（如 `/tmp/crypt.key`）建表，先在安装介质内存生成临时密钥并执行 `system.build.diskoScript`，随后用 `cryptsetup luksAddKey` 注册开机交互口令，并用 `luksRemoveKey` 移除临时密钥槽与明文文件。
+2. **Secure Boot 身份准备**：创建 `0700` 权限的 `/mnt/persist/etc/secureboot`（恢复离线备份的密钥对，或在 UEFI Setup Mode 下通过 `sbctl create-keys` 初始化并在进入系统后 `sbctl enroll-keys --microsoft`），确保 `nixos-install` 期间 Lanzaboote 可签发 UKI。
+3. **离线引导凭据与数据恢复**：
+   - 将离线保存的 SOPS age 私钥安装到 `/mnt/persist/var/lib/sops-nix/keys.txt`（`root:root`、`0600`），供首次启动解密登录密码、Wi-Fi、备份与身份密文；
+   - 将初始代理节点配置安装到 `/mnt/persist/usr/local/etc/sing-box/outbounds.json`（`root:root`、`0600`），使 Lockdown 与代理链路在首次启动即可连通；
+   - 使用离线 Restic 凭据将最新快照恢复至临时目录校验后，按原属主与权限拷回 `/mnt/persist`（含 `/etc/ssh`、`tailscale`、`~/.gnupg`、KWallet、Fcitx5 及核心应用数据）。
+4. **系统安装与启动验收**：运行 `sudo nixos-install --no-root-passwd --flake ".#${host}"`，重启后核对 `sudo sbctl status`、`systemctl --failed`、`sudo network-policy check`、`ssh-add -L` 与 `backup-status`。
 
 ## Docker 维护
 
-[容器配置](../modules/services/containers.nix)启用每周自动 prune，清理停止的容器、未使用网络、悬空镜像和构建缓存；卷不在默认清理范围。启用通知服务时，清理会保留带有 `org.nixos-config.service` 标签的受管资源。观察空间与清理记录：
+[容器模块](../modules/services/containers.nix) 启用 `local` 轮转日志驱动、`live-restore` 及每周自动 `docker-prune`，清理停止的容器、未使用网络、悬空镜像和构建缓存（保留命名卷及带 `org.nixos-config.service` 标签的通知服务资源）：
 
 ```sh
 docker system df
@@ -73,13 +84,9 @@ systemctl list-timers docker-prune.timer
 journalctl -u docker-prune.service
 ```
 
-新建容器默认使用 `local` 日志驱动，按大小轮转，通过 `docker logs <容器名>` 查看。`live-restore` 在兼容的 Docker daemon 重启期间尽量保持普通容器运行；系统关机或明确停止应用服务仍会结束容器。容器联网见[网络指南](network.md#docker-与-compose)。
-
 ## 增加主机
 
-1. 在 `hosts/<名称>/` 声明硬件、磁盘、启动方案、主机名、用户名、UID，以及该安装的系统和用户配置 `stateVersion`。
-2. 导入需要的 profile，选择实际备份目标、频率和网络公告。`site.storage.persistRoot` 指定持久根；已有数据的位置变化需要单独迁移。
-3. 配置该主机的 SOPS 密文与解密身份。`lib/credentials.nix` 提供 laptop 使用的字段绑定，主机传入目录、用户名与备份目标名称；可参考已有主机，不能复制其私钥或机器状态。
-4. 在 `nixosConfigurations` 注册主机，构建系统并检查对应配置。需要托管验收和缓存时，再加入验证工作流的 laptop 矩阵；当前 CI 面向 `x86_64-linux`，其他架构需要安排对应 runner 和验证入口。
-
-具体机器的磁盘与恢复约定放在它自己的主机说明中。测试使用独立的合成 laptop 配置，不需要新增一台真实主机来运行通用检查。
+1. 在 `hosts/<名称>/` 声明硬件配置、Disko 分区、启动方案、主机名、用户名、UID，以及系统与 Home Manager 的 `stateVersion`。
+2. 导入 `profiles/laptop`（或所需功能模块，无头服务器可直接导入 `./modules` 并保持 `site.home.enable = false`），按实际预算设置备份目标与网络公告。
+3. 在 `.sops.yaml` 注册新主机的 age 公钥规则，准备 `hosts/<名称>/secrets/*.sops.yaml`，并通过 `lib/credentials.nix` 绑定运行时凭据。
+4. 在 `flake.nix` 的 `nixosConfigurations`（可选指定 `system = "x86_64-linux"` 或 `"aarch64-linux"`）注册主机，完成清单求值与构建验证；如需纳入托管 CI，同步更新 `.github/workflows/ci.yml` 矩阵。

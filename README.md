@@ -27,6 +27,4 @@ host=laptop2  # 换成要构建的主机
 nix build --no-link ".#nixosConfigurations.${host}.config.system.build.toplevel"
 ```
 
-依赖由 `flake.lock` 固定，桌面开发使用 `nix develop .#laptop`，VPS 维护使用 `nix develop .#vps`。Home Manager 随 laptop 系统一起构建和激活。laptop 凭据在目标机激活时解密；VPS inventory 在维护机解密，由 Colmena 分发每台机器所需的凭据。
-
-已有安装的迁移恢复材料保存在[归档](docs/archive/laptop2-migration.md)，日常维护使用现行指南。
+依赖由 `flake.lock` 固定，`packages` 与 `devShells` 同时支持 `x86_64-linux` 和 `aarch64-linux`；桌面开发使用 `nix develop .#laptop`，VPS 维护使用 `nix develop .#vps`。Home Manager 随 laptop 系统一起构建和激活。laptop 凭据在目标机激活时解密；VPS inventory 在维护机解密，由 Colmena 分发每台机器所需的凭据。裸机安装与离线恢复流程见 [主机维护](docs/maintenance.md#裸机安装与离线引导恢复) 与具体主机说明（如 [laptop2](hosts/laptop2/README.md)）。

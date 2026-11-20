@@ -20,7 +20,7 @@ nix develop .#vps     # 准备 VPS 材料、构建、Colmena 部署和 Worker �
 | oranc | 只读源码，读写 `tmp/devtools/cache/` 和 Nix 数据库，使用 Nix store、daemon 与缓存配置 | host 网络 |
 | Wrangler | 只读当前 Worker 目录，读写项目根 `.wrangler/` 登录状态 | host 网络 |
 
-每个沙箱工具都有 `tmp/.cache/nixos-config-tools/<工具>/`，其中 `cache/` 和 `logs/` 保存缓存与日志，`tmp/` 保存每次运行的临时文件。正常退出即清理本次临时目录；再次调用时，systemd-tmpfiles 清理一天前遗留的临时文件及三十天未使用的缓存、日志。运行中的目录通过文件锁保留。Wrangler 登录状态和部署材料单独保存，由用户清理。
+每个沙箱工具都有 `tmp/.cache/nixos-config-tools/<工具>/`，其中 `cache/` 和 `logs/` 保存缓存与日志，`tmp/` 保存每次运行的临时文件。正常退出即清理本次临时目录；再次调用时，systemd-tmpfiles 清理一天前遗留的临时文件及三十天未使用的缓存、日志。运行中的目录通过文件锁保留。沙箱在挂载仓库源码后自动遮蔽 `tmp/`、`.wrangler/`、`.config/`、`.secrets/`、`nixos-privates/` 及根级 `keys.txt`/`*.key` 等敏感路径，按白名单单独开放工具所需可写目录，并支持在 `tmp/` 子目录内直接执行命令。Wrangler 同时识别 `wrangler.{json,jsonc,toml}` 且不在干净源码目录遗留空状态目录。默认要求工作区位于持久文件系统；在受限临时环境中可显式设置 `NIXOS_CONFIG_ALLOW_TMPFS=1` 放行。
 
 开发 shell 将辅助工具的 `XDG_CACHE_HOME` 和 `TMPDIR` 放在同一根目录的 `shell/` 下，Go 与 npm 使用各自子目录。VM 提交客户端的导出缓存也随之保存在磁盘工作区，容量由客户端自身管理。
 
@@ -36,7 +36,7 @@ sing-box check -c config.json
 sing-box run -c config.json
 ```
 
-该目录供网络工具共同读写。Wrangler 的登录与发布流程见 [VPS 维护](vps.md#发布证书-worker)。需要隔离的工具通过同一包装器声明正常功能所需的文件、网络和凭据权限。
+该目录供网络工具共同读写。Wrangler 的登录与发布流程见 [VPS 维护](vps.md#4-发布与验证-workers)。需要隔离的工具通过同一包装器声明正常功能所需的文件、网络和凭据权限。
 
 ## 基础检查
 
@@ -46,7 +46,7 @@ sing-box run -c config.json
 nix build --no-link --print-build-logs .#checks.x86_64-linux.lint
 ```
 
-该入口覆盖 Nix 格式、Actions、ShellCheck，以及 Python、JSON、TOML 的语法。CI 在启动缓存代理和准备开发环境之前执行同一检查。
+该入口覆盖 Nix 格式、Actions、ShellCheck，`ruff` Python 静态检查、`node --check` JS/MJS 语法校验，以及 Python、JSON、TOML、YAML 的解析检查。CI 在启动缓存代理和准备开发环境之前执行同一检查。
 
 ## 配置求值
 
@@ -77,15 +77,15 @@ nix develop .#vps --command python3 .github/ci/evaluate.py \
 | `identity` | 公钥推导、已有身份自动注册、SSH 签名、Git 验签，以及换钥期间新旧身份共存 |
 | `network` | 配置组合、出口选择；真实 DNS/DoT/DoH 与代理进程、FakeIP 域名恢复和记录类型、远程规则更新及离线缓存、日志和故障 |
 | `desktop` | 字体匹配和混排、原生 Sway/i3 配置、显示布局选择，以及网络规则通知的确认流程 |
-| `configuration-*` | 独立合成 laptop 的能力组合、服务与会话、持久化所有权和完整系统求值；`configuration-full` 同时构建凭据绑定产物 |
+| `configuration-*` | 覆盖 `full`、`laptop2`（真实主机配置求值）、`headless`（含纯无头禁用 Home Manager 校验）、`network-off`、`dns-and-sing-box`、`sway` 六类架构契约与持久化目录属主校验；`configuration-full` 同时构建凭据绑定产物 |
 | `git-backup` | 临时 Git 仓库中的本地备份与远端推送 |
-| `vm-network` | systemd 下的网络切换、规则下载与确认应用、失败与重启恢复，持续双栈流量、DNS、Tailscale、容器和日志隔离 |
-| `vm-backup` | 实际窗口触发、独立仓库、中断和有界关机、重启恢复、gVisor 通知与补发 |
-| `vm-desktop` | 三会话登录、注销、锁屏、钱包、壁纸、输入法与显示状态，以及加密启动和重启后的恢复 |
-| `vm-applications` | 三会话中的真实应用启动、中文输入与退出提醒；Sway 完成共享的 DevContainer 和 Vaultwarden 全流程 |
-| `vm-vps` | 实际 bootstrap 镜像的 BIOS/UEFI 启动、512 MiB 客体、DHCP/静态网络、扩容与 swap、SSH 别名及代理下的 Colmena 凭据交付与 test/boot/switch、HTTP 回源与双栈入口策略、Docker bridge 的 DNS、出站连接与端口发布及服务重载、跨节点协议转发、多承载出口故障切换、路径选择与连接延续、系统 DoT 与 NTS、用户态隧道出口、重启回滚及 Wrangler 沙箱中的 Worker 打包 |
-| `vm-files` | 双节点设备证书认证与撤销、HTTPS 登录和会话、WebDAV、加密 SMB、随机访问码输入与描述文件交付、跨平台证书文件导出、临时分享及请求日志 |
-| `e2e` | network、backup、desktop、applications、vps 五项 VM 结果的聚合 |
+| `vm-network` | 完整 `base.nix`（`sudo-rs`、`io_uring_disabled = 1`、`sops-nix`）与 `lockdown + purposeRouting + tailscale + chronyd`（NTS）下的网络切换、规则下载与确认应用、失败与重启恢复、持续双栈流量、DNS、容器和日志隔离 |
+| `vm-backup` | 完整 `base.nix` 底座下的实际窗口触发、独立仓库、中断和有界关机、重启恢复、陈旧锁恢复、gVisor 通知与补发 |
+| `vm-desktop` | 三会话登录、注销、原生 `swaylock`/`i3lock`/KScreenLocker 锁屏、钱包、本机 HTTPS 壁纸服务、输入法与显示状态，以及 `sway` 节点的 `6.18` 内核 `vboxdrv` 模块加载和 Lanzaboote UKI 签名加密启动恢复 |
+| `vm-applications` | 三会话中的 Firejail 沙箱隔离与启动校验、真实应用中文输入与退出提醒；`sway` 节点按需启用容器与密码库服务完成 DevContainer 和 Vaultwarden 全流程 |
+| `vm-vps` | 调用真实 `prepare.py` 产出节点/Worker/订阅材料，验证 BIOS/UEFI 512 MiB 镜像启动、扩容与 swap、Colmena 统一凭据下发与 test/boot/switch、Cloudflare HTTP 回源与双栈防火墙、Docker bridge、跨节点协议转发、多承载出口故障切换、系统 DoT 与 NTS、重启回滚及 Wrangler 沙箱打包 |
+| `vm-files` | 双节点设备证书认证与撤销、HTTPS 登录和会话、WebDAV、加密 SMB、随机访问码输入与描述文件交付、OpenSSL 3 证书导出、临时分享及请求日志 |
+| `e2e` | `vm-network`、`vm-desktop`、`vm-applications`、`vm-backup`、`vm-files`、`vm-vps` 六项 VM 结果的聚合 |
 
 例如，身份脚本的修改先运行：
 
@@ -106,7 +106,7 @@ nix develop .#laptop --command python3 -m tests.integration.backup -v
 
 ## 完整验收与计时
 
-配置求值通过后，完整项目验收继续执行所选 host 的系统构建、领域检查、OCI 缓存与更新候选集成，以及上述五项 VM 场景。文件服务按需单独运行。Home Manager 是系统构建的依赖，不单独构建。
+配置求值通过后，完整项目验收继续执行所选 host 的系统构建、领域检查、OCI 缓存与更新候选集成，以及上述六项 VM 场景。Home Manager 是系统构建的依赖，不单独构建。
 
 ```sh
 # 使用上一步为所选 host 生成的清单。
@@ -130,20 +130,12 @@ PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.updates
 ```sh
 nix build --no-link .#checks.x86_64-linux.vm-network.driver \
   .#checks.x86_64-linux.vm-desktop.driver .#checks.x86_64-linux.vm-applications.driver \
-  .#checks.x86_64-linux.vm-backup.driver .#checks.x86_64-linux.vm-vps.driver
+  .#checks.x86_64-linux.vm-backup.driver .#checks.x86_64-linux.vm-files.driver \
+  .#checks.x86_64-linux.vm-vps.driver
 nix build --no-link --print-build-logs .#checks.x86_64-linux.e2e
 ```
 
 `.driver` 包含测试脚本、客体系统和依赖，构建它不会执行测试场景；部分启动磁盘镜像的制作仍需要 KVM。构建 `vm-*` 结果才执行场景；直接构建 `e2e` 也会先准备缺失依赖。已经存在的成功 derivation 可以复用，应区分本轮执行和缓存命中。所有场景都实际运行成功的 VM 阶段耗时，才是完整重新执行的基线。
-
-文件服务模块变更时单独执行：
-
-```sh
-nix build --no-link .#checks.x86_64-linux.vm-files.driver
-nix build --no-link --print-build-logs .#checks.x86_64-linux.vm-files
-```
-
-该场景使用合成凭据和证书，经过生产服务的权限、网络隔离和 gVisor 临时分享入口。
 
 CI 的执行分组、资源安排与报告入口见[工作流说明](ci.md)。上面的原生 Nix 命令使用本机配置的资源限制，并行安排不一定与 CI 相同。
 
@@ -169,7 +161,7 @@ VM 测试驱动通过控制通道发送命令。无需输入的 SSH 探测使用
 
 备份 VM 用一个代表仓库执行完整维护、canary 和恢复；三个仓库仍覆盖独立状态、策略及失败隔离。场景设定时间后验证自动备份的窗口与补跑。进程集成检查负责 Restic 数据和锁的行为，VM 负责 systemd、启动、关机与通知环境。
 
-网络 VM 观察实际流量和服务状态，覆盖激活失败、重启退避和回滚。持续流量记录发送进程、连接、阶段和序号；每次状态切换分别确认发送进展与目标收到的流量。VPS 路径选择使用同一条 TCP 连接，在切换确认后发送新的请求并等待应答。FakeIP 场景通过仅携带地址的 TCP/UDP 验证同 IP 域名的不同出口，并在服务重启、地址族切换和正常系统重启后复用映射。突然断电后的场景验证 Lockdown、策略恢复，以及重新查询 A/AAAA 后的连接与出口；限制与恢复方法见[异常退出后的恢复](network.md#异常退出后的恢复)。
+网络 VM 观察实际流量和服务状态，覆盖激活失败、重启退避和回滚。持续流量记录发送进程、连接、阶段和序号；每次状态切换分别确认发送进展与目标收到的流量。VPS 路径选择使用同一条 TCP 连接，在切换确认后发送新的请求并等待应答。FakeIP 场景通过仅携带地址的 TCP/UDP 验证同 IP 域名的不同出口，并在服务重启、地址族切换和正常系统重启后复用映射。突然断电后的场景验证 Lockdown、策略恢复，以及重新查询 A/AAAA 后的连接与出口；限制与恢复方法见[异常退出后的恢复](network.md#fakeip-与异常退出恢复)。
 
 开发工具的隔离策略与开发环境共用。网络 VM 运行 Actionlint、DNS 解析与采集、代理连接和 oranc 发布；VPS VM 运行 Wrangler 的本地 Worker，验证这些工具在既定权限内完成正常工作。
 

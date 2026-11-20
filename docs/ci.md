@@ -1,100 +1,54 @@
 # 自动更新、验收与缓存发布
 
-[验证工作流](../.github/workflows/ci.yml)按 laptop 和 remote 两组构建、测试和发布缓存。[更新入口](../.github/workflows/update.yml)安排更新顺序，[候选工作流](../.github/workflows/update-inputs.yml)为每组准备提交、调用验证并合并 PR。
+[ci.yml](../.github/workflows/ci.yml) 按 `laptop` 和 `remote` 两个范围执行构建、VM 验收与增量缓存发布；[update.yml](../.github/workflows/update.yml) 与 [update-inputs.yml](../.github/workflows/update-inputs.yml) 定时推进依赖、验证候选提交并快进合并 `master`。
 
-VPS 使用合成 inventory 进行协议和部署验证。真实 inventory 在维护机解密，私有节点构建、凭据下发与 Worker 发布由维护机完成；公共 CI 缓存只包含公开配置和合成测试产物。
+## 触发入口与故障排障
 
-## 入口和候选提交
+### 工作流入口
 
 | 入口 | 行为 |
 | --- | --- |
-| push 到 `master` | 分别验证 laptop 和 remote，构建期间增量发布签名缓存 |
-| 手动运行 Verify and cache | 选择 laptop、remote 或 all；只有 master 发布缓存 |
-| 在 master 手动勾选 `initialize-cache` | 只创建缓存索引，供首次设置 package；不执行系统构建和 VM |
-| 定时更新 | 先更新并验证 remote，再从当前 master 开始 laptop 更新 |
-| 在 master 手动运行 Update flake inputs | 选择一组或 all，按同样流程准备、验证和合并 |
+| `push` 到 `master` | 分别验证 `laptop` 和 `remote`，构建期间由独立旁路容器增量发布签名缓存 |
+| 手动运行 `Verify and cache` | 可选 `laptop`、`remote` 或 `all`；仅 `master` 分支发布缓存 |
+| 在 `master` 勾选 `initialize-cache` | 仅用当前 `GITHUB_TOKEN` 创建 GHCR 缓存索引（`nix-cache-info`），不执行构建与 VM |
+| 定时或手动运行 `Update flake inputs` | 先更新并验证 `remote`（`nixpkgs-remote`、`colmena`、`cloudflare-ips-v4/v6`），再以最新 `master` 为基线更新 `laptop`（10 个输入） |
 
-更新时间见[更新入口](../.github/workflows/update.yml)，每组输入见[候选工作流](../.github/workflows/update-inputs.yml)。本地更新及按需升级见[主机维护](maintenance.md#更新与验证)。
+仅当候选包含实际输入变更（且不全为纯规则种子快照变化）时才进入验证。验证与缓存发布通过后，`update.py` 在推送候选分支与创建 PR 前再次核对远端 `refs/heads/master` 是否仍等于候选基线 `base`：若 `master` 在验证期间已前进则直接放弃本次合并，留待下一轮从新基线生成候选；否则通过 PR 快进合并并清理候选分支。
 
-GeoSite、GeoIP 的初始快照随其他输入更新。只有这两个输入的版本变化时，本轮结束；包含其他输入或规则来源声明变化时，将全部变化放入同一候选。运行中规则的更新与确认见[网络规则](network.md#规则来源与更新)。
+### 故障定位与诊断制品
 
-更新任务先创建候选提交并交给验证任务。构建针对最终提交，系统的 `configurationRevision` 与验收 SHA 一致；失败候选不推送。
+验证失败时先查看 Actions 页面 Summary，再下载保留 7 天的 `diagnostics-<scope>[-<host>]-<attempt>` 制品：
 
-每组验证和缓存发布成功后，该组创建 PR，将 master 快进到已验证的提交，再删除候选分支。若 master 已前进而无法快进，本轮关闭 PR 并删除分支，下一次从新基线开始。仓库分支策略必须允许这种合并方式；调整保护规则时需核对[合并实现](../.github/ci/update.py)。
-
-remote 更新 VPS 包集和 Cloudflare 地址段，laptop 更新自己的包集和桌面相关输入。每组的分支、候选 artifact 和报告均有独立名称。前一组失败仍继续后一组；前一组合并成功时，后一组以合并后的 master 为基线。
-
-## 主机与执行顺序
-
-验证矩阵选择范围与主机，当前支持 `x86_64-linux`。laptop 构建所选 host、`laptop` 开发环境及桌面和网络检查；remote 构建合成 VPS、bootstrap 镜像及 `vps` 维护环境。两组都验证 laptop sing-box 客户端与 VPS sing-box 服务端的协议兼容性，相同 derivation 可直接复用缓存。新增机器见[增加主机](maintenance.md#增加主机)。
-
-| 步骤 | 内容 |
+| 记录路径 | 排查用途 |
 | --- | --- |
-| 准备 | 清理指定 runner SDK、建立 swap、KVM、独立 Nix store 和资源采样 |
-| 基础检查 | 运行统一的 `lint`，检查源码与工作流 |
-| 缓存与工具 | 确认项目缓存可匿名读取，准备所选范围的工具；发布任务核对签名身份和写入权限 |
-| 进程集成 | 分别执行 OCI 缓存和更新候选集成 |
-| 清单求值 | 分项求值所选范围的系统、工具、检查与 VM，合并独立求值的发布策略，生成构建及发布清单 |
-| 依赖构建 | 构建所选范围的依赖、系统、领域检查和 VM driver；后台上传成功产物 |
-| 依赖发布收尾 | 补齐已有产物和运行时引用，上传大对象并等待队列完成；构建失败也保留成功产物 |
-| laptop VM | network、backup 依次运行，随后分别运行 desktop、applications |
-| remote VM | 从 BIOS/UEFI 交付镜像启动，执行 VPS 部署与代理场景 |
-| 汇总与发布收尾 | 按清单核对各项 VM 结果；完成剩余产物的发布并结束上传进程 |
+| Summary、`timings.jsonl` | 各阶段墙钟耗时、缓存恢复与实际构建活动对比、发布检查点等待时间 |
+| `logs/<pass>/<group>/<attempt>.log` | 普通检查与 VM 的完整构建及串口控制台输出 |
+| `evaluation.jsonl` | `nix-eval-jobs` 逐项求值的 derivation、输出路径、耗时与报错详情 |
+| `publication-paths.jsonl`、`publisher.log`、`cache/status.json` | 每次发布的命中/排除统计、NAR 体积及旁路发布容器状态 |
+| `resources.jsonl`、`oom-*.log`、`oranc.log`、`monitor.log` | CPU/内存/swap/磁盘采样、OOM 记录及本地缓存代理请求日志 |
+| `vm/<pass>/<check>/<attempt>/` | VM 测试导出的截图、OCR 记录、分阶段流量统计、应用工作流状态与失败现场 |
 
-每个矩阵任务的步骤共享 runner、容器和 Nix store。任务依次运行，失败不跳过其他任务；各 runner 通过 GHCR 复用相同依赖和测试结果。remote 的构建清单直接使用 VPS 包集，客户端兼容检查只引用 laptop 的 sing-box 包。本地求值要求、清单复核命令与检查范围见[验证指南](validation.md)。
+VM 阶段判定仅采用当前清单 derivation 最新一次已启动的执行记录；构建阶段首次出现失败 derivation 时立即在 Actions 页面发出标注，其余独立构建继续运行以保留可复用的成功缓存。
 
-GitHub Actions bootstrap cache 保存 oranc 的运行闭包，用于尽快启动代理。代理就绪后，开发环境和项目构建通过[GHCR 缓存](cache.md#发布范围)复用依赖。master 在 oranc 准备完成后立即保存 bootstrap cache，因此后续测试失败也能保留它。未命中或读取失败时照常构建；超过[工作流](../.github/workflows/ci.yml)中的容量上限时跳过保存，写入失败也不影响后续验证。运行 summary 中的 Oranc bootstrap cache 显示命中、大小和跳过原因，保存结果见对应步骤日志。
+## 容器隔离与执行顺序
 
-新的提交不会中断正在运行的验证；等待中的验证只保留最新一项，因此连续 push 的每个中间提交不一定都会执行。更新与验证使用独立的并发组，避免调用方占用验证需要的组。排队规则见 [GitHub concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)。
+每个矩阵任务在 Ubuntu Runner 上准备 swap、KVM 与独立 Docker 卷 `nixos-ci-store`：
+- **构建容器 `nixos-ci`**：以 `--volume "$GITHUB_WORKSPACE:/workspace:ro"` 只读挂载仓库源码，设置有界 `nofile` 上限（避免 `gawk` 按无限描述符上限分配巨量内存），不注入任何缓存发布凭据；
+- **发布旁路容器 `nixos-ci-publisher`**：仅在发布模式下启动，独立持有 `ORANC_SIGNING_KEY`、`ORANC_USERNAME` 与 `ORANC_PASSWORD`，挂载同一 `nixos-ci-store:/nix` 卷并通过共享 `/ci/cache` 目录消费构建队列。
 
-master push 和自动更新在构建、依赖缓存发布均成功后进入 VM 验证。后台上传失败会在当前构建阶段结束后的发布检查点报告，随后收集诊断；进入 VM 后，某组失败仍继续其余组，并在收尾发布已完成的新产物。手动验证非 master ref 时，构建成功后直接进入 VM。取消任务时有界停止上传进程，已经发布的缓存保留在 GHCR。
-
-同一构建阶段内，Nix 首次报告构建失败计数或结构化错误时立即在 Actions 标注，独立构建继续执行并发布成功产物。退出失败而尚无错误事件时，由退出状态补充记录。summary 分别记录首次失败时间和之后的构建耗时，完整消息保留在构建日志中，阶段最终结果由 Nix 退出状态及诊断收集结果确定。本地构建入口也保存错误记录；工作流通过 `--github-actions` 启用页面标注。
-
-GHCR 缓存发布和测试分别报告状态，任意一项失败都会使验证任务失败。缓存可在全部验证完成前发布，其存在不代表验收通过或已经部署。自动更新直接调用验证工作流，因为 [GITHUB_TOKEN 引发的 push](https://docs.github.com/en/actions/concepts/security/github_token)不会再次触发 push 工作流。
-
-## 首次启用
-
-1. 使用公开仓库，在 Settings → Actions → General 中允许使用 GitHub 创建的 actions。
-2. 在同一页面允许工作流创建 PR。验证任务需要读取仓库和写入 packages；更新合并任务需要写入 contents 和 pull requests。
-3. 如果缓存 package 尚不存在，在 Actions → Verify and cache → Run workflow 中选择 master、勾选 `initialize-cache`。该入口使用本轮 GITHUB_TOKEN 发布 `nix-cache-info`，无需签名私钥；已有 package 可跳过此步。
-4. 从 GitHub 头像进入 Your profile → Packages → 缓存 package → Package settings。在 Danger Zone → Change visibility 中设为 **Public**；这项公开操作不能撤回。若 package 关联了仓库，取消 **Inherit access from repository**，再在 **Manage Actions access** 中添加或确认本仓库，角色选 **Write**。首次通过 Actions 发布会自动授予该仓库 package Admin，因此仍需手动确认角色，不能只看 workflow 中的 `packages: write`。[GitHub package 权限说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)区分了 package 角色、仓库关联和可见性。
-5. 在仓库 Settings → Secrets and variables → Actions 设置 `NIX_CACHE_SIGNING_KEY`，复用与仓库公钥配套的私钥。生成、核对及可选 CLI 上传命令见[缓存签名密钥](cache.md#签名密钥)。
-6. 在 master 手动运行 Verify and cache，保持 `initialize-cache` **不勾选**。确认验证和发布成功；再观察一次更新任务，核对 PR 合并的 SHA 与验证的候选提交一致。
-
-Nix 获取 GitHub inputs、缓存读取和发布使用当前 job 自动提供的临时 `GITHUB_TOKEN`，无需配置个人 token。package 的公开设置和访问角色由上述网页步骤管理。日常验证在系统构建前检查匿名读取，发布任务还检查签名身份和写入权限；失败时先核对 package 设置及签名密钥。
-
-## 资源和故障记录
-
-清单求值由 nix-eval-jobs 在内存预算内调度独立条目，逐项记录成功或错误；全部条目与发布策略完成后才写出供后续使用的清单。求值期间每分钟向 Actions 控制台输出资源概要，便于在 runner 失联时定位最后的资源状况。
-
-依赖构建一次执行一个 derivation，供它使用全部可用 CPU，避免多个编译器同时争抢内存。CI 容器限制内存及 swap 总量，为 runner 留出空间。CI 使用自己的 Nix 配置；runner、超时、磁盘清理和资源限制集中在[验证工作流](../.github/workflows/ci.yml)，求值预算位于[清单入口](../.github/ci/evaluate.py)，VM 的资源需求由[测试定义](../tests/vm)负责。
-
-容器的 `nofile` 上限需要保持有界：gawk 会据此分配管道管理数组，接近无限的默认值可能导致数十 GiB 的内存分配。调整 runner 或容器启动方式时，应保留工作流中的这项限制。
-
-发生失败时，先看运行页面的 summary，再下载 `diagnostics-<scope>[-<host>]-<attempt>` artifact。诊断文件保留七天：
-
-| 记录 | 用途 |
+| 阶段 | 内容 |
 | --- | --- |
-| summary、`timings.jsonl` | 查看各阶段墙钟时间及耗时依赖，区分实际执行与缓存复用；查看后台查询、上传数量与体积，以及发布检查点的等待时间和结果 |
-| `logs/<pass>/<group>/<attempt>.log` | 构建 stdout、stderr 的连续记录，与控制台同步输出；普通检查和 VM 均保留，summary 给出每次执行的路径 |
-| `evaluation.jsonl` | 查看各个求值条目的 derivation、输出、耗时和错误 |
-| `publication-paths.jsonl` | 核对每次发布选中的路径、再分发排除项、公共及项目缓存命中，以及待上传路径的 NAR 大小 |
-| `publisher.log`、`cache/status.json`、`published-paths.json` | 定位上传进程错误，核对退出状态和本轮成功发布的路径 |
-| `resources.jsonl`、`oom-*.log` | 对照 CPU、内存、swap、磁盘、内存上限触发、socket 内存限流及 OOM 记录判断资源瓶颈 |
-| `oranc.log`、`monitor.log` | 按 UTC 时间对照缓存请求与 manifest 重试，排查缓存代理及资源采集故障 |
-| `vm/<pass>/<check>/<attempt>/` | 测试脚本写出的截图、OCR 与输入阶段记录、分阶段流量观察、应用工作流文件及失败诊断；summary 的 VM evidence 列出实际收集的文件数量与目录 |
+| 准备与静态门禁 | 磁盘清理、swap/KVM/Nix 卷初始化、运行 `checks.x86_64-linux.lint` |
+| 缓存代理与进程集成 | 准备并缓存 `oranc` 启动闭包，校验匿名读取（发布模式同时校验签名密钥匹配），运行 `cache` 与 `updates` 进程集成测试 |
+| 清单求值与依赖构建 | `evaluate.py` 求值目标范围全部任务与排除策略（写出 `policy.json`），单并发满核构建系统、领域检查与 VM `.driver`，旁路容器后台增量上传可再分发产物 |
+| `laptop` VM 套件 | 依次执行 `vm-network`、`vm-backup`、`vm-files`，再执行 `vm-desktop`、`vm-applications` |
+| `remote` VM 套件 | 从 `vpsBootstrap` BIOS/UEFI 原始镜像启动客体，执行 `vm-vps` 全链路部署与协议验证 |
+| 汇总与发布收尾 | 核对全部 VM 结果，等待旁路容器完成大对象与剩余队列上传并安全退出 |
 
-VM 判定使用当前清单的 derivation 和输出路径，并且只采用该组最新一次已开始的执行。中断或失败的重跑会留下对应状态，较早的成功不会代替它；每次执行的证据保存在独立目录。summary 保留各次构建耗时，VM 表展示当前判定。
+## 首次启用步骤
 
-构建日志在执行期间持续写入，失败和中断时保留已有内容。VM 的控制台记录位于构建日志中，额外文件由测试脚本写入输出目录。构建进程结束后收集这些文件，诊断副本的目录和文件统一为 artifact 上传用户可遍历、可读取的权限。输出缺失和收集错误在 summary 中单独列出，原始构建结果照常记录。
-
-构建目录及权限由 Nix 管理。VM 构建使用 `--keep-failed` 保留失败现场，原目录位置见构建日志，在 runner 生命周期结束时释放。
-
-后台缓存查询和上传与构建重叠，发布检查点的等待时间反映阶段结束后的剩余工作。比较运行效率时看任务总墙钟时间和检查点等待时间，后台耗时不与构建耗时相加。
-
-SIGKILL 本身不能证明 OOM，需要结合资源记录与内核日志。构建活动结束也不等于构建成功；未结束的活动只记录到命令退出为止。VM 耗时的比较方式见[完整验收与计时](validation.md#完整验收与计时)。
-
-NAR 下载中断时，对照 Nix 客户端错误、`oranc.log` 中的路径和时间。代理的流式响应日志不能覆盖所有底层传输错误；判断限流需要实际的限流响应或其他服务端证据。
-
-缓存的发布范围、失败重试和历史对象保留见[缓存指南](cache.md#发布范围)。
+1. 在公开仓库 **Settings → Actions → General** 允许 GitHub 官方 Actions，并勾选允许工作流创建与批准 PR。
+2. 若 GHCR 缓存 package 尚未建立，在 **Actions → Verify and cache** 选择 `master` 并勾选 `initialize-cache` 运行一次。
+3. 打开 GitHub **Packages → 缓存 package → Package settings**：将可见性设为 **Public**；取消 **Inherit access from repository**，在 **Manage Actions access** 中为本仓库显式设置 **Write** 角色（参见 [GitHub Package 权限说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)）。
+4. 按 [构建缓存签名密钥](cache.md#签名密钥管理) 生成密钥对，将公钥写入 `nix/cache-identity.json`，私钥写入仓库 Actions Secret `NIX_CACHE_SIGNING_KEY`。
+5. 在 `master` 手动运行一次不勾选 `initialize-cache` 的 **Verify and cache**，确认构建、VM 验收与旁路缓存发布全部通过。

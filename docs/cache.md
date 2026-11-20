@@ -1,40 +1,24 @@
 # 构建缓存
 
-## 配置如何生效
+项目为 laptop 主机、开发容器与 CI 提供统一的公共缓存 + GHCR 二进制缓存（[oranc](https://github.com/linyinfeng/oranc)）配置。公共缓存在 [public-caches.nix](../nix/public-caches.nix) 声明，项目缓存身份与监听端口分别在 [cache-identity.json](../nix/cache-identity.json) 和 [cache-config.nix](../nix/cache-config.nix) 管理。
 
-本项目的 laptop 主机和 CI 自动配置构建缓存，其他开发环境需要[安装客户端配置](#开发容器及其他-nix-客户端)。这些设置持久生效，构建其他 flake 项目时同样使用，无需在每次运行 Nix 时添加参数。VPS 由维护机构建后通过 Colmena 接收完整闭包。
+## 查看状态与客户端配置
 
-添加或移除公共缓存时，修改 [public-caches.nix](../nix/public-caches.nix)；更换项目缓存仓库或签名身份时，修改 [cache-identity.json](../nix/cache-identity.json)。代理地址和端口在 [cache-config.nix](../nix/cache-config.nix) 中设置。修改后，NixOS 主机重新部署配置，其他客户端重新执行安装命令。
+### NixOS 主机与容器
 
-缓存需要包含构建所请求的精确 store path。自定义源码或构建参数可能产生公共缓存没有的路径，由项目缓存补充；刚初始化的项目缓存还需要经过构建和发布才有软件产物。
-
-## 项目 OCI 缓存
-
-[oranc](https://github.com/linyinfeng/oranc) 将声明的 GHCR package 提供为标准 Nix binary cache。它与自身的构建依赖一起独立锁定，不参与每日更新。单独升级使用 `nix flake update oranc`，验证方式见[本地验证](#本地验证)。
-
-package 的创建、Public 和 Actions Write 设置见 [CI 首次启用](ci.md#首次启用)。CI 在使用项目缓存前直接 GET `nix-cache-info`；不要用 `nix store info` 探测尚未初始化的缓存，当前固定版本的 oranc 在该路径上可能尝试创建索引，导致匿名请求出现 500。初始化只写入索引，不发布软件闭包，也不修改 package 的可见性。
-
-## NixOS 主机与容器
-
-主机通过 `site.cache` 指定项目仓库、公钥、监听地址和端口。默认只监听本机；需要与 Docker 容器共用时，选择容器可达的宿主地址，并在依赖网桥时安排服务在 Docker 之后启动。[laptop2 的主机配置](../hosts/laptop2/default.nix)采用统一声明的网桥地址，可作为此类配置的实例。
-
-系统配置激活后，普通用户和 root 执行 `nixos-rebuild`、`nix build` 和 `nix develop` 时自动使用公共缓存与项目缓存，并验证签名，无需逐个用户确认缓存设置。`nixos-rebuild switch` 立即激活，`boot` 在下次启动时生效；构建过程使用当前已激活的 Nix 配置。公共 GHCR 包可匿名读取，消费端只需公钥，无需签名私钥或 registry token。容器访问由[私网访问策略](network.md#私网开发访问与公网入站)管理。
-
-在采用统一声明的主机上，可从仓库根目录检查已初始化的缓存：
+启用 `site.cache` 的主机自动配置本地 `oranc` 代理、Nix substituters 与签名公钥（当监听地址位于 Docker 网桥且启用了 Docker 时，`cache.nix` 自动将 `oranc.service` 排在 `docker.service` 之后启动；同时默认开启 `fallback = true` 与 5 秒连接超时，本地代理暂不可用时自动回退构建）：
 
 ```sh
 systemctl status oranc
-journalctl -u oranc
+journalctl -u oranc -n 50 --no-pager
 nix config show | rg 'substituters|trusted-public-keys|require-sigs'
 cache_url=$(nix eval --raw --file nix/cache-config.nix local.uri)
 nix store info --store "$cache_url"
 ```
 
-使用其他地址的主机需相应替换 `cache_url`。禁用项目代理时公共缓存继续可用。私有仓库可配置 `site.cache.netrcFile`，指向 root 所有的 0600 运行时文件；`machine` 与客户端使用的代理地址一致。凭据由 Nix 发送给代理用于上游认证，内容不进入 Nix store。
+### 开发容器及其他 Nix 客户端
 
-## 开发容器及其他 Nix 客户端
-
-宿主提供可达的 oranc 代理后，在开发容器的源码 checkout 中查看并安装客户端配置：
+宿主机提供可达的 `oranc` 代理后，在开发容器或外部客户端的仓库根目录安装持久配置：
 
 ```sh
 bash scripts/nix-cache.sh print
@@ -43,56 +27,39 @@ nix config show | rg 'substituters|trusted-public-keys|require-sigs'
 nix develop .#laptop
 ```
 
-`install` 将配置写入 `${XDG_CONFIG_HOME:-$HOME/.config}/nix/nixos-config-cache.conf`，并在同目录 `nix.conf` 中加入相对 `include`，保留原有设置。再次运行会更新托管片段，不重复添加 include。之后直接使用原生 Nix 命令。重建容器或更新缓存声明后重新执行安装命令，也可将它接入容器自身已有的初始化流程。
+无法连接宿主代理时使用 `bash scripts/nix-cache.sh install --public-only`。非 NixOS 的多用户 Nix daemon 环境由管理员执行 `sudo bash scripts/nix-cache.sh install --system && sudo systemctl restart nix-daemon.service`。
 
-无法访问宿主代理时，用 `print --public-only` 查看、`install --public-only` 安装公共缓存。脚本不需要先进入开发 shell；其他参数见 `bash scripts/nix-cache.sh --help`。
+### 本地验证与升级 `oranc`
 
-多用户 Nix 的下载和信任由 daemon 决定，仅修改普通用户配置不能授权新的缓存公钥。在非 NixOS 的 daemon 安装中，由管理员执行：
+`oranc` 在 `flake.lock` 中保留独立的构建输入锁，避免日常 `nixpkgs` 升级破坏 GitHub Actions 的启动缓存命中。单独升级并验证：
 
 ```sh
-sudo bash scripts/nix-cache.sh install --system
-sudo systemctl restart nix-daemon.service
+nix flake update oranc
+nix build --no-link .#oranc
+ci_tools=$(nix build --no-link --print-out-paths --impure --expr \
+  'import ./nix/ci-tools.nix { flake = builtins.getFlake ("git+file://" + toString ./.); scope = "laptop"; }')
+PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input nixpkgs
 ```
 
-系统模式写入 `${NIX_CONF_DIR:-/etc/nix}`，由当前平台的服务管理器重启运行中的 daemon。NixOS 主机通过声明式配置和 `nixos-rebuild` 应用。若设置了 `NIX_USER_CONF_FILES`，需确认它包含安装目标的 `nix.conf`；`NIX_CONFIG` 和命令行遵循 [Nix 自身的优先级](https://nix.dev/manual/nix/2.34/command-ref/conf-file.html)。
+## 发布范围与再分发过滤
 
-## 发布范围
+[nix/ci.nix](../nix/ci.nix) 收集当前范围（`laptop` 或 `remote`）的构建根，[nix/cache-policy.nix](../nix/cache-policy.nix) 与 [.github/ci/cache.py](../.github/ci/cache.py) 共同执行再分发过滤：
 
-[CI 清单](../nix/ci.nix)选择当前范围的构建根，[发布策略](../nix/cache-policy.nix)定义再分发限制。remote 仅发布公开合成节点、测试与维护工具；私有 VPS 系统在维护机构建。[发布脚本](../.github/ci/cache.py)在每轮 CI 开始时计算一次输出清单和排除集合。项目构建通过 `post-build-hook` 将成功产物写入队列，由后台进程增量收集运行时引用并发布；求值直接写入 store 的文件也随引用纳入。
+- **源码树隔离**：`inputs.self.outPath` 始终列入 `excludedPaths`，防止仓库源码（含加密 `.sops.yaml` 与硬件标识）上传至不可删的公开 GHCR；客户端求值 Flake 时已在本地 `/nix/store` 写入同一源码树，因此从缓存恢复系统配置不受影响。
+- **穿透解包与双范围一致扫描**：`cache-policy.nix` 对 `laptop` 与 `remote` 统一执行许可证扫描，递归解包 `passthru.unwrapped`（如 Firejail 或 XWayland 包装器）并显式纳入受限运行时依赖（如 `anytype`、`anytype-heart`、`google-chrome`、`vscode`）。
+- **引用图截断**：`Publisher.discover()` 在记录命中 `excludedPaths` 的候选统计后，立即停止向被排除路径的内部 `references` 继续展开，阻断非可再分发载荷经上层环境或包装脚本泄露到公开缓存。
 
-启动时纳入已经准备好的产物，阶段结束时补齐钩子未覆盖的已有输出，再等待发布完成。部分构建或 VM 失败时，其余已完成的可再分发路径仍可发布，供下轮使用。发布时机见 [CI 执行顺序](ci.md#主机与执行顺序)。
+CI 先构建受限依赖再执行或恢复 VM 测试结果；公开缓存包含可再分发的自定义包、开发 shell（`laptop` / `vps`）、公开合成配置及通过验收的 VM 测试结果。首次探测未初始化的 GHCR package 时直接请求 `nix-cache-info`（避免在空仓库上执行 `nix store info` 触发索引写入错误），初始化流程见 [CI 首次启用](ci.md#首次启用步骤)。
 
-`laptop` 和 `vps` 开发环境分别随对应的 CI 构建发布到项目缓存。配置缓存后，本地和 CI 的 `nix develop` 可复用其中的工具，包括 VM 提交客户端。缓存匹配相同的 store path，flake 求值仍在当前机器进行。
+## 旁路发布隔离、重试与历史保留
 
-公开范围包括可再分发的自定义包、配置产物及成功的 Nix VM 测试结果。输入相同的检查可以恢复已有成功结果，如何区分复用与本轮执行见[验证指南](validation.md#完整验收与计时)。
+在 GitHub Actions 中，构建容器 `nixos-ci` 以只读方式挂载仓库源码且不持有任何发布凭据；`ORANC_SIGNING_KEY`、`ORANC_USERNAME` 与 `ORANC_PASSWORD` 仅注入独立 PID 与环境变量命名空间的旁路容器 `nixos-ci-publisher`。两者共享 `nixos-ci-store:/nix` 卷，并通过 `/ci/cache/requests` 队列与检查点文件通信。
 
-软件许可证的 `redistributable` 元数据用于筛选直接软件包。有再分发限制的软件、下载源及复制这些内容的 bundle 不发布；普通系统包装脚本、符号链接和元数据可以保留对它们的引用。`unfreeRedistributable` 与禁止再分发的许可分别处理。
+发布进程复用本轮已扫描路径及公共/项目缓存签名，构建期间单路上传普通对象，检查点阶段先逐个上传大对象再并发清空剩余普通队列；历史 GHCR 对象持续保留以支持旧系统代次与缓存复用。
 
-新增软件或将软件复制进 bundle 时，应核对许可证及 `cache-policy.nix` 中的排除范围；仅靠 Nix store 引用无法识别复制进去的内容及其再分发权。发布只上传筛选后的路径，避免自动展开依赖而带入受限内容。
+## 签名密钥管理
 
-CI 先从原始来源构建被排除的软件及容器，再请求 E2E 结果，保证恢复测试结果时所需的受限依赖已经存在。消费缓存的主机仍自行取得这些应用；部分引用它们的上层产物可能由 Nix 在本地组装，其余可发布依赖继续命中缓存。公开缓存不是完整主机闭包的独立离线副本。
-
-## 签名、重试与历史对象
-
-CI 通过 Nix 的临时 `netrc-file` 将当前 job 的 GITHUB_TOKEN 提供给本地 oranc，完成 GHCR 读取认证。凭据仅匹配代理专用的回环地址，文件权限为 0600，任务结束时删除。诊断 artifact 按明确的文件清单收集；公共缓存仍供主机匿名读取。
-
-CI 的 Nix 配置启用 `fallback`：替代下载失败后，根据已有 derivation 构建所需产物，再进入正常发布流程。大型产物重新构建可能增加耗时，报告分别记录缓存恢复和构建活动。下载并发由 CI 配置控制。
-
-产物发布使用运行时的 `NIX_CACHE_SIGNING_KEY`、GITHUB_TOKEN 和 `oranc push`。上传进程持有发布凭据，构建钩子只记录路径。日常 CI 在首次写入前将私钥推导出的公钥与仓库声明核对。手动初始化入口只写不含产物签名的索引，无需私钥。私钥不保存在仓库或 Nix 构建环境中；密钥生成与交接见下文[签名密钥](#签名密钥)，仓库权限见 [CI 启用步骤](ci.md#首次启用)。
-
-CI 在本轮复用路径及其引用的处理结果，根据本地公共缓存签名、项目签名去重，再向公共缓存和项目缓存批量查询剩余路径的元数据。Nix 核对同一路径的 NAR 哈希、大小和引用后导入签名，据此跳过远端已有的产物。公共缓存采用仓库声明和 Nix 内置的默认缓存配置。
-
-缓存查询失败时，CI 记录端点及错误，继续发布尚未确认有缓存的路径。构建期间单路上传普通产物，大对象留到阶段收尾逐个上传，随后并行处理剩余普通产物。这样可控制压缩与构建叠加的内存占用；大小阈值和并发参数集中在[发布脚本](../.github/ci/cache.py)。
-
-发布使用 oranc 的有限重试，每批成功后更新本轮上传记录。发布检查点等待剩余产物完成；上传失败或进程异常退出会使检查点和 CI 失败。下一次运行通过远端项目签名识别已完成的上传，继续处理剩余路径。发布数量、缓存命中、上传体积及后台耗时和收尾等待时间见 [CI 诊断](ci.md#资源和故障记录)。
-
-历史 GHCR 对象持续保留。narinfo 引用对应 NAR，旧系统代次、开发环境和测试结果仍可能需要它们，因此没有按 tag 年龄删除对象的任务。未来清理需要以保留的根及可达对象为依据。个人资料的恢复由 [Restic 备份](backup.md)负责。
-
-## 签名密钥
-
-`NIX_CACHE_SIGNING_KEY` 保存 Nix 的 Ed25519 缓存签名私钥；CI 用它签名，消费者通过 `nix/cache-identity.json` 中的公钥验证构建产物。私钥由 [`nix key generate-secret`](https://nix.dev/manual/nix/2.34/command-ref/new-cli/nix3-key-generate-secret) 随机生成。`--key-name` 是签名标识，相同名称再次生成也会得到另一对密钥，无法据此恢复原私钥。
-
-已有缓存身份应复用配套私钥。以下命令用于首次创建，私钥文件权限为 0600；`set -C` 保护同名现有文件，括号将 shell 设置限制在本次操作内：
+首次创建 Ed25519 缓存签名密钥对（已有缓存身份时直接复用原私钥，轮换时使用新 key-name 如 `nixos-config-2`）：
 
 ```sh
 (
@@ -105,15 +72,9 @@ CI 在本轮复用路径及其引用的处理结果，根据本地公共缓存�
 )
 ```
 
-最后输出的是公钥，将其填写到 `nix/cache-identity.json` 的 `publicKey`。私钥文件的完整内容填写到 [GitHub 仓库 secret](ci.md#首次启用) `NIX_CACHE_SIGNING_KEY`；也可以在对应仓库的 checkout 中通过 CLI 上传：
+将输出的公钥填入 `nix/cache-identity.json` 的 `publicKey`，并将私钥离线备份后写入 GitHub Actions Secret：
 
 ```sh
 signing_key="${XDG_STATE_HOME:-$HOME/.local/state}/nixos-config/cache/nixos-config-1.secret"
 gh secret set NIX_CACHE_SIGNING_KEY < "$signing_key"
 ```
-
-在正确的仓库 checkout 中执行，并先核对推导出的公钥。备份仓库外的私钥文件以便迁移和恢复。正式轮换时采用新的名称与文件名（例如 `nixos-config-2`），协调更新 CI 私钥和消费者信任，并安排旧缓存的签名过渡。
-
-## 本地验证
-
-升级 oranc 后构建 `nix build --no-link .#oranc`，再按[验证指南](validation.md#完整验收与计时)运行 OCI 集成。该流程使用临时 registry 和合成密钥；首次启用和权限变更通过真实 Actions 运行确认 GHCR 匿名访问、发布权限及后续缓存命中。

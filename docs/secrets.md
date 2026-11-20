@@ -2,13 +2,13 @@
 
 笔记本的 `hosts/<主机>/secrets.nix` 选择凭据目录、用户、备份目标和 Wi-Fi 连接，`lib/credentials.nix` 负责共享字段绑定。通用模块只接收运行时文件路径。SOPS 使用持久根下 `var/lib/sops-nix/keys.txt` 中的 age 身份解密，运行时文件由 sops-nix 管理。
 
-VPS 使用[加密 inventory](vps.md#建立私有-inventory)，维护机解密后通过 Colmena 分发节点专属的运行凭据。订阅地址、证书 Worker 凭据，以及撤销与换钥顺序也在该指南中维护。
+VPS 使用[加密 inventory](vps.md#1-编辑私有-inventory-与生成材料)，维护机解密后通过 Colmena 分发节点专属的运行凭据。订阅地址、证书 Worker 凭据，以及撤销与换钥顺序也在该指南中维护。
 
 主机凭据和 VPS inventory 均采用 SOPS 原生 YAML：字段名可见，秘密值加密。节点等标识作为 YAML 键时也会保留可读，因此使用适合公开的名称。
 
 | 密文 | 内容 | 消费者 |
 | --- | --- | --- |
-| `system.sops.yaml` | 登录密码 hash、Tailscale auth key、Wi-Fi 环境文件、Bark device token、额外通知通道、文件服务账号与证书地址；可选的个人资料 | 用户创建、Tailscale、NetworkManager、通知与文件服务 |
+| `system.sops.yaml` | 登录密码 hash、Tailscale auth key、Wi-Fi 环境文件、Bark device token、额外通知通道、文件服务账号与证书名称 | 用户创建、Tailscale、NetworkManager、通知与文件服务 |
 | `backup.sops.yaml` | Restic 密码，以及各目标的仓库地址和环境文件 | 各仓库独立 Restic 作业 |
 | `identity.sops.yaml` | OpenPGP 公钥证书、命名子密钥、SSH hosts 与 Git 身份 | SSH、Git |
 
@@ -41,14 +41,13 @@ sops "hosts/$host/secrets/system.sops.yaml"
 | `notifications/barkDeviceToken` | Bark 客户端的 APNs device token，区别于服务端生成的 device key |
 | `notifications/channels` | 原生 Apprise YAML 字符串，示例包含三个带 tag 的通道；仅使用 Bark 时填 `urls: []`，通道说明见[通知](notifications.md) |
 | `files/adminPassword`、`files/userPassword` | 两个独立的长随机密码，供 HTTPS 与 SMB 使用；启用与证书签发见[文件服务](files.md) |
-| `files/certificateNames` | 实际访问的域名与 IP 数组；按[文件服务](files.md#首次配置)填写并手动签发 |
+| `files/certificateNames` | YAML `|` 多行文本，每行一个实际访问的域名或 IP；按[文件服务](files.md#配置服务端证书)填写并手动签发 |
 | `password`、`repositories/*/url` | Restic 仓库密码和对象存储控制台给出的 S3 endpoint、bucket、仓库前缀；恢复既有仓库必须使用原密码 |
 | `repositories/*/environment` | 对应提供方的 S3 access key/secret；限定到该备份 bucket 所需权限 |
 | `gpg/publicKeys` | 包含所选子密钥的完整 OpenPGP 公钥证书，可填写多个 ASCII armor 公钥块 |
 | `gpg/ssh` | 用途名到认证子密钥完整指纹的映射，如 `github`、`ios`；未使用时填 `{}` |
 | `gpg/signingKey` | 签名子密钥的完整指纹；未使用时填 `null` |
 | `ssh/hosts`、`git/identity` | 原生 SSH/Git 配置，多行字符串；未使用时可留空 |
-| `retained` | 可选的个人资料；保存原有内容，没有启用服务的副作用 |
 
 新用户需要同时调整主机用户名和备份目标。SSH 用途直接在身份文档中增加，无需修改 Nix 绑定。新安装的磁盘和启动配置需要单独设计，见[新增主机](maintenance.md#增加主机)。
 
@@ -170,18 +169,18 @@ systemctl --user restart gpg-agent.service
 
 SSID 和密码写入 `system.sops.yaml` 的 `wifi/environment`，公开的 Nix 声明通过变量名引用它们。以下 `home` 是 NetworkManager 中显示的连接别名，可以自行改名，与真实 SSID 无关。
 
-先按主机 `secrets.nix` 中的连接 profile 变量名填写密文：
+先按主机 `secrets.nix` 中的连接 profile 变量名填写密文（示例对应 [system.example.yaml](../data/secrets/system.example.yaml) 与 [hosts/laptop2/secrets.nix](../hosts/laptop2/secrets.nix)）：
 
 ```yaml
 wifi:
   environment: |
-    WIFI_HOME_SSID='示例家庭 Wi-Fi'
-    WIFI_HOME_PASSWORD='REPLACE_WITH_HOME_PASSWORD'
+    HOME_SSID='示例家庭 Wi-Fi'
+    HOME_PSK='REPLACE_WITH_HOME_PASSWORD'
 ```
 
 这是 [systemd EnvironmentFile](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html#EnvironmentFile=) 格式，单引号内的空格、`$` 和双引号按原样保留。值含单引号时可用双引号包围，并将值内的双引号和反斜杠分别写为 `\"`、`\\`。各变量值保持单行。
 
-对应的 Nix 结构如下，可据此编辑现有 `profiles` 属性集。该文件已有的 `environmentFiles` 绑定会自动提供 `/run/secrets/wifi-environment`：
+对应的 Nix 结构如下，可据此编辑现有 `profiles` 属性集。`lib/credentials.nix` 已绑定 `/run/secrets/wifi-environment`：
 
 ```nix
 networking.networkmanager.ensureProfiles.profiles = {
@@ -192,10 +191,10 @@ networking.networkmanager.ensureProfiles.profiles = {
       type = "wifi";
       autoconnect = true;
     };
-    wifi.ssid = "$WIFI_HOME_SSID";
+    wifi.ssid = "$HOME_SSID";
     wifi-security = {
       key-mgmt = "wpa-psk";
-      psk = "$WIFI_HOME_PASSWORD";
+      psk = "$HOME_PSK";
     };
     ipv4.method = "auto";
     ipv6.method = "auto";
@@ -203,7 +202,7 @@ networking.networkmanager.ensureProfiles.profiles = {
 };
 ```
 
-这里使用 `"$WIFI_HOME_SSID"`，保留 `$变量名` 给运行时替换。示例使用共享密码（`wpa-psk`）连接。添加其他网络时，在密文中增加一对变量，并在 `profiles` 中增加一个独立 UUID 的连接；只填写环境变量不会自动创建 profile。
+这里使用 `"$HOME_SSID"` 与 `"$HOME_PSK"`，保留 `$变量名` 给运行时替换。示例使用共享密码（`wpa-psk`）连接。添加其他网络时，在密文中增加一对变量，并在 `profiles` 中增加一个独立 UUID 的连接。
 
 应用配置时，SOPS 提供环境文件，`NetworkManager-ensure-profiles.service` 将变量替换为实际值，生成 `/run/NetworkManager/system-connections/home.nmconnection`，权限为 root 所有、0600，然后通知 NetworkManager 重新加载。凭据更新会重启这个生成服务。Nix store 中的连接模板只包含变量引用。
 

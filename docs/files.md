@@ -18,19 +18,19 @@
 
 laptop profile 启用 `site.files`，用主机用户名确定共享目录。部署前，用 SOPS 编辑主机的 `system.sops.yaml`，填写 `files.adminPassword`、`files.userPassword` 和 `files.certificateNames`；完整字段见[凭据示例](../data/secrets/system.example.yaml)。
 
-`certificateNames` 是域名与 IP 数组，加入实际访问的地址即可：
+`certificateNames` 使用 YAML `|` 多行字符串，每行填写一个实际访问的域名或 IP：
 
 ```yaml
 files:
-  certificateNames:
-    - localhost
-    - 127.0.0.1
-    - "::1"
+  certificateNames: |
+    localhost
+    127.0.0.1
+    ::1
 ```
 
-域名通配符写成带引号的 `"*.example.test"`，覆盖该域名下一级子域名。IP 需精确匹配；经常切换网络时可使用稳定的 Tailscale 域名。
+域名通配符直接按行填写（如 `*.example.test`），覆盖该域名下一级子域名。IP 需精确匹配；经常切换网络时可使用稳定的 Tailscale 域名。
 
-地址随 SOPS 加密保存，签发命令从 root 私有的运行时文档读取数组，自动区分域名和 IP。TLS 客户端可以读取服务端证书中的 SAN，服务端证书文件仅 root 可读。
+`sops-nix` 按 `files/certificateNames` 单字段提取至 root 私有的 `/run/secrets/files-certificate-config`（不含其他系统凭据），签发命令自动区分域名和 IP。服务端证书私钥仅 root 可读。
 
 构建并切换系统，重新登录以加载共享组成员身份，再手动签发证书：
 
@@ -57,7 +57,7 @@ httpserver --random-code ./iphone
 | 文件 | 用途 |
 | --- | --- |
 | `iphone.mobileconfig` | iOS 描述文件，包含服务端 CA 和加密的设备身份 |
-| `iphone.p12` | Android、Windows 的加密设备身份 |
+| `iphone.p12` | Android、Windows、Linux 的加密设备身份（OpenSSL 3 现代默认加密参数） |
 | `server-ca.cer` | Android、Windows 的服务端信任根 |
 
 命令交互询问 P12 密码，安装身份时输入同一密码。目录权限为 `0700`，文件权限为 `0600`。
@@ -128,7 +128,7 @@ httpserver --code '自行指定的访问码' ./directory
 
 默认分享当前目录；传入文件时，根地址 `https://<地址>:8444/` 直接访问该文件。图片、PDF 和文本按类型显示，文件响应支持 HEAD 和 Range。HTML 与 SVG 在受限的浏览器环境中显示。
 
-命令为活动的局域网网卡地址分别打印 URL 和二维码，包括由实际网卡承载的 bridge 或 VLAN；找不到这样的地址时显示 localhost。每个地址都会检查证书 SAN，缺少的地址仍会显示，并提示添加到 SOPS 的 `files.certificateNames`。将常用地址一次加入数组、部署并重新签发，之后保留该配置即可。
+命令为活动的局域网网卡地址分别打印 URL 和二维码，包括由实际网卡承载的 bridge 或 VLAN；找不到这样的地址时显示 localhost。每个地址都会检查证书 SAN，缺少的地址仍会显示，并提示添加到 SOPS 的 `files.certificateNames`。将常用地址逐行加入该字段、部署并重新签发即可。
 
 `--random-code` 生成 12 位大写字母和数字，终端与网页输入框均以 `XXXX-XXXX-XXXX` 显示。输入框自动大写、分组，也可粘贴带或不带连字符的访问码。`--code` 使用自行指定的原值。
 
