@@ -76,18 +76,21 @@ def prepare(state):
     settings = state / "mullvad"
     settings.mkdir(mode=0o700, exist_ok=True)
     path = settings / "settings.json"
+    seed = json.dumps({"settings_version": 17, "lockdown_mode": True,
+                       "allow_lan": False, "auto_connect": False}) + "\n"
     if path.exists():
-        # Never edit a running daemon's persisted settings. Re-enable via CLI
-        # after startup; the independent early blocker remains in force.
-        data = json.loads(path.read_text())
-        if data.get("settings_version") != 17 or not data.get("lockdown_mode") or data.get("allow_lan"):
-            raise ValueError("Mullvad settings differ from the validated protected state; refusing daemon startup")
+        if path.is_symlink():
+            raise ValueError("refusing a symlink Mullvad settings file")
+        # Retain existing daemon settings across schema migrations; connect()
+        # enforces lockdown-mode and LAN blocking through the official CLI.
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            data = None
+        if not isinstance(data, dict):
+            atomic(path, seed)
     else:
-        # The locked 2026.5 schema uses serde(default), CURRENT_SETTINGS_VERSION=17.
-        # Seed BEFORE its first daemon start, so early blocking cannot be cleared
-        # by an initially disconnected daemon with the default Lockdown=false.
-        atomic(path, json.dumps({"settings_version": 17, "lockdown_mode": True,
-                                "allow_lan": False, "auto_connect": False}) + "\n")
+        atomic(path, seed)
 
 
 def remove(runtime):
@@ -139,8 +142,11 @@ def main():
     try:
         {"prepare": lambda: prepare(args.state), "start": lambda: routing(args.runtime),
          "stop": lambda: remove(args.runtime), "connect": lambda: connect(args.state)}[args.action]()
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
-        parser.exit(1, "network control operation failed; protection remains enabled\n")
+    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        parser.exit(
+            1,
+            f"network control operation failed ({ipv6.error_summary(error)}); protection remains enabled\n",
+        )
 
 
 if __name__ == "__main__":

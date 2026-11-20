@@ -10,6 +10,7 @@ from tests.support import load_script
 renderer = load_script("network/render.py")
 underlay = load_script("network/underlay.py")
 compiler = load_script("network/domain_policy.py")
+lockdown = load_script("network/lockdown.py")
 
 
 class NetworkConfiguration(unittest.TestCase):
@@ -85,3 +86,30 @@ class NetworkConfiguration(unittest.TestCase):
             changed = compiler.compile_policy(policy, fragments, connections)
             self.assertEqual(changed["route"]["rule_set"][0]["rules"], [{"domain": ["changed.example"]}])
             self.assertNotEqual(model["dns_generation"], changed["dns_generation"])
+
+    def test_lockdown_prepare_allows_schema_migrations_and_repairs_corrupt_seed(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+
+        fake_key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEE=\n"
+        fake_pub = "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBI=\n"
+
+        def fake_run(args, *, data=None, check=True):
+            return SimpleNamespace(returncode=0, stdout=fake_pub if "pubkey" in args else fake_key)
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(lockdown, "run", side_effect=fake_run):
+            state = Path(directory) / "site-network"
+            lockdown.prepare(state)
+            settings_path = state / "mullvad/settings.json"
+            seeded = json.loads(settings_path.read_text())
+            self.assertEqual(seeded["lockdown_mode"], True)
+            self.assertEqual(seeded["allow_lan"], False)
+
+            migrated = {"settings_version": 99, "lockdown_mode": True, "allow_lan": False, "extra_field": "kept"}
+            settings_path.write_text(json.dumps(migrated))
+            lockdown.prepare(state)
+            self.assertEqual(json.loads(settings_path.read_text()), migrated)
+
+            settings_path.write_text("{corrupt-json")
+            lockdown.prepare(state)
+            self.assertEqual(json.loads(settings_path.read_text())["lockdown_mode"], True)

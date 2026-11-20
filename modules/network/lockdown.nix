@@ -81,7 +81,11 @@ in
       '';
     };
     systemd.services = {
-      mullvad-early-boot-blocking.environment = controlEnvironment;
+      mullvad-early-boot-blocking = {
+        environment = controlEnvironment;
+        requires = [ "site-network-prepare.service" ];
+        after = [ "site-network-prepare.service" ];
+      };
       mullvad-daemon = {
         environment = controlEnvironment;
         requires = [ "site-network-prepare.service" ];
@@ -96,7 +100,13 @@ in
       site-network-prepare = {
         description = "Create local peer identity and seed protected first-start settings";
         after = [ "local-fs.target" ];
-        before = [ "mullvad-daemon.service" ];
+        before = [
+          "mullvad-early-boot-blocking.service"
+          "mullvad-daemon.service"
+          "shutdown.target"
+        ];
+        conflicts = [ "shutdown.target" ];
+        unitConfig.DefaultDependencies = false;
         path = tools;
         serviceConfig = {
           Type = "oneshot";
