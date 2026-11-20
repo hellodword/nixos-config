@@ -3,7 +3,7 @@
   lib,
   pkgs,
   inputs,
-  userName,
+  userName ? null,
   ...
 }:
 let
@@ -16,6 +16,12 @@ in
   ];
   options.site.core.enable = lib.mkEnableOption "persistent, secure laptop base";
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = userName != null && userName != "";
+        message = "Enabling site.core requires specialArgs.userName.";
+      }
+    ];
     system.configurationRevision = inputs.self.rev or (inputs.self.dirtyRev or "uncommitted");
     environment.etc."flake-inputs/self".source = inputs.self.outPath;
     users.mutableUsers = false;
@@ -76,6 +82,8 @@ in
           "flakes"
         ];
         auto-optimise-store = true;
+        fallback = lib.mkDefault true;
+        connect-timeout = lib.mkDefault 5;
         sandbox = true;
         require-sigs = true;
         trusted-users = [ "root" ];

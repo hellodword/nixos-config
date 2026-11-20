@@ -20,8 +20,8 @@ let
 in
 {
   site.backup = {
-    enable = true;
-    source = config.site.storage.persistRoot;
+    enable = lib.mkDefault true;
+    source = lib.mkDefault config.site.storage.persistRoot;
     roots = [
       {
         path = "etc/machine-id";

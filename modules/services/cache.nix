@@ -10,6 +10,14 @@ let
   caches = import ../../nix/cache-config.nix;
   projectCache = caches.withProject cfg;
   oranc = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.oranc;
+  needsDockerBridge =
+    config.virtualisation.docker.enable
+    && !lib.elem cfg.listenAddress [
+      "127.0.0.1"
+      "::1"
+      "0.0.0.0"
+      "::"
+    ];
 in
 {
   options.site.cache = {
@@ -66,8 +74,8 @@ in
       ];
       systemd.services.oranc = {
         wantedBy = [ "multi-user.target" ];
-        wants = [ "network-online.target" ];
-        after = [ "network-online.target" ];
+        wants = [ "network-online.target" ] ++ lib.optional needsDockerBridge "docker.service";
+        after = [ "network-online.target" ] ++ lib.optional needsDockerBridge "docker.service";
         serviceConfig = import ../../lib/service-hardening.nix // {
           ExecStart = "${oranc}/bin/oranc server --listen ${lib.escapeShellArg projectCache.listen}";
           Restart = "on-failure";

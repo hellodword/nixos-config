@@ -1,7 +1,7 @@
-{ ... }:
+{ lib, ... }:
 {
   boot.plymouth = {
-    enable = true;
-    theme = "breeze";
+    enable = lib.mkDefault true;
+    theme = lib.mkDefault "breeze";
   };
 }

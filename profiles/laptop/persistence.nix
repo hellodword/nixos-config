@@ -16,8 +16,13 @@ let
   ];
 in
 {
-  # State remains accessible when a capability is disabled. Keep the account
-  # owning sing-box's state for the same lifetime as its persistent directory.
+  # State remains accessible when a capability is disabled. Keep the accounts
+  # owning persistent daemon directories for the lifetime of those paths.
+  users.users.chrony = {
+    uid = config.ids.uids.chrony;
+    group = "chrony";
+  };
+  users.groups.chrony.gid = config.ids.gids.chrony;
   users.users.sing-box = {
     isSystemUser = true;
     group = "sing-box";
@@ -28,7 +33,7 @@ in
     file:
     "f ${config.site.storage.persistRoot}${
       config.users.users.${userName}.home
-    }/${file} 0600 ${userName} users -"
+    }/${file} 0600 ${userName} ${config.users.users.${userName}.group} -"
   ) kdeFiles;
   environment.persistence.${config.site.storage.persistRoot} = {
     hideMounts = true;

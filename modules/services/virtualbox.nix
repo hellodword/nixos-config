@@ -1,17 +1,14 @@
 {
   pkgs,
   lib,
-  userName,
+  userName ? null,
   config,
   inputs,
   ...
 }:
-
 let
   cfg = config.virtualisation.virtualbox.host;
-
-  # 与 NixOS VirtualBox host 模块使用相同的参数，
-  # 保证引用的是同一个 VirtualBox derivation。
+  siteCfg = config.site.virtualbox;
   virtualbox = cfg.package.override {
     inherit (cfg)
       enableHardening
@@ -19,44 +16,39 @@ let
       enableWebService
       enableKvm
       ;
-
     extensionPack = if cfg.enableExtensionPack then pkgs.virtualboxExtpack else null;
   };
-
-  # 只创建一个轻量级启动脚本。
+  exportedEnv = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (name: value: "export ${name}=${lib.escapeShellArg value}") siteCfg.environment
+  );
   virtualboxLauncher = pkgs.writeShellScriptBin "VirtualBox" ''
-    export ANV_DEBUG=video-decode,video-encode
+    ${exportedEnv}
     exec ${virtualbox}/bin/VirtualBox "$@"
   '';
-
 in
 {
-  options.site.virtualbox.enable = lib.mkEnableOption "VirtualBox with the existing host integration";
-  config = lib.mkIf config.site.virtualbox.enable {
-    nixpkgs.config.allowUnfreePackages = [ "Oracle_VirtualBox_Extension_Pack" ];
-
-    # VirtualBox is not currently allowed to access USB devices
-    users.users."${userName}".extraGroups = [ "vboxusers" ];
-
-    virtualisation.virtualbox = {
-      host = {
-        enable = true;
-        package = (import ../../nix/packages.nix { inherit pkgs inputs; }).virtualbox;
-      };
+  options.site.virtualbox = {
+    enable = lib.mkEnableOption "VirtualBox with the existing host integration";
+    environment = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = { };
+      description = "Environment variables exported by the VirtualBox desktop launcher.";
     };
-
-    environment.systemPackages = [
-      (pkgs.lib.hiPrio virtualboxLauncher)
-    ];
-
-    # https://discourse.nixos.org/t/how-to-adjust-the-timeout-of-a-systemd-device/12620
-    # Timed out waiting for device /dev/vboxguest
+  };
+  config = lib.mkIf siteCfg.enable {
+    nixpkgs.config.allowUnfreePackages = [ "Oracle_VirtualBox_Extension_Pack" ];
+    users.users.${userName}.extraGroups = [ "vboxusers" ];
+    virtualisation.virtualbox.host = {
+      enable = true;
+      package = (import ../../nix/packages.nix { inherit pkgs inputs; }).virtualbox;
+    };
+    environment.systemPackages = lib.optional (siteCfg.environment != { }) (
+      pkgs.lib.hiPrio virtualboxLauncher
+    );
     systemd.units."dev-vboxguest.device".text = ''
       [Unit]
       ConditionVirtualization=oracle
     '';
-
-    # https://github.com/NixOS/nixpkgs/issues/363887#issuecomment-2536693220
     boot.kernelParams = [ "kvm.enable_virt_at_load=0" ];
   };
 }

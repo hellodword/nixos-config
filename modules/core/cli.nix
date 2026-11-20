@@ -3,12 +3,12 @@
   lib,
   pkgs,
   inputs,
-  userName,
+  userName ? null,
   ...
 }:
 let
   cfg = config.site.cli;
-  identityRuntime = "/run/site-identity/${userName}";
+  identityRuntime = if userName != null then "/run/site-identity/${userName}" else "";
   identityPython = pkgs.python3.withPackages (p: [ p.pyyaml ]);
   identityCommand = "${identityPython}/bin/python3 ${../../scripts/secrets}/identity.py";
   runtimeFile =
@@ -29,6 +29,12 @@ in
   config = lib.mkMerge [
     { programs.nix-index-database.enable = lib.mkDefault cfg.enable; }
     (lib.mkIf cfg.enable {
+      assertions = [
+        {
+          assertion = userName != null && userName != "";
+          message = "Enabling site.cli requires specialArgs.userName.";
+        }
+      ];
       nixpkgs.config.allowUnfreePackages = [ "p7zip" ];
       programs.gnupg.agent = {
         enable = true;

@@ -20,10 +20,8 @@ in
   site.cache = caches.project // {
     enable = true;
   };
-  systemd.services.oranc = lib.mkIf config.site.cache.enable {
-    wants = [ "docker.service" ];
-    after = [ "docker.service" ];
-  };
+  site.virtualbox.environment.ANV_DEBUG = "video-decode,video-encode";
+  services.thermald.enable = true;
 
   users.users.${userName}.uid = 1000;
   home-manager.users.${userName}.home.stateVersion = "22.11";

@@ -2,7 +2,7 @@
   config,
   lib,
   pkgs,
-  userName,
+  userName ? null,
   ...
 }:
 let
@@ -46,6 +46,7 @@ in
 {
   imports = [
     ./displays.nix
+    ./fonts.nix
     ./wallpaper.nix
   ];
   options.site.desktop = {
@@ -65,6 +66,10 @@ in
   };
   config = lib.mkIf cfg.enable {
     assertions = [
+      {
+        assertion = config.site.home.enable;
+        message = "Enabling site.desktop requires site.home.enable.";
+      }
       {
         assertion = cfg.sway.enable || cfg.i3.enable || cfg.plasma.enable;
         message = "Enable at least one desktop session, or disable site.desktop entirely.";
