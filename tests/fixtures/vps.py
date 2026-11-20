@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shutil
 import sys
 
 import yaml
@@ -64,7 +65,7 @@ def generate(source, keys, output):
         for node, info in meta['nodes'].items():
             target = output / 'nodes' / node / generation
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.symlink_to(Path('../../..') / generation / 'nodes' / node / info['release'])
+            shutil.copytree(prepared / 'nodes' / node / info['release'], target)
     provider = json.loads((output / 'v1/subscriptions/primary/trojan/linux.json').read_text())
     paths = [path for path in provider['outbounds']
              if path['tag'] in provider['exits']['us']['paths']]
