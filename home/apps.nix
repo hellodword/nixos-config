@@ -9,6 +9,7 @@
 let
   browser = builtins.fromJSON (builtins.readFile ../data/firefox.json);
   code = builtins.fromJSON (builtins.readFile ../data/vscode.json);
+  swayXwayland = import ../nix/sway-xwayland.nix { inherit pkgs; };
   prefs = {
     "keyword.enabled" = true;
     "browser.search.suggest.enabled" = false;
@@ -96,6 +97,10 @@ in
     };
     programs.vscode = {
       enable = true;
+      package = swayXwayland {
+        package = pkgs.vscode;
+        binary = "code";
+      };
       argvSettings = {
         password-store = "gnome-libsecret";
         enable-crash-reporter = false;

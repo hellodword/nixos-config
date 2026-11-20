@@ -8,6 +8,7 @@
 let
   profiles = "${pkgs.firejail}/etc/firejail";
   wrap = import ../nix/firejail.nix { inherit pkgs; };
+  swayXwayland = import ../nix/sway-xwayland.nix { inherit pkgs; };
   apps = nixosConfig.site.apps.enable or false;
   productivity = nixosConfig.site.productivity.enable or false;
   common = extra: ''
@@ -125,7 +126,10 @@ in
         firefox
         chrome
         (wrap {
-          package = pkgs.bitwarden-desktop;
+          package = swayXwayland {
+            package = pkgs.bitwarden-desktop;
+            binary = "bitwarden";
+          };
           arguments = [ "--password-store=gnome-libsecret" ];
           binaries = [ "bitwarden" ];
           profile = profile "bitwarden" (desktopBus + keyring);
