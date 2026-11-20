@@ -10,8 +10,6 @@
   defaults =
     { pkgs, ... }:
     let
-      image = import ../fixtures/applications/container.nix { inherit pkgs; };
-      certificates = import (pkgs.path + /nixos/tests/nginx/proxyprotocol/snakeoil-certs.nix);
       python = pkgs.python3.withPackages (p: [
         p.playwright
         p.selenium
@@ -21,8 +19,7 @@
     {
       imports = [
         (import ./background.nix { scenario = "applications"; })
-        inputs.impermanence.nixosModules.impermanence
-        ../../modules/core/storage.nix
+        ../fixtures/vm-sops.nix
         ../../profiles/laptop/persistence.nix
         ../../modules/core/home.nix
         ../../modules/core/cli.nix
@@ -30,20 +27,19 @@
         ../../modules/desktop/workstation.nix
         ../../modules/desktop/apps.nix
         ../../modules/desktop/fonts.nix
-        ../../modules/services/containers.nix
       ];
       _module.args.userName = "desktop";
       time.timeZone = "America/New_York";
       boot.kernelPackages = pkgs.linuxPackages_6_18;
       virtualisation = {
-        memorySize = 6144;
+        memorySize = 3072;
         cores = 2;
         diskSize = 4096;
         qemu.options = [
           "-cpu host"
           "-vga none -device virtio-gpu-pci,xres=1920,yres=1080"
         ];
-        emptyDiskImages = [ 8192 ];
+        emptyDiskImages = [ 2048 ];
         fileSystems."/persist" = {
           device = "/dev/vdb";
           fsType = "ext4";
@@ -61,23 +57,17 @@
       users.users.desktop = {
         isNormalUser = true;
         uid = 1000;
-        initialPassword = "synthetic-fixture-only";
+        password = "synthetic-fixture-only";
       };
       site = {
         desktop.enable = true;
         apps.enable = true;
-        containers = {
-          enable = true;
-        };
       };
       services.displayManager.sddm.settings.Users.MaximumUid = 1000;
       hardware.graphics.enable = true;
       environment.variables = {
         WLR_RENDERER = "pixman";
         LIBGL_ALWAYS_SOFTWARE = "1";
-      };
-      environment.etc = {
-        "application-fixtures/container.tar.gz".source = image;
       };
       environment.systemPackages = [
         pkgs.jq
@@ -88,31 +78,6 @@
           exec ${python}/bin/python3 ${./applications.py} "$@"
         '')
       ];
-      services.vaultwarden = {
-        enable = true;
-        config = {
-          DOMAIN = "https://vault.test.nix";
-          ROCKET_ADDRESS = "127.0.0.1";
-          ROCKET_PORT = 8222;
-          SIGNUPS_ALLOWED = true;
-          SIGNUPS_VERIFY = false;
-          WEB_VAULT_ENABLED = false;
-        };
-      };
-      networking.extraHosts = "127.0.0.1 vault.test.nix";
-      security.pki.certificateFiles = [ certificates.ca.cert ];
-      services.nginx = {
-        enable = true;
-        virtualHosts."vault.test.nix" = {
-          addSSL = true;
-          sslCertificate = certificates."*.test.nix".cert;
-          sslCertificateKey = certificates."*.test.nix".key;
-          locations."/" = {
-            proxyPass = "http://127.0.0.1:8222";
-            proxyWebsockets = true;
-          };
-        };
-      };
       systemd.services.application-website = {
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {
@@ -122,9 +87,47 @@
       };
     };
   nodes = {
-    sway = {
-      services.displayManager.defaultSession = lib.mkForce "sway";
-    };
+    sway =
+      { pkgs, ... }:
+      let
+        image = import ../fixtures/applications/container.nix { inherit pkgs; };
+        certificates = import (pkgs.path + /nixos/tests/nginx/proxyprotocol/snakeoil-certs.nix);
+      in
+      {
+        imports = [ ../../modules/services/containers.nix ];
+        services.displayManager.defaultSession = lib.mkForce "sway";
+        virtualisation = {
+          memorySize = lib.mkForce 6144;
+          emptyDiskImages = lib.mkForce [ 8192 ];
+        };
+        site.containers.enable = true;
+        environment.etc."application-fixtures/container.tar.gz".source = image;
+        services.vaultwarden = {
+          enable = true;
+          config = {
+            DOMAIN = "https://vault.test.nix";
+            ROCKET_ADDRESS = "127.0.0.1";
+            ROCKET_PORT = 8222;
+            SIGNUPS_ALLOWED = true;
+            SIGNUPS_VERIFY = false;
+            WEB_VAULT_ENABLED = false;
+          };
+        };
+        networking.extraHosts = "127.0.0.1 vault.test.nix";
+        security.pki.certificateFiles = [ certificates.ca.cert ];
+        services.nginx = {
+          enable = true;
+          virtualHosts."vault.test.nix" = {
+            addSSL = true;
+            sslCertificate = certificates."*.test.nix".cert;
+            sslCertificateKey = certificates."*.test.nix".key;
+            locations."/" = {
+              proxyPass = "http://127.0.0.1:8222";
+              proxyWebsockets = true;
+            };
+          };
+        };
+      };
     i3 = {
       services.displayManager.defaultSession = lib.mkForce "none+i3";
     };
@@ -400,6 +403,18 @@
                 finally:
                     user(machine, "systemctl --user stop rofi-command-clipboard.service")
 
+    def exercise_firejail(machine):
+        machine.succeed("printf firejail-persist-canary > /persist/firejail-canary.txt && chmod 0644 /persist/firejail-canary.txt")
+        user(machine, "test -r /persist/firejail-canary.txt")
+        for wrapped in ("firefox", "bitwarden", "feh", "bw"):
+            user(machine, f"grep -F '/run/wrappers/bin/firejail' \"$(command -v {wrapped})\"")
+        user(machine, "feh --version >/dev/null && bw --version >/dev/null")
+        user(
+            machine,
+            "profile=$(sed -n 's/.*\\(--profile=[^ ]*\\).*/\\1/p' \"$(command -v firefox)\") && "
+            "test -n \"$profile\" && /run/wrappers/bin/firejail --quiet \"$profile\" -- test ! -e /persist/firejail-canary.txt",
+        )
+
     failures = []
     outcomes = []
     for machine, session in ((i3, "i3"), (plasma, "KDE"), (sway, "sway")):
@@ -408,9 +423,18 @@
             machine.start()
             login(machine)
             machine.wait_for_unit("home-manager-desktop.service")
-            machine.wait_for_unit("docker.service")
-            machine.wait_for_unit("vaultwarden.service")
-            machine.wait_for_unit("nginx.service")
+            machine.succeed(
+                "test \"$(cat /proc/sys/kernel/io_uring_disabled)\" = 1 && "
+                "test \"$(cat /run/secrets/vm-smoke)\" = synthetic-sops-ready && "
+                "/run/wrappers/bin/sudo --version | grep -qi sudo-rs"
+            )
+            if session == "sway":
+                machine.wait_for_unit("docker.service")
+                machine.wait_for_unit("vaultwarden.service")
+                machine.wait_for_unit("nginx.service")
+            else:
+                machine.fail("systemctl is-enabled docker.service")
+                machine.fail("systemctl is-enabled vaultwarden.service")
             gui["wait_for_session"](machine, session, user_command)
             if session == "KDE":
                 machine.wait_until_fails("pgrep -u 1000 -f '^([^ ]*/)?ksplashqml( |$)'", timeout=90)
@@ -428,6 +452,7 @@
                 user(machine, "docker load -i /etc/application-fixtures/container.tar.gz", timeout=300)
             blocked = None
             for name, action in (
+                ("firejail", lambda: exercise_firejail(machine)),
                 ("rofi-kitty", lambda: exercise_launchers(machine, session)),
                 ("firefox", lambda: exercise_application(machine, "firefox")),
                 ("vscode", lambda: exercise_application(machine, "vscode", full=session == "sway")),

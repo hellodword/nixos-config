@@ -81,9 +81,18 @@ path.write_text(json.dumps({"active": state["pending"], "pending": None}))
 ''')
             chooser.chmod(0o755)
             manager.chmod(0o755)
+            runner = root / "run-network-rules.py"
+            runner.write_text(
+                "import importlib.util, pathlib, sys\n"
+                f"spec = importlib.util.spec_from_file_location('network_rules', {str(ROOT / 'scripts/desktop/network_rules.py')!r})\n"
+                "module = importlib.util.module_from_spec(spec)\n"
+                "spec.loader.exec_module(module)\n"
+                f"module.STATUS = pathlib.Path({str(status)!r})\n"
+                "sys.exit(module.main())\n"
+            )
             for choice, cancelled in (("0", "0"), ("1", "1"), ("1", "0")):
                 process = await asyncio.create_subprocess_exec(sys.executable,
-                    str(ROOT / "scripts/desktop/network_rules.py"), "--status", str(status),
+                    str(runner),
                     "--rofi", str(chooser), "--systemctl", str(manager),
                     env=os.environ | {
                         "FIXTURE_ROOT": str(root),

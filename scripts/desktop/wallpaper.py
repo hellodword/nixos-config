@@ -80,10 +80,10 @@ def schedule(systemctl):
         print(f"Next wallpaper check: {datetime.fromtimestamp(due, timezone.utc).isoformat()}", flush=True)
 
 
-def collect(feed_url):
+def collect():
     LIBRARY.mkdir(parents=True, exist_ok=True)
     collected = []
-    with urllib.request.urlopen(feed_url, timeout=15) as response:
+    with urllib.request.urlopen(FEED, timeout=15) as response:
         images = json.loads(response.read(1024 * 1024))["images"]
     for image in images:
         date = image["fullstartdate"]
@@ -92,7 +92,7 @@ def collect(feed_url):
         target = LIBRARY / (date + ".jpg")
         if target.exists():
             continue
-        url = urllib.parse.urljoin(feed_url, image["url"])
+        url = urllib.parse.urljoin(FEED, image["url"])
         if urllib.parse.urlsplit(url).scheme != "https":
             raise ValueError("wallpaper downloads require HTTPS")
         temporary = None
@@ -119,7 +119,7 @@ def collect(feed_url):
     return collected
 
 
-def fetch(feed_url, swaymsg, feh):
+def fetch(swaymsg, feh):
     def interrupted(signum, _frame):
         raise SystemExit(128 + signum)
 
@@ -128,7 +128,7 @@ def fetch(feed_url, swaymsg, feh):
         state = fetch_state() | {"lastAttempt": timestamp(), "result": "running"}
         write_state("fetch.json", json.dumps(state) + "\n")
         try:
-            collected = collect(feed_url)
+            collected = collect()
         except SystemExit:
             state["result"] = "interrupted"
             write_state("fetch.json", json.dumps(state) + "\n")
@@ -187,15 +187,12 @@ def present(rotate, swaymsg, feh, preferred=None):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["fetch", "apply", "rotate", "schedule"])
-    parser.add_argument("--feed-url", default=FEED)
     parser.add_argument("--swaymsg", required=True)
     parser.add_argument("--feh", required=True)
     parser.add_argument("--systemctl", required=True)
     args = parser.parse_args()
     if args.action == "fetch":
-        if urllib.parse.urlsplit(args.feed_url).scheme != "https":
-            parser.error("the image feed must use HTTPS")
-        fetch(args.feed_url, args.swaymsg, args.feh)
+        fetch(args.swaymsg, args.feh)
     elif args.action == "schedule":
         schedule(args.systemctl)
     else:

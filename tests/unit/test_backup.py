@@ -175,7 +175,7 @@ class RunnerReliabilityTest(unittest.TestCase):
                 {"path": "document", "required": True},
                 {"path": "transient.wal"},
             ]}
-            args = SimpleNamespace(source=source, state=state, restic=str(fake_restic), run_state=None, offset_minutes=0)
+            args = SimpleNamespace(source=source, state=state, restic=str(fake_restic), run_state=None)
 
             mode_file.write_text("partial-with-snapshot")
             backup.run_operation(args, policy, {"host": "fixture"}, "backup")
@@ -270,7 +270,7 @@ class RunnerReliabilityTest(unittest.TestCase):
                 "checkWithCache": True,
                 "retention": ["--keep-last", "2"],
             }
-            args = SimpleNamespace(source=source, state=state, restic="restic", run_state=None, offset_minutes=0)
+            args = SimpleNamespace(source=source, state=state, restic="restic", run_state=None)
             with patch.object(backup, "restic", side_effect=fake_restic):
                 backup.run_operation(args, policy, {"host": "fixture"}, "check")
                 backup.run_operation(args, policy, {"host": "fixture"}, "maintenance")

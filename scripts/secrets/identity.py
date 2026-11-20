@@ -15,6 +15,9 @@ import tempfile
 
 import yaml
 
+SSH_DIRECTORY = Path("/etc/ssh")
+
+
 class IdentityError(ValueError):
     """A diagnostic which contains no key material or private configuration."""
 
@@ -254,7 +257,6 @@ def main():
     prepare = commands.add_parser("prepare", help="publish identity files after SOPS decryption")
     prepare.add_argument("--source", type=Path, required=True)
     prepare.add_argument("--runtime", type=Path, required=True)
-    prepare.add_argument("--ssh-directory", type=Path, default=Path("/etc/ssh"))
     prepare.add_argument("--user", required=True)
     registration = commands.add_parser("register", help="enable declared identities in the user's GPG agent")
     registration.add_argument("--runtime", type=Path, required=True)
@@ -263,7 +265,7 @@ def main():
     os.umask(0o077)
     try:
         if args.operation == "prepare":
-            publish(args.source, args.runtime, args.ssh_directory, args.user)
+            publish(args.source, args.runtime, SSH_DIRECTORY, args.user)
         else:
             return register(args.runtime, args.home)
     except IdentityError as error:

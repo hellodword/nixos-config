@@ -6,16 +6,31 @@ import sys
 
 import yaml
 
-from scripts.vps.model import Inventory, MODES
 from scripts.network.provider_groups import grouped_outbounds
 
 
 def generate(source, keys, output):
+    sys.path.insert(0, str(source / 'scripts/vps'))
+    from model import Inventory
+    from prepare import generate as prepare_vps
+
     document = yaml.safe_load((source / 'data/secrets/vps.example.yaml').read_text())
     for name, node in document['nodes'].items():
-        node.update(serverName=f'{name}.test.nix', interface='eth0', dhcp=(name == 'west'),
-                    addresses=[node['address'] + '/24'], sshHost=f'deploy-{name}')
-        node['sshServer']['rootAuthorizedKeys'] = [(keys / 'ssh.pub').read_text().strip()]
+        node.update(
+            serverName=f'{name}.test.nix',
+            interface='eth0',
+            dhcp=(name == 'west'),
+            gateway='192.0.2.30',
+            nameservers=['192.0.2.30#dns.test.nix', '192.0.2.31#dns.test.nix'],
+            sshHost=f'deploy-{name}',
+            modules=['modules/vps/docker.nix'] if name == 'edge' else ['modules/vps/http-origin.nix'],
+        )
+        if name == 'edge':
+            node['addresses'] = [node['address'] + '/24']
+        node['sshServer'] = {
+            'port': 2222 if name == 'edge' else 22022,
+            'rootAuthorizedKeys': [(keys / 'ssh.pub').read_text().strip()],
+        }
     document['workers']['certificates']['url'] = 'https://cert.test.nix:8443'
     document['nodes']['west']['web'] = {'app.test.nix': 'http://127.0.0.1:18090'}
     document['exits'] |= {
@@ -39,19 +54,18 @@ def generate(source, keys, output):
         } for branch in range(2)]
     for generation in ('v1', 'v2'):
         data = copy.deepcopy(document)
+        data['secrets']['west-http-origin-prefix'] = f'/fixture-origin-{generation}'
         if generation == 'v2':
             data['subscriptions']['primary']['key'] = 'a5' * 32
         vps = Inventory(data)
-        for node in vps.nodes:
-            directory = output / 'nodes' / node / generation
-            directory.mkdir(parents=True)
-            (directory / 'proxy.json').write_text(json.dumps(vps.server(node)))
-            (directory / 'certificate.json').write_text(json.dumps(vps.certificate_request(node)))
-            if node == 'west':
-                (directory / 'http-origin-prefix').write_text(f'/fixture-origin-{generation}\n')
-        for mode in MODES:
-            (output / f'provider-{generation}-{mode}.json').write_text(json.dumps(vps.provider('primary', mode)))
-    provider = Inventory(document).provider('primary', 'trojan')
+        prepared = output / generation
+        prepare_vps(vps, prepared)
+        meta = json.loads((prepared / 'metadata.json').read_text())
+        for node, info in meta['nodes'].items():
+            target = output / 'nodes' / node / generation
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.symlink_to(Path('../../..') / generation / 'nodes' / node / info['release'])
+    provider = json.loads((output / 'v1/subscriptions/primary/trojan/linux.json').read_text())
     paths = [path for path in provider['outbounds']
              if path['tag'] in provider['exits']['us']['paths']]
     for path in paths:

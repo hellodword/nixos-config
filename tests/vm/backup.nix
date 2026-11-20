@@ -70,7 +70,7 @@ in
     };
     imports = [
       (import ./background.nix { scenario = "backup"; })
-      inputs.impermanence.nixosModules.impermanence
+      ../fixtures/vm-sops.nix
       ../../profiles/laptop/persistence.nix
       ../../modules/services/containers.nix
       ../../modules/services/notifications.nix
@@ -132,6 +132,11 @@ in
         upstream.wait_for_open_port(8000)
         machine.start()
         machine.wait_for_unit("multi-user.target")
+        machine.succeed(
+            "test \"$(cat /proc/sys/kernel/io_uring_disabled)\" = 1 && "
+            "test \"$(cat /run/secrets/vm-smoke)\" = synthetic-sops-ready && "
+            "/run/wrappers/bin/sudo --version | grep -qi sudo-rs"
+        )
         notification_smoke(machine, upstream, "${notificationPackages.python}/bin/python3", runtime)
         machine.succeed("mkdir -p /persist/data/Cache; echo important > /persist/data/document; echo disposable > /persist/data/Cache/blob; systemd-tmpfiles --create")
         for target in ("first", "second", "third"):

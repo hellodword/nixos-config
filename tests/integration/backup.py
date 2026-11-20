@@ -145,7 +145,7 @@ class RepositoryTest(unittest.TestCase):
                 clock[0] = datetime.fromisoformat(instant).timestamp()
                 # Fresh arguments each time emulate separate systemd invocations.
                 args = SimpleNamespace(operation=operation, policy=policy, source=source, state=state,
-                                       restic=shutil.which("restic"), force=force, run_state=None, offset_minutes=None)
+                                       restic=shutil.which("restic"), force=force, run_state=None)
                 return backup.execute(args)
 
             with patch.dict(os.environ, env, clear=True), patch.object(backup.time, "time", side_effect=lambda: clock[0]), patch.object(backup, "on_ac_power", return_value=True):
@@ -334,14 +334,14 @@ class RepositoryTest(unittest.TestCase):
                       "canary": {"path": "canary", "sha256": backup.hashlib.sha256(b"recoverable").hexdigest()},
                       "retention": ["--keep-last", "2"], "checkPartitions": 2,
                       "minimumIntervalSeconds": {"check": 7 * 86400, "restore-test": 7 * 86400, "maintenance": 30 * 86400},
-                      "schedule": {"timeZone": "Asia/Shanghai", "windows": [
+                      "schedule": {"timeZone": "Asia/Shanghai", "offsetMinutes": 5, "windows": [
                           {"start": "10:10", "end": "12:00", "maintenance": False},
                           {"start": "21:10", "end": "23:00", "maintenance": True}]}}
             path = root / "policy.json"
             path.write_text(json.dumps(policy))
             args = SimpleNamespace(operation="automatic", policy=path, source=source,
                                    state=root / "state", restic=shutil.which("restic"),
-                                   run_state=None, force=False, offset_minutes=5)
+                                   run_state=None, force=False)
             clock = [0]
             power = [False]
             def at(instant):

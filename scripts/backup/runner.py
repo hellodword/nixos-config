@@ -425,7 +425,8 @@ def run_operation(args, policy, metadata, operation, *, reuse_backup=False):
                     if backup(args, policy, metadata, common):
                         record["partialReadWarning"] = True
                 if reuse_backup:
-                    window = window_at(policy["schedule"], time.time(), args.offset_minutes)
+                    offset = policy.get("schedule", {}).get("offsetMinutes", 0)
+                    window = window_at(policy["schedule"], time.time(), offset)
                     if not window or window["id"] != metadata["window"] or not window["maintenance"] or not on_ac_power():
                         record.update(result="skipped", reason="awaiting maintenance window and AC power")
                         return
@@ -461,8 +462,7 @@ def run_operation(args, policy, metadata, operation, *, reuse_backup=False):
 def execute(args):
     check_interrupted()
     policy = json.loads(args.policy.read_text())
-    args.offset_minutes = (args.offset_minutes if args.offset_minutes is not None
-                           else policy.get("schedule", {}).get("offsetMinutes", 0))
+    offset = policy.get("schedule", {}).get("offsetMinutes", 0)
     if args.operation == "plan":
         print(json.dumps(select(args.source, policy), ensure_ascii=True, indent=2))
         return
@@ -475,7 +475,7 @@ def execute(args):
             return "repository busy"
         metadata = {"host": policy["host"]}
         schedule = policy.get("schedule")
-        window = window_at(schedule, time.time(), args.offset_minutes) if schedule else None
+        window = window_at(schedule, time.time(), offset) if schedule else None
         if window:
             metadata["window"] = window["id"]
         if args.operation != "automatic":
@@ -490,7 +490,7 @@ def execute(args):
         previous = read_record(success_path(args.state, "backup"))
         completed = False
         if previous.get("window") != window["id"]:
-            decision = automatic_decision(args.state, "backup", policy, time.time(), args.offset_minutes)
+            decision = automatic_decision(args.state, "backup", policy, time.time(), offset)
             if decision["nextEligibleAt"] is None or decision["nextEligibleAt"] > time.time():
                 return decision["reason"]
             run_operation(args, policy, metadata, "backup")
@@ -498,10 +498,10 @@ def execute(args):
         order = sorted(OPERATIONS[1:], key=lambda op: attempt(args.state, op).get("started", 0))
         for operation in order:
             check_interrupted()
-            current = window_at(schedule, time.time(), args.offset_minutes)
+            current = window_at(schedule, time.time(), offset)
             if not current or current["id"] != window["id"] or not current["maintenance"] or not on_ac_power():
                 break
-            decision = automatic_decision(args.state, operation, policy, time.time(), args.offset_minutes)
+            decision = automatic_decision(args.state, operation, policy, time.time(), offset)
             if decision["nextEligibleAt"] is None or decision["nextEligibleAt"] > time.time():
                 continue
             run_operation(args, policy, metadata, operation, reuse_backup=True)
@@ -518,7 +518,6 @@ def main():
     parser.add_argument("--state", required=True, type=Path)
     parser.add_argument("--restic", default="restic")
     parser.add_argument("--force", action="store_true", help="ignore the manual operation's minimum interval; automatic policy and locks still apply")
-    parser.add_argument("--offset-minutes", type=int, help="override the policy's window offset")
     parser.add_argument("--run-state", type=Path, help="systemd runtime marker for completed or skipped work")
     args = parser.parse_args()
     os.umask(0o077)

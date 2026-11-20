@@ -7,9 +7,11 @@ import signal
 import subprocess
 import sys
 
+STATUS = Path("/run/site-network-rules/status.json")
 
-def pending(status):
-    return json.loads(status.read_text()).get("pending")
+
+def pending():
+    return json.loads(STATUS.read_text()).get("pending")
 
 
 def auth_cancelled(stderr):
@@ -31,7 +33,7 @@ def auth_cancelled(stderr):
 
 
 def review(args):
-    update = pending(args.status)
+    update = pending()
     if not update:
         return 0
     notification = subprocess.Popen([
@@ -50,18 +52,18 @@ def review(args):
             notification.wait()
     if action not in {"default", "review"}:
         return 0
-    while update := pending(args.status):
+    while update := pending():
         answer = subprocess.run([
             args.rofi, "-dmenu", "-no-custom", "-format", "i", "-selected-row", "0",
             "-p", "网络规则", "-mesg", "应用将重启 DNS 与代理服务，现有连接可能需要重连。"],
             input="稍后\n立即应用\n", text=True, capture_output=True)
         if answer.returncode or answer.stdout.strip() != "1":
             return 0
-        if pending(args.status) != update:
+        if pending() != update:
             continue
         unit = "site-network-rules-apply@" + update["id"] + ".service"
         applied = subprocess.run([args.systemctl, "start", unit], text=True, capture_output=True)
-        status = json.loads(args.status.read_text())
+        status = json.loads(STATUS.read_text())
         success = applied.returncode == 0 and (status.get("active") or {}).get("id") == update["id"]
         if not success and auth_cancelled(applied.stderr) and (status.get("pending") or {}).get("id") == update["id"]:
             return 0
@@ -77,7 +79,6 @@ def review(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--status", type=Path, default=Path("/run/site-network-rules/status.json"))
     parser.add_argument("--notify-send", default="notify-send")
     parser.add_argument("--rofi", default="rofi")
     parser.add_argument("--systemctl", default="systemctl")

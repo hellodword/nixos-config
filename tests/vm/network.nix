@@ -25,6 +25,34 @@ let
     } -o $out
   '';
   cacheURI = "http://${caches.local.listen}/cache.test.nix:5000/synthetic/network-cache";
+  purposeCatalog =
+    (lib.evalModules {
+      modules = [
+        {
+          options.site.network = {
+            purposeGroups = lib.mkOption { type = lib.types.unspecified; };
+            routeFragments = lib.mkOption { type = lib.types.unspecified; };
+            connectionFragments = lib.mkOption { type = lib.types.unspecified; };
+          };
+          config = {
+            _module.check = false;
+            _module.args = { inherit inputs pkgs; };
+            site.network.purposeRouting.enable = true;
+          };
+        }
+        ../../modules/network/purpose-routing.nix
+      ];
+    }).config.site.network;
+  localRuleSets =
+    fragment:
+    fragment
+    // {
+      rule_set = map (entry: {
+        type = "local";
+        inherit (entry) tag format;
+        path = entry.initial_path;
+      }) fragment.rule_set;
+    };
   kdeconnect = pkgs.kdePackages.kdeconnect-kde;
   discoveryNode = {
     environment.systemPackages = [ kdeconnect ];
@@ -104,10 +132,6 @@ let
     imports = [ ../../modules/services/cache.nix ];
     site.cache = caches.project // {
       enable = true;
-    };
-    systemd.services.oranc = {
-      wants = [ "docker.service" ];
-      after = [ "docker.service" ];
     };
     site.network.localAccess.enable = true;
     networking.firewall.allowedTCPPorts = [ 18085 ];
@@ -306,7 +330,10 @@ in
     virtualisation.cores = 2;
     networking.useDHCP = false;
     networking.interfaces.eth0.useDHCP = lib.mkForce false;
-    networking.extraHosts = "192.168.1.30 headscale.test.nix cache.test.nix";
+    networking.extraHosts = ''
+      192.168.1.30 headscale.test.nix cache.test.nix
+      192.0.2.30 nts.test.nix
+    '';
     security.pki.certificateFiles = [
       certificates.ca.cert
       notification.ca
@@ -329,7 +356,7 @@ in
     client = {
       virtualisation.memorySize = lib.mkForce 3072;
       imports = [
-        inputs.impermanence.nixosModules.impermanence
+        ../fixtures/vm-sops.nix
         ../../profiles/laptop/persistence.nix
         ../../modules/network
         ../../modules/network/connections.nix
@@ -365,7 +392,7 @@ in
         isNormalUser = true;
         uid = 1000;
       };
-      security.sudo.extraRules = [
+      security.sudo-rs.extraRules = [
         {
           users = [ "desktop" ];
           commands = [
@@ -376,8 +403,8 @@ in
           ];
         }
       ];
-      # Keep the deliberate daemon crash observable until the test restores it.
-      systemd.services.mullvad-daemon.serviceConfig.Restart = lib.mkForce "no";
+      services.chrony.servers = lib.mkForce [ "nts.test.nix" ];
+      systemd.services.chronyd.wantedBy = lib.mkOverride 40 [ "multi-user.target" ];
       systemd.services.site-network-ipv6-reconcile.postStart = ''
         if test -p /run/ipv6-hotplug-gate; then
           mv /run/ipv6-hotplug-gate /run/ipv6-scan-finished
@@ -419,6 +446,10 @@ in
         dns.fakeIP.excludeFile = "/var/lib/network-policy/fakeip-exclude.jsonc";
         singBox.enable = true;
         lockdown.enable = true;
+        purposeRouting.enable = true;
+        connectionFragments."40-purpose-000-connection.json" = lib.mkForce (
+          localRuleSets purposeCatalog.connectionFragments."40-purpose-000-connection.json"
+        );
         exclude = {
           dns = [ "tls://dns.test.nix:24003" ];
           bootstrap = [ "192.168.1.20" ];
@@ -439,6 +470,9 @@ in
           };
         };
         routeFragments = {
+          "40-purpose-000-domain.json" = lib.mkForce (
+            localRuleSets purposeCatalog.routeFragments."40-purpose-000-domain.json"
+          );
           "35-remote.json" = {
             rule_set = [
               {
@@ -632,6 +666,17 @@ in
       ];
       services.openssh.enable = true;
       services.openssh.settings.PasswordAuthentication = false;
+      services.chrony = {
+        enable = true;
+        enableNTS = true;
+        servers = lib.mkForce [ ];
+        extraConfig = ''
+          local stratum 1
+          allow 0.0.0.0/0
+          ntsservercert ${cert}
+          ntsserverkey ${key}
+        '';
+      };
       systemd.services.notification-fixture.serviceConfig.ExecStart =
         notification.command + " --address 198.51.100.30";
       networking.firewall.enable = false;
@@ -913,6 +958,11 @@ in
         peer.wait_for_unit("tailscaled.service")
         client.start()
         client.wait_for_unit("site-network-routing.service")
+        client.succeed(
+            "test \"$(cat /proc/sys/kernel/io_uring_disabled)\" = 1 && "
+            "test \"$(cat /run/secrets/vm-smoke)\" = synthetic-sops-ready && "
+            "/run/wrappers/bin/sudo --version | grep -qi sudo-rs"
+        )
         # The underlay watcher stops the proxy while replacing its first binding.
         # Installed capture routes do not mean that transition has finished.
         ready_underlay()
@@ -1044,6 +1094,9 @@ in
                     client.fail(command + " curl --max-time 4 -sSf http://198.51.100.30:18080/container-blocked")
 
         healthy()
+        client.wait_until_succeeds("systemctl is-active chronyd.service && chronyc -n sources | grep -F '192.0.2.30'", timeout=60)
+        user("dig @127.0.0.1 -p 5300 +short cache.nixos.org A | grep -Fx 198.51.100.30")
+        client.wait_until_succeeds("journalctl --namespace=network -u site-dns-events -o cat --no-pager | network-dns-log --name cache.nixos.org | grep '40-purpose-'")
         container_start(client)
         __import__("runpy").run_path("${./network_exclude.py}")["run"](client, target)
         containers_active = True
@@ -1460,13 +1513,18 @@ in
         healthy()
         # Separate abrupt daemon loss from tunnel loss. A graceful service stop
         # cannot establish either of these failure boundaries.
-        client.succeed("systemctl kill -s SIGKILL --kill-whom=main mullvad-daemon")
-        status, observed = client.execute("su -s /bin/sh desktop -c " + shlex.quote("curl --noproxy '*' --max-time 6 -sSf http://198.51.100.30:18080/daemon-loss"))
-        assert status != 0 or observed == "192.168.1.20"
-        client.succeed("ip link delete wg0-mullvad || test ! -e /sys/class/net/wg0-mullvad")
-        tailnet()
-        blocked()
-        client.succeed("systemctl restart mullvad-daemon site-network-connect")
+        with subtest("abrupt mullvad-daemon loss preserves lockdown"):
+            client.succeed("mkdir -p /run/systemd/system/mullvad-daemon.service.d; printf '[Service]\\nRestart=no\\n' > /run/systemd/system/mullvad-daemon.service.d/crash-test.conf; systemctl daemon-reload")
+            try:
+                client.succeed("systemctl kill -s SIGKILL --kill-whom=main mullvad-daemon")
+                status, observed = client.execute("su -s /bin/sh desktop -c " + shlex.quote("curl --noproxy '*' --max-time 6 -sSf http://198.51.100.30:18080/daemon-loss"))
+                assert status != 0 or observed == "192.168.1.20"
+                client.succeed("ip link delete wg0-mullvad || test ! -e /sys/class/net/wg0-mullvad")
+                tailnet()
+                blocked()
+            finally:
+                client.succeed("rm -f /run/systemd/system/mullvad-daemon.service.d/crash-test.conf; systemctl daemon-reload")
+                client.succeed("systemctl restart mullvad-daemon site-network-connect")
         healthy()
         client.succeed("echo '{\"outbounds\":[]}' > /run/provider.json")
         client.fail("network-policy apply")

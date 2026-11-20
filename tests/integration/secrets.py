@@ -25,11 +25,20 @@ class DeclaredIdentity(unittest.TestCase):
             document, keys = gpg_identity.create(home, fixture)
             runtime = root / "published"
             public_directory = root / "ssh"
-            worker = ["python3", str(ROOT / "scripts/secrets/identity.py")]
+            runner = root / "run-identity.py"
+            runner.write_text(
+                "import importlib.util, pathlib, sys\n"
+                f"spec = importlib.util.spec_from_file_location('identity', {str(ROOT / 'scripts/secrets/identity.py')!r})\n"
+                "module = importlib.util.module_from_spec(spec)\n"
+                "spec.loader.exec_module(module)\n"
+                f"module.SSH_DIRECTORY = pathlib.Path({str(public_directory)!r})\n"
+                "sys.exit(module.main())\n"
+            )
+            worker = ["python3", str(runner)]
 
             def publish():
                 subprocess.run(worker + ["prepare", "--source", str(fixture / "identity.yaml"),
-                                         "--runtime", str(runtime), "--ssh-directory", str(public_directory),
+                                         "--runtime", str(runtime),
                                          "--user", pwd.getpwuid(os.getuid()).pw_name], check=True, capture_output=True)
 
             def register():

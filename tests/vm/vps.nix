@@ -349,7 +349,6 @@ in
         (import ../../nix/wrangler.nix { inherit pkgs; })
         pkgs.curl
         pkgs.nftables
-        pkgs.sops
         inputs.nixpkgs.legacyPackages.x86_64-linux.sing-box
         pkgs.wireguard-tools
         inputs.colmena.packages.x86_64-linux.default
@@ -510,10 +509,11 @@ in
                 controller.wait_until_succeeds(remote(machine, "getent ahostsv4 dot-failover.fixture.example"), timeout=45)
             controller.succeed("grep dot-failover /run/vps-dns-1.jsonl; systemctl start vps-dns-0.service")
         with subtest("Wrangler bundles both Workers with isolated files and persistent account state"):
+            controller.succeed("test -s /run/vps/v1/workers/subscriptions/wrangler.json && test -s /run/vps/v1/workers/certificates/secrets.json")
             controller.succeed("runuser -u publisher -- ${python}/bin/python3 ${source}/tests/integration/wrangler.py", timeout=120)
         def deploy(release, goal, target="edge,west"):
             for name in target.split(","):
-                status, output = controller.execute(f"SOPS_AGE_KEY_FILE=${../fixtures/vps-secrets/identity.txt} VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute < /dev/null", timeout=300)
+                status, output = controller.execute(f"VPS_RELEASE={release} colmena -f ${hive} apply {goal} --on {name} --parallel 1 --no-substitute < /dev/null", timeout=300)
                 if status:
                     for command in ("free -m; df -h / /nix/store; journalctl -b -u nix-daemon -u systemd-oomd --no-pager; dmesg | tail -n 40",
                                     remote({"edge": edge, "west": west}[name], "journalctl -b -u site-vps-proxy -u site-vps-certificate -u nginx --no-pager -n 80")):
@@ -551,8 +551,14 @@ in
             succeed(edge, "systemctl reload nftables.service")
             docker_connectivity()
 
-        providers = {mode: json.loads(controller.succeed(f"cat /run/vps/provider-v1-{mode}.json"))
-                     for mode in ("hy2", "trojan", "trojan-chain")}
+        providers = {
+            mode: json.loads(
+                controller.succeed(
+                    "cat /run/vps/v1/subscriptions/primary/" + (mode + "/" if mode != "hy2" else "") + "linux.json"
+                )
+            )
+            for mode in ("hy2", "trojan", "trojan-chain")
+        }
         wait_unit(west, "nginx.service")
         assert controller.succeed("curl --fail --cacert ${tls.ca.cert} --resolve app.test.nix:443:192.0.2.11 https://app.test.nix").strip() == "vps application"
 
@@ -753,7 +759,7 @@ in
             wait_unit(west, "site-vps-proxy.service")
             assert succeed(west, "cat /etc/vps-generation") == "v2"
             assert succeed(west, "cat /nix/var/nix/profiles/system/etc/vps-generation") == "v1"
-            next_provider = json.loads(controller.succeed("cat /run/vps/provider-v2-trojan.json"))
+            next_provider = json.loads(controller.succeed("cat /run/vps/v2/subscriptions/primary/trojan/linux.json"))
             next_path = next(p for p in next_provider["outbounds"] if p["tag"] == "edge → west · native · Trojan")
             request(next_path, "192.0.2.11")
             deploy("v2", "switch", "west")

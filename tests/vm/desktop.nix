@@ -23,8 +23,22 @@ let
   identityFixture = "${
     pkgs.python3.withPackages (ps: [ ps.pyyaml ])
   }/bin/python3 ${../fixtures/gpg_identity.py}";
-  wallpaper = import ../../nix/wallpaper.nix { inherit pkgs; };
-  certificates = import (pkgs.path + /nixos/tests/nginx/proxyprotocol/snakeoil-certs.nix);
+  bingCert = pkgs.runCommand "bing-wallpaper-cert" { nativeBuildInputs = [ pkgs.openssl ]; } ''
+    mkdir -p "$out"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+      -subj "/CN=Synthetic Wallpaper CA" \
+      -addext "basicConstraints=critical,CA:TRUE" \
+      -addext "keyUsage=critical,keyCertSign,cRLSign" \
+      -keyout "$out/ca.key" -out "$out/ca.pem"
+    openssl req -newkey rsa:2048 -nodes \
+      -subj "/CN=www.bing.com" \
+      -addext "subjectAltName=DNS:www.bing.com" \
+      -keyout "$out/key.pem" -out "$out/server.csr"
+    openssl x509 -req -in "$out/server.csr" \
+      -CA "$out/ca.pem" -CAkey "$out/ca.key" -CAcreateserial \
+      -days 3650 -copy_extensions copyall -out "$out/cert.pem"
+    rm -f "$out/ca.key" "$out/server.csr" "$out/ca.srl"
+  '';
   wallpaperImages =
     pkgs.runCommand "wallpaper-fixture"
       {
@@ -55,28 +69,9 @@ in
   node.pkgsReadOnly = false;
   node.specialArgs = { inherit inputs; };
   defaults = {
-    nixpkgs.overlays = [
-      (
-        _: prev:
-        lib.genAttrs [ "swaylock" "i3lock" ] (
-          name:
-          prev.symlinkJoin {
-            name = "${name}-observed";
-            paths = [ prev.${name} ];
-            nativeBuildInputs = [ prev.makeWrapper ];
-            postBuild = ''
-              mv "$out/bin/${name}" "$out/bin/.${name}-wrapped"
-              makeWrapper ${prev.python3}/bin/python3 "$out/bin/${name}" \
-                --add-flags "${../fixtures/lock_ready.py} ${name} $out/bin/.${name}-wrapped"
-            '';
-          }
-        )
-      )
-    ];
     imports = [
       (import ./background.nix { scenario = "desktop"; })
-      inputs.impermanence.nixosModules.impermanence
-      ../../modules/core/storage.nix
+      ../fixtures/vm-sops.nix
       ../../profiles/laptop/persistence.nix
       ../../modules/core/home.nix
       ../../modules/core/cli.nix
@@ -109,27 +104,27 @@ in
     users.users.desktop = {
       isNormalUser = true;
       uid = 1000;
-      initialPassword = "synthetic-fixture-only";
+      password = "synthetic-fixture-only";
     };
     site.desktop.enable = true;
     site.connections.enable = true;
-    networking.extraHosts = "127.0.0.1 wallpaper.test.nix";
-    security.pki.certificateFiles = [ certificates.ca.cert ];
+    networking.extraHosts = "127.0.0.1 www.bing.com";
+    security.pki.certificateFiles = [ "${bingCert}/ca.pem" ];
     services.nginx = {
       enable = true;
-      virtualHosts."wallpaper.test.nix" = {
+      virtualHosts."www.bing.com" = {
         onlySSL = true;
         listen = [
           {
             addr = "127.0.0.1";
-            port = 8449;
+            port = 443;
             ssl = true;
           }
         ];
-        sslCertificate = certificates."*.test.nix".cert;
-        sslCertificateKey = certificates."*.test.nix".key;
+        sslCertificate = "${bingCert}/cert.pem";
+        sslCertificateKey = "${bingCert}/key.pem";
         root = wallpaperImages;
-        locations."= /feed.json".proxyPass = "http://127.0.0.1:8450";
+        locations."= /HPImageArchive.aspx".proxyPass = "http://127.0.0.1:8450";
       };
     };
     systemd.services.wallpaper-feed = {
@@ -174,8 +169,6 @@ in
         ThreadingHTTPServer(('127.0.0.1', 8450), Feed).serve_forever()
       ''}";
     };
-    systemd.user.services.site-wallpaper-fetch.serviceConfig.ExecStart =
-      lib.mkForce "${wallpaper}/bin/site-wallpaper fetch --feed-url https://wallpaper.test.nix:8449/feed.json";
     systemd.user.services.desktop-health.serviceConfig.ExecStartPre =
       pkgs.writeShellScript "health-start-gate" ''
         if [ -p "$XDG_RUNTIME_DIR/vm-health-gate" ]; then
@@ -204,8 +197,14 @@ in
   };
   nodes = {
     sway = {
-      imports = [ ../../profiles/laptop/boot.nix ];
+      imports = [
+        ../../profiles/laptop/boot.nix
+        ../../modules/services/virtualbox.nix
+      ];
+      boot.kernelPackages = pkgs.linuxPackages_6_18;
+      site.virtualbox.enable = true;
       virtualisation = {
+        diskSize = 2048;
         emptyDiskImages = lib.mkForce [
           512
           1024
@@ -219,8 +218,12 @@ in
       # passphrase prompt on the VM's framebuffer.
       boot.kernelParams = [ "plymouth.ignore-serial-consoles" ];
       boot.initrd.kernelModules = [ "virtio_gpu" ];
-      environment.systemPackages = [ pkgs.cryptsetup ];
+      environment.systemPackages = [
+        pkgs.cryptsetup
+        pkgs.sbctl
+      ];
       specialisation.boot-luks.configuration = {
+        imports = [ ../../hosts/laptop2/secureboot.nix ];
         boot.initrd.luks.devices = lib.mkVMOverride {
           cryptroot.device = "/dev/vdc";
         };
@@ -362,8 +365,33 @@ in
                     machine.send_key("ctrl", delay=timedelta(milliseconds=150))
                     pid = machine.succeed(process(locker)).strip().splitlines()[-1]
                     gui["qt_password_focus"](machine, pid, time.monotonic() + 30)
+                elif session == "sway":
+                    machine.wait_until_succeeds(
+                        "pid=$(pgrep -u 1000 -n -x swaylock) && grep -qE '/dev/shm/|memfd:' \"/proc/$pid/maps\" && "
+                        + user_command("swaymsg -t get_tree | jq -e '[.. | objects | select(.focused? == true)] | length == 0'"),
+                        timeout=30,
+                    )
+                    time.sleep(0.25)
                 else:
-                    machine.wait_until_succeeds("jq -e '.phase == \"ready\"' /run/user/1000/" + locker + "-ready.json", timeout=30)
+                    x11_grab_probe = (
+                        "import ctypes, sys; "
+                        "x11 = ctypes.CDLL('${pkgs.libx11}/lib/libX11.so.6'); "
+                        "x11.XOpenDisplay.restype = ctypes.c_void_p; "
+                        "x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]; "
+                        "x11.XDefaultRootWindow.restype = ctypes.c_ulong; "
+                        "x11.XGrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]; "
+                        "x11.XUngrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong]; "
+                        "x11.XCloseDisplay.argtypes = [ctypes.c_void_p]; "
+                        "dpy = x11.XOpenDisplay(None); assert dpy; "
+                        "rc = x11.XGrabKeyboard(dpy, x11.XDefaultRootWindow(dpy), 0, 1, 1, 0); "
+                        "x11.XUngrabKeyboard(dpy, 0) if rc == 0 else None; "
+                        "x11.XCloseDisplay(dpy); sys.exit(0 if rc == 1 else 1)"
+                    )
+                    machine.wait_until_succeeds(
+                        process(locker) + " >/dev/null && " + user_command("python3 -c " + shlex.quote(x11_grab_probe)),
+                        timeout=30,
+                    )
+                    time.sleep(0.25)
                 # Capture after the native lock surface has had time to paint,
                 # immediately before entering the password, not on process spawn.
                 if screenshot:
@@ -456,6 +484,7 @@ in
 
     def encrypted_boot(machine):
         # This disk is created by the VM test and contains only synthetic state.
+        machine.succeed("install -d -m 0700 /persist/etc/secureboot && ln -sfn /persist/etc/secureboot /etc/secureboot && sbctl create-keys")
         machine.succeed("printf synthetic-disk-passphrase | cryptsetup luksFormat -q --iter-time=1 /dev/vdc -")
         machine.succeed("printf synthetic-disk-passphrase | cryptsetup luksOpen --key-file - /dev/vdc cryptroot")
         machine.succeed("mkfs.ext4 /dev/mapper/cryptroot")
@@ -468,6 +497,7 @@ in
         machine.succeed("${pkgs.rsync}/bin/rsync -aHAXx --exclude=/mnt --exclude=/tmp / /mnt/encrypted-root/")
         machine.succeed("umount /mnt/encrypted-root")
         machine.succeed("/run/current-system/specialisation/boot-luks/bin/switch-to-configuration boot")
+        machine.succeed("compgen -G '/boot/EFI/Linux/*.efi' >/dev/null && sbctl verify | grep -F '✓'")
         machine.succeed("sync")
         machine.crash()
         machine.start()
@@ -478,6 +508,7 @@ in
         machine.send_key("ret")
         machine.wait_for_unit("display-manager.service", timeout=180)
         machine.succeed("findmnt -n -o SOURCE / | grep -Fx /dev/mapper/cryptroot")
+        machine.succeed("sbctl verify | grep -F '✓'")
         login_session(machine, "sway", "sway")
         machine.screenshot("boot-unlocked-sway")
         stop_session(machine, "sway", menu=True)
@@ -598,6 +629,13 @@ in
     def exercise_session(machine, session, compositor):
         machine.wait_for_unit("persist.mount")
         machine.wait_for_unit("home-manager-desktop.service")
+        machine.succeed(
+            "test \"$(cat /proc/sys/kernel/io_uring_disabled)\" = 1 && "
+            "test \"$(cat /run/secrets/vm-smoke)\" = synthetic-sops-ready && "
+            "/run/wrappers/bin/sudo --version | grep -qi sudo-rs"
+        )
+        if session == "sway":
+            machine.succeed("uname -r | grep -E '^6\\.18\\.' && modprobe vboxdrv && test -c /dev/vboxdrv")
         if session in ("sway", "i3"):
             now = int(machine.succeed("date +%s"))
             saved_fetch = {"lastAttempt": datetime.fromtimestamp(now, timezone.utc).isoformat(), "result": "unchanged"}
