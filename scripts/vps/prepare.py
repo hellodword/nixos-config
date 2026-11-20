@@ -26,7 +26,10 @@ def generate(vps, directory):
     write(directory / "metadata.json", metadata)
     for node in vps.nodes:
         release = metadata["nodes"][node]["release"]
-        for name, value in {"proxy.json": vps.server(node), "certificate.json": vps.certificate_request(node)}.items():
+        files = {"proxy.json": vps.server(node), "certificate.json": vps.certificate_request(node)}
+        if (origin_prefix := vps.http_origin_prefix(node)) is not None:
+            files["http-origin-prefix"] = origin_prefix + "\n"
+        for name, value in files.items():
             write(directory / "nodes" / node / release / name, value)
     subscription_worker = directory / "workers/subscriptions"
     certificate = directory / "workers/certificates"

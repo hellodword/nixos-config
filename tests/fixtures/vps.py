@@ -47,6 +47,8 @@ def generate(source, keys, output):
             directory.mkdir(parents=True)
             (directory / 'proxy.json').write_text(json.dumps(vps.server(node)))
             (directory / 'certificate.json').write_text(json.dumps(vps.certificate_request(node)))
+            if node == 'west':
+                (directory / 'http-origin-prefix').write_text(f'/fixture-origin-{generation}\n')
         for mode in MODES:
             (output / f'provider-{generation}-{mode}.json').write_text(json.dumps(vps.provider('primary', mode)))
     provider = Inventory(document).provider('primary', 'trojan')

@@ -6,7 +6,6 @@
     in
     if cwd == "" then "" else cwd + "/tmp/vps",
   metadata ? null,
-  vpsSecretsFile ? ../secrets/vps.sops.yaml,
 }:
 let
   inherit (inputs.nixpkgs-remote) lib;
@@ -42,7 +41,7 @@ let
       nodeNixpkgs = lib.mapAttrs (
         _: node: inputs.nixpkgs-remote.legacyPackages.${nodeSystem node}
       ) inventory.nodes;
-      specialArgs = { inherit inputs vpsSecretsFile; };
+      specialArgs = { inherit inputs; };
     };
   }
   // lib.mapAttrs (name: node: { ... }: {
@@ -59,12 +58,21 @@ let
       targetPort = null;
       buildOnTarget = false;
       tags = node.tags or [ ];
-      keys = lib.genAttrs [ "proxy.json" "certificate.json" ] (file: {
-        keyFile = "${directory}/nodes/${name}/${node.release}/${file}";
-        destDir = "/var/lib/site-vps/releases/${node.release}";
-        permissions = "0600";
-        uploadAt = "pre-activation";
-      });
+      keys =
+        lib.genAttrs
+          (
+            [
+              "proxy.json"
+              "certificate.json"
+            ]
+            ++ lib.optional (lib.elem "modules/vps/http-origin.nix" (node.modules or [ ])) "http-origin-prefix"
+          )
+          (file: {
+            keyFile = "${directory}/nodes/${name}/${node.release}/${file}";
+            destDir = "/var/lib/site-vps/releases/${node.release}";
+            permissions = "0600";
+            uploadAt = "pre-activation";
+          });
     };
   }) inventory.nodes;
 in

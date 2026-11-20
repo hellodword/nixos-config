@@ -2,16 +2,15 @@
   config,
   lib,
   pkgs,
-  name,
+  node,
   inputs,
-  vpsSecretsFile,
   ...
 }:
 let
   ranges = input: lib.filter (line: line != "") (lib.splitString "\n" (builtins.readFile input));
   ipv4 = ranges inputs.cloudflare-ips-v4;
   ipv6 = ranges inputs.cloudflare-ips-v6;
-  credentialDirectory = "/var/lib/site-http-origin/credentials/${builtins.hashFile "sha256" vpsSecretsFile}";
+  release = "/var/lib/site-vps/releases/${node.release}";
   locations = pkgs.writeText "http-origin-locations.conf.in" ''
     location = $ORIGIN_PREFIX {
       proxy_pass http://127.0.0.1:8080;
@@ -31,43 +30,6 @@ in
       message = "The HTTP origin requires both Cloudflare address lists.";
     }
   ];
-
-  deployment.keys.http-origin-prefix = {
-    keyCommand = [
-      "python3"
-      "-c"
-      ''
-        import os
-        import shlex
-        import subprocess
-        import sys
-
-        sops = ["sops", *sys.argv[1:]]
-        try:
-            reader = shlex.split(os.environ.get("SOPS_AGE_KEY_CMD", ""))
-        except ValueError:
-            reader = []
-        if not reader or os.path.basename(reader[0]) != "sudo":
-            os.execvp("sops", sops)
-
-        reader.insert(1, "-n")
-        os.environ["SOPS_AGE_KEY_CMD"] = shlex.join(reader)
-        status = subprocess.run(sops).returncode
-        if status:
-            print("If sudo authorization has expired, run 'sudo -v' in the same terminal and retry.", file=sys.stderr)
-        sys.exit(status)
-      ''
-      "decrypt"
-      "--extract"
-      ''["secrets"]["${name}-http-origin-prefix"]''
-      "${vpsSecretsFile}"
-    ];
-    destDir = credentialDirectory;
-    user = "root";
-    group = "root";
-    permissions = "0600";
-    uploadAt = "pre-activation";
-  };
 
   networking.firewall.allowedTCPPorts = [ 80 ];
   networking.nftables.tables.site_http_origin = {
@@ -144,6 +106,6 @@ in
     };
   };
   systemd.services.nginx.serviceConfig.LoadCredential = [
-    "http-origin-prefix:${credentialDirectory}/http-origin-prefix"
+    "http-origin-prefix:${release}/http-origin-prefix"
   ];
 }

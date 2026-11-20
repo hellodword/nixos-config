@@ -30,6 +30,7 @@ from tests.fixtures.network_fixture import http_server, socks_server, socks_http
 
 model = load_script("vps/model.py")
 clients = load_script("vps/clients.py")
+gc_state = load_script("vps/gc_state.py")
 SERVER_SING_BOX = "sing-box"
 CLIENT_SING_BOX = "sing-box"
 
@@ -48,7 +49,66 @@ class InventoryProtocol(unittest.TestCase):
         arm["nodes"]["edge"].update(dhcp=False, addresses=["192.0.2.10/24"])
         arm["nodes"]["edge"]["modules"] = ["modules/vps/http-origin.nix"]
         arm["secrets"]["edge-http-origin-prefix"] = "/origin-segment_1"
-        self.assertEqual(model.Inventory(arm).metadata()["nodes"]["west"]["system"], "aarch64-linux")
+        arm_inv = model.Inventory(arm)
+        arm_meta = arm_inv.metadata()["nodes"]
+        self.assertEqual(arm_meta["west"]["system"], "aarch64-linux")
+
+        rotated = copy.deepcopy(arm)
+        rotated["secrets"]["edge-http-origin-prefix"] = "/origin-segment_2"
+        rotated_inv = model.Inventory(rotated)
+        self.assertNotEqual(arm_meta["edge"]["release"], rotated_inv.metadata()["nodes"]["edge"]["release"])
+
+        with tempfile.TemporaryDirectory() as temp:
+            prep_root = Path(temp)
+            subprocess.run(
+                [sys.executable, str(ROOT / "scripts/vps/prepare.py")],
+                input=yaml.safe_dump(arm),
+                text=True,
+                cwd=prep_root,
+                check=True,
+                capture_output=True,
+            )
+            prefix_file = prep_root / "tmp/vps/nodes/edge" / arm_meta["edge"]["release"] / "http-origin-prefix"
+            self.assertEqual(prefix_file.read_text().strip(), "/origin-segment_1")
+            self.assertEqual(prefix_file.stat().st_mode & 0o777, 0o600)
+            west_dir = prep_root / "tmp/vps/nodes/west" / arm_meta["west"]["release"]
+            self.assertFalse((west_dir / "http-origin-prefix").exists())
+
+        with tempfile.TemporaryDirectory() as temp:
+            gc_root = Path(temp)
+            store_v1 = gc_root / "store-v1"
+            store_v2 = gc_root / "store-v2"
+            for store_dir, rel, cert_id in ((store_v1, "rel-v1", "cert-a"), (store_v2, "rel-v2", "cert-b")):
+                units = store_dir / "etc/systemd/system"
+                units.mkdir(parents=True)
+                (units / "site-vps-proxy.service").write_text(
+                    f"LoadCredential=proxy.json:/var/lib/site-vps/releases/{rel}/proxy.json\n"
+                    f"LoadCredential=tls.crt:/var/lib/site-vps-certificate/{cert_id}/current/tls.crt\n"
+                )
+            runtime = gc_root / "run"
+            profiles = gc_root / "profiles"
+            runtime.mkdir()
+            profiles.mkdir()
+            (runtime / "current-system").symlink_to(store_v2)
+            (profiles / "system-1-link").symlink_to(store_v1)
+            releases_dir = gc_root / "releases"
+            certs_dir = gc_root / "certs"
+            for name in ("rel-v1", "rel-v2", "rel-old", "rel-fresh"):
+                target = releases_dir / name
+                target.mkdir(parents=True)
+                if name != "rel-fresh":
+                    os.utime(target, (100, 100))
+            for name in ("cert-a", "cert-b", "cert-old"):
+                target = certs_dir / name
+                target.mkdir(parents=True)
+                os.utime(target, (100, 100))
+            found_rel, found_cert = gc_state.referenced_ids(gc_state.system_roots(profiles, runtime))
+            self.assertEqual(found_rel, {"rel-v1", "rel-v2"})
+            self.assertEqual(found_cert, {"cert-a", "cert-b"})
+            gc_state.prune_directory(releases_dir, found_rel, grace_seconds=900, now=2000)
+            gc_state.prune_directory(certs_dir, found_cert, grace_seconds=900, now=2000)
+            self.assertEqual({p.name for p in releases_dir.iterdir()}, {"rel-v1", "rel-v2", "rel-fresh"})
+            self.assertEqual({p.name for p in certs_dir.iterdir()}, {"cert-a", "cert-b"})
 
         invalid_cases = [
             (lambda d: d["nodes"]["edge"].update(udpSlot=True), "nodes.edge.udpSlot"),

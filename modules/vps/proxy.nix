@@ -178,4 +178,28 @@ in
       "tls.key:${certificate}/tls.key"
     ];
   };
+  systemd.services.site-vps-gc = {
+    description = "Prune unreferenced VPS release credentials and certificate directories";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "site-vps-proxy.service" ];
+    serviceConfig = hardened // {
+      Type = "oneshot";
+      DynamicUser = false;
+      User = "root";
+      Group = "root";
+      ReadWritePaths = [
+        "-/var/lib/site-vps/releases"
+        "-/var/lib/site-vps-certificate"
+      ];
+      ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/vps/gc_state.py} --keep-release ${lib.escapeShellArg node.release} --keep-certificate ${lib.escapeShellArg node.certificateId}";
+    };
+  };
+  systemd.timers.site-vps-gc = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "daily";
+      RandomizedDelaySec = "1h";
+      Persistent = true;
+    };
+  };
 }

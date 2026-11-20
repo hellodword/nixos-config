@@ -140,7 +140,6 @@ let
     (inputs.colmena.lib.makeHive (
       (import ../../nix/vps.nix {
         inputs = originInputs;
-        vpsSecretsFile = ../fixtures/vps-secrets + "/${release}.sops.yaml";
         metadata = metadata // {
           nodes = lib.mapAttrs (
             name: node:
@@ -212,7 +211,6 @@ let
       vps = import ${source}/nix/vps.nix {
         inherit inputs;
         directory = "/run/vps";
-        vpsSecretsFile = ${../fixtures/vps-secrets} + ("/" + release + ".sops.yaml");
         metadata = metadata // { nodes = builtins.mapAttrs (name: node: node // {
           inherit release;
         }) metadata.nodes; };

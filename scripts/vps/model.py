@@ -356,16 +356,23 @@ class Inventory:
         return {"outbounds": outbounds, "endpoints": [], "exits": exits,
                 "groups": copy.deepcopy(subscription["groups"])}
 
+    def http_origin_prefix(self, node):
+        if "modules/vps/http-origin.nix" not in self.nodes[node].get("modules", []):
+            return None
+        return self.secret(f"{node}-http-origin-prefix", f"secrets.{node}-http-origin-prefix")
+
     def metadata(self):
         result = {"nodes": {}}
         for name, node in self.nodes.items():
             cert = self.certificate_request(name)
+            origin_prefix = self.http_origin_prefix(name)
+            release_inputs = [self.server(name), cert] + ([origin_prefix] if origin_prefix is not None else [])
             result["nodes"][name] = {
                 key: copy.deepcopy(value) for key, value in node.items()
                 if key in {"address", "serverName", "udpSlot", "uefi", "system", "disk", "interface", "dhcp",
                            "addresses", "gateway", "nameservers", "sshHost", "sshServer",
                            "swapMiB", "tags", "modules", "web"}
-            } | {"udpPort": self.port(name), "release": digest([self.server(name), cert])[:32],
+            } | {"udpPort": self.port(name), "release": digest(release_inputs)[:32],
                  "certificateId": digest(cert["names"])[:16]}
         return result
 
