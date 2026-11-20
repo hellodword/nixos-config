@@ -122,6 +122,71 @@ class UpdateCandidate(unittest.TestCase):
             self.assertNotEqual(remote["branch"], laptop["branch"])
             self.assertNotEqual(remote_outputs["artifact"], laptop_outputs["artifact"])
 
+    def test_merge_skips_stale_candidate_when_master_advanced(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            repo = root / "repo"
+            repo.mkdir()
+
+            def git(*arguments):
+                return subprocess.check_output(["git", *arguments], cwd=repo, text=True).strip()
+
+            git("init", "--quiet", "--initial-branch=master")
+            git("config", "user.name", "Update fixture")
+            git("config", "user.email", "fixture@example.invalid")
+            git("config", "commit.gpgsign", "false")
+            (repo / "flake.lock").write_text('{"version": 7}\n')
+            git("add", "--", "flake.lock")
+            git("commit", "--quiet", "-m", "base")
+            base = git("rev-parse", "HEAD")
+            (repo / "flake.lock").write_text('{"version": 7, "updated": true}\n')
+            git("add", "--", "flake.lock")
+            git("commit", "--quiet", "-m", "candidate")
+            head = git("rev-parse", "HEAD")
+
+            state = root / "state"
+            state.mkdir()
+            (state / "update.json").write_text(json.dumps({
+                "base": base,
+                "head": head,
+                "scope": "remote",
+                "branch": "automation/flake-update-remote-1-1",
+            }))
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            calls = root / "gh-calls.log"
+            gh = bin_dir / "gh"
+            gh.write_text(
+                "#!/usr/bin/env bash\n"
+                "set -euo pipefail\n"
+                f"printf '%s\\n' \"$*\" >> {json.dumps(str(calls))}\n"
+                "if [[ \"${1:-}\" == api && \"${2:-}\" == repos/owner/repo/git/ref/heads/master ]]; then\n"
+                "  printf 'ffffffffffffffffffffffffffffffffffffffff\\n'\n"
+                "  exit 0\n"
+                "fi\n"
+                "exit 99\n"
+            )
+            gh.chmod(0o755)
+            summary = root / "summary.md"
+            result = subprocess.run(
+                [sys.executable, str(ROOT / ".github/ci/update.py"), "merge", "--state", str(state)],
+                cwd=repo,
+                env=os.environ | {
+                    "PATH": f"{bin_dir}:{os.environ['PATH']}",
+                    "GITHUB_REPOSITORY": "owner/repo",
+                    "GITHUB_STEP_SUMMARY": str(summary),
+                },
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn("Master advanced", result.stdout)
+            self.assertIn("Skipped stale remote candidate", summary.read_text())
+            self.assertEqual(
+                calls.read_text().splitlines(),
+                ["api repos/owner/repo/git/ref/heads/master --jq .object.sha"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

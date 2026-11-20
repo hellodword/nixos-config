@@ -78,6 +78,16 @@ def merge(state):
     head, branch = record["head"], record["branch"]
     if run(["git", "rev-parse", "HEAD"]) != head or run(["git", "status", "--porcelain"]):
         raise RuntimeError("The verified candidate must remain clean and unchanged")
+    current = run(["gh", "api", f"repos/{repository}/git/ref/heads/master", "--jq", ".object.sha"])
+    if current != record["base"]:
+        print(f"Master advanced from {record['base']} to {current}; skipping stale {record['scope']} candidate {head}.")
+        if summary_path := os.environ.get("GITHUB_STEP_SUMMARY"):
+            with Path(summary_path).open("a") as summary:
+                summary.write(
+                    f"Skipped stale {record['scope']} candidate `{head}`: "
+                    f"`master` advanced from `{record['base']}` to `{current}`.\n\n"
+                )
+        return
     subprocess.run(["git", "-c", "credential.helper=", "-c", "credential.helper=!gh auth git-credential",
                     "push", "origin", f"{head}:refs/heads/{branch}"], check=True)
     body = state / "pull-request.md"
