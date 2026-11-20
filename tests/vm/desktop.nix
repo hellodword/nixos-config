@@ -367,7 +367,7 @@ in
                     gui["qt_password_focus"](machine, pid, time.monotonic() + 30)
                 elif session == "sway":
                     machine.wait_until_succeeds(
-                        "pid=$(pgrep -u 1000 -n -x swaylock) && grep -qE '/dev/shm/|memfd:' \"/proc/$pid/maps\" && "
+                        "pid=$(" + process(locker) + " | tail -n 1) && test -n \"$pid\" && grep -qE '/dev/shm/|memfd:' \"/proc/$pid/maps\" && "
                         + user_command("swaymsg -t get_tree | jq -e '[.. | objects | select(.focused? == true)] | length == 0'"),
                         timeout=30,
                     )
@@ -388,7 +388,7 @@ in
                         "x11.XCloseDisplay(dpy); sys.exit(0 if rc == 1 else 1)"
                     )
                     machine.wait_until_succeeds(
-                        process(locker) + " >/dev/null && " + user_command("python3 -c " + shlex.quote(x11_grab_probe)),
+                        process(locker) + " >/dev/null && " + user_command("${pkgs.python3}/bin/python3 -c " + shlex.quote(x11_grab_probe)),
                         timeout=30,
                     )
                     time.sleep(0.25)
