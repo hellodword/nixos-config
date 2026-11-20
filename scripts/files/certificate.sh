@@ -28,12 +28,37 @@ from pathlib import Path
 
 import yaml
 
+def parse_lines(text):
+    return [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+
 try:
-    names = yaml.safe_load(Path(sys.argv[1]).read_text())["files"]["certificateNames"]
-except (OSError, yaml.YAMLError, KeyError, TypeError):
+    raw = Path(sys.argv[1]).read_text()
+except OSError:
     raise SystemExit("Cannot read files.certificateNames from the certificate configuration.") from None
+
+try:
+    loaded = yaml.safe_load(raw)
+except yaml.YAMLError:
+    loaded = raw
+
+if isinstance(loaded, dict):
+    files = loaded.get("files")
+    value = files.get("certificateNames") if isinstance(files, dict) else None
+    names = parse_lines(value) if isinstance(value, str) else value
+elif isinstance(loaded, list):
+    names = loaded
+elif isinstance(loaded, str):
+    names = parse_lines(raw)
+else:
+    names = None
+
 if not isinstance(names, list) or not names or not all(isinstance(name, str) for name in names):
-    raise SystemExit("files.certificateNames must be a nonempty array of strings.")
+    raise SystemExit("files.certificateNames must be a nonempty array or newline-delimited list of strings.")
 
 print("""[req]
 prompt = no

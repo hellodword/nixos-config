@@ -14,6 +14,7 @@ let
     inherit key;
   };
   secret = name: config.sops.secrets.${name}.path;
+  backupEnabled = config.site.backup.enable && backupTargets != [ ];
   providers = lib.genAttrs backupTargets (_: { });
 in
 {
@@ -21,13 +22,13 @@ in
   services.tailscale.authKeyFile = lib.mkIf config.services.tailscale.enable (
     secret "tailscale-auth-key"
   );
-  site.cli.identityFile = secret "personal-identity";
+  site.cli.identityFile = lib.mkIf config.site.cli.enable (secret "personal-identity");
   site.backup.targets = lib.mapAttrs (name: _: {
-    repositoryFile = secret "restic-repo-${name}";
-    passwordFile = secret "restic-password";
-    environmentFile = secret "restic-s3-${name}";
+    repositoryFile = lib.mkIf backupEnabled (secret "restic-repo-${name}");
+    passwordFile = lib.mkIf backupEnabled (secret "restic-password");
+    environmentFile = lib.mkIf backupEnabled (secret "restic-s3-${name}");
   }) providers;
-  site.notifications = {
+  site.notifications = lib.mkIf config.site.notifications.enable {
     barkDeviceTokenFile = secret "bark-device-token";
     extraConfigFile = secret "notification-channels";
     users = [ userName ];
@@ -37,56 +38,61 @@ in
     userPasswordFile = secret "files-user-password";
     certificateConfigFile = secret "files-certificate-config";
   };
-  sops.secrets = {
-    # Whole-document extraction preserves arrays for the root-only signing command.
-    files-certificate-config = lib.mkIf config.site.files.enable (yaml "system" "");
-    files-admin-password = lib.mkIf config.site.files.enable (
-      (yaml "system" "files/adminPassword")
-      // {
-        restartUnits = [
-          "site-files-accounts.service"
-        ];
+  sops.secrets = lib.mkMerge [
+    {
+      "${userName}-password" = (yaml "system" "login/passwordHash") // {
+        neededForUsers = true;
+      };
+    }
+    (lib.mkIf config.site.files.enable {
+      files-certificate-config = yaml "system" "files/certificateNames";
+      files-admin-password = (yaml "system" "files/adminPassword") // {
+        restartUnits = [ "site-files-accounts.service" ];
+      };
+      files-user-password = (yaml "system" "files/userPassword") // {
+        restartUnits = [ "site-files-accounts.service" ];
+      };
+    })
+    (lib.mkIf config.services.tailscale.enable {
+      tailscale-auth-key = yaml "system" "tailscale/authKey";
+    })
+    (lib.mkIf backupEnabled (
+      {
+        restic-password = yaml "backup" "password";
       }
-    );
-    files-user-password = lib.mkIf config.site.files.enable (
-      (yaml "system" "files/userPassword")
-      // {
-        restartUnits = [
-          "site-files-accounts.service"
-        ];
-      }
-    );
-    "${userName}-password" = (yaml "system" "login/passwordHash") // {
-      neededForUsers = true;
-    };
-    tailscale-auth-key = lib.mkIf config.services.tailscale.enable (yaml "system" "tailscale/authKey");
-    restic-password = yaml "backup" "password";
-    bark-device-token = (yaml "system" "notifications/barkDeviceToken") // {
-      restartUnits = [ "site-notification-secrets.service" ];
-    };
-    notification-channels = {
-      sopsFile = hostSecretsDirectory + "/system.sops.yaml";
-      key = "notifications/channels";
-      restartUnits = [ "site-notification-secrets.service" ];
-    };
-    wifi-environment = lib.mkIf (config.networking.networkmanager.ensureProfiles.profiles != { }) {
-      sopsFile = hostSecretsDirectory + "/system.sops.yaml";
-      key = "wifi/environment";
-      restartUnits = [ "NetworkManager-ensure-profiles.service" ];
-    };
-    personal-identity = {
-      sopsFile = hostSecretsDirectory + "/identity.sops.yaml";
-      key = "";
-      mode = "0400";
-      restartUnits = [ "site-identity.service" ];
-    };
-  }
-  // lib.mapAttrs' (
-    name: _: lib.nameValuePair "restic-repo-${name}" (yaml "backup" "repositories/${name}/url")
-  ) providers
-  // lib.mapAttrs' (
-    name: _: lib.nameValuePair "restic-s3-${name}" (yaml "backup" "repositories/${name}/environment")
-  ) providers;
+      // lib.mapAttrs' (
+        name: _: lib.nameValuePair "restic-repo-${name}" (yaml "backup" "repositories/${name}/url")
+      ) providers
+      // lib.mapAttrs' (
+        name: _: lib.nameValuePair "restic-s3-${name}" (yaml "backup" "repositories/${name}/environment")
+      ) providers
+    ))
+    (lib.mkIf config.site.notifications.enable {
+      bark-device-token = (yaml "system" "notifications/barkDeviceToken") // {
+        restartUnits = [ "site-notification-secrets.service" ];
+      };
+      notification-channels = {
+        sopsFile = hostSecretsDirectory + "/system.sops.yaml";
+        key = "notifications/channels";
+        restartUnits = [ "site-notification-secrets.service" ];
+      };
+    })
+    (lib.mkIf (config.networking.networkmanager.ensureProfiles.profiles != { }) {
+      wifi-environment = {
+        sopsFile = hostSecretsDirectory + "/system.sops.yaml";
+        key = "wifi/environment";
+        restartUnits = [ "NetworkManager-ensure-profiles.service" ];
+      };
+    })
+    (lib.mkIf config.site.cli.enable {
+      personal-identity = {
+        sopsFile = hostSecretsDirectory + "/identity.sops.yaml";
+        key = "";
+        mode = "0400";
+        restartUnits = [ "site-identity.service" ];
+      };
+    })
+  ];
 
   networking.networkmanager.ensureProfiles.environmentFiles = lib.optional (
     config.networking.networkmanager.ensureProfiles.profiles != { }
