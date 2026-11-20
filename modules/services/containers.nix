@@ -30,7 +30,6 @@ in
         };
       };
     };
-    systemd.services.docker.serviceConfig.LimitNOFILE = "infinity";
     users.users.${userName} = {
       extraGroups = [ "docker" ];
       subUidRanges = [

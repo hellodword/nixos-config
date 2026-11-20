@@ -129,19 +129,5 @@ in
       just
     ];
     programs.fuse.userAllowOther = true;
-    security.pam.loginLimits = [
-      {
-        domain = "@wheel";
-        item = "nofile";
-        type = "soft";
-        value = "524288";
-      }
-      {
-        domain = "@wheel";
-        item = "nofile";
-        type = "hard";
-        value = "unlimited";
-      }
-    ];
   };
 }
