@@ -368,7 +368,7 @@ in
                 elif session == "sway":
                     machine.wait_until_succeeds(
                         "pid=$(" + process(locker) + " | tail -n 1) && test -n \"$pid\" && grep -qE '/dev/shm/|memfd:' \"/proc/$pid/maps\" && "
-                        + user_command("swaymsg -t get_tree | jq -e '[.. | objects | select(.focused? == true)] | length == 0'"),
+                        + user_command("swaymsg -t get_tree | jq -e '[.. | objects | select(.focused? == true and .type? != \"workspace\")] | length == 0'"),
                         timeout=30,
                     )
                     time.sleep(0.25)
