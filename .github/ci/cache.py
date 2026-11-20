@@ -129,7 +129,12 @@ class Publisher:
             batch = path_info(frontier)
             self.seen.update(batch)
             infos.update(batch)
-            frontier = {reference for info in batch.values() for reference in info["references"]} - self.seen
+            frontier = {
+                reference
+                for path, info in batch.items()
+                if path not in self.excluded
+                for reference in info["references"]
+            } - self.seen
         if not infos:
             return
         excluded = set(infos) & self.excluded

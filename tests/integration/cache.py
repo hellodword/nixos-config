@@ -234,6 +234,8 @@ def main():
           publicRemote = pkgs.writeText "${prefix}-public-remote" "remote public signature";
           buildInput = builtins.toFile "${prefix}-build-input" "build input";
           runtimeInput = builtins.toFile "${prefix}-runtime-input" "runtime input";
+          innerPayload = builtins.toFile "${prefix}-inner-payload" "restricted inner payload";
+          excludedWrapper = builtins.toFile "${prefix}-excluded-wrapper" "exec ${innerPayload}";
           source = pkgs.writeText "${prefix}-source" "synthetic restricted content";
           restricted = pkgs.runCommand "${prefix}-restricted" {} "cp ${source} $out";
           bundle = pkgs.runCommand "${prefix}-bundle" {} "cp ${restricted} $out";
@@ -258,7 +260,7 @@ def main():
           '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
           { inherit child large late recovered publicLocal publicRemote source restricted bundle driver root failure; }
-          // { buildInput.path = buildInput; runtimeInput.path = runtimeInput; }
+          // { buildInput.path = buildInput; runtimeInput.path = runtimeInput; innerPayload.path = innerPayload; excludedWrapper.path = excludedWrapper; }
         '''.replace("NIXPKGS_INPUT", args.nixpkgs_input).replace("PREFIX", json.dumps(work.name)).replace("GATE_URL", json.dumps(gate_url))
         fixture = json.loads(run(["nix", "eval", "--impure", "--json", "--expr", fixture], cwd=ROOT))
         evaluation_state = work / "evaluation"
@@ -449,6 +451,18 @@ def main():
                 assert sum(event["project"] for event in publications) == 5
                 assert not (remote_state / "published-paths.json").exists()
             assert json.loads((remote_state / "cache/status.json").read_text())["result"] == "stopped"
+            wrapper_state = work / "wrapper-exclusion"
+            wrapper_state.mkdir()
+            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                wrapper_publisher = cache.Publisher(wrapper_state, {
+                    "inventory": {"outputs": [fixture["excludedWrapper"]["path"]], "derivations": [],
+                                  "excluded": [fixture["excludedWrapper"]["path"]]},
+                    "public_key": public,
+                    **publication_settings,
+                })
+                wrapper_publisher.discover([fixture["excludedWrapper"]["path"]])
+            assert fixture["innerPayload"]["path"] not in wrapper_publisher.seen
+            assert not wrapper_publisher.pending
             verify(uri, [*roots, fixture["runtimeInput"]["path"]], public)
             # Evaluation keeps source inputs live; remove the build outputs to
             # exercise restoration from both caches.
