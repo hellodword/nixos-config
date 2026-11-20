@@ -9,6 +9,9 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import selectors
+import signal
+import socket
 import subprocess
 import tempfile
 import time
@@ -75,38 +78,134 @@ def save(path, state):
             os.unlink(temporary)
 
 
+def notify_ready():
+    address = os.environ.get("NOTIFY_SOCKET")
+    if not address:
+        return
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as channel:
+        channel.connect("\0" + address[1:] if address.startswith("@") else address)
+        channel.sendall(b"READY=1")
+
+
+def safe_observe():
+    try:
+        return observe()
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def stop_proxy():
+    stopped = subprocess.run(["systemctl", "stop", "sing-box.service"], timeout=40, check=False)
+    if stopped.returncode:
+        raise SystemExit("cannot stop proxy for an underlay change")
+
+
+def start_proxy():
+    subprocess.run(["systemctl", "--no-block", "start", "sing-box.service"], check=True, timeout=10)
+
+
+def drain_events(selector, stream, debounce=0.15, max_wait=0.5):
+    started = time.monotonic()
+    quiet_until = started + debounce
+    max_deadline = started + max_wait
+    while True:
+        now = time.monotonic()
+        timeout = min(quiet_until, max_deadline) - now
+        if timeout <= 0:
+            return True
+        if not selector.select(timeout=timeout):
+            return True
+        chunk = os.read(stream.fileno(), 65536)
+        if not chunk:
+            return False
+        quiet_until = min(time.monotonic() + debounce, max_deadline)
+
+
+def watch(output_path, spawn_monitor=None):
+    if spawn_monitor is None:
+        def spawn_monitor():
+            return subprocess.Popen(
+                ["ip", "monitor", "link", "address", "route"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+
+    had_output = output_path.exists()
+    try:
+        previous = json.loads(output_path.read_text())
+    except (OSError, ValueError):
+        previous = object()
+
+    current = safe_observe()
+    if current != previous:
+        if had_output:
+            stop_proxy()
+        save(output_path, current)
+        notify_ready()
+        if current is not None:
+            start_proxy()
+        previous = current
+    else:
+        notify_ready()
+        if current is not None:
+            start_proxy()
+
+    def apply_current():
+        nonlocal previous
+        latest = safe_observe()
+        if latest != previous:
+            stop_proxy()
+            save(output_path, latest)
+            if latest is not None:
+                start_proxy()
+            previous = latest
+
+    running = True
+
+    def handle_stop(_signum, _frame):
+        nonlocal running
+        running = False
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, handle_stop)
+
+    while running:
+        monitor = spawn_monitor()
+        try:
+            apply_current()
+            with selectors.DefaultSelector() as selector:
+                selector.register(monitor.stdout, selectors.EVENT_READ)
+                while running:
+                    if not selector.select(timeout=1.0):
+                        if monitor.poll() is not None:
+                            break
+                        continue
+                    chunk = os.read(monitor.stdout.fileno(), 65536)
+                    if not chunk:
+                        break
+                    alive = drain_events(selector, monitor.stdout)
+                    apply_current()
+                    if not alive:
+                        break
+        finally:
+            if monitor.poll() is None:
+                monitor.terminate()
+                try:
+                    monitor.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    monitor.kill()
+                    monitor.wait()
+            if monitor.stdout is not None:
+                monitor.stdout.close()
+        if running:
+            time.sleep(0.5)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("/run/site-network-underlay/underlay.json"))
     args = parser.parse_args()
-    try:
-        previous = json.loads(args.output.read_text())
-    except (OSError, ValueError):
-        previous = object()
-    first = True
-    while True:
-        try:
-            # The local WireGuard receiver must run before Mullvad can connect.
-            current = observe()
-        except (OSError, ValueError, subprocess.SubprocessError):
-            current = None
-        if current != previous:
-            # A completed stop is required before any binding changes. Failure
-            # leaves the old known configuration; it never clears protection.
-            stopped = subprocess.run(["systemctl", "stop", "sing-box.service"], timeout=40, check=False)
-            if stopped.returncode:
-                raise SystemExit("cannot stop proxy for an underlay change")
-            save(args.output, current)
-            if current is not None:
-                subprocess.run(["systemctl", "--no-block", "start", "sing-box.service"], check=True, timeout=10)
-            previous = current
-        elif first and current is not None:
-            # A coordinated policy update already started the proxy with this
-            # binding. Starting an active unit is a no-op; do not stop it again.
-            # This also recovers an observer interrupted after stopping the proxy.
-            subprocess.run(["systemctl", "--no-block", "start", "sing-box.service"], check=True, timeout=10)
-        first = False
-        time.sleep(2)
+    watch(args.output)
 
 
 if __name__ == "__main__":

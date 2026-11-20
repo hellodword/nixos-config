@@ -69,7 +69,9 @@ in
       restartTriggers = [ config.security.pki.caBundle ];
       description = "Shared TCP/UDP splitting and explicit DNS transport tunnels";
       wantedBy = [ "multi-user.target" ];
-      wants = lib.optional cfg.dns.enable "site-dns.service";
+      wants =
+        lib.optional cfg.dns.enable "site-dns.service"
+        ++ lib.optional cfg.lockdown.enable "site-network-underlay.service";
       after = [
         "network.target"
       ]
@@ -78,6 +80,7 @@ in
       ++ lib.optionals cfg.lockdown.enable [
         "site-network-routing.service"
         "mullvad-daemon.service"
+        "site-network-underlay.service"
       ];
       partOf = [ "site-network-policy.service" ];
       requires = [

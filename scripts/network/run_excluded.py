@@ -6,14 +6,23 @@ import sys
 
 
 def excluded(cgroups):
-    return any("net_cls" in controllers.split(",") and path == "/mullvad-exclusions"
-               for _, controllers, path in (line.split(":", 2) for line in cgroups.splitlines()))
+    for line in cgroups.splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        hierarchy, controllers, path = parts
+        if "net_cls" in controllers.split(",") and path == "/mullvad-exclusions":
+            return True
+        if hierarchy == "0" and controllers == "" and (
+            path == "/mullvad-exclusions" or path.endswith("/mullvad-exclusions")
+        ):
+            return True
+    return False
 
 
 def main():
-    # The pinned nixpkgs Mullvad 2026.5 builds the net_cls implementation. Its
-    # exclude helper returns success when no net_cls mount exists, so its exit
-    # status alone does not prove exclusion. Do not silently run unexcluded.
+    # Verify actual cgroup membership across both net_cls (v1) and unified (v2)
+    # hierarchies before starting an excluded infrastructure process.
     if not excluded(Path("/proc/self/cgroup").read_text()) or len(sys.argv) < 2:
         raise SystemExit("process exclusion is unavailable; waiting for the exclusion cgroup")
     os.execv(sys.argv[1], sys.argv[1:])

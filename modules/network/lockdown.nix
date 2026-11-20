@@ -172,6 +172,8 @@ in
           mullvad
         ];
         serviceConfig = {
+          Type = "notify";
+          NotifyAccess = "main";
           ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/network}/underlay.py";
           RuntimeDirectory = "site-network-underlay";
           RuntimeDirectoryMode = "0700";

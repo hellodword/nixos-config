@@ -11,6 +11,7 @@ renderer = load_script("network/render.py")
 underlay = load_script("network/underlay.py")
 compiler = load_script("network/domain_policy.py")
 lockdown = load_script("network/lockdown.py")
+run_excluded = load_script("network/run_excluded.py")
 
 
 class NetworkConfiguration(unittest.TestCase):
@@ -113,3 +114,59 @@ class NetworkConfiguration(unittest.TestCase):
             settings_path.write_text("{corrupt-json")
             lockdown.prepare(state)
             self.assertEqual(json.loads(settings_path.read_text())["lockdown_mode"], True)
+
+    def test_run_excluded_recognizes_cgroup_v1_and_v2(self):
+        self.assertTrue(run_excluded.excluded("5:net_cls:/mullvad-exclusions\n0::/user.slice\n"))
+        self.assertTrue(run_excluded.excluded("0::/mullvad-exclusions\n"))
+        self.assertTrue(run_excluded.excluded("0::/system.slice/mullvad-exclusions\n"))
+        self.assertFalse(run_excluded.excluded("0::/system.slice/sing-box.service\n"))
+        self.assertFalse(run_excluded.excluded("5:net_cls:/\n0::/\n"))
+
+    def test_underlay_watch_notifies_ready_and_coalesces_monitor_events(self):
+        import os
+        import signal
+        import socket
+        import subprocess
+        import sys
+        from unittest.mock import patch
+
+        states = [
+            None,
+            None,
+            {"interface": "eth0", "ipv4": "192.0.2.10"},
+            {"interface": "eth0", "ipv4": "192.0.2.11"},
+        ]
+        events = []
+
+        def fake_observe():
+            return states.pop(0) if len(states) > 1 else states[0]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "underlay.json"
+            notify_path = root / "notify.sock"
+            with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as server:
+                server.bind(str(notify_path))
+                server.settimeout(2)
+
+                spawns = [0]
+
+                def spawn():
+                    spawns[0] += 1
+                    if spawns[0] == 1:
+                        return subprocess.Popen(
+                            [sys.executable, "-c", "import sys; sys.stdout.write('route1\\nroute2\\n'); sys.stdout.flush()"],
+                            stdout=subprocess.PIPE,
+                        )
+                    os.kill(os.getpid(), signal.SIGTERM)
+                    return subprocess.Popen([sys.executable, "-c", ""], stdout=subprocess.PIPE)
+
+                with patch.dict(os.environ, {"NOTIFY_SOCKET": str(notify_path)}), \
+                     patch.object(underlay, "observe", side_effect=fake_observe), \
+                     patch.object(underlay, "stop_proxy", side_effect=lambda: events.append("stop")), \
+                     patch.object(underlay, "start_proxy", side_effect=lambda: events.append("start")), \
+                     patch.object(underlay.time, "sleep", side_effect=lambda _: None):
+                    underlay.watch(output, spawn_monitor=spawn)
+                self.assertEqual(server.recv(64), b"READY=1")
+            self.assertEqual(json.loads(output.read_text()), {"interface": "eth0", "ipv4": "192.0.2.11"})
+            self.assertEqual(events, ["stop", "start", "stop", "start"])
