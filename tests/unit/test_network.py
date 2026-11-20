@@ -233,3 +233,23 @@ class NetworkConfiguration(unittest.TestCase):
                  patch.object(exclude_mod, "manage_dns") as managed:
                 self.assertEqual(exclude_mod.privileged({"state": directory}, str(req)), 0)
                 managed.assert_called_once()
+
+    def test_dnsdist_annotate_emits_valid_json_without_policy_tag(self):
+        dns_policy = load_script("network/dns_policy.py")
+        config = {
+            "groups": {
+                name: {
+                    "upstreams": [
+                        {"protocol": "tls", "address": "192.0.2.1", "port": 853, "serverName": "dns.test"},
+                        {"protocol": "https", "address": "192.0.2.2", "port": 443, "serverName": "dns.test"},
+                    ]
+                }
+                for name in ("cn", "global")
+            },
+            "routeFragments": {"00-defaults.json": {"final": "proxy"}},
+        }
+        model = compiler.compile_policy(config, include_connections=False)
+        plan = dns_policy.plan_resolvers(config)
+        rendered = dns_policy.render_dnsdist(config, model, plan)
+        self.assertIn('message:setExtra(\'{"response_source":"\' .. source .. \'"}\')', rendered)
+        self.assertNotIn("local metadata = dq:getTag('policy') or '{}'", rendered)

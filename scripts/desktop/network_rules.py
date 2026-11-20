@@ -12,6 +12,24 @@ def pending(status):
     return json.loads(status.read_text()).get("pending")
 
 
+def auth_cancelled(stderr):
+    lowered = (stderr or "").lower()
+    if "control process exited" in lowered or "failed with result" in lowered:
+        return False
+    return any(
+        marker in lowered
+        for marker in (
+            "access denied",
+            "not authorized",
+            "authentication",
+            "authorization",
+            "dismissed",
+            "cancelled",
+            "canceled",
+        )
+    )
+
+
 def review(args):
     update = pending(args.status)
     if not update:
@@ -45,6 +63,8 @@ def review(args):
         applied = subprocess.run([args.systemctl, "start", unit], text=True, capture_output=True)
         status = json.loads(args.status.read_text())
         success = applied.returncode == 0 and (status.get("active") or {}).get("id") == update["id"]
+        if not success and auth_cancelled(applied.stderr) and (status.get("pending") or {}).get("id") == update["id"]:
+            return 0
         subprocess.run([args.notify_send, "--app-name=Network rules",
                         "网络规则已应用" if success else "网络规则尚未应用",
                         "DNS 与连接路由已同步。" if success else f"可稍后重试；详情：journalctl -u {unit}"], check=False)

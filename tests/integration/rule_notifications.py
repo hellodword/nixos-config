@@ -72,22 +72,29 @@ root = pathlib.Path(os.environ["FIXTURE_ROOT"])
 path = root / "status.json"
 state = json.loads(path.read_text())
 assert sys.argv[1:] == ["start", "site-network-rules-apply@" + state["pending"]["id"] + ".service"]
+if os.environ.get("FIXTURE_AUTH_CANCELLED") == "1":
+    sys.stderr.write("Failed to start " + sys.argv[2] + ": Access denied\\n")
+    raise SystemExit(1)
 (root / "applied").write_text(state["pending"]["id"])
 path.write_text(json.dumps({"active": state["pending"], "pending": None}))
 ''')
             chooser.chmod(0o755)
             manager.chmod(0o755)
-            for choice in ("0", "1"):
+            for choice, cancelled in (("0", "0"), ("1", "1"), ("1", "0")):
                 process = await asyncio.create_subprocess_exec(sys.executable,
                     str(ROOT / "scripts/desktop/network_rules.py"), "--status", str(status),
                     "--rofi", str(chooser), "--systemctl", str(manager),
-                    env=os.environ | {"FIXTURE_ROOT": str(root), "FIXTURE_CHOICE": choice})
+                    env=os.environ | {
+                        "FIXTURE_ROOT": str(root),
+                        "FIXTURE_CHOICE": choice,
+                        "FIXTURE_AUTH_CANCELLED": cancelled,
+                    })
                 assert await asyncio.wait_for(process.wait(), timeout=20) == 0
                 dialog = json.loads((root / "dialog.json").read_text())
                 selected = dialog["args"][dialog["args"].index("-selected-row") + 1]
                 assert selected == "0" and dialog["choices"][0] == "稍后"
                 current = json.loads(status.read_text())
-                if choice == "0":
+                if choice == "0" or cancelled == "1":
                     assert current["pending"] == pending and current["active"] is None
                     assert not (root / "applied").exists()
                 else:

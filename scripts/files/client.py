@@ -92,12 +92,11 @@ def export(name, output_dir):
         raise ValueError("Use a nonempty, single-line export password")
     if password != getpass.getpass("Repeat password: "):
         raise ValueError("Passwords do not match")
-    # This PKCS#12 encoding is understood by Apple's certificate importers as
-    # well as Windows and Android. The password is never embedded in the profile.
+    # Export using OpenSSL 3 modern PKCS#12 defaults (PBES2 AES-256-CBC and
+    # HMAC-SHA256); the password is never embedded in the configuration profile.
     identity = openssl("pkcs12", "-export", "-in", device / "certificate.crt",
                        "-inkey", device / "key.pem", "-certfile", AUTHORITY / "ca.crt",
-                       "-name", name, "-keypbe", "PBE-SHA1-3DES", "-certpbe", "PBE-SHA1-3DES",
-                       "-macalg", "sha1", "-iter", "100000", "-passout", "stdin",
+                       "-name", name, "-iter", "100000", "-passout", "stdin",
                        data=(password + "\n").encode())
     ca = openssl("x509", "-in", STATE / "ca.crt", "-outform", "DER")
     profile = payload("Configuration", f"File service — {name}", PayloadContent=[

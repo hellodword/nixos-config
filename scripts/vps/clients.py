@@ -35,6 +35,37 @@ def direct_dns_rules(rules, servers):
     return result
 
 
+DOMAIN_FIELDS = {"domain", "domain_suffix", "domain_keyword", "domain_regex"}
+IP_FIELDS = {"ip_cidr", "ip_is_private", "source_ip_cidr", "source_ip_is_private"}
+
+
+def rule_set_tags(rule):
+    raw = rule.get("rule_set", [])
+    tags = {raw} if isinstance(raw, str) else set(raw)
+    for child in rule.get("rules", []):
+        tags.update(rule_set_tags(child))
+    return tags
+
+
+def has_ip_criteria(rule, domain_sets):
+    if rule.get("type") == "logical":
+        return any(has_ip_criteria(child, domain_sets) for child in rule.get("rules", []))
+    tags = rule_set_tags(rule)
+    return bool(IP_FIELDS.intersection(rule) or (tags - domain_sets))
+
+
+def needs_domain_resolve(rule, domain_sets):
+    if rule.get("type") == "logical":
+        children = rule.get("rules", [])
+        if rule.get("mode") == "and":
+            return (
+                any(needs_domain_resolve(child, domain_sets) for child in children)
+                and not any(has_ip_criteria(child, domain_sets) for child in children)
+            )
+        return any(needs_domain_resolve(child, domain_sets) for child in children)
+    return bool(DOMAIN_FIELDS.intersection(rule) or (rule_set_tags(rule) & domain_sets))
+
+
 def mobile(provider, cache_id=None):
     config = json.loads((DATA / "sing-box-client.json").read_text())
     if cache_id is not None:
@@ -58,12 +89,13 @@ def mobile(provider, cache_id=None):
         if isinstance(binding, dict) and name != primary:
             config["dns"]["servers"].append(copy.deepcopy(prototype) | {"tag": "dns-" + name, "detour": name})
     route, dns = purposes.sing_box(groups)
+    domain_sets = {tag for item in dns["rules"] for tag in rule_set_tags(item)}
     config["route"]["rule_set"] = route["rule_set"]
     config["route"]["rules"].extend(route["rules"])
     rules = []
     for rule in config["route"]["rules"]:
-        if rule.get("outbound") == "direct":
-            # Resolve through DNS policy before dialing; the dialer's resolver is a single transport.
+        if rule.get("outbound") == "direct" and needs_domain_resolve(rule, domain_sets):
+            # Resolve domain-matched direct rules through DNS policy before dialing.
             rules.append({key: value for key, value in rule.items() if key != "outbound"} | {"action": "resolve"})
         rules.append(rule)
     config["route"]["rules"] = rules
@@ -91,7 +123,10 @@ def shadowrocket_nodes(provider):
 
 
 def shadowrocket(provider, subscription_name=None):
-    general, _, rules = (DATA / "shadowrocket-client.conf").read_text().partition("[Rule]\n")
+    parts = re.split(r"(?m)^\[Rule\][ \t]*(?:\r?\n|$)", (DATA / "shadowrocket-client.conf").read_text(), maxsplit=1)
+    if len(parts) != 2:
+        raise ValueError("shadowrocket-client.conf is missing a [Rule] section")
+    general, rules = parts
     lines = [general.rstrip()]
     if any("detour" in node for node in provider["outbounds"]):
         lines.append("close-if-proxy-chain-missing = true")
@@ -102,13 +137,19 @@ def shadowrocket(provider, subscription_name=None):
                 port = "" if upstream["port"] == (443 if protocol == "https" else 853) else f":{upstream['port']}"
                 urls.append(f"{protocol}://{upstream['address']}{port}{upstream.get('path', '')}")
         lines.append(setting + " = " + ", ".join(urls))
+    udp_by_path = {
+        path: exit_.get("udp", True)
+        for exit_ in provider.get("exits", {}).values()
+        for path in exit_.get("paths", [])
+    }
     if subscription_name is None:
         lines += ["", "[Proxy]"]
         for node in provider["outbounds"]:
+            udp = "true" if udp_by_path.get(node["tag"], True) else "false"
             chain = ", chain=" + node["detour"] if "detour" in node else ""
             lines.append(f"{node['tag']} = {node['type']}, {node['server']}, {node['server_port']}, "
                          f"password={json.dumps(node['password'])}, sni={node['tls']['server_name']}, "
-                         "skip-cert-verify=false, udp-relay=true" + chain)
+                         f"skip-cert-verify=false, udp-relay={udp}" + chain)
     lines += ["", "[Proxy Group]"]
     paths = {node["tag"] for node in provider["outbounds"]}
     for group in grouped_outbounds(provider):

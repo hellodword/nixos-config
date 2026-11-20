@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
+import {timingSafeEqual} from "node:crypto";
 import {readFile} from "node:fs/promises";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
 import test from "node:test";
 
+crypto.subtle.timingSafeEqual ??= timingSafeEqual;
 const root = process.env.VPS_DIRECTORY;
 
 test("certificate credentials remain at the Porkbun boundary", async () => {
@@ -23,6 +25,10 @@ test("certificate credentials remain at the Porkbun boundary", async () => {
   try {
     const request = new Request(certificate.url, {headers: {authorization: `Bearer ${certificate.token}`}});
     assert.deepEqual(await (await worker.fetch(request, env)).json(), {certificate: "fixture-certificate", key: "fixture-key"});
+    for (const malformed of [`bearer ${certificate.token}`, `Bearer  ${certificate.token}`, `Bearer ${certificate.token} extra`, certificate.token]) {
+      const rejected = new Request(certificate.url, {headers: {authorization: malformed}});
+      assert.equal((await worker.fetch(rejected, env)).status, 401);
+    }
     env.ACCESS = "{}";
     assert.equal((await worker.fetch(request, env)).status, 401);
     assert.equal(calls, 1);

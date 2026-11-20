@@ -309,6 +309,7 @@ class InventoryProtocol(unittest.TestCase):
 
     def test_prepared_deployments_and_native_clients(self):
         inventory = self.inventory()
+        inventory["exits"]["west-native"]["udp"] = False
         inventory["subscriptions"]["primary"]["name"] = "个人网络 (iPhone)"
         inventory["subscriptions"]["primary"]["groups"]["hideme"] = {"exits": ["west-native", "edge-native"]}
         vps = model.Inventory(inventory)
@@ -352,6 +353,16 @@ class InventoryProtocol(unittest.TestCase):
             self.assertEqual(decoded, provider["outbounds"])
             mobile = json.loads((directory / "sing-box.json").read_text())
             self.assertEqual([node for node in mobile["outbounds"] if node["tag"] in tags], decoded)
+            self.assertFalse(any(
+                rule.get("action") == "resolve" and (
+                    rule.get("ip_is_private") or "geoip-cn" in rule.get("rule_set", [])
+                )
+                for rule in mobile["route"]["rules"]
+            ))
+            self.assertTrue(any(
+                rule.get("action") == "resolve" and rule.get("domain_suffix") == ["cn"]
+                for rule in mobile["route"]["rules"]
+            ))
             config = directory / "sing-box.json"
             if mode == "trojan-chain":
                 local = directory / "chain.json"
@@ -373,6 +384,8 @@ class InventoryProtocol(unittest.TestCase):
                 self.assertEqual(json.loads(options["password"]), node["password"])
                 self.assertEqual(options["sni"], node["tls"]["server_name"])
                 self.assertEqual(options["skip-cert-verify"], "false")
+                expected_udp = "false" if node["tag"] in provider["exits"]["west-native"]["paths"] else "true"
+                self.assertEqual(options["udp-relay"], expected_udp)
                 self.assertEqual(options.get("chain"), node.get("detour"))
             self.assertEqual(full.partition("[Rule]\n")[2], separate.partition("[Rule]\n")[2])
             payment = next(rule for rule in mobile["route"]["rules"] if "geosite-paypal" in rule.get("rule_set", []))
@@ -510,11 +523,17 @@ class InventoryProtocol(unittest.TestCase):
                                     self.assertEqual(response.headers["Content-Disposition"],
                                                      f'attachment; filename="{basename}{suffix}"; filename*=UTF-8\'\'' +
                                                      urllib.parse.quote(title + suffix, safe=""))
-                    # The static-asset binding is reachable only through the subscription handler.
-                    with self.assertRaises(urllib.error.HTTPError) as denied:
-                        urllib.request.urlopen(url + "/linux.json", timeout=2, context=tls)
-                    self.assertEqual(denied.exception.code, 404)
-                    denied.exception.close()
+                    # The static-asset binding is reachable only through the subscription handler,
+                    # and unknown UUIDs return 404 even when query parameters are invalid.
+                    for probe_url in (
+                        url + "/linux.json",
+                        f"https://127.0.0.1:{port}{route}/00000000-0000-4000-8000-000000000000?client=invalid",
+                        f"https://127.0.0.1:{port}{route}/00000000-0000-4000-8000-000000000000?client=linux&mode=invalid",
+                    ):
+                        with self.assertRaises(urllib.error.HTTPError) as denied:
+                            urllib.request.urlopen(probe_url, timeout=2, context=tls)
+                        self.assertEqual(denied.exception.code, 404)
+                        denied.exception.close()
                 finally:
                     process.terminate()
                     process.wait(timeout=10)

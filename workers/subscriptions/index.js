@@ -17,6 +17,11 @@ export default {
         !/^\/[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(path)) {
       return reply(null, 404);
     }
+    const rootMetadata = await env.ASSETS.fetch(new Request(new URL(`${path}/metadata.json`, url.origin)));
+    if (!rootMetadata.ok) {
+      await rootMetadata.body?.cancel();
+      return reply(null, 404);
+    }
     let client = url.searchParams.get("client")?.toLowerCase();
     if (client === undefined) {
       const agent = request.headers.get("User-Agent") ?? "";
@@ -24,27 +29,37 @@ export default {
       else if (/sing-box|\b(?:sfa|sfi|sfm|sft)\//i.test(agent)) client = "sing-box";
     }
     if (!Object.hasOwn(formats, client)) {
+      await rootMetadata.body?.cancel();
       return reply("Specify ?client=linux, sing-box, shadowrocket, shadowrocket-subscribe or shadowrocket-config\n", 400, "text/plain; charset=utf-8");
     }
     const mode = url.searchParams.get("mode") ?? "hy2";
     if (!["hy2", "trojan", "trojan-chain"].includes(mode)) {
+      await rootMetadata.body?.cancel();
       return reply("Specify mode=hy2, trojan or trojan-chain\n", 400, "text/plain; charset=utf-8");
     }
     const folder = mode === "hy2" ? path : `${path}/${mode}`;
     const [filename, contentType] = formats[client];
     const asset = await env.ASSETS.fetch(new Request(new URL(`${folder}/${filename}`, url.origin)));
-    if (!asset.ok) return reply(null, 404);
+    if (!asset.ok) {
+      await rootMetadata.body?.cancel();
+      return reply(null, 404);
+    }
     const response = reply(asset.body, 200, contentType);
     response.headers.set("Vary", "User-Agent");
     if (client === "shadowrocket" || client === "shadowrocket-config" || client === "sing-box") {
-      const metadata = await env.ASSETS.fetch(new Request(new URL(`${folder}/metadata.json`, url.origin)));
+      const metadata = mode === "hy2"
+        ? rootMetadata
+        : await env.ASSETS.fetch(new Request(new URL(`${folder}/metadata.json`, url.origin)));
+      if (mode !== "hy2") await rootMetadata.body?.cancel();
       if (!metadata.ok) return reply(null, 404);
       const {id, name} = await metadata.json();
       const suffix = client === "sing-box" ? ".json" : ".conf";
       const asciiName = (mode === "hy2" ? id : `${id}-${mode}`) + suffix;
-      const filename = encodeURIComponent(name + suffix).replace(/['()*]/g,
+      const encodedName = encodeURIComponent(name + suffix).replace(/['()*]/g,
         character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
-      response.headers.set("Content-Disposition", `attachment; filename="${asciiName}"; filename*=UTF-8''${filename}`);
+      response.headers.set("Content-Disposition", `attachment; filename="${asciiName}"; filename*=UTF-8''${encodedName}`);
+    } else {
+      await rootMetadata.body?.cancel();
     }
     return response;
   },

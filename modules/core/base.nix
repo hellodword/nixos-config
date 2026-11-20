@@ -122,7 +122,6 @@ in
       pciutils
       lm_sensors
       sops
-      openssl_legacy
       nix-output-monitor
       nix-tree
       nixfmt

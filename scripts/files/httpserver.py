@@ -33,14 +33,23 @@ def nginx_quote(value):
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def mounts():
+def mounts(mountinfo=Path("/proc/self/mountinfo")):
     def unescape(value):
         return re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), value)
     entries = []
-    for line in Path("/proc/self/mountinfo").read_text().splitlines():
+    for line in reversed(mountinfo.read_text().splitlines()):
         fields = line.split()
         entries.append((Path(unescape(fields[4])), fields[2], Path(unescape(fields[3]))))
     return sorted(entries, key=lambda entry: len(entry[0].parts), reverse=True)
+
+
+def safe_resolve(path):
+    try:
+        return path.resolve()
+    except PermissionError:
+        if path.parent == path:
+            return path
+        return safe_resolve(path.parent) / path.name
 
 
 def backing_path(path, entries):
@@ -69,7 +78,7 @@ def selection(raw, settings):
             raise ValueError("Choose a specific file or directory within this root")
     denied = []
     for path in settings["blockedPaths"]:
-        blocked = Path(path).resolve()
+        blocked = safe_resolve(Path(os.path.abspath(os.path.expanduser(path))))
         blocked_device, blocked_physical = backing_path(blocked, entries)
         if device != blocked_device:
             continue

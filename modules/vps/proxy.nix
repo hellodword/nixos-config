@@ -19,10 +19,12 @@ let
   reload = pkgs.writeShellScript "reload-vps-certificate" ''
     set -eu
     if [ -f ${certState}/changed ]; then
-      rm ${certState}/changed
-      ${pkgs.systemd}/bin/systemctl --no-block try-restart site-vps-proxy.service ${
-        lib.optionalString (web != { }) "nginx.service"
-      }
+      for unit in site-vps-proxy.service ${lib.optionalString (web != { }) "nginx.service"}; do
+        if [ "$(${pkgs.systemd}/bin/systemctl show -P ActiveState "$unit")" = "active" ]; then
+          ${pkgs.systemd}/bin/systemctl try-restart "$unit"
+        fi
+      done
+      rm -f ${certState}/changed
     fi
   '';
 in
@@ -102,6 +104,7 @@ in
     description = "Fetch the VPS TLS certificate";
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
+    onSuccess = [ "site-vps-certificate-reload.service" ];
     path = [ pkgs.openssl ];
     environment.SSL_CERT_FILE = config.security.pki.caBundle;
     serviceConfig = hardened // {
@@ -113,8 +116,15 @@ in
       StateDirectoryMode = "0700";
       LoadCredential = [ "request:${release}/certificate.json" ];
       ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/vps/certificate.py} --request %d/request --state ${certState} --ca-file ${config.security.pki.caBundle}";
-      ExecStartPost = "+${reload}";
       TimeoutStartSec = "2min";
+    };
+  };
+  systemd.services.site-vps-certificate-reload = {
+    description = "Reload VPS services after TLS certificate update";
+    after = [ "site-vps-certificate.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = reload;
     };
   };
   systemd.timers.site-vps-certificate = {

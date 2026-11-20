@@ -1,11 +1,20 @@
 """Refresh locally used remote images; optional argv filters the tag list."""
+import argparse
 import json
 import subprocess
 import sys
 import time
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="docker-pull-my-images", description=__doc__)
+    parser.add_argument(
+        "filter",
+        nargs=argparse.REMAINDER,
+        help="optional filter command receiving sorted image tags on stdin",
+    )
+    args = parser.parse_args(argv)
+    filter_cmd = args.filter[1:] if args.filter[:1] == ["--"] else args.filter
     ids = subprocess.check_output(["docker", "images", "--quiet"], text=True).split()
     tags = set()
     for start in range(0, len(ids), 100):
@@ -14,8 +23,8 @@ def main():
             for tag in image.get("RepoTags") or []:
                 if image.get("RepoDigests") or tag.startswith("ghcr.io/"):
                     tags.add(tag)
-    if sys.argv[1:]:
-        result = subprocess.run(sys.argv[1:], input="".join(tag + "\n" for tag in sorted(tags)),
+    if filter_cmd:
+        result = subprocess.run(filter_cmd, input="".join(tag + "\n" for tag in sorted(tags)),
                                 text=True, capture_output=True, check=True)
         tags = set(result.stdout.splitlines())
     failed = []
