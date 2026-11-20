@@ -201,7 +201,7 @@ class RepositoryTest(unittest.TestCase):
                 self.assertEqual(report["repositories"]["limited"]["automatic"]["maintenance"]["nextEligibleAt"],
                                  manual["started"] + 86400)
                 # Never-attempted maintenance takes its turn; the previous check
-                # failure cannot starve it. Maintenance performs its own precheck.
+                # failure cannot starve it. Maintenance verifies the pruned repo.
                 at("2027-03-16T14:00:00+00:00")
                 self.assertEqual(backup.read_record(state / "maintenance-result.json")["result"], "success")
                 self.assertEqual(backup.read_record(state / "check-attempt.json"), failed)
@@ -403,8 +403,8 @@ class RepositoryTest(unittest.TestCase):
                 with patch.object(backup, "run_operation", side_effect=cross_boundary):
                     at("2026-11-16T14:59:00+00:00")
                 self.assertEqual(backup.read_record(args.state / "restore-test-result.json"), restored)
-                # If the monthly preflight check finishes after the window,
-                # leave pruning for the next evening without repeating backup.
+                # If backup finishes after the window end, due maintenance waits
+                # for the next evening and runs only a single post-prune check.
                 policy["minimumIntervalSeconds"]["check"] = 7 * 86400
                 path.write_text(json.dumps(policy))
                 clock[0] = datetime.fromisoformat("2026-12-10T03:00:00+00:00").timestamp()
@@ -412,16 +412,21 @@ class RepositoryTest(unittest.TestCase):
                 backup.run_operation(args, policy, metadata, "check")
                 maintained = backup.read_record(args.state / "maintenance-success.json")
                 original_restic = backup.restic
-                def finish_preflight(binary, arguments, *values, **kwargs):
+                maintenance_checks = []
+                def cross_window_during_backup(binary, arguments, *values, **kwargs):
+                    if arguments[0] == "check":
+                        maintenance_checks.append(list(arguments))
                     result = original_restic(binary, arguments, *values, **kwargs)
-                    if arguments == ["check"]:
+                    if arguments[0] == "backup" and clock[0] == datetime.fromisoformat("2026-12-10T14:59:00+00:00").timestamp():
                         clock[0] = datetime.fromisoformat("2026-12-10T15:01:00+00:00").timestamp()
                     return result
-                with patch.object(backup, "restic", side_effect=finish_preflight):
+                with patch.object(backup, "restic", side_effect=cross_window_during_backup):
                     at("2026-12-10T14:59:00+00:00")
+                self.assertEqual(maintenance_checks, [])
                 self.assertEqual(backup.read_record(args.state / "maintenance-success.json"), maintained)
-                self.assertEqual(backup.read_record(args.state / "maintenance-result.json")["result"], "skipped")
-                at("2026-12-11T13:30:00+00:00")
+                with patch.object(backup, "restic", side_effect=cross_window_during_backup):
+                    at("2026-12-11T13:30:00+00:00")
+                self.assertEqual(maintenance_checks, [["check"]])
                 self.assertGreater(backup.read_record(args.state / "maintenance-success.json")["time"], maintained["time"])
             destination = root / "restored"
             subprocess.run(["restic", "restore", "latest", "--target", str(destination), "--verify"], env=env, check=True, capture_output=True)

@@ -7,6 +7,7 @@ Symlinks are saved as links, never traversed. Selection fails on unreadable
 paths, required missing roots and mount boundaries.
 """
 import argparse
+from datetime import datetime
 import fcntl
 import fnmatch
 import hashlib
@@ -36,9 +37,11 @@ class Interrupted(Exception):
 
 
 class ResticError(RuntimeError):
-    def __init__(self, code, detail):
+    def __init__(self, code, detail, summary=None, errors=()):
         self.code = code
         self.detail = safe_error(detail)
+        self.summary = summary
+        self.errors = tuple(errors)
         super().__init__(f"Restic failed (exit {code}): {self.detail}")
 
 
@@ -114,6 +117,7 @@ def restic_command(binary, arguments, state, *, cwd=None, capture=False, log_nam
     check_interrupted()
     log = state / log_name
     summary = None
+    item_errors = []
     tail = b""
     captured = bytearray()
     pending = b""
@@ -161,17 +165,32 @@ def restic_command(binary, arguments, state, *, cwd=None, capture=False, log_nam
                             item = json.loads(line)
                             if item.get("message_type") == "summary":
                                 summary = item
+                            elif item.get("message_type") == "error":
+                                detail = item.get("error")
+                                item_errors.append(detail.get("message", "") if isinstance(detail, dict) else str(detail or ""))
                             elif item.get("message_type") == "exit_error":
                                 error = item.get("message", "")
                         except (ValueError, AttributeError):
                             pass
+                if pending:
+                    try:
+                        item = json.loads(pending)
+                        if item.get("message_type") == "summary":
+                            summary = item
+                        elif item.get("message_type") == "error":
+                            detail = item.get("error")
+                            item_errors.append(detail.get("message", "") if isinstance(detail, dict) else str(detail or ""))
+                        elif item.get("message_type") == "exit_error":
+                            error = item.get("message", "")
+                    except (ValueError, AttributeError):
+                        pass
                 code = process.wait()
             finally:
                 stream.close()
         if STOP_AT is not None:
             raise Interrupted(code)
         if code:
-            raise ResticError(code, error or tail.decode(errors="replace"))
+            raise ResticError(code, error or tail.decode(errors="replace"), summary=summary, errors=item_errors)
         return bytes(captured) if capture else summary
     finally:
         # Unexpected local I/O failures still leave the pipe open during cleanup.
@@ -185,6 +204,37 @@ def restic_command(binary, arguments, state, *, cwd=None, capture=False, log_nam
         process.stdout.close()
 
 
+def boot_time():
+    try:
+        for line in Path("/proc/stat").read_text().splitlines():
+            if line.startswith("btime "):
+                return int(line.split()[1])
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+def process_comm(pid):
+    try:
+        return Path(f"/proc/{pid}/comm").read_text().strip()
+    except FileNotFoundError:
+        return None
+    except OSError:
+        return ""
+
+
+def lock_created_before_boot(lock, btime):
+    raw_time = lock.get("time")
+    if not isinstance(raw_time, str) or btime is None:
+        return False
+    normalized = re.sub(r"\.(\d{6})\d+", r".\1", raw_time)
+    try:
+        created = datetime.fromisoformat(normalized).timestamp()
+    except ValueError:
+        return False
+    return created < btime
+
+
 def recover_locks(binary, state):
     """Only an explicitly single-host repository may remove proven dead local locks."""
     def inspect(arguments):
@@ -194,10 +244,12 @@ def recover_locks(binary, state):
     ids = inspect(["list", "locks"]).decode().splitlines()
     if any(not re.fullmatch(r"[0-9a-f]{64}", identity) for identity in ids):
         raise RuntimeError("cannot inspect repository locks")
+    hostname = socket.gethostname()
+    btime = boot_time()
     for identity in ids:
         lock = json.loads(inspect(["cat", "lock", identity]))
         pid = lock.get("pid")
-        if lock.get("hostname") != socket.gethostname() or type(pid) is not int or pid <= 0:
+        if lock.get("hostname") != hostname or type(pid) is not int or pid <= 0:
             raise RuntimeError("repository lock owner cannot be verified locally")
         try:
             os.kill(pid, 0)
@@ -205,6 +257,11 @@ def recover_locks(binary, state):
             continue
         except PermissionError:
             pass
+        if lock_created_before_boot(lock, btime):
+            continue
+        comm = process_comm(pid)
+        if comm is None or (comm and comm not in ("restic", ".restic-wrapped")):
+            continue
         raise RuntimeError("repository lock may belong to a live process")
     # Never --remove-all. The local flock remains held through inspection,
     # ordinary Restic stale-lock removal and the single retry.
@@ -226,20 +283,84 @@ def restic(binary, arguments, state, *, cwd=None, recover_stale_locks=False):
     return restic_command(binary, arguments, state, cwd=cwd)
 
 
+def transient_vanished_only(source, policy, paths, errors):
+    if any("no such file or directory" not in message.lower() for message in errors):
+        return False
+    source = source.resolve(strict=True)
+    for rule in policy["roots"]:
+        if rule.get("required", False) and not source.joinpath(*relative(rule["path"]).parts).exists():
+            return False
+    vanished = False
+    for rel in paths:
+        candidate = source.joinpath(*PurePosixPath(rel).parts)
+        try:
+            info = candidate.lstat()
+        except FileNotFoundError:
+            vanished = True
+            continue
+        except OSError:
+            return False
+        if stat.S_ISREG(info.st_mode):
+            try:
+                with candidate.open("rb"):
+                    pass
+            except FileNotFoundError:
+                vanished = True
+            except OSError:
+                return False
+    return vanished or bool(errors)
+
+
 def backup(args, policy, metadata, common):
     plan = select(args.source, policy)
+    partial_warning = False
     with tempfile.NamedTemporaryFile(dir=args.state) as files:
         for name in plan["paths"]:
             files.write(os.fsencode(name) + b"\0")
         files.flush()
         # Stable host/tag grouping lets Restic select an existing parent
         # when the exact file list changes.
-        summary = restic(args.restic, ["backup", "--json", "--host", policy["host"], *common, "--group-by", "host,tags", "--files-from-raw", files.name], args.state, cwd=args.source,
-                         recover_stale_locks=policy.get("recoverStaleLocks", False))
-    if summary is None:
+        try:
+            summary = restic(
+                args.restic,
+                ["backup", "--json", "--host", policy["host"], *common, "--group-by", "host,tags", "--files-from-raw", files.name],
+                args.state,
+                cwd=args.source,
+                recover_stale_locks=policy.get("recoverStaleLocks", False),
+            )
+        except ResticError as error:
+            if (
+                error.code == 3
+                and isinstance(error.summary, dict)
+                and error.summary.get("snapshot_id")
+                and transient_vanished_only(args.source, policy, plan["paths"], error.errors)
+            ):
+                summary = error.summary
+                partial_warning = True
+            else:
+                raise
+    if not isinstance(summary, dict) or not summary.get("snapshot_id"):
         raise RuntimeError("Restic completed without a backup summary")
-    atomic_json(args.state / "backup-success.json", metadata | {"time": int(time.time()), "snapshot": summary["snapshot_id"], "files": len(plan["paths"]), "bytes": plan["bytes"], "missingOptional": plan["missingOptional"]})
-    print(json.dumps({"operation": "backup", "files": len(plan["paths"]), "bytes": plan["bytes"], "missingOptionalCount": len(plan["missingOptional"])}))
+    success_record = metadata | {
+        "time": int(time.time()),
+        "snapshot": summary["snapshot_id"],
+        "files": len(plan["paths"]),
+        "bytes": plan["bytes"],
+        "missingOptional": plan["missingOptional"],
+    }
+    if partial_warning:
+        success_record["partialReadWarning"] = True
+    atomic_json(args.state / "backup-success.json", success_record)
+    summary_event = {
+        "operation": "backup",
+        "files": len(plan["paths"]),
+        "bytes": plan["bytes"],
+        "missingOptionalCount": len(plan["missingOptional"]),
+    }
+    if partial_warning:
+        summary_event["partialReadWarning"] = True
+    print(json.dumps(summary_event))
+    return partial_warning
 
 
 def on_ac_power():
@@ -247,7 +368,7 @@ def on_ac_power():
     return subprocess.run(["systemd-ac-power"], timeout=5, check=False).returncode == 0
 
 
-def run_operation(args, policy, metadata, operation, *, checked=False, reuse_backup=False):
+def run_operation(args, policy, metadata, operation, *, reuse_backup=False):
     check_interrupted()
     record = metadata | {"id": uuid.uuid4().hex, "operation": operation,
               "bootId": Path("/proc/sys/kernel/random/boot_id").read_text().strip(),
@@ -273,15 +394,17 @@ def run_operation(args, policy, metadata, operation, *, checked=False, reuse_bac
                       recover_stale_locks=policy.get("recoverStaleLocks", False))
 
     common = ["--tag", "site:" + policy["host"]]
+    check_flags = ["--with-cache"] if policy.get("checkWithCache", False) else []
     try:
         if operation == "backup":
             phase("selection-and-backup")
-            backup(args, policy, metadata, common)
+            if backup(args, policy, metadata, common):
+                record["partialReadWarning"] = True
         elif operation == "check":
             parts = policy.get("checkPartitions", 12)
             old = read_record(success_path(args.state, operation))
             part = old.get("nextPartition", 1) if old.get("partitions") == parts else 1
-            command(["check", f"--read-data-subset={part}/{parts}"])
+            command(["check", *check_flags, f"--read-data-subset={part}/{parts}"])
             atomic_json(success_path(args.state, operation), metadata | {
                 "time": int(time.time()), "partitions": parts, "checkedPartition": part,
                 "nextPartition": part % parts + 1})
@@ -299,10 +422,8 @@ def run_operation(args, policy, metadata, operation, *, checked=False, reuse_bac
             if operation == "maintenance":
                 if not reuse_backup:
                     phase("selection-and-backup")
-                    backup(args, policy, metadata, common)
-                if not checked:
-                    phase("check-before-prune")
-                    command(["check"])
+                    if backup(args, policy, metadata, common):
+                        record["partialReadWarning"] = True
                 if reuse_backup:
                     window = window_at(policy["schedule"], time.time(), args.offset_minutes)
                     if not window or window["id"] != metadata["window"] or not window["maintenance"] or not on_ac_power():
@@ -313,7 +434,7 @@ def run_operation(args, policy, metadata, operation, *, checked=False, reuse_bac
                      *common, "--host", policy["host"], "--group-by", "host,tags", *policy["retention"]])
             if operation == "maintenance":
                 phase("check-after-prune")
-                command(["check"])
+                command(["check", *check_flags])
                 atomic_json(success_path(args.state, operation), metadata | {"time": int(time.time())})
         record["result"] = "success"
     except (Interrupted, KeyboardInterrupt) as error:
@@ -374,7 +495,6 @@ def execute(args):
                 return decision["reason"]
             run_operation(args, policy, metadata, "backup")
             completed = True
-        checked = False
         order = sorted(OPERATIONS[1:], key=lambda op: attempt(args.state, op).get("started", 0))
         for operation in order:
             check_interrupted()
@@ -384,9 +504,8 @@ def execute(args):
             decision = automatic_decision(args.state, operation, policy, time.time(), args.offset_minutes)
             if decision["nextEligibleAt"] is None or decision["nextEligibleAt"] > time.time():
                 continue
-            run_operation(args, policy, metadata, operation, checked=checked, reuse_backup=True)
+            run_operation(args, policy, metadata, operation, reuse_backup=True)
             completed = True
-            checked = checked or operation == "check"
         if not completed:
             return "window work already completed or awaiting maintenance conditions"
 

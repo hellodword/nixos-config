@@ -70,6 +70,9 @@ in
       r2.recoverStaleLocks = true;
       b2 = {
         recoverStaleLocks = true;
+        checkPartitions = 24;
+        minimumIntervalSeconds.check = 14 * 86400;
+        health.check = 28 * 86400;
         automatic = {
           backupAttemptsPerWindow = 1;
           heavySpacingSeconds = 86400;

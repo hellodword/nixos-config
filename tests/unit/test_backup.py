@@ -1,5 +1,7 @@
 """Backup selection, cost accounting and public recovery status."""
+from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -136,6 +138,145 @@ class DeliveryTest(unittest.TestCase):
             final = backup.read_record(state / "backup-notification.json")
             self.assertEqual(final["id"], "latest")
             self.assertEqual(final["deliveredChannels"], ["bark", "secondary"])
+
+
+class RunnerReliabilityTest(unittest.TestCase):
+    def test_backup_tolerates_exit_3_only_when_snapshot_summary_exists(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "document").write_text("important")
+            (source / "transient.wal").write_text("ephemeral")
+            state = root / "state"
+            state.mkdir(mode=0o700)
+            fake_restic = root / "fake-restic.py"
+            mode_file = root / "mode"
+            fake_restic.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, pathlib, sys\n"
+                f"mode = pathlib.Path({str(mode_file)!r}).read_text().strip()\n"
+                "if mode == 'partial-with-snapshot':\n"
+                f"    pathlib.Path({str(source / 'transient.wal')!r}).unlink(missing_ok=True)\n"
+                "    print(json.dumps({'message_type': 'summary', 'snapshot_id': 'abc12345'}))\n"
+                "    sys.exit(3)\n"
+                "if mode == 'permission-denied-with-snapshot':\n"
+                "    print(json.dumps({'message_type': 'error', 'error': {'message': 'open document: permission denied'}}))\n"
+                "    print(json.dumps({'message_type': 'summary', 'snapshot_id': 'denied123'}))\n"
+                "    sys.exit(3)\n"
+                "if mode == 'partial-without-snapshot':\n"
+                "    print(json.dumps({'message_type': 'exit_error', 'message': 'vanished before snapshot'}))\n"
+                "    sys.exit(3)\n"
+                "print(json.dumps({'message_type': 'summary', 'snapshot_id': 'fatal999'}))\n"
+                "sys.exit(1)\n"
+            )
+            fake_restic.chmod(0o755)
+            policy = {"host": "fixture", "roots": [
+                {"path": "document", "required": True},
+                {"path": "transient.wal"},
+            ]}
+            args = SimpleNamespace(source=source, state=state, restic=str(fake_restic), run_state=None, offset_minutes=0)
+
+            mode_file.write_text("partial-with-snapshot")
+            backup.run_operation(args, policy, {"host": "fixture"}, "backup")
+            success = backup.read_record(state / "backup-success.json")
+            self.assertEqual(success["snapshot"], "abc12345")
+            self.assertTrue(success["partialReadWarning"])
+            result = backup.read_record(state / "backup-result.json")
+            self.assertEqual(result["result"], "success")
+            self.assertTrue(result["partialReadWarning"])
+
+            for bad_mode, expected_code in (
+                ("permission-denied-with-snapshot", 3),
+                ("partial-without-snapshot", 3),
+                ("fatal-with-summary", 1),
+            ):
+                mode_file.write_text(bad_mode)
+                previous_success = (state / "backup-success.json").read_bytes()
+                with self.assertRaises(backup.ResticError):
+                    backup.run_operation(args, policy, {"host": "fixture"}, "backup")
+                self.assertEqual((state / "backup-success.json").read_bytes(), previous_success)
+                failed = backup.read_record(state / "backup-result.json")
+                self.assertEqual(failed["result"], "failure")
+                self.assertEqual(failed["resticExitCode"], expected_code)
+
+    def test_recover_locks_unlocks_stale_boot_and_recycled_pid_while_preserving_live_restic(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            lock_id = "a" * 64
+            host = backup.socket.gethostname()
+            live_pid = os.getpid()
+            btime = 2_000_000_000
+            pre_boot_iso = datetime.fromtimestamp(btime - 120, tz=timezone.utc).isoformat().replace("+00:00", ".123456789Z")
+            post_boot_iso = datetime.fromtimestamp(btime + 120, tz=timezone.utc).isoformat().replace("+00:00", ".123456789Z")
+            unlocked = []
+
+            def make_inspector(lock_payload):
+                def fake_command(_binary, arguments, _state, **_kwargs):
+                    if arguments[-2:] == ["list", "locks"]:
+                        return (lock_id + "\n").encode()
+                    if arguments[-3:] == ["cat", "lock", lock_id]:
+                        return json.dumps(lock_payload).encode()
+                    if arguments == ["unlock"]:
+                        unlocked.append(True)
+                        return None
+                    raise AssertionError(arguments)
+                return fake_command
+
+            # Lock created before current boot unlocks even if PID currently exists.
+            with patch.object(backup, "boot_time", return_value=btime), \
+                    patch.object(backup, "process_comm", return_value="restic"), \
+                    patch.object(backup, "restic_command", side_effect=make_inspector(
+                        {"hostname": host, "pid": live_pid, "time": pre_boot_iso})):
+                backup.recover_locks("restic", state)
+            self.assertEqual(len(unlocked), 1)
+
+            # Lock created after boot whose PID now belongs to a non-restic process unlocks.
+            with patch.object(backup, "boot_time", return_value=btime), \
+                    patch.object(backup, "process_comm", return_value="python3"), \
+                    patch.object(backup, "restic_command", side_effect=make_inspector(
+                        {"hostname": host, "pid": live_pid, "time": post_boot_iso})):
+                backup.recover_locks("restic", state)
+            self.assertEqual(len(unlocked), 2)
+
+            # Live local restic lock after boot is preserved.
+            with patch.object(backup, "boot_time", return_value=btime), \
+                    patch.object(backup, "process_comm", return_value="restic"), \
+                    patch.object(backup, "restic_command", side_effect=make_inspector(
+                        {"hostname": host, "pid": live_pid, "time": post_boot_iso})), \
+                    self.assertRaisesRegex(RuntimeError, "live process"):
+                backup.recover_locks("restic", state)
+
+    def test_check_honors_target_partitions_and_cache_flag_and_single_maintenance_check(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "doc").write_text("data")
+            state = root / "state"
+            state.mkdir(mode=0o700)
+            calls = []
+
+            def fake_restic(_binary, arguments, _state, **_kwargs):
+                calls.append(list(arguments))
+                if arguments[0] == "backup":
+                    return {"snapshot_id": "snap0001"}
+                return None
+
+            policy = {
+                "host": "fixture",
+                "roots": [{"path": "doc", "required": True}],
+                "checkPartitions": 24,
+                "checkWithCache": True,
+                "retention": ["--keep-last", "2"],
+            }
+            args = SimpleNamespace(source=source, state=state, restic="restic", run_state=None, offset_minutes=0)
+            with patch.object(backup, "restic", side_effect=fake_restic):
+                backup.run_operation(args, policy, {"host": "fixture"}, "check")
+                backup.run_operation(args, policy, {"host": "fixture"}, "maintenance")
+            self.assertEqual(calls[0], ["check", "--with-cache", "--read-data-subset=1/24"])
+            check_calls = [cmd for cmd in calls[1:] if cmd[0] == "check"]
+            self.assertEqual(check_calls, [["check", "--with-cache"]])
 
 
 if __name__ == "__main__":

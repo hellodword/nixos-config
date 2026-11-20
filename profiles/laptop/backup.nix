@@ -25,9 +25,11 @@ in
     roots = [
       {
         path = "etc/machine-id";
+        required = true;
       }
       {
         path = "etc/ssh";
+        required = true;
         includePaths = [
           "ssh_host_*_key"
           "ssh_host_*_key.pub"
@@ -35,9 +37,11 @@ in
       }
       {
         path = "var/lib/sops-nix";
+        required = true;
       }
       {
         path = "etc/secureboot";
+        required = config.boot.lanzaboote.enable or false;
       }
       {
         path = "var/lib/site-network";
@@ -45,6 +49,7 @@ in
       }
       {
         path = "${home}/.gnupg";
+        required = true;
         excludeNames = [
           "gpg-agent.conf"
           "gpg.conf"
@@ -55,6 +60,7 @@ in
       }
       {
         path = "${home}/.ssh";
+        required = true;
         excludeNames = [ "config" ];
       }
       (optional "${home}/.config/Bitwarden/data.json")

@@ -24,6 +24,7 @@ let
       sha256 = builtins.hashString "sha256" canary;
     };
     checkPartitions = cfg.checkPartitions;
+    checkWithCache = cfg.checkWithCache;
     retention = [
       "--keep-daily"
       "7"
@@ -42,6 +43,8 @@ let
       dataPolicy
       // {
         inherit (target)
+          checkPartitions
+          checkWithCache
           schedule
           automatic
           minimumIntervalSeconds
@@ -140,7 +143,8 @@ let
     let
       state = "/var/lib/site-backup-${target}";
     in
-    "${pkgs.python3}/bin/python3 ${../../scripts/backup}/runner.py ${operation} --policy ${targetPolicies.${target}} --source ${lib.escapeShellArg cfg.source} --state ${state} --restic ${lib.getExe pkgs.restic}"
+    "${pkgs.systemd}/bin/systemd-inhibit --what=shutdown --who=${lib.escapeShellArg "site-backup-${target}"} --why=${lib.escapeShellArg "Completing Restic operation and releasing locks"} --mode=delay"
+    + " ${pkgs.python3}/bin/python3 ${../../scripts/backup}/runner.py ${operation} --policy ${targetPolicies.${target}} --source ${lib.escapeShellArg cfg.source} --state ${state} --restic ${lib.getExe pkgs.restic}"
     + " --run-state /run/${nameFor target operation}/result.json";
   mkService =
     target: settings: operation:
@@ -274,6 +278,11 @@ in
       default = 12;
       description = "Rotate pack verification across this many partitions; advance only after success.";
     };
+    checkWithCache = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Pass --with-cache to Restic pack verification.";
+    };
     automatic = automaticOptions { };
     minimumIntervalSeconds = lib.mkOption {
       type = intervals {
@@ -388,6 +397,16 @@ in
                 default = false;
                 description = "Single-host repositories only: inspect lock owners, remove proven dead local locks with ordinary unlock, then retry once.";
               };
+              checkPartitions = lib.mkOption {
+                type = lib.types.ints.between 1 100;
+                default = cfg.checkPartitions;
+                description = "Rotate pack verification across this many partitions for this repository.";
+              };
+              checkWithCache = lib.mkOption {
+                type = lib.types.bool;
+                default = cfg.checkWithCache;
+                description = "Pass --with-cache to Restic pack verification for this repository.";
+              };
             };
           }
         )
@@ -455,6 +474,7 @@ in
           lib.nameValuePair "site-backup-${target}-notify" {
             description = "Deliver latest backup results for ${target}";
             onSuccess = [ "site-backup-status.service" ];
+            unitConfig.ConditionPathExistsGlob = "/var/lib/site-backup-${target}/*-pending.json";
             serviceConfig = {
               Type = "oneshot";
               ExecStart = notifyCommand target;
