@@ -38,6 +38,42 @@ class InventoryProtocol(unittest.TestCase):
     def inventory(self):
         return yaml.safe_load((ROOT / "data/secrets/vps.example.yaml").read_text())
 
+    def test_node_declaration_validation_and_architectures(self):
+        base = self.inventory()
+        default_meta = model.Inventory(base).metadata()["nodes"]
+        self.assertEqual(default_meta["edge"]["system"], "x86_64-linux")
+
+        arm = copy.deepcopy(base)
+        arm["nodes"]["west"]["system"] = "aarch64-linux"
+        arm["nodes"]["edge"].update(dhcp=False, addresses=["192.0.2.10/24"])
+        arm["nodes"]["edge"]["modules"] = ["modules/vps/http-origin.nix"]
+        arm["secrets"]["edge-http-origin-prefix"] = "/origin-segment_1"
+        self.assertEqual(model.Inventory(arm).metadata()["nodes"]["west"]["system"], "aarch64-linux")
+
+        invalid_cases = [
+            (lambda d: d["nodes"]["edge"].update(udpSlot=True), "nodes.edge.udpSlot"),
+            (lambda d: d["nodes"]["edge"].update(swapMiB=False), "nodes.edge.swapMiB"),
+            (lambda d: d["nodes"]["edge"]["sshServer"].update(port=True), "nodes.edge.sshServer.port"),
+            (lambda d: d["nodes"]["edge"].pop("uefi"), "nodes.edge.uefi"),
+            (lambda d: d["nodes"]["edge"].update(uefi=1), "nodes.edge.uefi"),
+            (lambda d: d["nodes"]["edge"].update(system="riscv64-linux"), "nodes.edge.system"),
+            (lambda d: d["nodes"]["west"].update(address=d["nodes"]["edge"]["address"]), "nodes.west.address"),
+            (lambda d: d["nodes"]["edge"].update(address="127.0.0.1"), "nodes.edge.address"),
+            (lambda d: d["nodes"]["edge"].update(address="0.0.0.0"), "nodes.edge.address"),
+            (lambda d: d["nodes"]["edge"].update(dhcp=False), "nodes.edge.addresses"),
+            (lambda d: d["nodes"]["edge"].update(modules=["modules/vps/missing.nix"]), "nodes.edge.modules[0]"),
+            (lambda d: d["nodes"]["edge"].update(modules=["modules/vps/http-origin.nix"]), "secrets.edge-http-origin-prefix"),
+            (lambda d: (d["nodes"]["edge"].update(modules=["modules/vps/http-origin.nix"]),
+                        d["secrets"].update({"edge-http-origin-prefix": "/nested/path"})), "secrets.edge-http-origin-prefix"),
+        ]
+        for mutate, location in invalid_cases:
+            with self.subTest(location=location):
+                candidate = copy.deepcopy(base)
+                mutate(candidate)
+                with self.assertRaises(model.DeclarationError) as raised:
+                    model.Inventory(candidate)
+                self.assertIn(location, str(raised.exception))
+
     def test_mobile_direct_dns_races_and_routing(self):
         with tempfile.TemporaryDirectory() as temp, contextlib.ExitStack() as stack:
             root = Path(temp)

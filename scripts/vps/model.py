@@ -14,7 +14,8 @@ from urllib.parse import urlparse
 
 UDP_FIRST, UDP_LAST = 20000, 29999
 MODES = {"hy2": "HY2", "trojan": "Trojan", "trojan-chain": "Trojan via CHAIN"}
-DEFAULT_DNS = json.loads((Path(__file__).resolve().parents[2] / "data/network/vps-dns.json").read_text())
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_DNS = json.loads((ROOT / "data/network/vps-dns.json").read_text())
 
 
 def profile_name(title, mode):
@@ -37,8 +38,8 @@ def field(mapping, key, kind, path, default=...):
             return default
         raise DeclarationError(location, "required field is missing")
     value = mapping[key]
-    if not isinstance(value, kind):
-        names = {dict: "a mapping", list: "a list", str: "text", int: "an integer"}
+    if (kind is not bool and isinstance(value, bool)) or not isinstance(value, kind):
+        names = {dict: "a mapping", list: "a list", str: "text", int: "an integer", bool: "a boolean"}
         raise DeclarationError(location, "expected " + names[kind])
     return value
 
@@ -90,19 +91,33 @@ class Inventory:
         self.validate_subscriptions()
 
     def validate_nodes(self):
-        slots, snis = set(), set()
+        addresses, slots, snis = set(), set(), set()
         for name, node in self.nodes.items():
             identifier(name, "nodes")
             path = f"nodes.{name}"
             address = field(node, "address", str, path)
             try:
-                ipaddress.IPv4Address(address)
+                parsed_address = ipaddress.IPv4Address(address)
             except ValueError:
                 raise DeclarationError(path + ".address", "expected an IPv4 address") from None
+            require(
+                not parsed_address.is_loopback
+                and not parsed_address.is_unspecified
+                and not parsed_address.is_multicast
+                and address not in addresses,
+                path + ".address",
+                "use a unique routable IPv4 address",
+            )
+            addresses.add(address)
             slot = field(node, "udpSlot", int, path)
-            require(type(slot) is int and 0 <= slot <= UDP_LAST - UDP_FIRST and slot not in slots,
+            require(0 <= slot <= UDP_LAST - UDP_FIRST and slot not in slots,
                     path + ".udpSlot", f"use a unique integer between 0 and {UDP_LAST - UDP_FIRST}")
             slots.add(slot)
+            field(node, "uefi", bool, path)
+            system = field(node, "system", str, path, "x86_64-linux")
+            require(system in {"x86_64-linux", "aarch64-linux"},
+                    path + ".system", "expected x86_64-linux or aarch64-linux")
+            node["system"] = system
             sni = field(node, "serverName", str, path)
             require(re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", sni) and sni not in snis,
                     path + ".serverName", "use a unique DNS server name")
@@ -111,14 +126,56 @@ class Inventory:
             require(re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", ssh_host),
                     path + ".sshHost", "expected a concrete SSH host alias")
             ssh = field(node, "sshServer", dict, path)
-            require(field(ssh, "rootAuthorizedKeys", list, path + ".sshServer"),
+            keys = field(ssh, "rootAuthorizedKeys", list, path + ".sshServer")
+            require(bool(keys) and all(isinstance(key, str) and bool(key.strip()) for key in keys),
                     path + ".sshServer.rootAuthorizedKeys", "supply at least one public key")
+            if "port" in ssh:
+                port = field(ssh, "port", int, path + ".sshServer")
+                require(1 <= port <= 65535, path + ".sshServer.port", "expected a TCP port")
+            if "disk" in node:
+                disk = field(node, "disk", str, path)
+                require(disk.startswith("/dev/"), path + ".disk", "expected a /dev block path")
+            if "swapMiB" in node:
+                swap = field(node, "swapMiB", int, path)
+                require(swap > 0, path + ".swapMiB", "expected a positive integer")
+            if "tags" in node:
+                tags = field(node, "tags", list, path)
+                require(all(isinstance(tag, str) and bool(tag) for tag in tags),
+                        path + ".tags", "expected nonempty tag strings")
             interface = field(node, "interface", str, path, "eth0")
             require(re.fullmatch(r"[a-zA-Z0-9_.:-]{1,15}", interface), path + ".interface", "invalid interface name")
-            for index, module in enumerate(field(node, "modules", list, path, [])):
+            dhcp = field(node, "dhcp", bool, path, True)
+            node_addresses = field(node, "addresses", list, path, [])
+            for index, cidr in enumerate(node_addresses):
+                require(isinstance(cidr, str) and "/" in cidr,
+                        f"{path}.addresses[{index}]", "expected an IP address with prefix length")
+                try:
+                    ipaddress.ip_interface(cidr)
+                except ValueError:
+                    raise DeclarationError(f"{path}.addresses[{index}]", "expected an IP address with prefix length") from None
+            require(dhcp or bool(node_addresses),
+                    path + ".addresses", "supply at least one static address when dhcp is false")
+            if "gateway" in node:
+                gateway = field(node, "gateway", str, path)
+                try:
+                    ipaddress.ip_address(gateway)
+                except ValueError:
+                    raise DeclarationError(path + ".gateway", "expected an IP address") from None
+            if "nameservers" in node:
+                nameservers = field(node, "nameservers", list, path)
+                require(bool(nameservers) and all(isinstance(ns, str) and bool(ns) for ns in nameservers),
+                        path + ".nameservers", "supply at least one nameserver")
+            modules = field(node, "modules", list, path, [])
+            for index, module in enumerate(modules):
                 require(isinstance(module, str) and re.fullmatch(r"[a-zA-Z0-9_/-]+\.nix", module)
                         and not module.startswith("/") and ".." not in module.split("/"),
                         f"{path}.modules[{index}]", "use a repository-relative Nix path")
+                require((ROOT / module).is_file(), f"{path}.modules[{index}]", "module file does not exist")
+            if "modules/vps/http-origin.nix" in modules:
+                prefix = self.secret(f"{name}-http-origin-prefix", f"secrets.{name}-http-origin-prefix")
+                require(isinstance(prefix, str) and bool(re.fullmatch(r"/[A-Za-z0-9_-]+", prefix)),
+                        f"secrets.{name}-http-origin-prefix",
+                        "expected / followed by one URL-safe path segment")
             for hostname, upstream in field(node, "web", dict, path, {}).items():
                 require(isinstance(hostname, str) and re.fullmatch(r"[a-z0-9][a-z0-9.-]*", hostname)
                         and hostname != sni, path + ".web", "use DNS names distinct from the proxy SNI")
@@ -305,7 +362,7 @@ class Inventory:
             cert = self.certificate_request(name)
             result["nodes"][name] = {
                 key: copy.deepcopy(value) for key, value in node.items()
-                if key in {"address", "serverName", "udpSlot", "uefi", "disk", "interface", "dhcp",
+                if key in {"address", "serverName", "udpSlot", "uefi", "system", "disk", "interface", "dhcp",
                            "addresses", "gateway", "nameservers", "sshHost", "sshServer",
                            "swapMiB", "tags", "modules", "web"}
             } | {"udpPort": self.port(name), "release": digest([self.server(name), cert])[:32],
