@@ -239,6 +239,7 @@ in
               whitelist ''${HOME}/.local/share/remmina
               whitelist ''${HOME}/.config/freerdp
               whitelist ''${HOME}/.ssh
+              read-only ''${HOME}/.ssh
               whitelist ''${DOWNLOADS}
               include ${profiles}/whitelist-common.inc
             ''

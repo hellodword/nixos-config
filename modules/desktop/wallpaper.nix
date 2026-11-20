@@ -25,11 +25,14 @@ let
       TimeoutStartSec = if action == "fetch" then "5min" else "20s";
       TimeoutStopSec = "5s";
       NoNewPrivileges = true;
+      CapabilityBoundingSet = "";
       ProtectSystem = "strict";
-      ProtectHome = "read-only";
       PrivateTmp = true;
+      PrivateDevices = true;
       RestrictSUIDSGID = true;
       LockPersonality = true;
+      SystemCallArchitectures = "native";
+      SystemCallFilter = [ "@system-service" ];
       UMask = "0077";
       RuntimeDirectory = "site-wallpaper";
       RuntimeDirectoryMode = "0700";
@@ -48,6 +51,21 @@ let
       ];
       InaccessiblePaths = [ config.site.storage.persistRoot ];
     }
+    // (
+      if action == "fetch" then
+        {
+          TemporaryFileSystem = "%h:ro";
+          BindPaths = [
+            "%h/Pictures/wallpaper"
+            "%h/.local/state/site-wallpaper"
+          ];
+          BindReadOnlyPaths = [ "-%h/.Xauthority" ];
+        }
+      else
+        {
+          ProtectHome = "read-only";
+        }
+    )
     // lib.optionalAttrs (action != "apply") {
       ExecCondition = "${pkgs.systemd}/bin/systemctl --user is-active --quiet ${lib.concatStringsSep " " targets}";
     };
