@@ -94,7 +94,11 @@ def prepare_dns(args, stage, policy, model):
 
 def prepare_proxy(args, stage, policy, base, provider_data, model, transports):
     listeners = {}
-    exclusions = domain_policy.read_json(args.fakeip_exclude, policy.get("jsoncTool", "hujsonfmt")) if args.fakeip_exclude else {}
+    exclusions = (
+        domain_policy.read_json(args.fakeip_exclude, policy.get("jsoncTool", "hujsonfmt"))
+        if args.fakeip_exclude and args.fakeip_exclude.exists()
+        else {}
+    )
     network = assembler.assemble(base, policy, transports, model, args.ipv4_only, exclusions)
     (stage / "network.json").write_text(json.dumps(network) + "\n")
     listeners["sing-box.service"] = [(inbound["listen"], inbound["listen_port"])
@@ -221,7 +225,9 @@ def recovery_step(primary):
         primary.add_note("Restoring previous policy: " + ipv6.error_summary(error))
 
 
-def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, restart_all=False):
+def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, restart_all=False, offline=None):
+    if offline is None:
+        offline = bool(watch) and underlay.safe_observe() is None
     current = root / "current"
     previous = current.resolve(strict=True)
     if previous.parent != root or not previous.name.startswith("generation-"):
@@ -240,6 +246,8 @@ def activate(root, stage, watch, run=command, wait_ready=ready, consumers=None, 
         recovering = state in {"failed", "activating"}
         if before.get(unit) != after[unit] or recovering or restart_all:
             changed.append(unit)
+            if offline and unit == "sing-box.service":
+                continue
             running = state in {"active", "reloading", "activating", "failed"}
             if unit in before_enabled and (restart_all or running):
                 restore.append(unit)
@@ -309,12 +317,15 @@ def commit_policy(args, stage, rule_store, snapshot, definitions, consumers):
         publish(args.root, stage)
     elif args.action == "ipv6":
         previous = ipv6.transition(args.root, args.ipv4_only,
-            lambda: activate(args.root, stage, False, consumers=consumers, restart_all=True),
-            lambda: ready(stage, consumers, command, wait_binding=args.watch_underlay),
+            lambda offline=False: activate(args.root, stage, False, consumers=consumers,
+                                           restart_all=True, offline=offline),
+            lambda offline=False: ready(stage, [u for u in consumers if not (offline and u == "sing-box.service")],
+                                        command, wait_binding=args.watch_underlay and not offline),
             lockdown=args.watch_underlay, tailscale=args.tailscale)
         shutil.rmtree(previous)
     elif args.action in {"apply", "apply-rules"}:
-        previous = activate(args.root, stage, args.watch_underlay, consumers=consumers)
+        offline = args.watch_underlay and underlay.safe_observe(args.ipv4_only) is None
+        previous = activate(args.root, stage, args.watch_underlay, consumers=consumers, offline=offline)
         saved = rule_store.state.copy()
         try:
             rule_store.state["active"] = snapshot
@@ -326,7 +337,7 @@ def commit_policy(args, stage, rule_store, snapshot, definitions, consumers):
             with recovery_step(error):
                 rule_store.save()
             with recovery_step(error):
-                activate(args.root, previous, args.watch_underlay, consumers=consumers)
+                activate(args.root, previous, args.watch_underlay, consumers=consumers, offline=offline)
             raise
         shutil.rmtree(previous)
 

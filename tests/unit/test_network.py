@@ -12,6 +12,9 @@ underlay = load_script("network/underlay.py")
 compiler = load_script("network/domain_policy.py")
 lockdown = load_script("network/lockdown.py")
 run_excluded = load_script("network/run_excluded.py")
+ipv6_mod = load_script("network/ipv6.py")
+runtime_policy = load_script("network/runtime_policy.py")
+exclude_mod = load_script("network/exclude.py")
 
 
 class NetworkConfiguration(unittest.TestCase):
@@ -138,7 +141,7 @@ class NetworkConfiguration(unittest.TestCase):
         ]
         events = []
 
-        def fake_observe():
+        def fake_observe(*_args, **_kwargs):
             return states.pop(0) if len(states) > 1 else states[0]
 
         with tempfile.TemporaryDirectory() as directory:
@@ -170,3 +173,63 @@ class NetworkConfiguration(unittest.TestCase):
                 self.assertEqual(server.recv(64), b"READY=1")
             self.assertEqual(json.loads(output.read_text()), {"interface": "eth0", "ipv4": "192.0.2.11"})
             self.assertEqual(events, ["stop", "start", "stop", "start"])
+
+    def test_ipv6_multiline_tunnel_json_and_offline_policy_activation(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        self.assertEqual(ipv6_mod.parse_tunnel_json('{"state":"connected"}'), {"state": "connected"})
+        self.assertEqual(
+            ipv6_mod.parse_tunnel_json('Warning: custom relay\n{\n  "state": "connected",\n  "details": {}\n}\n'),
+            {"state": "connected", "details": {}},
+        )
+        self.assertIsNone(ipv6_mod.parse_tunnel_json("unavailable"))
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            prev = root / "generation-old"
+            stage = root / "generation-new"
+            prev.mkdir()
+            stage.mkdir()
+            (prev / "activation.json").write_text(json.dumps({
+                "site-dns.service": {"dnsdist.conf": "a"},
+                "sing-box.service": {"network.json": "a", "provider.json": "a"},
+            }))
+            (stage / "activation.json").write_text(json.dumps({
+                "site-dns.service": {"dnsdist.conf": "b"},
+                "sing-box.service": {"network.json": "b", "provider.json": "b"},
+            }))
+            (root / "current").symlink_to("generation-old")
+            calls = []
+
+            def fake_run(*args, check=True, timeout=120):
+                calls.append(args)
+                if args[:3] == ("systemctl", "show", "--property=ActiveState"):
+                    unit = args[-1]
+                    return SimpleNamespace(returncode=0, stdout=(b"active\n" if unit == "site-dns.service" else b"inactive\n"))
+                return SimpleNamespace(returncode=0, stdout=b"")
+
+            waited = []
+            runtime_policy.activate(
+                root, stage, True, run=fake_run,
+                wait_ready=lambda gen, units, run: waited.append(list(units)),
+                consumers={"site-dns.service", "sing-box.service"},
+                offline=True,
+            )
+            self.assertEqual((root / "current").resolve(), stage.resolve())
+            self.assertEqual(waited, [["site-dns.service"]])
+
+    def test_exclude_privileged_accepts_root_caller_without_sudo_mismatch(self):
+        import os
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as directory:
+            req = Path(directory) / "request.json"
+            req.write_text(json.dumps({"action": "show", "dns": None}))
+            current_uid = os.getuid()
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(exclude_mod.os, "geteuid", side_effect=[0, current_uid]), \
+                 patch.object(exclude_mod, "excluded", return_value=True), \
+                 patch.object(exclude_mod, "manage_dns") as managed:
+                self.assertEqual(exclude_mod.privileged({"state": directory}, str(req)), 0)
+                managed.assert_called_once()

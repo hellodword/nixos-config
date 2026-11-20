@@ -28,6 +28,8 @@ let
       setpriv = "${pkgs.util-linux}/bin/setpriv";
       mount = "${pkgs.util-linux}/bin/mount";
       sudo = "/run/wrappers/bin/sudo";
+      pkexec = "/run/wrappers/bin/pkexec";
+      notifySend = "${pkgs.libnotify}/bin/notify-send";
       systemctl = "${pkgs.systemd}/bin/systemctl";
       exclude = "${config.services.mullvad-vpn.package}/bin/mullvad-exclude";
     }

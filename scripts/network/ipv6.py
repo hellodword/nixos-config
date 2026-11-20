@@ -81,13 +81,33 @@ def active(unit):
     return run("systemctl", "is-active", "--quiet", unit, check=False).returncode == 0
 
 
+def parse_tunnel_json(output):
+    text = output.strip()
+    if not text:
+        return None
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            return parsed
+    except json.JSONDecodeError:
+        pass
+    decoder = json.JSONDecoder()
+    for index, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(text[index:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict) and "state" in parsed:
+            return parsed
+    return None
+
+
 def tunnel_state(timeout=5):
     result = run("mullvad", "status", "--json", check=False, timeout=timeout)
-    # The CLI may precede JSON with an account warning for a custom peer.
-    for line in reversed(result.stdout.splitlines()):
-        if line.startswith("{"):
-            return json.loads(line).get("state", "unknown")
-    return "unavailable"
+    parsed = parse_tunnel_json(result.stdout)
+    return parsed.get("state", "unknown") if parsed else "unavailable"
 
 
 def wait_tunnel():
@@ -134,11 +154,18 @@ def interfaces(only4):
         for name in devices():
             # Device.modify changes the applied connection, leaving its profile
             # and credentials intact. Native Reapply restores that profile.
-            # Some device types are externally managed (Docker/Tailscale).
-            connection = run("nmcli", "-g", "GENERAL.CON-UUID", "device", "show", name).stdout.strip()
+            # Some device types are externally managed (Docker/Tailscale) or
+            # may disconnect while scanning.
+            shown = run("nmcli", "-g", "GENERAL.CON-UUID", "device", "show", name, check=False)
+            if shown.returncode != 0:
+                continue
+            connection = shown.stdout.strip()
             if connection and connection != "--":
-                run("nmcli", "device", "modify", name, "ipv6.method", "disabled",
-                    "ipv6.addresses", "", "ipv6.gateway", "", "ipv6.routes", "", "ipv6.dns", "")
+                modified = run("nmcli", "device", "modify", name, "ipv6.method", "disabled",
+                               "ipv6.addresses", "", "ipv6.gateway", "", "ipv6.routes", "", "ipv6.dns", "",
+                               check=False)
+                if modified.returncode != 0 and name in devices():
+                    modified.check_returncode()
         (SYSCTL / "default/disable_ipv6").write_text("1\n")
         (SYSCTL / "all/disable_ipv6").write_text("1\n")
     else:
@@ -146,11 +173,16 @@ def interfaces(only4):
         for path in SYSCTL.glob("*/disable_ipv6"):
             if path.parent.name == "all":
                 continue
-            path.write_text("0\n")
+            try:
+                path.write_text("0\n")
+            except OSError:
+                continue
         if address := configuration().get("dnsIngress"):
             run("ip", "-6", "address", "replace", address + "/128", "dev", "lo", "nodad")
         for name in devices():
-            run("nmcli", "device", "reapply", name)
+            reapplied = run("nmcli", "device", "reapply", name, check=False)
+            if reapplied.returncode != 0 and name in devices():
+                reapplied.check_returncode()
         if active("systemd-networkd.service"):
             run("networkctl", "reconfigure", "*")
         elif not active("NetworkManager.service"):
@@ -194,11 +226,14 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
             run("systemctl", "stop", "tailscaled.service")
         step = "applying interface settings"
         interfaces(only4)
+        observed = None
         if lockdown:
-            underlay.save(Path("/run/site-network-underlay/underlay.json"), underlay.observe(only4))
+            observed = underlay.safe_observe(only4)
+            underlay.save(Path("/run/site-network-underlay/underlay.json"), observed)
             run("systemctl", "restart", "site-network-routing.service")
+        offline = lockdown and observed is None
         step = "activating DNS and proxy configuration"
-        previous = apply_policy()
+        previous = apply_policy(offline=offline)
         step = "starting the local tunnel and Tailscale"
         if lockdown:
             run("systemctl", "restart", "site-network-connect.service")
@@ -213,8 +248,8 @@ def transition(root, only4, apply_policy, wait_policy, lockdown=False, tailscale
         step = "waiting for physical bindings and network services"
         if watching:
             run("systemctl", "start", "site-network-underlay.service")
-        wait_policy()
-        if lockdown:
+        wait_policy(offline=offline)
+        if lockdown and not offline:
             wait_tunnel()
         current["phase"] = "ready"
         save(root, current)
@@ -268,11 +303,19 @@ def status(root, consumers, lockdown=False, tailscale=False):
     applied = root / "current/ipv6-mode.json"
     actual = json.loads(applied.read_text())["ipv4_only"] if applied.exists() else None
     print("DNS/proxy generation: " + ("IPv4 only" if actual else "normal" if actual is False else "unavailable"))
-    complete = actual == only4 and all(active(unit) for unit in consumers)
+    offline = False
+    if lockdown:
+        import underlay
+        offline = underlay.safe_observe(only4) is None
+        if offline:
+            print("Physical underlay: offline")
+    expected_units = [u for u in consumers if not (offline and u == "sing-box.service")]
+    complete = actual == only4 and all(active(unit) for unit in expected_units)
     if lockdown:
         tunnel = tunnel_state()
         print("Mullvad tunnel: " + tunnel)
-        complete &= tunnel == "connected"
+        if not offline:
+            complete &= tunnel == "connected"
     if tailscale:
         print("Tailscale service: " + ("active" if active("tailscaled.service") else "inactive"))
     if only4:

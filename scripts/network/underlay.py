@@ -87,9 +87,9 @@ def notify_ready():
         channel.sendall(b"READY=1")
 
 
-def safe_observe():
+def safe_observe(ipv4_only=None):
     try:
-        return observe()
+        return observe(ipv4_only=ipv4_only)
     except (OSError, ValueError, subprocess.SubprocessError):
         return None
 

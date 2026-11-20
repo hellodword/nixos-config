@@ -154,7 +154,7 @@ let
             ++ lib.optional (cfg.purposeGroups != [ ]) "-${cfg.selectionsFile}"
             ++ lib.optional (
               cfg.dns.fakeIP.enable && cfg.dns.fakeIP.excludeFile != null
-            ) cfg.dns.fakeIP.excludeFile
+            ) "-${cfg.dns.fakeIP.excludeFile}"
             ++ lib.optionals cfg.lockdown.enable [
               "/var/lib/site-network/gateway.key"
               "/var/lib/site-network/client.pub"
@@ -488,12 +488,20 @@ in
       after = [ "site-network-address-family.service" ];
       serviceConfig = {
         Type = "oneshot";
-        # Collect a burst before scanning. Events during the scan create the next request.
+        # Collect a burst before scanning. Events during the scan create the next request;
+        # restore the marker if reconciliation fails so path/service recovery retries cleanly.
         ExecStartPre = [
           "${pkgs.coreutils}/bin/sleep 3"
           "${pkgs.coreutils}/bin/rm -f ${reconcilePending}"
         ];
         ExecStart = "${runtimeCommand} reconcile";
+        ExecStopPost = pkgs.writeShellScript "restore-ipv6-reconcile-on-failure" ''
+          if [ "''${SERVICE_RESULT:-success}" != "success" ]; then
+            exec ${requestReconcile}
+          fi
+        '';
+        Restart = "on-failure";
+        RestartSec = "2s";
       };
     };
     networking.networkmanager.dispatcherScripts = lib.mkIf config.networking.networkmanager.enable [
@@ -508,7 +516,7 @@ in
       }
     ];
     services.udev.extraRules = ''
-      ACTION=="add", SUBSYSTEM=="net", RUN+="${requestReconcile}"
+      ACTION=="add", SUBSYSTEM=="net", ENV{INTERFACE}!="veth*", RUN+="${requestReconcile}"
     '';
     environment.etc."gai.conf".text = ''
       precedence ::1/128       50

@@ -209,6 +209,27 @@
       }
     ];
   }
+  // lib.optionalAttrs fakeIP {
+    "20-unmapped-fakeip.json".rules = [
+      {
+        type = "logical";
+        mode = "and";
+        rules = [
+          {
+            ip_cidr = [
+              "198.18.0.0/15"
+              "2001:2::/48"
+            ];
+          }
+          {
+            domain_regex = [ "." ];
+            invert = true;
+          }
+        ];
+        action = "reject";
+      }
+    ];
+  }
   // lib.optionalAttrs tailscale {
     "21-tailnet-ip.json".rules = [
       {

@@ -102,10 +102,20 @@ let
       # Keep one process owner for the profile and its DNS lifetime.
       exec 9>"''${XDG_RUNTIME_DIR:?}/${name}.lock"
       if ! ${pkgs.util-linux}/bin/flock --nonblock 9; then
-        echo '${name} is running; close its window before starting another DNS environment.' >&2
+        message='${name} is running; close its window before starting another DNS environment.'
+        if [[ ! -t 2 ]]; then
+          ${pkgs.libnotify}/bin/notify-send -u normal "${name}" "$message" || true
+        fi
+        echo "$message" >&2
         exit 1
       fi
-      exec /run/current-system/sw/bin/network-exclude "''${dns[@]}" -- ${command} "$@"
+      /run/current-system/sw/bin/network-exclude "''${dns[@]}" -- ${command} "$@" || {
+        status=$?
+        if [[ ! -t 2 ]]; then
+          ${pkgs.libnotify}/bin/notify-send -u critical "${name}" "Failed to launch excluded browser (exit $status)." || true
+        fi
+        exit "$status"
+      }
     '';
   cliProfile = pkgs.writeText "bitwarden-cli.profile" ''
     blacklist ${nixosConfig.site.storage.persistRoot}

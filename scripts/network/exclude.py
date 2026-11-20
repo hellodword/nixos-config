@@ -159,7 +159,8 @@ def privileged(policy, request_path):
     if os.geteuid() != 0 or not excluded(Path("/proc/self/cgroup").read_text()):
         raise RuntimeError("Mullvad process exclusion is not available")
     with open(request_path) as handle:
-        uid = int(os.environ.get("SUDO_UID", os.getuid()))
+        caller_env = os.environ.get("SUDO_UID") or os.environ.get("PKEXEC_UID")
+        uid = int(caller_env) if caller_env is not None else os.geteuid()
         if os.fstat(handle.fileno()).st_uid != uid:
             raise RuntimeError("request owner differs from the calling user")
         request = json.load(handle)
@@ -227,17 +228,34 @@ def main():
             os.execvpe(command[0], command, os.environ)
         request = {"action": "run", "dns": parsed.dns, "command": command,
                    "cwd": os.getcwd(), "environment": dict(os.environ)}
-    # sudo transports only the request filename. User environment is restored
+    # sudo/pkexec transports only the request filename. User environment is restored
     # after dropping privileges, including PATH and SSH_AUTH_SOCK.
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") if os.geteuid() != 0 else None
     with tempfile.NamedTemporaryFile(mode="w", prefix="network-exclude-", suffix=".json",
-                                     dir=os.environ.get("XDG_RUNTIME_DIR")) as handle:
+                                     dir=runtime_dir) as handle:
         json.dump(request, handle)
         handle.flush()
         command = [policy["exclude"], policy["python"], "-Es", __file__, policy_path,
                    "--privileged", handle.name]
-        if os.geteuid() != 0:
+        child_env = None
+        if os.geteuid() == 0:
+            child_env = {k: v for k, v in os.environ.items() if k not in {"SUDO_UID", "SUDO_GID", "PKEXEC_UID"}}
+        elif sys.stdin.isatty():
             command = [policy["sudo"], "--", *command]
-        return wait_command(subprocess.Popen(command))
+        elif subprocess.run([policy["sudo"], "-n", "true"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+            command = [policy["sudo"], "-n", "--", *command]
+        elif (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")) and Path(
+            policy.get("pkexec", "/run/wrappers/bin/pkexec")
+        ).is_file():
+            command = [policy.get("pkexec", "/run/wrappers/bin/pkexec"), *command]
+        else:
+            message = "Authentication requires a terminal (sudo) or an active desktop Polkit agent."
+            notify_send = policy.get("notifySend")
+            if notify_send and (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY")):
+                subprocess.run([notify_send, "-u", "critical", "network-exclude", message], check=False)
+            raise RuntimeError(message)
+        return wait_command(subprocess.Popen(command, env=child_env))
 
 
 if __name__ == "__main__":
