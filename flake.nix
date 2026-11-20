@@ -20,12 +20,28 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.home-manager.follows = "home-manager";
     };
-    nixos-hardware.url = "github:NixOS/nixos-hardware/master";
-    # Keep installation-sensitive revisions until a separately validated upgrade.
-    disko.url = "github:nix-community/disko/5a2dc95464080764b9ca1b82b5d6d981157522be";
-    impermanence.url = "github:nix-community/impermanence/fa627f4c8b8e92f58f58a73d99ee4e1304e64eb2";
-    lanzaboote.url = "github:nix-community/lanzaboote/001e560fffc8f0235e9db20ebeb4ccde0ade1caf";
-    sops-nix.url = "github:Mic92/sops-nix/dcd241ba97088c22569d1573286e1b9daad340c0";
+    nixos-hardware = {
+      url = "github:NixOS/nixos-hardware/master";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # Update installation and boot inputs independently with nix flake update <input>.
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    impermanence = {
+      url = "github:nix-community/impermanence";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.home-manager.follows = "home-manager";
+    };
+    lanzaboote = {
+      url = "github:nix-community/lanzaboote";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    sops-nix = {
+      url = "github:Mic92/sops-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     sing-box-geosite = {
       url = "github:lyc8503/sing-box-rules/rule-set-geosite";
       flake = false;
@@ -42,40 +58,72 @@
       url = "github:catppuccin/fcitx5";
       flake = false;
     };
-    reproducible-violentmonkey.url = "github:hellodword/reproducible-violentmonkey";
+    reproducible-violentmonkey = {
+      url = "github:hellodword/reproducible-violentmonkey";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nix-index-database = {
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     oranc.url = "github:linyinfeng/oranc";
-    agents-misc.url = "github:hellodword/agents-misc";
-    colmena.url = "github:nix-community/colmena";
+    agents-misc = {
+      url = "github:hellodword/agents-misc";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    colmena = {
+      url = "github:nix-community/colmena";
+      inputs.nixpkgs.follows = "nixpkgs-remote";
+      inputs.stable.follows = "nixpkgs-remote";
+    };
   };
   outputs =
     { self, nixpkgs, ... }@inputs:
     let
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       mkHost =
-        host: userName:
+        {
+          host,
+          userName,
+          system ? "x86_64-linux",
+        }:
         nixpkgs.lib.nixosSystem {
           modules = [
+            { nixpkgs.hostPlatform = nixpkgs.lib.mkDefault system; }
             ./modules
             host
           ];
           specialArgs = { inherit inputs userName; };
         };
-      synthetic = mkHost ./tests/fixtures/laptop.nix "fixture";
+      synthetic = mkHost {
+        host = ./tests/fixtures/laptop.nix;
+        userName = "fixture";
+      };
       vps = import ./nix/vps.nix { inherit inputs; };
     in
     {
-      nixosConfigurations.laptop2 = mkHost ./hosts/laptop2 "ubuntu";
+      nixosConfigurations.laptop2 = mkHost {
+        host = ./hosts/laptop2;
+        userName = "ubuntu";
+      };
       nixosModules.default = import ./modules;
       nixosModules.vps = import ./profiles/vps;
       colmenaHive = inputs.colmena.lib.makeHive vps.hive;
       vpsBootstrap = builtins.mapAttrs (_: node: node.config.system.build.image) vps.bootstrap;
-      packages.${system} = import ./nix/packages.nix { inherit pkgs inputs system; };
-      devShells.${system} = import ./nix/dev-shells.nix { inherit inputs system; };
+      packages = forAllSystems (
+        system:
+        import ./nix/packages.nix {
+          pkgs = nixpkgs.legacyPackages.${system};
+          inherit inputs system;
+        }
+      );
+      devShells = forAllSystems (system: import ./nix/dev-shells.nix { inherit inputs system; });
       checks.${system} = import ./nix/checks.nix {
         inherit pkgs inputs;
         laptop = synthetic;

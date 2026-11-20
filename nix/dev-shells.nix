@@ -62,11 +62,13 @@ let
           restic
           mkpasswd
           distribution
-          inputs.agents-misc.packages.${system}.vm-test-submit
           tools.dnsdist
           tools.dnsproxy
           tools.dns-collector
         ]
+        ++ lib.optional (
+          laptop && inputs.agents-misc.packages.${system} ? vm-test-submit
+        ) inputs.agents-misc.packages.${system}.vm-test-submit
         ++ lib.optionals (!laptop) [
           nix
           netcat-openbsd

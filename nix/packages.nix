@@ -10,6 +10,8 @@ in
   oranc = inputs.oranc.packages.${system}.oranc;
   vps-python = remote.python3.withPackages (p: [ p.pyyaml ]);
   wrangler = import ./wrangler.nix { pkgs = remote; };
+}
+// pkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isx86_64 {
   # The existing laptop fix is also a public, reusable cache output.
   virtualbox = pkgs.virtualbox.overrideAttrs (old: {
     postFixup = (old.postFixup or "") + ''
