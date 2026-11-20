@@ -2,6 +2,7 @@
 set -euo pipefail
 
 : "${NIX_IMAGE:?NIX_IMAGE must be set by ./.github/actions/nix-env}"
+: "${NIX_CI_STATE:?NIX_CI_STATE must be set by ./.github/actions/nix-env}"
 : "${NIX_CONFIG:?NIX_CONFIG must be set by ./.github/actions/nix-env}"
 : "${NIX_USER_CONF_FILES:?NIX_USER_CONF_FILES must be set by ./.github/actions/nix-env}"
 
@@ -24,11 +25,9 @@ fi
 exec docker run \
   --ulimit nofile=65536:65536 \
   --workdir /workspace \
+  --volume "$NIX_CI_STATE/gitconfig:/root/.gitconfig:ro" \
   --env NIX_USER_CONF_FILES \
   --env NIX_CONFIG \
-  --env GIT_CONFIG_COUNT=1 \
-  --env GIT_CONFIG_KEY_0=safe.directory \
-  --env GIT_CONFIG_VALUE_0=/workspace \
   "${docker_args[@]}" \
   "$NIX_IMAGE" \
   "$@"

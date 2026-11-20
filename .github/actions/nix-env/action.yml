@@ -24,6 +24,10 @@ runs:
         http-connections = 8
         CONFIG
         cp "$state/nix-base.conf" "$state/nix.conf"
+        cat > "$state/gitconfig" <<'GITCONFIG'
+        [safe]
+          directory = /workspace
+        GITCONFIG
 
         nix_config=$(printf 'experimental-features = nix-command flakes\naccess-tokens = github.com=%s\n' "$GITHUB_TOKEN")
         delimiter="EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')"
