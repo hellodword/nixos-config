@@ -116,9 +116,9 @@ Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网�
 
 `firefox` 和桌面入口读取 `~/.config/mozilla/firefox/default`，`firefox-origin` 读取 `origin`；显式 `--profile` 或 `-P` 使用指定资料。默认资料使用 Arkenfox 加项目覆盖项，保留会话、cookie 和登录资料，并安装 Violentmonkey；`origin` 保持独立。Firefox 与 Chrome 的 DNS 走系统分流。VS Code 既支持声明式扩展也支持界面安装，扩展数据与编辑器运行状态持久化。
 
-Sway 下的 VS Code 和 Bitwarden Desktop 使用 XWayland，并通过系统 GTK 模块缓存加载 Fcitx。VS Code 的编辑器、集成终端和 Dev Container 支持中文输入，Bitwarden 沿用 Firejail 沙箱和桌面密钥环。命令行、菜单和文件关联使用同一启动配置。分数缩放时的文字清晰度在实际显示器上确认。
+Sway 下的 VS Code 和 Bitwarden Desktop 通过共享包装器 [nix/sway-xwayland.nix](../nix/sway-xwayland.nix) 以 XWayland 模式运行（`unset NIXOS_OZONE_WL` 并注入 `--ozone-platform=x11`），同时显式设置 `GTK_IM_MODULE=fcitx` 与 `GTK_IM_MODULE_FILE=/run/current-system/sw/etc/gtk-3.0/immodules.cache`。由于 Sway 会话默认清空 `GTK_IM_MODULE` 以供原生 Wayland 应用使用 `zwp_text_input_v3`，切换至 XWayland 的 Electron 进程必须附带上述 GTK3 模块配置才能在普通环境与 Firejail 沙箱内正常加载 Fcitx5 中文输入（覆盖 VS Code 编辑器、集成终端、Dev Container 及 Bitwarden 搜索框）。
 
-这项运行配置绕过原生 Wayland 首次键盘映射与输入法激活之间的初始化竞态，对应 [Chromium 的 XKB 状态保护](https://github.com/chromium/chromium/commit/564344ab9eb89b305366e60b4b4f8ab2f70e791c)。更新应用时，VS Code 核对其内置 Electron，Bitwarden 核对 nixpkgs 为它选择的 Electron，确认 Chromium 基线或回移补丁包含该修复；以项目实际构建出的包为准。确认后按应用移除 Sway 专用启动分支，恢复原生 Wayland，在普通和 CPU 竞争环境各运行两次全新 Sway 应用场景，验证中文编辑与保存、容器重开、终端命令、Vaultwarden 登录与搜索、退出提醒。通过后移除对应分支及说明；[应用验证](validation.md)保留运行版本和显示后端证据。
+该 XWayland 分支用于规避 Chromium `< 158.0.8106.0` 在 Sway + Fcitx5 下的原生 Wayland 启动崩溃竞态：窗口首次获得焦点时，Fcitx5 发送的输入法激活事件可能早于 Sway 下发的首份 XKB keymap 到达，导致 `XkbKeyboardLayoutEngine::UpdateModifiers()` / `GetDomCodeByKeysym()` 解引用空的 `xkb_state_` 并在 `xkb_state_update_mask()` 触发 `SIGSEGV`（[Chromium commit `564344ab9eb8`](https://github.com/chromium/chromium/commit/564344ab9eb89b305366e60b4b4f8ab2f70e791c)，自 `158.0.8106.0` 起包含修复；当前锁定的 Electron 43 内置 `Chrome/150.0.7871.250`）。后续升级时通过编译产物的 `Chrome/<version>` 字符串确认达到 `158.0.8106.0`（或确认 nixpkgs 已回移该补丁）并通过 `vm-applications` Sway 全流程后，方可移除对应包装。
 
 ## 音频与触控板
 
