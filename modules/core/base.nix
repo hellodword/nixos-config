@@ -128,7 +128,6 @@ in
       nixd
       just
     ];
-    systemd.suppressedSystemUnits = [ "systemd-machine-id-commit.service" ];
     programs.fuse.userAllowOther = true;
     security.pam.loginLimits = [
       {
