@@ -13,33 +13,49 @@ import tempfile
 import time
 
 
+WRANGLER_CONFIGS = ("wrangler.json", "wrangler.jsonc", "wrangler.toml")
+MASKED_PROJECT_DIRS = ("tmp", ".wrangler", ".config", ".secrets", "nixos-privates")
+
+
 def main():
     policy = json.loads(Path(sys.argv[1]).read_text())
     arguments = sys.argv[2:]
-    root = Path(subprocess.check_output(
-        [policy["git"], "rev-parse", "--show-toplevel"], text=True).strip()).resolve()
+    help_query = bool(arguments) and arguments[0] in {"-h", "--help", "-V", "--version", "version", "help"}
+    top = subprocess.run([policy["git"], "rev-parse", "--show-toplevel"], capture_output=True, text=True)
     cwd, home = Path.cwd(), Path.home()
     os.umask(0o077)
 
-    def directory(path):
-        if not path.resolve().is_relative_to(root):
-            raise RuntimeError(f"tool directory must stay inside the project: {path}")
-        path.mkdir(parents=True, exist_ok=True, mode=0o700)
-        path.chmod(0o700)
-        return path
-
-    storage = directory(root / "tmp/.cache/nixos-config-tools" / policy["name"])
-    filesystem = subprocess.check_output(
-        [policy["stat"], "-f", "-c", "%T", str(storage)], text=True).strip()
-    if filesystem in {"tmpfs", "ramfs"}:
-        raise RuntimeError(f"{storage} is on {filesystem}; use the laptop's persistent workspace")
-    cache, logs, temporary = [directory(storage / name) for name in ("cache", "logs", "tmp")]
-    rules = "".join(
-        f"e {json.dumps(str(path).replace('%', '%%'), ensure_ascii=False)} - - - {age} -\n"
-        for path, age in ((cache, "30d"), (logs, "30d"), (temporary, "1d")))
-    subprocess.run([policy["tmpfiles"], "--user", "--clean", "-"], input=rules, text=True, check=True)
-
     with ExitStack() as stack:
+        if top.returncode == 0:
+            root = Path(top.stdout.strip()).resolve()
+            in_repo = True
+        elif not policy["project"] or help_query:
+            root = Path(stack.enter_context(
+                tempfile.TemporaryDirectory(prefix=f"nixos-config-tool-{policy['name']}-")
+            )).resolve()
+            in_repo = False
+        else:
+            raise RuntimeError("run this tool inside a Git checkout")
+
+        def directory(path):
+            if not path.resolve().is_relative_to(root):
+                raise RuntimeError(f"tool directory must stay inside the project: {path}")
+            path.mkdir(parents=True, exist_ok=True, mode=0o700)
+            path.chmod(0o700)
+            return path
+
+        storage = directory(root / "tmp/.cache/nixos-config-tools" / policy["name"])
+        if in_repo and os.environ.get("NIXOS_CONFIG_ALLOW_TMPFS") != "1":
+            filesystem = subprocess.check_output(
+                [policy["stat"], "-f", "-c", "%T", str(storage)], text=True).strip()
+            if filesystem in {"tmpfs", "ramfs"}:
+                raise RuntimeError(f"{storage} is on {filesystem}; use the laptop's persistent workspace")
+        cache, logs, temporary = [directory(storage / name) for name in ("cache", "logs", "tmp")]
+        rules = "".join(
+            f"e {json.dumps(str(path).replace('%', '%%'), ensure_ascii=False)} - - - {age} -\n"
+            for path, age in ((cache, "30d"), (logs, "30d"), (temporary, "1d")))
+        subprocess.run([policy["tmpfiles"], "--user", "--clean", "-"], input=rules, text=True, check=True)
+
         def lock(path):
             fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             stack.callback(os.close, fd)
@@ -83,15 +99,27 @@ def main():
         mount(passwd, "/etc/passwd")
         mount(group, "/etc/group")
         masked = []
-        if policy["project"]:
+        writable_roots = [directory(root / name).resolve() for name in policy["writable"]]
+        if policy["project"] and in_repo:
             mount(root)
-            # Decrypted deployment files and other tools' credentials need separate grants.
-            for name in ("tmp", ".wrangler"):
-                if (root / name).exists():
-                    args += ["--tmpfs", str(root / name)]
-                    masked.append(str(root / name))
-        for name in policy["writable"]:
-            mount(directory(root / name), writable=True)
+            # Decrypted deployment files and local credentials need explicit grants.
+            for name in MASKED_PROJECT_DIRS:
+                target = root / name
+                if target.exists() or target.is_symlink():
+                    if target.is_dir() and not target.is_symlink():
+                        args += ["--tmpfs", str(target)]
+                        masked.append(str(target))
+                    else:
+                        args += ["--ro-bind", "/dev/null", str(target)]
+            for key_file in dict.fromkeys([root / "keys.txt", *sorted(root.glob("*.key"))]):
+                if key_file.exists() or key_file.is_symlink():
+                    if key_file.is_dir() and not key_file.is_symlink():
+                        args += ["--tmpfs", str(key_file)]
+                        masked.append(str(key_file))
+                    else:
+                        args += ["--ro-bind", "/dev/null", str(key_file)]
+        for writable_path in writable_roots:
+            args.extend(["--bind", str(writable_path), str(writable_path)])
         mount(cache, writable=True)
         mount(logs, writable=True)
         mount(work, "/tmp", writable=True)
@@ -114,11 +142,25 @@ def main():
             mount(directory(root / ".wrangler"), home / ".config/.wrangler", writable=True)
             environment.update(WRANGLER_SEND_METRICS="false", WRANGLER_LOG_PATH=str(logs),
                                WRANGLER_CACHE_DIR=str(cache), MINIFLARE_CACHE_DIR=str(cache / "miniflare"))
-            if (cwd / "wrangler.json").is_file():
-                mount(cwd)
-                directory(cwd / ".wrangler")
-                mount(work, cwd / ".wrangler", writable=True)
+            if any((cwd / name).is_file() for name in WRANGLER_CONFIGS):
+                wrangler_work = work / "wrangler-cwd"
+                wrangler_work.mkdir(mode=0o700)
+                args += ["--tmpfs", str(cwd)]
+                for entry in sorted(cwd.iterdir(), key=lambda p: p.name):
+                    if entry.name == ".wrangler":
+                        continue
+                    if entry.is_symlink():
+                        args += ["--symlink", os.readlink(entry), str(cwd / entry.name)]
+                    else:
+                        args += ["--ro-bind", str(entry), str(cwd / entry.name)]
+                args += ["--dir", str(cwd / ".wrangler"), "--bind", str(wrangler_work), str(cwd / ".wrangler")]
+                masked.append(str(cwd))
             else:
+                args += ["--dir", str(cwd)]
+        else:
+            in_writable = any(cwd.is_relative_to(w) for w in writable_roots)
+            in_masked = any(cwd.is_relative_to(Path(m)) for m in masked)
+            if not (policy["project"] and in_repo) or (in_masked and not in_writable) or not cwd.is_relative_to(root):
                 args += ["--dir", str(cwd)]
 
         variables = ["TERM", "COLORTERM", "NO_COLOR", "CI"] + policy["passEnvironment"]

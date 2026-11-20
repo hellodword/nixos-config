@@ -23,12 +23,14 @@ let
         export npm_config_cache="$devtools_cache/npm"
         export EDITOR=vim
         mkdir -p -m 700 "$XDG_CACHE_HOME" "$TMPDIR" "$HOME/.cache/nix"
-        case "$(${pkgs.coreutils}/bin/stat -f -c %T "$TMPDIR")" in
-          tmpfs|ramfs)
-            printf 'Use a persistent checkout for development tools: %s\n' "$devtools_project" >&2
-            exit 1
-            ;;
-        esac
+        if [[ "''${NIXOS_CONFIG_ALLOW_TMPFS:-0}" != 1 ]]; then
+          case "$(${pkgs.coreutils}/bin/stat -f -c %T "$TMPDIR")" in
+            tmpfs|ramfs)
+              printf 'Use a persistent checkout for development tools: %s\n' "$devtools_project" >&2
+              exit 1
+              ;;
+          esac
+        fi
         # Reuse the laptop's persistent Nix cache across both shells and wrappers.
         if [[ ! -e "$XDG_CACHE_HOME/nix" ]]; then
           ln -s "$HOME/.cache/nix" "$XDG_CACHE_HOME/nix"
