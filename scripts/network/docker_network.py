@@ -30,7 +30,7 @@ class Docker(http.client.HTTPConnection):
         self.sock.connect("/run/docker.sock")
 
 
-def topology():
+def topology(ipv6_pending):
     connection = Docker("localhost", timeout=10)
     try:
         connection.request("GET", "/networks")
@@ -67,10 +67,10 @@ def topology():
                     address = str(ipaddress.ip_interface(f"{gateway}/{prefix}"))
                     if address not in addresses[name]:
                         run("ip", "-6", "address", "replace", address, "dev", name)
-    if reconcile:
+    if reconcile and ipv6_pending is not None:
         # Docker may enable IPv6 explicitly while creating a bridge. The mode
         # coordinator owns host sysctls and serializes changes with on/off.
-        run("systemctl", "--no-block", "start", "site-network-ipv6-reconcile.service")
+        ipv6_pending.touch()
     routes = {}
     for family in ("-4", "-6"):
         for route in json.loads(run("ip", family, "-j", "route", "show", "table", "main").stdout):
@@ -193,7 +193,7 @@ def notify():
             channel.sendall(b"READY=1")
 
 
-def watch(dns, lockdown, local_access):
+def watch(dns, lockdown, local_access, ipv6_pending):
     if lockdown:
         if run("docker", "network", "inspect", "site-direct", check=False).returncode:
             run("docker", "network", "create", "--driver", "bridge",
@@ -219,7 +219,7 @@ def watch(dns, lockdown, local_access):
             previous_neighbors = None
             rules("add")
             while True:
-                bridges, routes = topology()
+                bridges, routes = topology(ipv6_pending)
                 routing(routes)
                 current = (bridges, routes)
                 if current != previous or run("nft", "list", "table", "inet", TABLE, check=False).returncode:
@@ -264,9 +264,13 @@ if __name__ == "__main__":
     parser.add_argument("--dns", action="store_true")
     parser.add_argument("--lockdown", action="store_true")
     parser.add_argument("--local-access", action="store_true")
+    parser.add_argument("--ipv6-pending", type=Path)
     args = parser.parse_args()
     try:
-        watch(args.dns, args.lockdown, args.local_access) if args.action == "run" else stop()
+        if args.action == "run":
+            watch(args.dns, args.lockdown, args.local_access, args.ipv6_pending)
+        else:
+            stop()
     except (OSError, ValueError, RuntimeError, http.client.HTTPException, subprocess.SubprocessError) as error:
         print(f"Docker local networking: {error}", file=sys.stderr)
         if isinstance(error, subprocess.CalledProcessError):

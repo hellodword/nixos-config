@@ -9,6 +9,7 @@ let
   dns = config.site.network.dns.enable or false;
   lockdown = config.site.network.lockdown.enable or false;
   localAccess = config.site.network.localAccess.enable or false;
+  ipv6Pending = config.systemd.paths.site-network-ipv6-reconcile.pathConfig.PathExists or null;
   command = "${pkgs.python3}/bin/python3 ${../../scripts/network}/docker_network.py";
 in
 {
@@ -41,13 +42,14 @@ in
         config.virtualisation.docker.package
         pkgs.iproute2
         pkgs.nftables
-        pkgs.systemd
       ];
       serviceConfig = (import ../../lib/service-hardening.nix) // {
         DynamicUser = false;
         Type = "notify";
+        ReadWritePaths = lib.optional (ipv6Pending != null) (builtins.dirOf ipv6Pending);
         ExecStart =
           "${command} run"
+          + lib.optionalString (ipv6Pending != null) " --ipv6-pending ${lib.escapeShellArg ipv6Pending}"
           + lib.optionalString dns " --dns"
           + lib.optionalString lockdown " --lockdown"
           + lib.optionalString localAccess " --local-access";

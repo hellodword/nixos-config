@@ -171,7 +171,7 @@ OpenSSH 仅通过此 ProxyCommand 建立连接，代理不可用时连接失败�
 
 ## 地址族与运行时切换
 
-laptop profile 通过 `site.network.ipv6.enable = false` 默认使用 IPv4。需要 IPv6 时，可在本次启动期间启用；其他主机可通过同一选项声明自己的默认值。
+laptop profile 通过 `site.network.ipv6.enable = false` 默认使用 IPv4，开机时在网络连接建立前阻断 IPv6。需要 IPv6 时，可在本次启动期间启用。其他主机可通过同一选项声明自己的默认值。
 
 ```sh
 sudo network-ipv6 status
@@ -187,7 +187,9 @@ sudo network-ipv6 off
 
 命令控制宿主和转发出口。容器或虚拟机内部的 IPv6 配置、已经缓存在其中的 AAAA 记录，以及远端代理服务器自身的网络配置，由各自环境管理。关闭期间经过本机出口的原生 IPv6 流量被阻断。
 
-临时覆盖只记录在 `/run/site-network-policy/`，重启回到声明式默认值。物理连接由 NetworkManager 管理；重连、新接口出现、服务重启及 `network-policy apply` 继续遵守当前模式。NetworkManager 修改的是当前连接；启用 IPv6 时重新应用保存的连接配置，Wi-Fi profile 与凭据保持原样。Mullvad 通过原生 CLI 配置，启动连接时按当前模式重新应用。
+IPv4 模式下，Wi-Fi 重连、新网卡出现或 Docker 网桥启用 IPv6 时，系统会合并短时间内的通知，统一核对接口。核对期间又有接口变化，系统会再核对一轮。`sudo network-ipv6 status` 可查看哪些接口仍启用了 IPv6，以及 IPv6 阻断表是否就位。
+
+临时覆盖保存在 `/run/site-network-policy/`。服务重启和 `network-policy apply` 都沿用当前模式。NetworkManager 调整活动连接，启用 IPv6 时重新应用保存的连接配置，Wi-Fi 继续使用已有的凭据。Mullvad 在启动连接时通过原生 CLI 应用当前模式。
 
 切换期间会短暂重启 DNS、sing-box、本地隧道及已运行的 Tailscale，现有连接可能中断。先验证候选配置，再建立 IPv6 阻断并启用对应配置；启用双栈时先放行 `lo` 上源、目的地址均为 `::1` 的通信，让 DNS 和代理完成本地就绪检查，随后启动本地隧道及 Tailscale，再解除其余 IPv6 阻断。命令等待物理出口绑定、服务监听和隧道共同就绪后才报告成功。配置验证不通过时保留当前模式；切换开始后失败则恢复完整 IPv6 阻断（含回环），命令返回非零，`status` 显示 `incomplete`。检查相应 journal 后重新执行目标模式。`status` 同时检查接口、包过滤表、配置代次、消费者服务及 Mullvad 隧道状态。
 

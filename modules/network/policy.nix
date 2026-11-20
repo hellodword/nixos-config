@@ -81,6 +81,13 @@ let
     ''}
   '';
   runtimeRoot = "/run/site-network-policy";
+  reconcileDirectory = "/run/site-network-ipv6-reconcile";
+  reconcilePending = "${reconcileDirectory}/pending";
+  requestReconcile = pkgs.writeShellScript "request-ipv6-reconcile" ''
+    set -eu
+    ${pkgs.coreutils}/bin/mkdir -p -m 0700 ${reconcileDirectory}
+    exec ${pkgs.coreutils}/bin/touch ${reconcilePending}
+  '';
   rulesState = "/var/lib/site-network-rules";
   consumers =
     lib.optionals cfg.dns.enable (
@@ -469,10 +476,23 @@ in
         ExecStart = "${runtimeCommand} initialize";
       };
     };
+    systemd.tmpfiles.rules = [ "d ${reconcileDirectory} 0700 root root -" ];
+    systemd.paths.site-network-ipv6-reconcile = {
+      description = "Watch for interfaces needing address family configuration";
+      wantedBy = [ "paths.target" ];
+      pathConfig.PathExists = reconcilePending;
+    };
     systemd.services.site-network-ipv6-reconcile = {
       description = "Apply the current address family to connected interfaces";
+      requires = [ "site-network-address-family.service" ];
+      after = [ "site-network-address-family.service" ];
       serviceConfig = {
         Type = "oneshot";
+        # Collect a burst before scanning. Events during the scan create the next request.
+        ExecStartPre = [
+          "${pkgs.coreutils}/bin/sleep 3"
+          "${pkgs.coreutils}/bin/rm -f ${reconcilePending}"
+        ];
         ExecStart = "${runtimeCommand} reconcile";
       };
     };
@@ -481,14 +501,14 @@ in
         source = pkgs.writeShellScript "network-address-family" ''
           case "$2" in
             up|dhcp6-change|connectivity-change)
-              ${pkgs.systemd}/bin/systemctl --no-block start site-network-ipv6-reconcile.service
+              exec ${requestReconcile}
               ;;
           esac
         '';
       }
     ];
     services.udev.extraRules = ''
-      ACTION=="add", SUBSYSTEM=="net", TAG+="systemd", ENV{SYSTEMD_WANTS}+="site-network-ipv6-reconcile.service"
+      ACTION=="add", SUBSYSTEM=="net", RUN+="${requestReconcile}"
     '';
     environment.etc."gai.conf".text = ''
       precedence ::1/128       50

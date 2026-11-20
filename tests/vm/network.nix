@@ -378,6 +378,12 @@ in
       ];
       # Keep the deliberate daemon crash observable until the test restores it.
       systemd.services.mullvad-daemon.serviceConfig.Restart = lib.mkForce "no";
+      systemd.services.site-network-ipv6-reconcile.postStart = ''
+        if test -p /run/ipv6-hotplug-gate; then
+          mv /run/ipv6-hotplug-gate /run/ipv6-scan-finished
+          read -r -t 120 <>/run/ipv6-scan-finished
+        fi
+      '';
       networking.interfaces.eth1 = {
         ipv4.addresses = lib.mkForce [ ];
         ipv6.addresses = lib.mkForce [ ];
@@ -1243,7 +1249,20 @@ in
         client.wait_until_succeeds("network-ipv6 status", timeout=60)
         ipv4_healthy()
         traffic_checkpoint("transition")
-        client.succeed("nmcli connection down underlay; nmcli connection up underlay")
+        with subtest("IPv4-only mode covers interfaces added after a reconnect scan"):
+            client.succeed("mkfifo /run/ipv6-hotplug-gate", "nmcli connection down underlay", "nmcli connection up underlay")
+            client.wait_until_succeeds("test -p /run/ipv6-scan-finished", timeout=90)
+            try:
+                for i in range(4):
+                    client.succeed(f"ip link add hotplug{i} type veth peer name hotpeer{i}")
+                client.succeed("sysctl -qw net.ipv6.conf.hotplug3.disable_ipv6=0", "udevadm settle --timeout=30",
+                               "test $(sysctl -n net.ipv6.conf.hotplug3.disable_ipv6) = 0")
+            finally:
+                client.succeed("echo continue > /run/ipv6-scan-finished", timeout=10)
+            client.wait_until_succeeds("test $(sysctl -n net.ipv6.conf.hotplug3.disable_ipv6) = 1", timeout=90)
+            for i in range(4):
+                client.succeed(f"ip link del hotplug{i}")
+            client.succeed("rm /run/ipv6-scan-finished")
         client.wait_until_succeeds("network-ipv6 status", timeout=90)
         ipv4_healthy()
         traffic_checkpoint("transition")
