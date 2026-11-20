@@ -163,7 +163,7 @@ jobs:
             --ulimit nofile=65536:65536 \
             --memory=12g --memory-swap=20g \
             --volume nixos-ci-store:/nix \
-            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
             --volume "$state:/ci" \
             --volume "$RUNNER_TEMP/nixos-build:/build" \
             --workdir /workspace --env TMPDIR=/build --env NIX_USER_CONF_FILES=/ci/nix.conf \
@@ -297,17 +297,18 @@ jobs:
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}
         run: |
+          listen=$(docker exec nixos-ci nix eval --raw --file nix/cache-config.nix ci.listen)
+          # netrc matches a host, not a port. The proxy has its own loopback
+          # address so local integration fixtures do not receive this token.
+          (umask 077; printf 'machine %s\nlogin %s\npassword %s\n' \
+            "${listen%:*}" "$ORANC_USERNAME" "$ORANC_PASSWORD" > "$RUNNER_TEMP/nixos-ci/oranc.netrc")
           python3 .github/ci/report.py run --state "$RUNNER_TEMP/nixos-ci" --phase tools -- \
-            docker exec -i --env SCOPE --env ORANC_USERNAME --env ORANC_PASSWORD nixos-ci bash -euo pipefail <<'BASH'
+            docker exec -i --env SCOPE nixos-ci bash -euo pipefail <<'BASH'
           if [[ "$SCOPE" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
           export NIXPKGS_INPUT="$nixpkgs_input"
           python_root=$(nix build --no-update-lock-file --no-link --print-out-paths --impure --expr \
             '(builtins.getFlake ("git+file://" + toString ./.)).inputs.${builtins.getEnv "NIXPKGS_INPUT"}.legacyPackages.x86_64-linux.python3')
           listen=$(nix eval --raw --file nix/cache-config.nix ci.listen)
-          # netrc matches a host, not a port. The proxy has its own loopback
-          # address so local integration fixtures do not receive this token.
-          (umask 077; printf 'machine %s\nlogin %s\npassword %s\n' \
-            "${listen%:*}" "$ORANC_USERNAME" "$ORANC_PASSWORD" > /ci/oranc.netrc)
           RUST_LOG=oranc=info,oranc::registry=debug \
             "$(cat /ci/oranc)" server --listen "$listen" < /dev/null 2>&1 | \
             "$python_root/bin/python3" -u -c '
@@ -350,8 +351,14 @@ jobs:
           ORANC_PASSWORD: ${{ github.token }}
           ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
         run: |
-          docker exec -i --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY \
-            nixos-ci bash -euo pipefail <<'BASH'
+          docker run --rm -i --ulimit nofile=65536:65536 \
+            --volume nixos-ci-store:/nix:ro \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --volume "$RUNNER_TEMP/nixos-ci:/ci:ro" \
+            --workdir /workspace --env NIX_USER_CONF_FILES=/ci/nix.conf \
+            --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY \
+            "$NIX_IMAGE" bash -euo pipefail <<'BASH'
+          git config --global --add safe.directory /workspace
           expected=$(nix eval --raw --file nix/cache-config.nix project.publicKey)
           actual=$(printf '%s' "$ORANC_SIGNING_KEY" | nix key convert-secret-to-public)
           if [[ "$actual" != "$expected" ]]; then
@@ -387,11 +394,30 @@ jobs:
         id: publisher
         if: github.ref == 'refs/heads/master'
         env:
+          NIX_CONFIG: |
+            experimental-features = nix-command flakes
+            access-tokens = github.com=${{ github.token }}
           ORANC_USERNAME: ${{ github.actor }}
           ORANC_PASSWORD: ${{ github.token }}
           ORANC_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
         run: |
-          docker exec --env ORANC_USERNAME --env ORANC_PASSWORD --env ORANC_SIGNING_KEY nixos-ci \
+          state="$RUNNER_TEMP/nixos-ci"
+          docker run --detach --name nixos-ci-publisher \
+            --network container:nixos-ci \
+            --ulimit nofile=65536:65536 \
+            --memory=4g --memory-swap=8g \
+            --volume nixos-ci-store:/nix \
+            --volume "$GITHUB_WORKSPACE:/workspace:ro" \
+            --volume "$state:/ci" \
+            --workdir /workspace \
+            --env NIX_USER_CONF_FILES=/ci/nix.conf \
+            --env NIX_CONFIG \
+            --env ORANC_USERNAME \
+            --env ORANC_PASSWORD \
+            --env ORANC_SIGNING_KEY \
+            "$NIX_IMAGE" sleep infinity
+          docker exec nixos-ci-publisher git config --global --add safe.directory /workspace
+          docker exec nixos-ci-publisher \
             bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py start --state /ci'
       - name: Build systems, non-VM checks and all VM drivers
         id: build
@@ -432,7 +458,11 @@ jobs:
             '"$(cat /ci/python)" .github/ci/cache.py checkpoint --state /ci --phase publish-results --finish'
       - name: Stop the cache publisher
         if: ${{ always() && steps.publisher.outcome != 'skipped' && steps.publisher.outcome != '' }}
-        run: docker exec nixos-ci bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py stop --state /ci'
+        run: |
+          if docker inspect nixos-ci-publisher >/dev/null 2>&1; then
+            trap 'docker rm -f nixos-ci-publisher >/dev/null 2>&1 || true' EXIT
+            docker exec nixos-ci-publisher bash -euo pipefail -c '"$(cat /ci/python)" .github/ci/cache.py stop --state /ci'
+          fi
       - name: Report timings and resources
         if: always()
         run: |
