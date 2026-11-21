@@ -358,7 +358,7 @@ jobs:
         run: |
           bash .github/ci/nix-container.sh --detach --name nixos-ci-publisher \
             --network container:nixos-ci \
-            --memory=4g --memory-swap=8g \
+            --memory=12g --memory-swap=20g \
             --volume nixos-ci-store:/nix \
             --volume "$GITHUB_WORKSPACE:/workspace:ro" \
             --volume "$NIX_CI_STATE:/ci" \

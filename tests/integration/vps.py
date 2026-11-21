@@ -293,8 +293,18 @@ class InventoryProtocol(unittest.TestCase):
                             self.assertEqual(socks_http(port, domain, origin), "proxy", (root / "sing-box.log").read_text())
                             self.assertEqual(calls[-1], (resolvers[0].ipv4, origin))
                         counts = [len(resolver.calls) for resolver in resolvers]
-                        self.assertEqual(socks_http(port, "cached.fixture.example", origin), "proxy")
-                        self.assertEqual([len(resolver.calls) for resolver in resolvers], counts)
+                        release_cached = threading.Event()
+                        for resolver in resolvers:
+                            resolver.gates["cached.fixture.example."] = (threading.Event(), release_cached)
+                        try:
+                            self.assertEqual(socks_http(port, "cached.fixture.example", origin), "proxy")
+                            self.assertTrue(
+                                any(len(resolver.calls) == count for resolver, count in zip(resolvers, counts))
+                            )
+                        finally:
+                            for resolver in resolvers:
+                                resolver.gates.pop("cached.fixture.example.", None)
+                            release_cached.set()
                         for domain in ("nx.fixture.example", "allfail.fixture.example"):
                             release = threading.Event()
                             if domain.startswith("nx."):

@@ -121,7 +121,10 @@ else
       pkgs.vscode
       pkgs.vscode.vscodeServer
     ];
-    # Image layers embed restricted files. System symlinks and test results do not.
-    bundles = [ image.drvPath ];
+    # Image layers and bootloader VM disks copy restricted files instead of symlinking them.
+    bundles = [
+      image.drvPath
+      flake.checks.${system}.vm-desktop.nodes.sway.system.build.vm.drvPath
+    ];
     extraPrivateBuilds = [ image ];
   }
