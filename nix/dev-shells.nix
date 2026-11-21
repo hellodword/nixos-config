@@ -7,6 +7,7 @@ let
       pkgs = inputs.${if laptop then "nixpkgs" else "nixpkgs-remote"}.legacyPackages.${system};
       tools = import ./dev-tools.nix { inherit inputs pkgs system; };
       python = pkgs.python3.withPackages (p: [
+        p.cryptography
         p.pyyaml
         p.dnspython
         p.h2

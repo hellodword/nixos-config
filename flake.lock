@@ -104,11 +104,11 @@
     },
     "crane": {
       "locked": {
-        "lastModified": 1793836618,
-        "narHash": "sha256-TREenflwEjxOSq292FYwbc3kEm7TDRtXCZRNWEdjBmg=",
+        "lastModified": 1792350552,
+        "narHash": "sha256-292lvpvxTGKryKxh3/3tcIVi85CwYGdl4oOi113Sob8=",
         "owner": "ipetkov",
         "repo": "crane",
-        "rev": "79fd63528501446749c09f08cad486a58c7d173e",
+        "rev": "e675a36b7377bebe41d548388a2501cbb16d380d",
         "type": "github"
       },
       "original": {
@@ -119,11 +119,11 @@
     },
     "crane_2": {
       "locked": {
-        "lastModified": 1792350552,
-        "narHash": "sha256-292lvpvxTGKryKxh3/3tcIVi85CwYGdl4oOi113Sob8=",
+        "lastModified": 1793836618,
+        "narHash": "sha256-TREenflwEjxOSq292FYwbc3kEm7TDRtXCZRNWEdjBmg=",
         "owner": "ipetkov",
         "repo": "crane",
-        "rev": "e675a36b7377bebe41d548388a2501cbb16d380d",
+        "rev": "79fd63528501446749c09f08cad486a58c7d173e",
         "type": "github"
       },
       "original": {
@@ -171,6 +171,7 @@
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": [
+          "infra",
           "oranc",
           "nixpkgs"
         ]
@@ -232,9 +233,24 @@
         "type": "github"
       }
     },
+    "infra": {
+      "inputs": {
+        "nixpkgs": "nixpkgs",
+        "oranc": "oranc"
+      },
+      "locked": {
+        "path": "./infra",
+        "type": "path"
+      },
+      "original": {
+        "path": "./infra",
+        "type": "path"
+      },
+      "parent": []
+    },
     "lanzaboote": {
       "inputs": {
-        "crane": "crane",
+        "crane": "crane_2",
         "nixpkgs": [
           "nixpkgs"
         ],
@@ -367,7 +383,7 @@
     },
     "oranc": {
       "inputs": {
-        "crane": "crane_2",
+        "crane": "crane",
         "flake-parts": "flake-parts",
         "nixpkgs": "nixpkgs_2",
         "treefmt-nix": "treefmt-nix_2"
@@ -462,12 +478,15 @@
         "disko": "disko",
         "home-manager": "home-manager",
         "impermanence": "impermanence",
+        "infra": "infra",
         "lanzaboote": "lanzaboote",
         "nix-index-database": "nix-index-database",
         "nixos-hardware": "nixos-hardware",
-        "nixpkgs": "nixpkgs",
+        "nixpkgs": [
+          "infra",
+          "nixpkgs"
+        ],
         "nixpkgs-remote": "nixpkgs-remote",
-        "oranc": "oranc",
         "plasma-manager": "plasma-manager",
         "reproducible-violentmonkey": "reproducible-violentmonkey",
         "sing-box-geoip": "sing-box-geoip",
@@ -589,6 +608,7 @@
     "treefmt-nix_2": {
       "inputs": {
         "nixpkgs": [
+          "infra",
           "oranc",
           "nixpkgs"
         ]

@@ -1,7 +1,7 @@
-# Temporary overlay from https://github.com/NixOS/nixpkgs/pull/589900
-# (generated with NixOS/nixpkgs#579073) so pkgs.vscode and pkgs.vscode.vscodeServer
-# share commit 8a14f0cc1b08d531eb83255ea3764ae22aa932b5 (1.147.0).
-# Remove this overlay once nixos-unstable includes VS Code >= 1.147.0.
+# Align pkgs.vscode and pkgs.vscode.vscodeServer to commit
+# 8a14f0cc1b08d531eb83255ea3764ae22aa932b5 (1.147.0) when locked nixpkgs
+# provides an older release; pass upstream pkgs.vscode through once nixpkgs
+# reaches >= 1.147.0.
 final: prev: {
   vscode =
     if prev.lib.versionOlder prev.vscode.version "1.147.0" then

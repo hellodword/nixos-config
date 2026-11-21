@@ -25,7 +25,7 @@ in
   };
   oranc = sandbox {
     name = "oranc";
-    package = inputs.oranc.packages.${system}.oranc;
+    package = inputs.infra.packages.${system}.oranc;
     network = true;
     nix = true;
     database = true;

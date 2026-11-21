@@ -1,7 +1,8 @@
 {
   description = "NixOS laptops and VPS, with explicit state and network policy";
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    infra.url = "./infra";
+    nixpkgs.follows = "infra/nixpkgs";
     nixpkgs-remote.url = "github:NixOS/nixpkgs/nixos-unstable";
     cloudflare-ips-v4 = {
       url = "file+https://www.cloudflare.com/ips-v4";
@@ -66,7 +67,6 @@
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    oranc.url = "github:linyinfeng/oranc";
     agents-misc = {
       url = "github:hellodword/agents-misc";
       inputs.nixpkgs.follows = "nixpkgs";
