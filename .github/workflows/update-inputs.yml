@@ -27,38 +27,59 @@ jobs:
           ref: master
           fetch-depth: 0
           persist-credentials: false
-      - name: Configure Nix CI environment
-        uses: ./.github/actions/nix-env
-      - name: Update tracked inputs
-        env:
-          SCOPE: ${{ inputs.scope }}
-        run: |
-          bash .github/ci/nix-container.sh --rm \
-            --volume "$GITHUB_WORKSPACE:/workspace" \
-            --volume "$NIX_CI_STATE:/ci:ro" \
-            --env SCOPE \
-            -- bash -euo pipefail -c '
-              if [[ "$SCOPE" == remote ]]; then
-                nix flake update nixpkgs-remote colmena cloudflare-ips-v4 cloudflare-ips-v6
-              else
-                nix flake update \
-                catppuccin-fcitx5 nixos-hardware plasma-manager sing-box-geosite nixpkgs \
-                reproducible-violentmonkey arkenfox-userjs home-manager nix-index-database sing-box-geoip
-              fi
-            '
-      - name: Prepare an update candidate
+      - name: Initialize Nix container environment
+        uses: ./infra/action
+        with:
+          mode: env
+          project-dir: .
+          enable-kvm: 'false'
+      - name: Update tracked inputs and prepare candidate
         id: candidate
         env:
           SCOPE: ${{ inputs.scope }}
         run: |
-          python3 .github/ci/update.py prepare --scope "$SCOPE" --state "$RUNNER_TEMP/candidate"
+          set -euo pipefail
+          candidate_state="$RUNNER_TEMP/candidate-${SCOPE}-${GITHUB_RUN_ATTEMPT}"
+          bash infra/ci/container.sh --rm \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --volume "$NIX_CI_STATE:/ci:ro" \
+            --volume "$candidate_state:/candidate" \
+            --env SCOPE \
+            --env GITHUB_RUN_ID \
+            --env GITHUB_RUN_ATTEMPT \
+            -- bash -euo pipefail -c '
+              if [[ "$SCOPE" == remote ]]; then
+                nix flake update nixpkgs-remote colmena cloudflare-ips-v4 cloudflare-ips-v6
+                select_json="{\"scope\":\"remote\",\"hostName\":\"\"}"
+              else
+                nix flake update nixpkgs --flake ./infra
+                nix flake update infra catppuccin-fcitx5 nixos-hardware plasma-manager sing-box-geosite \
+                  reproducible-violentmonkey arkenfox-userjs home-manager nix-index-database sing-box-geoip
+                select_json="{\"scope\":\"laptop\",\"hostName\":\"laptop2\"}"
+              fi
+              nix run ./infra#ci -- update prepare \
+                --project-dir /workspace \
+                --select "$select_json" \
+                --state /candidate
+            '
+          if [[ -f "$candidate_state/update.json" ]]; then
+            sha=$(jq -r '.head' "$candidate_state/update.json")
+            {
+              printf 'changed=true\n'
+              printf 'sha=%s\n' "$sha"
+              printf 'artifact=candidate-%s-%s\n' "$SCOPE" "$GITHUB_RUN_ATTEMPT"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/upload-artifact@v7
         if: steps.candidate.outputs.changed == 'true'
         with:
           name: ${{ steps.candidate.outputs.artifact }}
-          path: ${{ runner.temp }}/candidate/
+          path: ${{ runner.temp }}/candidate-${{ inputs.scope }}-${{ github.run_attempt }}/
           retention-days: 7
           if-no-files-found: error
+
   verify:
     needs: prepare
     if: needs.prepare.outputs.changed == 'true'
@@ -72,6 +93,7 @@ jobs:
       candidate-sha: ${{ needs.prepare.outputs.sha }}
     secrets:
       NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+
   merge:
     needs: [prepare, verify]
     runs-on: ubuntu-24.04
@@ -87,12 +109,13 @@ jobs:
         with:
           name: ${{ needs.prepare.outputs.artifact }}
           path: ${{ runner.temp }}/candidate
-      - name: Publish the verified candidate and merge its PR
+      - name: Publish verified candidate and fast-forward master
         env:
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_SHA: ${{ needs.prepare.outputs.sha }}
         run: |
+          set -euo pipefail
           git fetch "$RUNNER_TEMP/candidate/candidate.bundle" HEAD
           test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE_SHA"
           git checkout --detach "$CANDIDATE_SHA"
-          python3 .github/ci/update.py merge --state "$RUNNER_TEMP/candidate"
+          python3 infra/ci update merge --project-dir . --state "$RUNNER_TEMP/candidate"

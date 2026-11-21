@@ -1,15 +1,16 @@
-# Derivations for the selected verification scope. YAML owns execution order.
+# CI manifest for laptop and remote scopes consumed by infra#ci.
 {
   flake,
-  scope,
-  hostName ? null,
+  system ? "x86_64-linux",
+  select ? { },
 }:
 let
-  system = "x86_64-linux";
+  scope = select.scope or "laptop";
+  rawHost = select.hostName or (if scope == "laptop" then "laptop2" else "");
+  hostName = if rawHost == "" then null else rawHost;
   remote = scope == "remote";
   pkgs = flake.inputs.${if remote then "nixpkgs-remote" else "nixpkgs"}.legacyPackages.${system};
   inherit (pkgs) lib;
-  host = flake.nixosConfigurations.${hostName};
   checks = flake.checks.${system};
   allVMs = [
     "vm-network"
@@ -34,11 +35,10 @@ let
           ++ allVMs
         ))
       ) (builtins.attrNames checks);
-  tools = import ./ci-tools.nix { inherit flake scope; };
   products = {
     inherit (checks) lint;
     oranc = flake.packages.${system}.oranc;
-    ci-tools = tools;
+    ci-tools = flake.inputs.infra.packages.${system}.ci-tools;
   }
   // (
     if remote then
@@ -47,8 +47,9 @@ let
         inherit (flake.packages.${system}) wrangler;
       }
     else
+      assert lib.assertMsg (hostName != null) "laptop CI scope requires select.hostName";
       {
-        system = host.config.system.build.toplevel;
+        system = flake.nixosConfigurations.${hostName}.config.system.build.toplevel;
         dev-shell = flake.devShells.${system}.laptop;
       }
   );
@@ -58,25 +59,139 @@ let
       value = checks.${name}.driver;
     }) vmNames
   );
+  cacheIdentity = builtins.fromJSON (builtins.readFile ./cache-identity.json);
+  cacheConfig = import ./cache-config.nix;
+  cachePolicy = import ./cache-policy.nix { inherit flake hostName scope; };
 in
-assert lib.assertMsg (lib.elem scope [
-  "laptop"
-  "remote"
-]) "CI scope must be laptop or remote";
+assert
+  builtins.elem scope [
+    "laptop"
+    "remote"
+  ]
+  || throw "CI scope must be laptop or remote";
 {
-  # Listing groups does not force the system or test derivations. Each job is
-  # evaluated independently by nix-eval-jobs before Python assembles the manifest.
   jobs = products // drivers // lib.genAttrs (checkNames ++ vmNames) (name: checks.${name});
-  groups = {
-    dependencies = builtins.attrNames products ++ checkNames ++ builtins.attrNames drivers;
-    vm-network-backup = lib.optionals (!remote) [
-      "vm-network"
-      "vm-backup"
-      "vm-files"
-    ];
-    vm-desktop = lib.optionals (!remote) [ "vm-desktop" ];
-    vm-applications = lib.optionals (!remote) [ "vm-applications" ];
-    vm-vps = lib.optionals remote [ "vm-vps" ];
+
+  groups =
+    if remote then
+      [
+        {
+          name = "private";
+          jobs = [ ];
+          required = true;
+          vm = null;
+          kvm = false;
+          maxJobs = 1;
+        }
+        {
+          name = "dependencies";
+          jobs = builtins.attrNames products ++ checkNames;
+          required = true;
+          vm = null;
+          kvm = false;
+          maxJobs = 1;
+        }
+        {
+          name = "vm-vps-driver";
+          jobs = [ "vm-vps-driver" ];
+          required = true;
+          vm = null;
+          kvm = true;
+          maxJobs = 1;
+        }
+        {
+          name = "vm-vps";
+          jobs = [ "vm-vps" ];
+          required = true;
+          vm = "nixos";
+          kvm = true;
+          maxJobs = 1;
+        }
+      ]
+    else
+      [
+        {
+          name = "private";
+          jobs = [ ];
+          required = true;
+          vm = null;
+          kvm = false;
+          maxJobs = 1;
+        }
+        {
+          name = "dependencies";
+          jobs = builtins.attrNames products ++ checkNames ++ builtins.attrNames drivers;
+          required = true;
+          vm = null;
+          kvm = false;
+          maxJobs = 1;
+        }
+        {
+          name = "vm-network-backup";
+          jobs = [
+            "vm-network"
+            "vm-backup"
+            "vm-files"
+          ];
+          required = true;
+          vm = "nixos";
+          kvm = true;
+          maxJobs = 1;
+        }
+        {
+          name = "vm-desktop";
+          jobs = [ "vm-desktop" ];
+          required = true;
+          vm = "nixos";
+          kvm = true;
+          maxJobs = 1;
+        }
+        {
+          name = "vm-applications";
+          jobs = [ "vm-applications" ];
+          required = true;
+          vm = "nixos";
+          kvm = true;
+          maxJobs = 1;
+        }
+      ];
+
+  cache = {
+    registry = cacheIdentity.registry or "ghcr.io";
+    inherit (cacheIdentity) repository publicKey;
+    mode = "incremental";
+    readSubstituters = [ "https://cache.nixos.org" ] ++ cacheConfig.ci.settings.substituters;
+    trustedPublicKeys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    ]
+    ++ cacheConfig.ci.settings.trusted-public-keys;
+    inherit (cachePolicy)
+      excludedPaths
+      excludedDerivations
+      bundles
+      privateBuilds
+      ;
   };
-  policy = import ./cache-policy.nix { inherit flake hostName scope; };
+
+  update =
+    if remote then
+      {
+        allowedLockfiles = [ "flake.lock" ];
+        ignoreOnlyInputs = [ ];
+        commitTitle = "chore: update remote flake inputs";
+        branchPrefix = "automation/flake-update-remote";
+      }
+    else
+      {
+        allowedLockfiles = [
+          "flake.lock"
+          "infra/flake.lock"
+        ];
+        ignoreOnlyInputs = [
+          "sing-box-geosite"
+          "sing-box-geoip"
+        ];
+        commitTitle = "chore: update laptop flake inputs";
+        branchPrefix = "automation/flake-update-laptop";
+      };
 }

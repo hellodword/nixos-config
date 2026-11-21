@@ -16,6 +16,7 @@ import time
 import traceback
 import uuid
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "infra/ci"))
 from build import valid_paths
 from report import record
 
