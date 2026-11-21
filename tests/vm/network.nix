@@ -773,7 +773,7 @@ in
   };
   testScript = ''
     import runpy
-    runtime = runpy.run_path("${./runtime.py}")
+    runtime = runpy.run_path("${inputs.infra.lib.testing.runtimePy}")
     with runtime["scenario"]([client, peer, target, upstream, dnsOnly, dnsProxy], lambda: [
         (client, "network-state", "systemctl --failed --no-pager; ip rule; ip -6 rule; nft list ruleset; cat /run/continuous/*.json"),
         (client, "network-journal", "journalctl --namespace='*' -b -u sing-box -u site-network-underlay -u site-network-connect -u continuous -n 160 --no-pager"),

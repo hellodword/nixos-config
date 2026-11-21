@@ -25,17 +25,17 @@ sudo bootctl list
 
 重启后检查 `sudo sbctl status`、`systemctl --failed`、`systemctl --user --failed`、`sudo network-ipv6 status` 与 `backup-status`。构建缓存的持久配置见 [构建缓存](cache.md)。
 
-## Flake 输入与依赖更新
+## Flake 输入与子 Flake 依赖更新
 
-仓库共声明 **20 个 Flake 输入**，按更新节奏与影响边界分为三组（自动更新工作流定义见 [update-inputs.yml](../.github/workflows/update-inputs.yml)）：
+根仓库声明 **20 个 Flake 输入**，其中 `infra` 指向仓内公共基础设施子 flake `./infra`（`infra/flake.lock` 锁定公共 `nixpkgs` 与独立依赖锁的 `oranc`），主包集 `nixpkgs` 跟随 `infra/nixpkgs`。按更新节奏与影响边界分为三组（自动更新工作流定义见 [update-inputs.yml](../.github/workflows/update-inputs.yml)）：
 
-| 分组 | 包含输入 | 更新方式 |
+| 分组 | 包含输入与锁文件 | 更新方式 |
 | --- | --- | --- |
-| `laptop` 自动更新（10 个） | `nixpkgs`、`home-manager`、`plasma-manager`、`nixos-hardware`、`nix-index-database`、`arkenfox-userjs`、`catppuccin-fcitx5`、`reproducible-violentmonkey`、`sing-box-geosite`、`sing-box-geoip` | 定时或手动运行 `Update flake inputs`（`laptop`），本地可用 `nix flake update nixpkgs home-manager plasma-manager` |
-| `remote` 自动更新（4 个） | `nixpkgs-remote`、`colmena`、`cloudflare-ips-v4`、`cloudflare-ips-v6` | 定时或手动运行 `Update flake inputs`（`remote`），推进 VPS 包集、部署器与 Cloudflare 回源白名单 |
-| 按需手动更新（6 个） | `disko`、`impermanence`、`lanzaboote`、`sops-nix`、`oranc`、`agents-misc` | 执行 `nix flake update <名称>` 独立升级并做针对性验证；其中前四项涉及分区、持久挂载、Secure Boot 与凭据激活，`oranc` 保持独立依赖锁以稳定 CI 启动缓存键 |
+| `laptop` 自动更新（`infra/flake.lock` + `flake.lock`） | `infra` 内的 `nixpkgs`，以及根仓的 `infra`、`home-manager`、`plasma-manager`、`nixos-hardware`、`nix-index-database`、`arkenfox-userjs`、`catppuccin-fcitx5`、`reproducible-violentmonkey`、`sing-box-geosite`、`sing-box-geoip` | 定时或手动运行 `Update flake inputs`（`laptop`）；本地运行 `nix flake update nixpkgs --flake ./infra && nix flake update infra home-manager plasma-manager` |
+| `remote` 自动更新（仅根 `flake.lock`） | `nixpkgs-remote`、`colmena`、`cloudflare-ips-v4`、`cloudflare-ips-v6` | 定时或手动运行 `Update flake inputs`（`remote`），推进 VPS 包集、部署器与 Cloudflare 回源白名单 |
+| 按需手动更新 | `infra` 内的 `oranc`，以及根仓的 `disko`、`impermanence`、`lanzaboote`、`sops-nix`、`agents-misc` | `oranc` 执行 `nix flake update oranc --flake ./infra && nix flake update infra`；其余根输入执行 `nix flake update <名称>` 并做针对性验证 |
 
-锁文件仅通过 `nix flake update` 更新。本地推进依赖后，按 [验证指南](validation.md#配置求值) 执行对应范围的清单求值与行为检查：
+锁文件仅通过 `nix flake lock` / `nix flake update` 更新（更新子目录 flake 时使用 `./infra` 或 `"git+file://$PWD?dir=infra"`）。本地推进依赖后，按 [验证指南](validation.md#配置求值) 执行对应范围的清单求值与行为检查：
 
 ```sh
 nix flake update catppuccin-fcitx5

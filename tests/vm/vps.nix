@@ -429,7 +429,7 @@ in
   };
   testScript = ''
     import runpy
-    runtime = runpy.run_path("${./runtime.py}")
+    runtime = runpy.run_path("${inputs.infra.lib.testing.runtimePy}")
     with runtime["scenario"]([controller, edge, west], lambda: [
         (controller, "stream", "systemctl status vps-client vps-stream --no-pager; cat /run/stream-request /run/stream-response; journalctl -b -u vps-stream -u vps-client -n 100 --no-pager"),
         (controller, "edge", "ssh -n -o BatchMode=yes -o ConnectTimeout=3 ${metadata.nodes.edge.sshHost} 'systemctl --failed --no-pager; journalctl -b -u site-vps-proxy -n 100 --no-pager'"),

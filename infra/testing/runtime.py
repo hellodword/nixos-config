@@ -1,4 +1,5 @@
-"""Bounded failure evidence and teardown for the native VM driver."""
+"""Bounded failure evidence collection and guest shutdown for NixOS QEMU VM tests."""
+
 from contextlib import contextmanager
 from datetime import timedelta
 import json
@@ -14,8 +15,6 @@ def collect_failure(error, captures=(), screenshots=()):
         try:
             if not guest.connected:
                 raise RuntimeError("guest control shell is unavailable; retain the driver serial log")
-            # Leave an independent share of the collection budget for the
-            # framebuffer when several guest commands cannot respond.
             per_capture = (60 - (20 if screenshots else 0)) / max(1, len(captures))
             budget = min(10, per_capture, deadline - time.monotonic())
             if budget <= 0:
@@ -45,8 +44,12 @@ def release_guest(guest, *, crash=False):
         return
     try:
         if guest.connected and not crash:
-            guest.execute("systemctl poweroff --no-block", timeout=10,
-                          check_return=False, check_output=False)
+            guest.execute(
+                "systemctl poweroff --no-block",
+                timeout=10,
+                check_return=False,
+                check_output=False,
+            )
         else:
             previous = guest.monitor.gettimeout()
             try:
@@ -66,13 +69,17 @@ def release_guest(guest, *, crash=False):
 
 
 @contextmanager
-def scenario(guests, captures):
+def scenario(guests, captures, screenshots=()):
     failure = None
     try:
         yield
     except Exception as error:
         failure = error
-        collect_failure(error, captures())
+        collect_failure(
+            error,
+            captures() if callable(captures) else captures,
+            screenshots() if callable(screenshots) else screenshots,
+        )
         raise
     finally:
         errors = []

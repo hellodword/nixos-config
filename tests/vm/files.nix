@@ -54,7 +54,7 @@ in
   };
   testScript = ''
     import runpy
-    runtime = runpy.run_path("${./runtime.py}")
+    runtime = runpy.run_path("${inputs.infra.lib.testing.runtimePy}")
     with runtime["scenario"]([server, client], lambda: [
         (server, "files", "systemctl --failed --no-pager; journalctl -b -u 'site-files-*' -u 'site-httpserver*' -n 120 --no-pager"),
         (client, "client", "ls -l /tmp; ip address; ip route; journalctl -b -u files-enrollment --no-pager -n 80"),

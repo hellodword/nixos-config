@@ -50,7 +50,7 @@ nix build --no-link --print-build-logs .#checks.x86_64-linux.lint
 
 ## 配置求值
 
-修改共享 Nix 模块、系统组合或 flake 输出后，使用与 CI 相同的[清单求值入口](../.github/ci/evaluate.py)。它通过 nix-eval-jobs 分别求值系统、开发环境、配置场景和各组 VM，再合并发布策略；worker 按内存预算回收。每个条目的结果保存在 `evaluation.jsonl`，全部成功后生成 `policy.json`，供构建与缓存发布使用。
+修改共享 Nix 模块、系统组合或 flake 输出后，使用与 CI 相同的[统一清单求值入口](../infra/ci/evaluate.py)（`nix run ./infra#ci -- evaluate`）。它通过 `nix-eval-jobs` 分别求值系统、开发环境、配置场景和各组 VM，再合并执行组、缓存与更新策略；worker 按内存预算回收。每个条目的结果保存在 `evaluation.jsonl`，全部成功后生成 `manifest.json`，供构建与缓存发布使用。
 
 VPS 模块或仅 `nixpkgs-remote` 的升级执行 remote 清单，laptop 改动执行 laptop 清单；共享入口执行两组。共享模块的影响范围沿实际使用者确定，涵盖导入它的系统与测试组合。交付前完成最终工作树对应范围的求值，再按改动选择产物构建和行为测试；继续修改相关配置后重新求值。
 
@@ -58,12 +58,12 @@ VPS 模块或仅 `nixpkgs-remote` 的升级执行 remote 清单，laptop 改动�
 mkdir -p tmp/ci
 state=$(mktemp -d "$PWD/tmp/ci/laptop.XXXXXX")
 host=laptop2  # 换成要验证的主机
-nix develop .#laptop --command python3 .github/ci/evaluate.py \
-  --scope laptop --host "$host" --state "$state"
+nix run ./infra#ci -- evaluate \
+  --project-dir . --select "{\"scope\":\"laptop\",\"hostName\":\"$host\"}" --state "$state"
 
 remote_state=$(mktemp -d "$PWD/tmp/ci/remote.XXXXXX")
-nix develop .#vps --command python3 .github/ci/evaluate.py \
-  --scope remote --state "$remote_state"
+nix run ./infra#ci -- evaluate \
+  --project-dir . --select '{"scope":"remote","hostName":""}' --state "$remote_state"
 ```
 
 每轮验证创建新目录，并在该轮的求值、构建和报告命令中沿用它。重试保留每次执行的事件与证据；交付时核对最终工作树生成的清单。
@@ -110,8 +110,8 @@ nix develop .#laptop --command python3 -m tests.integration.backup -v
 
 ```sh
 # 使用上一步为所选 host 生成的清单。
-nix develop .#laptop --command python3 .github/ci/build.py private --state "$state"
-nix develop .#laptop --command python3 .github/ci/build.py dependencies --state "$state"
+nix run ./infra#ci -- build --group private --state "$state"
+nix run ./infra#ci -- build --group dependencies --state "$state"
 ```
 
 只验证 VPS 时，构建 `checks.x86_64-linux.vps` 和 `checks.x86_64-linux.vm-vps.driver`，再执行 `checks.x86_64-linux.vm-vps`。其 bootstrap 镜像和完整系统都使用 `nixpkgs-remote`；测试通过 SSH 操作真实镜像启动的来宾，覆盖部署、重启和回滚。
@@ -119,10 +119,9 @@ nix develop .#laptop --command python3 .github/ci/build.py dependencies --state 
 OCI 和更新候选集成需要创建临时 Nix store、registry 与 Git 上游，使用与 Actions 相同的原生 CI 工具：
 
 ```sh
-ci_tools=$(nix build --no-link --print-out-paths --impure --expr \
-  'import ./nix/ci-tools.nix { flake = builtins.getFlake ("git+file://" + toString ./.); scope = "remote"; }')
+ci_tools=$(nix build --no-link --print-out-paths ./infra#ci-tools)
 PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input nixpkgs-remote
-PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.updates
+PATH="$ci_tools/bin:$PATH" python3 -m unittest tests.integration.updates -v
 ```
 
 本机具备 x86_64 Linux KVM 和所需 Nix system features 时，先准备 VM 环境，再执行测试：
@@ -167,7 +166,7 @@ VM 测试驱动通过控制通道发送命令。无需输入的 SSH 探测使用
 
 字体匹配与中西文度量由 `desktop` 检查验证；`vm-desktop` 保存真实 Kitty 窗口的截图，供人工核对网格、连字和 emoji 显示。钱包存取在登录、重新登录和重启后验证。物理显示器上的清晰度和缩放需在设备上确认。
 
-GUI 场景共用[驱动辅助代码](../tests/vm/gui.py)。交互期间使用桌面原生的闲置控制，测试自动锁屏时恢复生产调度。中文输入先确认窗口、控件焦点和 Fcitx 的拼音激活状态，再通过 VM 键盘输入。Qt、网页和 Electron 控件报告预编辑与提交状态；终端以实际读取到的内容确认提交。收到预期中文后，驱动才关闭输入法并继续保存或执行命令。登录和解锁等待当前 greeter 的密码焦点或锁屏程序的就绪信号。
+GUI 场景共用[公共桌面驱动辅助代码](../infra/testing/gui.py)与 [Playwright CDP 辅助代码](../infra/testing/vscode_cdp.py)。交互期间使用桌面原生的闲置控制，测试自动锁屏时恢复生产调度。中文输入先确认窗口、控件焦点和 Fcitx 的拼音激活状态，再通过 VM 键盘输入。Qt、网页和 Electron 控件报告预编辑与提交状态；终端以实际读取到的内容确认提交。收到预期中文后，驱动才关闭输入法并继续保存或执行命令。登录和解锁等待当前 greeter 的密码焦点或锁屏程序的就绪信号。
 
 每次输入共用一个单调时钟期限，保留阶段、耗时和应用观察到的状态。OCR 保留识别出的文本行，再合并同一基线的片段；命中和失败都保留截图与识别记录。失败采集分别执行 journal、状态和截图，各自有时间上限；采集和关机错误附在原始失败之后。
 

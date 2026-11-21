@@ -1,15 +1,15 @@
-"""Wait for visible controls before sending keyboard input to a desktop VM."""
+"""QMP pointer/keyboard control, screendump capture, Tesseract OCR, and desktop session helpers."""
 
-import os
-import json
-import csv
-import io
 from contextlib import contextmanager
+import csv
 from datetime import timedelta
+import io
+import json
+import os
 from pathlib import Path
 import re
-import shutil
 import shlex
+import shutil
 import struct
 import subprocess
 import tempfile
@@ -18,10 +18,12 @@ import time
 
 
 class Desktop:
-    """One owner for a guest's monitor, native input and idle inhibition."""
+    """Thread-safe owner for a QEMU guest monitor, native input, screenshots, and idle inhibition."""
 
-    def __init__(self, machine):
+    def __init__(self, machine, *, user="desktop", uid=1000):
         self.machine = machine
+        self.user = user
+        self.uid = uid
         self.input_lock = threading.RLock()
         self.idle_inhibited = False
         self.deadline = None
@@ -79,13 +81,14 @@ class Desktop:
             tablet = re.search(r"Mouse #(\d+):[^\n]*\(absolute\)", mice)
             assert tablet, mice
             self.send_monitor_command("mouse_set " + tablet[1])
-            # QMP distinguishes absolute tablet coordinates from relative mouse
-            # motion. Reuse the driver's session and bound its response polling.
             client = self.machine.qmp_client
             assert client is not None
+
             def send(events):
                 assert client.results.empty(), "QMP command still pending"
-                client.writer.write(json.dumps({"execute": "input-send-event", "arguments": {"events": events}}) + "\n")
+                client.writer.write(
+                    json.dumps({"execute": "input-send-event", "arguments": {"events": events}}) + "\n"
+                )
                 client.writer.flush()
                 deadline = self.deadline or time.monotonic() + 30
                 while client.results.empty():
@@ -95,8 +98,11 @@ class Desktop:
                     client.read_pending_messages()
                     time.sleep(0.01)
                 return client.results.get_nowait()
-            send([{"type": "abs", "data": {"axis": axis, "value": round(value * 32767 / (extent - 1))}}
-                  for axis, value, extent in (("x", x, width), ("y", y, height))])
+
+            send([
+                {"type": "abs", "data": {"axis": axis, "value": round(value * 32767 / (extent - 1))}}
+                for axis, value, extent in (("x", x, width), ("y", y, height))
+            ])
             if click:
                 send([{"type": "btn", "data": {"button": "left", "down": True}}])
                 time.sleep(0.15)
@@ -113,19 +119,32 @@ class Desktop:
             raw = Path(temporary) / "screen.ppm"
             self.send_monitor_command(f"screendump {raw}", timeout=remaining(deadline))
             with destination.open("wb") as stream:
-                subprocess.run(["pnmtopng", str(raw)], stdout=stream, stderr=subprocess.PIPE,
-                               check=True, timeout=remaining(deadline))
+                subprocess.run(
+                    ["pnmtopng", str(raw)],
+                    stdout=stream,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    timeout=remaining(deadline),
+                )
 
-    def session_command(self, command):
-        return ("runuser -u desktop -- env XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus "
-                "systemd-run --user --quiet --wait --pipe --collect --property=RuntimeMaxSec=30s sh -c " + shlex.quote(command))
+    def session_command(self, command, timeout=30):
+        runtime_dir = f"/run/user/{self.uid}"
+        return (
+            f"runuser -u {shlex.quote(self.user)} -- env "
+            f"XDG_RUNTIME_DIR={runtime_dir} DBUS_SESSION_BUS_ADDRESS=unix:path={runtime_dir}/bus "
+            f"systemd-run --user --quiet --wait --pipe --collect --property=RuntimeMaxSec={timeout}s "
+            + "sh -c "
+            + shlex.quote(command)
+        )
 
     def inhibit_idle(self):
         if self.idle_inhibited:
             return
-        self.session = self.machine.succeed(self.session_command('printf %s "$XDG_CURRENT_DESKTOP"'), timeout=30)
+        self.session = self.machine.succeed(
+            self.session_command('printf %s "$XDG_CURRENT_DESKTOP"'), timeout=30
+        )
         if "sway" in self.session:
-            command = "systemctl --user stop swayidle.service"
+            command = "systemctl --user stop swayidle.service || true"
         elif "i3" in self.session:
             settings = self.machine.succeed(self.session_command("xset q"), timeout=30)
             self.screensaver = re.search(r"timeout:\s+(\d+)\s+cycle:\s+(\d+)", settings).groups()
@@ -134,14 +153,19 @@ class Desktop:
             command = "systemd-run --user --collect --unit=vm-idle-inhibit vm-idle-inhibit"
         self.machine.succeed(self.session_command(command), timeout=30)
         if "KDE" in self.session:
-            self.machine.wait_until_succeeds("test -f /run/user/1000/vm-idle-inhibited", timeout=30)
+            self.machine.wait_until_succeeds(
+                f"test -f /run/user/{self.uid}/vm-idle-inhibited", timeout=30
+            )
         self.idle_inhibited = True
 
     def resume_idle(self):
         if not self.idle_inhibited:
             return
         if "sway" in self.session:
-            command = "systemctl --user start swayidle.service"
+            command = (
+                "if systemctl --user list-unit-files swayidle.service | grep -q swayidle.service; "
+                "then systemctl --user start swayidle.service; fi"
+            )
         elif "i3" in self.session:
             command = "xset s " + " ".join(self.screensaver) + "; xset s reset"
         else:
@@ -164,7 +188,6 @@ class Desktop:
             return
         try:
             if not self.machine.connected:
-                # An initrd failure has no running shell to receive poweroff.
                 self.send_monitor_command("quit")
                 self.machine.wait_for_shutdown(timeout=timedelta(seconds=10))
                 return
@@ -177,8 +200,6 @@ class Desktop:
                 shell.settimeout(previous)
             self.machine.wait_for_shutdown(timeout=timedelta(seconds=120))
         except Exception as error:
-            # Release this guest even when orderly shutdown fails. The original
-            # error still fails the test and its evidence remains available.
             try:
                 self.machine.process.terminate()
                 try:
@@ -198,8 +219,6 @@ class Desktop:
 
     def reboot(self):
         self.resume_idle()
-        # Request a real reboot from the guest; a graphical greeter may handle
-        # Ctrl+Alt+Delete as an interface shortcut rather than rebooting.
         self.machine.succeed("systemctl reboot --no-block", timeout=timedelta(seconds=10))
         self.machine.connected = False
 
@@ -212,14 +231,14 @@ def remaining(deadline):
 
 
 def input_method(machine, user_command, active, deadline):
-    """Confirm the focused Fcitx context before the next keyboard action."""
+    """Confirm focused Fcitx5 context before delivering keyboard input."""
     command = "fcitx5-remote -s pinyin && fcitx5-remote -o" if active else "fcitx5-remote -c"
     machine.succeed(user_command(command), timeout=timedelta(seconds=remaining(deadline)))
     last = ""
     while time.monotonic() < deadline:
-        status, last = machine.execute(user_command(
-            "fcitx5-remote; fcitx5-remote -n"
-        ), timeout=remaining(deadline))
+        status, last = machine.execute(
+            user_command("fcitx5-remote; fcitx5-remote -n"), timeout=remaining(deadline)
+        )
         lines = last.strip().splitlines()
         if status == 0 and lines and lines[0] == ("2" if active else "1"):
             if not active or lines[1:] == ["pinyin"]:
@@ -236,29 +255,40 @@ def focused_window(machine, user_command, deadline=None):
     esac
     "$wm" -t get_tree | jq -c 'first(.. | objects | select(.focused? == true) | {app_id, window_properties, name, pid})'
     '''
-    return machine.succeed(user_command(query), timeout=timedelta(seconds=remaining(deadline) if deadline else 30)).strip()
+    return machine.succeed(
+        user_command(query),
+        timeout=timedelta(seconds=remaining(deadline) if deadline else 30),
+    ).strip()
 
 
-def wait_for_session(machine, session, user_command):
-    # The WM target is started after environment import and PAM wallet setup.
-    # graphical-session.target alone can become active before those finish.
-    target = {"sway": "site-sway.target", "i3": "site-i3.target", "KDE": "plasma-workspace.target"}[session]
-    machine.wait_until_succeeds(user_command("systemctl --user is-active " + target), timeout=180)
-    machine.wait_until_succeeds(user_command(
-        "systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"
-    ), timeout=60)
-    machine.wait_until_succeeds(user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60)
+def wait_for_session(machine, session, user_command, *, target_unit=None, require_fcitx=True):
+    default_targets = {
+        "sway": "site-sway.target",
+        "i3": "site-i3.target",
+        "KDE": "plasma-workspace.target",
+    }
+    target = target_unit if target_unit is not None else default_targets.get(session)
+    if target:
+        machine.wait_until_succeeds(user_command("systemctl --user is-active " + target), timeout=180)
+    machine.wait_until_succeeds(
+        user_command("systemctl --user show-environment | grep '^XDG_CURRENT_DESKTOP=.*" + session + "'"),
+        timeout=60,
+    )
+    if require_fcitx:
+        machine.wait_until_succeeds(
+            user_command("busctl --user status org.fcitx.Fcitx5"), timeout=60
+        )
 
 
 def ocr_lines(tsv, scale=2):
-    """Preserve recognized text lines and join aligned fragments across a row."""
     fragments = {}
     for row in csv.DictReader(io.StringIO(tsv), delimiter="\t", quoting=csv.QUOTE_NONE):
         if row["level"] != "5" or not row["text"].strip():
             continue
         key = tuple(row[field] for field in ("page_num", "block_num", "par_num", "line_num"))
         fragments.setdefault(key, []).append({
-            "text": row["text"].strip(), "confidence": float(row["conf"]),
+            "text": row["text"].strip(),
+            "confidence": float(row["conf"]),
             **{field: int(row[field]) / scale for field in ("left", "top", "width", "height")},
         })
     rows = []
@@ -268,9 +298,15 @@ def ocr_lines(tsv, scale=2):
         rows.append({"center": (top + bottom) / 2, "height": bottom - top, "words": words})
     lines = []
     for row in sorted(rows, key=lambda item: item["center"]):
-        line = min((line for line in lines
-                    if abs(row["center"] - line["center"]) < min(row["height"], line["height"]) / 2),
-                   key=lambda line: abs(row["center"] - line["center"]), default=None)
+        line = min(
+            (
+                line
+                for line in lines
+                if abs(row["center"] - line["center"]) < min(row["height"], line["height"]) / 2
+            ),
+            key=lambda line: abs(row["center"] - line["center"]),
+            default=None,
+        )
         if line is None:
             lines.append(row)
         else:
@@ -281,8 +317,19 @@ def ocr_lines(tsv, scale=2):
     return lines
 
 
-def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sparse", fallback_layout=None, consecutive=1, check=None):
-    """Observe fresh frames without sending input. Retain the decisive frame."""
+def visible(
+    machine,
+    pattern,
+    timeout=60,
+    rotation=0,
+    region=None,
+    *,
+    layout="sparse",
+    fallback_layout=None,
+    consecutive=1,
+    check=None,
+):
+    """Observe fresh frames with 2x grayscale/threshold Tesseract OCR and retain evidence."""
     page_modes = {"line": "7", "block": "6", "sparse": "11"}
     with machine.nested("waiting for visible text: " + pattern), tempfile.TemporaryDirectory() as directory:
         started = time.monotonic()
@@ -293,9 +340,15 @@ def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sp
         raw = Path(directory) / "frame.ppm"
         cropped = Path(directory) / "region.ppm"
         prepared = Path(directory) / "text.ppm"
-        details = {"pattern": pattern, "region": region, "rotation": rotation,
-                   "layout": layout, "fallbackLayout": fallback_layout,
-                   "consecutive": consecutive, "passes": []}
+        details = {
+            "pattern": pattern,
+            "region": region,
+            "rotation": rotation,
+            "layout": layout,
+            "fallbackLayout": fallback_layout,
+            "consecutive": consecutive,
+            "passes": [],
+        }
         evidence = Path(machine.out_dir) / ("ocr-" + machine.name + "-" + str(time.monotonic_ns()))
 
         def retain(status):
@@ -306,8 +359,13 @@ def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sp
                 shutil.copyfile(frame, evidence / "frame.png")
             if cropped.exists():
                 with (evidence / "region.png").open("wb") as stream:
-                    subprocess.run(["pnmtopng", str(cropped)], stdout=stream,
-                                   stderr=subprocess.PIPE, timeout=10, check=True)
+                    subprocess.run(
+                        ["pnmtopng", str(cropped)],
+                        stdout=stream,
+                        stderr=subprocess.PIPE,
+                        timeout=10,
+                        check=True,
+                    )
             print("OCR evidence:", evidence)
 
         streak = 0
@@ -315,48 +373,75 @@ def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sp
             while time.monotonic() < deadline:
                 machine.screenshot(str(frame), timeout=remaining(deadline))
                 with raw.open("wb") as stream:
-                    subprocess.run(["pngtopnm", str(frame)], stdout=stream, stderr=subprocess.PIPE,
-                                   check=True, timeout=remaining(deadline))
+                    subprocess.run(
+                        ["pngtopnm", str(frame)],
+                        stdout=stream,
+                        stderr=subprocess.PIPE,
+                        check=True,
+                        timeout=remaining(deadline),
+                    )
                 transform = ["-rotate", str(rotation)] if rotation else []
                 if region is not None:
                     width, height = struct.unpack(">II", frame.read_bytes()[16:24])
                     if rotation % 180:
                         width, height = height, width
-                    x, y, w, h = (round(value * extent) for value, extent in
-                                  zip(region, (width, height, width, height)))
+                    x, y, w, h = (
+                        round(value * extent)
+                        for value, extent in zip(region, (width, height, width, height))
+                    )
                     transform += ["-crop", f"{w}x{h}+{x}+{y}", "+repage"]
-                subprocess.run(["magick", str(raw), *transform, str(cropped)],
-                               check=True, capture_output=True, timeout=remaining(deadline))
+                subprocess.run(
+                    ["magick", str(raw), *transform, str(cropped)],
+                    check=True,
+                    capture_output=True,
+                    timeout=remaining(deadline),
+                )
                 matched = False
-                # Two passes at most, then capture a fresh frame. Enlarging the
-                # crop helps small labels while preserving the native desktop.
-                for contrast, options, mode in (("grayscale", [], layout),
-                                                ("threshold", ["-threshold", "60%"], fallback_layout or layout)):
+                for contrast, options, mode in (
+                    ("grayscale", [], layout),
+                    ("threshold", ["-threshold", "60%"], fallback_layout or layout),
+                ):
                     if time.monotonic() >= deadline:
                         break
-                    subprocess.run(["magick", str(cropped), "-resize", "200%", "-colorspace", "Gray",
-                                    *options, str(prepared)],
-                                   check=True, capture_output=True, timeout=remaining(deadline))
+                    subprocess.run(
+                        ["magick", str(cropped), "-resize", "200%", "-colorspace", "Gray", *options, str(prepared)],
+                        check=True,
+                        capture_output=True,
+                        timeout=remaining(deadline),
+                    )
                     ocr_start = time.monotonic()
                     budget = min(8, remaining(deadline))
                     page_mode = page_modes[mode]
-                    observation = {"frameSeconds": ocr_start - started, "contrast": contrast, "psm": page_mode}
+                    observation = {
+                        "frameSeconds": ocr_start - started,
+                        "contrast": contrast,
+                        "psm": page_mode,
+                    }
                     details["passes"].append(observation)
                     try:
                         result = subprocess.run(
                             ["tesseract", str(prepared), "stdout", "--oem", "1", "--psm", page_mode, "tsv"],
-                            check=True, capture_output=True, text=True, timeout=budget,
+                            check=True,
+                            capture_output=True,
+                            text=True,
+                            timeout=budget,
                             env={**os.environ, "OMP_THREAD_LIMIT": "1"},
                         )
                     except subprocess.TimeoutExpired:
-                        observation.update(seconds=time.monotonic() - ocr_start,
-                                           status="deadline" if time.monotonic() >= deadline else "engine-timeout")
+                        observation.update(
+                            seconds=time.monotonic() - ocr_start,
+                            status="deadline" if time.monotonic() >= deadline else "engine-timeout",
+                        )
                         break
                     lines = ocr_lines(result.stdout)
                     text = " ".join(line["text"] for line in lines)
                     matched = bool(check(lines) if check else re.search(pattern, text))
-                    observation.update(seconds=time.monotonic() - ocr_start, status="matched" if matched else "unmatched",
-                                       text=text, lines=lines)
+                    observation.update(
+                        seconds=time.monotonic() - ocr_start,
+                        status="matched" if matched else "unmatched",
+                        text=text,
+                        lines=lines,
+                    )
                     if matched:
                         break
                 streak = streak + 1 if matched else 0
@@ -388,14 +473,19 @@ def qt_password_focus(machine, pid, deadline):
     last = ""
     while time.monotonic() < deadline:
         text = machine.succeed("journalctl -b _PID=" + pid + " --no-pager -o cat", timeout=remaining(deadline))
-        changes = [line for line in text.splitlines() if "activeFocusItem" in line
-                   and (" -> " in line or " remains " in line)]
+        changes = [
+            line
+            for line in text.splitlines()
+            if "activeFocusItem" in line and (" -> " in line or " remains " in line)
+        ]
         if changes:
             last = re.split(r" -> | remains ", changes[-1])[-1].strip()
             if re.search(r"(?:Password|Text)(?:Field|Input|Edit)", last, re.I):
                 return
-            if (time.monotonic() - started >= 3.0
-                    and not re.search(r"(?:^|\b)(?:0x0|null|nullptr|QQuickRootItem)\b", last, re.I)):
+            if (
+                time.monotonic() - started >= 3.0
+                and not re.search(r"(?:^|\b)(?:0x0|null|nullptr|QQuickRootItem)\b", last, re.I)
+            ):
                 return
         elif time.monotonic() - started >= 2.5:
             return
@@ -403,24 +493,20 @@ def qt_password_focus(machine, pid, deadline):
     raise AssertionError("Password control has no active focus: " + last)
 
 
-def login(machine, *, screenshot=None):
-    """Authenticate through SDDM so the real PAM wallet lifecycle runs."""
-    from datetime import timedelta
+def login(machine, *, user="desktop", password="synthetic-fixture-only", screenshot=None):
+    """Authenticate through SDDM so the real PAM wallet and systemd user session start."""
     machine.wait_for_unit("display-manager.service")
-    machine.wait_for_unit("home-manager-desktop.service")
-    # SDDM registers a view even when a QML error sends it to the embedded theme.
+    machine.wait_for_unit(f"home-manager-{user}.service")
     pid = machine.wait_until_succeeds(
         "pid=$(pgrep -u sddm -n -f sddm-greeter) && "
-        "journalctl -b _PID=\"$pid\" --no-pager -o cat | grep -F 'Adding view for' >/dev/null && "
-        "echo \"$pid\"",
+        'journalctl -b _PID="$pid" --no-pager -o cat | grep -F \'Adding view for\' >/dev/null && '
+        'echo "$pid"',
         timeout=60,
     ).strip()
     journal = machine.succeed(f"journalctl -b _PID={pid} --no-pager -o cat", timeout=10)
     if "Fallback to embedded theme" in journal:
         raise AssertionError(f"SDDM greeter {pid} could not display Breeze:\n{journal}")
-    # The selected account stays legible across greeter sizes; the password
-    # placeholder is small and low contrast in Breeze.
-    visible(machine, r"(?i)\bdesktop\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7), consecutive=2)
+    visible(machine, rf"(?i)\b{re.escape(user)}\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7), consecutive=2)
     if screenshot is not None:
         machine.screenshot(screenshot)
     deadline = time.monotonic() + 60
@@ -428,5 +514,5 @@ def login(machine, *, screenshot=None):
         qt_password_focus(machine, pid, deadline)
         delay = timedelta(milliseconds=150)
         machine.send_key("ctrl-u", delay=delay)
-        machine.send_chars("synthetic-fixture-only", delay=delay)
+        machine.send_chars(password, delay=delay)
         machine.send_key("ret", delay=delay)

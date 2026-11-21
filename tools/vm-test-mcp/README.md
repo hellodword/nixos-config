@@ -13,4 +13,4 @@ nix develop .#laptop --command vm-test-submit --help
 
 客户端直接使用 `agents-misc` 暴露的 package，其版本和上游依赖由 `flake.lock` 固定。需要升级时运行 `nix flake update agents-misc`，核对服务端与客户端的版本/构建身份，并用现有 VM 场景验证兼容性。
 
-测试中的 QMP、OCR、键盘输入、闲置控制和关机使用[原生驱动封装](../../tests/vm/gui.py)。截图和诊断写入原生测试输出目录，由执行器收集；结果中分别检查断言、资源释放和证据收集状态。
+测试中的 QMP、OCR、键盘输入、闲置控制和关机使用[公共驱动封装](../../infra/testing/gui.py)与[运行时辅助](../../infra/testing/runtime.py)。截图和诊断写入原生测试输出目录，由执行器收集；结果中分别检查断言、资源释放和证据收集状态。

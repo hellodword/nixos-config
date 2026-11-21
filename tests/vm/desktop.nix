@@ -343,8 +343,8 @@ in
         # their lock command in later arguments while the screen is unlocked.
         return "pgrep -u 1000 -f " + shlex.quote(r"^([^ ]*/)?\.?" + re.escape(name) + r"(-wrapped)?( |$)")
 
-    gui = runpy.run_path("${./gui.py}")
-    runtime = runpy.run_path("${./runtime.py}")
+    gui = runpy.run_path("${inputs.infra.lib.testing.guiPy}")
+    runtime = runpy.run_path("${inputs.infra.lib.testing.runtimePy}")
     visible, login = gui["visible"], gui["login"]
     power_menu = runpy.run_path("${./power_menu.py}")
 

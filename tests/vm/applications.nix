@@ -74,6 +74,7 @@
         pkgs.kdotool
         pkgs.geckodriver
         (pkgs.writeShellScriptBin "application-e2e" ''
+          export PYTHONPATH="${inputs.infra.lib.testing.testingDir}''${PYTHONPATH:+:$PYTHONPATH}"
           exec ${python}/bin/python3 ${./applications.py} "$@"
         '')
       ];
@@ -124,8 +125,8 @@
 
 
     key_delay = timedelta(milliseconds=150)
-    gui = runpy.run_path("${./gui.py}")
-    runtime = runpy.run_path("${./runtime.py}")
+    gui = runpy.run_path("${inputs.infra.lib.testing.guiPy}")
+    runtime = runpy.run_path("${inputs.infra.lib.testing.runtimePy}")
     visible, login = gui["visible"], gui["login"]
     power_menu = runpy.run_path("${./power_menu.py}")
 

@@ -1,6 +1,6 @@
 # 自动更新、验收与缓存发布
 
-[ci.yml](../.github/workflows/ci.yml) 按 `laptop` 和 `remote` 两个范围执行构建、VM 验收与增量缓存发布；[update.yml](../.github/workflows/update.yml) 与 [update-inputs.yml](../.github/workflows/update-inputs.yml) 定时推进依赖、验证候选提交并快进合并 `master`。
+[ci.yml](../.github/workflows/ci.yml) 通过公共 Composite Action [infra/action/action.yml](../infra/action/action.yml) 与统一执行器 `infra#ci`（`nix-ci`）按 `laptop` 和 `remote` 两个范围执行清单求值、分组构建、VM 验收与签名缓存发布；[update.yml](../.github/workflows/update.yml) 与 [update-inputs.yml](../.github/workflows/update-inputs.yml) 定时推进依赖、验证候选提交并原子快进合并 `master`。
 
 ## 触发入口与故障排障
 
@@ -11,9 +11,9 @@
 | `push` 到 `master` | 分别验证 `laptop` 和 `remote`，构建期间由独立旁路容器增量发布签名缓存 |
 | 手动运行 `Verify and cache` | 可选 `laptop`、`remote` 或 `all`；仅 `master` 分支发布缓存 |
 | 在 `master` 勾选 `initialize-cache` | 仅用当前 `GITHUB_TOKEN` 创建 GHCR 缓存索引（`nix-cache-info`），不执行构建与 VM |
-| 定时或手动运行 `Update flake inputs` | 先更新并验证 `remote`（`nixpkgs-remote`、`colmena`、`cloudflare-ips-v4/v6`），再以最新 `master` 为基线更新 `laptop`（10 个输入） |
+| 定时或手动运行 `Update flake inputs` | 先更新并验证 `remote`（`nixpkgs-remote`、`colmena`、`cloudflare-ips-v4/v6`，锁定于根 `flake.lock`），再以最新 `master` 为基线更新 `laptop`（同步推进 `infra/flake.lock` 的公共 `nixpkgs` 与根 `flake.lock` 的桌面输入） |
 
-仅当候选包含实际输入变更（且不全为纯规则种子快照变化）时才进入验证。验证与缓存发布通过后，`update.py` 在推送候选分支与创建 PR 前再次核对远端 `refs/heads/master` 是否仍等于候选基线 `base`：若 `master` 在验证期间已前进则直接放弃本次合并，留待下一轮从新基线生成候选；否则通过 PR 快进合并并清理候选分支。
+仅当候选包含受管锁文件白名单（`update.allowedLockfiles`）内的实质输入变更（且不全为 `ignoreOnlyInputs` 声明的纯规则快照变化）时才进入验证。验证与缓存发布通过后，`nix-ci update merge` 在推送候选分支与创建 PR 前核对远端 `refs/heads/master` 是否仍等于候选基线 `base`：若 `master` 在验证期间已前进则记录原因并以退出码 `0` 正常结束；否则创建附带验证运行链接的 PR，调用非强制 `force=false` 原子快进合并并清理临时分支。
 
 ### 故障定位与诊断制品
 
@@ -21,29 +21,28 @@
 
 | 记录路径 | 排查用途 |
 | --- | --- |
-| Summary、`timings.jsonl` | 各阶段墙钟耗时、缓存恢复与实际构建活动对比、发布检查点等待时间 |
+| Summary、`manifest.json`、`timings.jsonl` | 清单任务组定义、各阶段墙钟耗时、来源归类（`executed` / `cache restored` / `local reuse` / `skipped` / `failed`）与检查点等待时间 |
 | `logs/<pass>/<group>/<attempt>.log` | 普通检查与 VM 的完整构建及串口控制台输出 |
 | `evaluation.jsonl` | `nix-eval-jobs` 逐项求值的 derivation、输出路径、耗时与报错详情 |
-| `publication-paths.jsonl`、`publisher.log`、`cache/status.json` | 每次发布的命中/排除统计、NAR 体积及旁路发布容器状态 |
-| `resources.jsonl`、`oom-*.log`、`oranc.log`、`monitor.log` | CPU/内存/swap/磁盘采样、OOM 记录及本地缓存代理请求日志 |
+| `publication-paths.jsonl`、`published-paths.json`、`publisher.log`、`cache/status.json` | 远端 `.narinfo` 命中/排除统计、已上传对象清单、NAR 体积及旁路发布容器状态 |
+| `resources.jsonl`、`oom-*.log`、`oranc.log`、`monitor.log` | CPU/内存/swap/磁盘采样、容器 cgroup 内存峰值与 `oom_kill` 计数及本地缓存代理请求日志 |
 | `vm/<pass>/<check>/<attempt>/` | VM 测试导出的截图、OCR 记录、分阶段流量统计、应用工作流状态与失败现场 |
 
-VM 阶段判定仅采用当前清单 derivation 最新一次已启动的执行记录；构建阶段首次出现失败 derivation 时立即在 Actions 页面发出标注，其余独立构建继续运行以保留可复用的成功缓存。
+构建阶段首次出现失败 derivation 时立即在 Actions 页面发出 `::error::` 标注，其余独立构建继续运行以保留可复用的成功产物。`nix-ci report verify` 按 derivation 路径精确核对全部 `required = true` 目标在最新一次尝试中均成功完成。
 
 ## 容器隔离与执行顺序
 
-每个矩阵任务在 Ubuntu Runner 上准备 swap、KVM 与独立 Docker 卷 `nixos-ci-store`：
-- **构建容器 `nixos-ci`**：以 `--volume "$GITHUB_WORKSPACE:/workspace:ro"` 只读挂载仓库源码，设置有界 `nofile` 上限（避免 `gawk` 按无限描述符上限分配巨量内存），不注入任何缓存发布凭据；
-- **发布旁路容器 `nixos-ci-publisher`**：仅在发布模式下启动，独立持有 `ORANC_SIGNING_KEY`、`ORANC_USERNAME` 与 `ORANC_PASSWORD`，挂载同一 `nixos-ci-store:/nix` 卷并通过共享 `/ci/cache` 目录消费构建队列。
+每次运行按 `${RUNNER_TEMP}/nix-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}` 分配独立状态目录、独立 Docker 卷与容器名，并在 Ubuntu Runner 上清理冗余 SDK 目录、挂载 `8 GiB` swap 与 `/dev/kvm`：
+- **构建容器 `nix-ci-<run>-<attempt>`**：以只读方式挂载产品工作树 `/workspace:ro` 与公共基础设施 `/infra:ro`，统一注入 `--ulimit nofile=65536:1048576`，不注入任何缓存签名私钥或写凭据；
+- **发布旁路容器 `nix-ci-publisher-<run>-<attempt>`**：仅在增量发布模式下启动，独立持有 `ORANC_SIGNING_KEY`、`ORANC_USERNAME` 与 `ORANC_PASSWORD`，共享同一 `/nix` 卷并通过 `/ci/cache` 目录消费构建队列。
 
 | 阶段 | 内容 |
 | --- | --- |
-| 准备与静态门禁 | 磁盘清理、swap/KVM/Nix 卷初始化、运行 `checks.x86_64-linux.lint` |
-| 缓存代理与进程集成 | 准备并缓存 `oranc` 启动闭包，校验匿名读取（发布模式同时校验签名密钥匹配），运行 `cache` 与 `updates` 进程集成测试 |
-| 清单求值与依赖构建 | `evaluate.py` 求值目标范围全部任务与排除策略（写出 `policy.json`），单并发满核构建系统、领域检查与 VM `.driver`，旁路容器后台增量上传可再分发产物 |
-| `laptop` VM 套件 | 依次执行 `vm-network`、`vm-backup`、`vm-files`，再执行 `vm-desktop`、`vm-applications` |
-| `remote` VM 套件 | 从 `vpsBootstrap` BIOS/UEFI 原始镜像启动客体，执行 `vm-vps` 全链路部署与协议验证 |
-| 汇总与发布收尾 | 核对全部 VM 结果，等待旁路容器完成大对象与剩余队列上传并安全退出 |
+| 准备与启动缓存 | 磁盘清理、swap/KVM/Nix 卷初始化，按 `infra#oranc.outPath` 恢复或构建 `oranc` 闭包（`master` 未命中且归档不超过 `512 MiB` 时写回 Actions Cache） |
+| 缓存代理与清单求值 | 在 `127.0.0.2:37515` 启动本地 `oranc` 读取代理并通过匿名 `GET /nix-cache-info` 校验可读性，运行 `nix-ci evaluate` 写出 `manifest.json`，执行 `lint`、`cache` 与 `updates` 集成检查 |
+| `laptop` 执行组 | 依次构建 `private`、`dependencies`（含全部非 VM 检查与 5 个 VM `.driver`），完成依赖检查点后顺序执行 `vm-network-backup`、`vm-desktop`、`vm-applications` |
+| `remote` 执行组 | 先构建无 KVM 需求的 `dependencies`，再在 `kvm = true` 组构建 `vm-vps-driver`（含 `vpsBootstrap` BIOS/UEFI 磁盘镜像）并执行 `vm-vps` |
+| 汇总与发布收尾 | `nix-ci report verify` 核对必需目标，完成最终检查点上传、采样资源并输出 Markdown Summary |
 
 ## 首次启用步骤
 

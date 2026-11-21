@@ -48,5 +48,5 @@ in
           --client-sing-box ${client}/bin/sing-box -v
         touch $out
       '';
-  vm-vps = pkgs.testers.runNixOSTest (import ../tests/vm/vps.nix { inherit inputs; });
+  vm-vps = inputs.infra.lib.testing.mkTest pkgs (import ../tests/vm/vps.nix { inherit inputs; });
 }

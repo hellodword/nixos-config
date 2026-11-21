@@ -118,7 +118,7 @@ in
   };
   testScript = builtins.readFile ./notifications.py + ''
     import runpy
-    runtime = runpy.run_path("${./runtime.py}")
+    runtime = runpy.run_path("${inputs.infra.lib.testing.runtimePy}")
     with runtime["scenario"]([machine, upstream], lambda: [
         (machine, "backup-state", "find /var/lib/site-backup-* -maxdepth 1 -name '*.json' -print -exec cat {} +"),
         (machine, "backup-journal", "journalctl -b -u 'site-backup-*' -n 160 --no-pager"),

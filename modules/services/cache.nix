@@ -23,6 +23,11 @@ in
   imports = [ ../core/reserved-ports.nix ];
   options.site.cache = {
     enable = lib.mkEnableOption "signed OCI cache consumption through oranc";
+    registry = lib.mkOption {
+      type = lib.types.str;
+      default = "ghcr.io";
+      description = "OCI registry hosting the Nix binary cache.";
+    };
     repository = lib.mkOption {
       type = lib.types.str;
       default = "";

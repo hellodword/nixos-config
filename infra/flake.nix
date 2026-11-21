@@ -20,7 +20,10 @@
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      lib.cache = import ./nix/cache.nix;
+      lib = {
+        cache = import ./nix/cache.nix;
+        testing = import ./nix/testing.nix;
+      };
 
       overlays.vscode = import ./nix/vscode.nix;
 

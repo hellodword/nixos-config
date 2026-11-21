@@ -141,13 +141,19 @@ rec {
     inherit pkgs userName;
     config = laptop.config;
   };
-  vm-desktop = pkgs.testers.runNixOSTest (import ../tests/vm/desktop.nix { inherit inputs; });
-  vm-applications = pkgs.testers.runNixOSTest (
+  vm-desktop = inputs.infra.lib.testing.mkTest pkgs (
+    import ../tests/vm/desktop.nix { inherit inputs; }
+  );
+  vm-applications = inputs.infra.lib.testing.mkTest pkgs (
     import ../tests/vm/applications.nix { inherit inputs; }
   );
-  vm-backup = pkgs.testers.runNixOSTest (import ../tests/vm/backup.nix { inherit inputs; });
-  vm-network = pkgs.testers.runNixOSTest (import ../tests/vm/network.nix { inherit inputs; });
-  vm-files = pkgs.testers.runNixOSTest (import ../tests/vm/files.nix { inherit inputs; });
+  vm-backup = inputs.infra.lib.testing.mkTest pkgs (
+    import ../tests/vm/backup.nix { inherit inputs; }
+  );
+  vm-network = inputs.infra.lib.testing.mkTest pkgs (
+    import ../tests/vm/network.nix { inherit inputs; }
+  );
+  vm-files = inputs.infra.lib.testing.mkTest pkgs (import ../tests/vm/files.nix { inherit inputs; });
   e2e = pkgs.linkFarm "nixos-vm-tests" (
     map
       (name: {

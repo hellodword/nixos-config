@@ -10,10 +10,10 @@
 | `modules/` | 能力选项、NixOS 服务和软件装配 |
 | `home/` | 随系统激活的用户配置，包括 CLI、应用、桌面与状态栏 |
 | `lib/` | 策略组合、凭据字段绑定和共享服务设置 |
+| `infra/` | 公共基础设施子 flake（共享 `nixpkgs`/`oranc`、VS Code overlay、`nix-ci` 执行器、Composite Action、`lib.cache` 与 `lib.testing`） |
 | `nix/` | 包定制、工具包装、检查和缓存清单 |
 | `scripts/` | 系统服务及本地维护命令的运行逻辑 |
-| `.github/workflows/` | GitHub 事件、步骤、权限、runner 磁盘、容器和资源设置 |
-| `.github/ci/` | 构建事件统计、资源采集、缓存筛选和候选提交处理 |
+| `.github/workflows/` | GitHub 事件、权限与调用 `./infra/action` 的工作流编排 |
 | `tests/` | 合成配置、行为与进程检查、原生 NixOS VM 场景 |
 | `tools/vm-test-mcp/` | 可选远端执行的接入说明 |
 
@@ -36,7 +36,7 @@ Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户�
 | 桌面电源菜单 | [桌面配置](../home/desktop.nix) | [进程提醒与电源操作](../scripts/desktop/power.py) |
 | 壁纸 | [会话与定时任务](../modules/desktop/wallpaper.nix) | [恢复、轮换与下载](../scripts/desktop/wallpaper.py) |
 | SSH/GPG | [系统和用户服务](../modules/core/cli.nix) | [公钥发布与身份注册](../scripts/secrets/identity.py) |
-| CI | [工作流](../.github/workflows) | [构建统计、发布与更新](../.github/ci) |
+| CI | [工作流](../.github/workflows)、[Composite Action](../infra/action/action.yml) | [清单求值、构建、缓存与更新](../infra/ci) |
 | VPS 与订阅 | [节点和服务](../modules/vps)、[部署](../nix/vps.nix) | [部署材料与客户端生成](../scripts/vps)、[Worker](../workers) |
 
 脚本按运行责任组织：网络的 `runtime_policy.py` 协调输入、候选校验和激活，`dns_policy.py` 分别规划解析器与生成 dnsdist 配置；VPS 的 `model.py` 校验声明和关系，`clients.py` 输出客户端格式，`prepare.py` 写出部署材料。共享测试进程放在 `tests/fixtures/`，由需要它们的场景引用。
