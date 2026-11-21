@@ -81,8 +81,8 @@ nix develop .#vps --command python3 .github/ci/evaluate.py \
 | `git-backup` | 临时 Git 仓库中的本地备份与远端推送 |
 | `vm-network` | 完整 `base.nix`（`sudo-rs`、`io_uring_disabled = 1`、`sops-nix`）与 `lockdown + purposeRouting + tailscale + chronyd`（NTS）下的网络切换、规则下载与确认应用、失败与重启恢复、持续双栈流量、DNS、容器和日志隔离 |
 | `vm-backup` | 完整 `base.nix` 底座下的实际窗口触发、独立仓库、中断和有界关机、重启恢复、陈旧锁恢复、gVisor 通知与补发 |
-| `vm-desktop` | 三会话登录、注销、原生 `swaylock`/`i3lock`/KScreenLocker 锁屏、钱包、本机 HTTPS 壁纸服务、输入法与显示状态，以及 `sway` 节点的 `6.18` 内核 `vboxdrv` 模块加载和 Lanzaboote UKI 签名加密启动恢复 |
-| `vm-applications` | 三会话中的 Firejail 沙箱隔离与启动校验、真实应用中文输入与退出提醒；`sway` 节点按需启用容器与密码库服务完成 DevContainer 和 Vaultwarden 全流程 |
+| `vm-desktop` | 三会话登录、注销、原生 `swaylock`/`i3lock`/KScreenLocker 锁屏、钱包、本机 HTTPS 壁纸服务、输入法与显示状态，以及 `sway` 节点的配置内核 `vboxdrv` 模块加载和 Lanzaboote UKI 签名加密启动恢复 |
+| `vm-applications` | 三会话中的 Firejail 沙箱隔离与启动校验、真实应用中文输入与退出提醒；`sway` 节点按需启用容器服务完成 DevContainer 全流程 |
 | `vm-vps` | 调用真实 `prepare.py` 产出节点/Worker/订阅材料，验证 BIOS/UEFI 512 MiB 镜像启动、扩容与 swap、Colmena 统一凭据下发与 test/boot/switch、Cloudflare HTTP 回源与双栈防火墙、Docker bridge、跨节点协议转发、多承载出口故障切换、系统 DoT 与 NTS、重启回滚及 Wrangler 沙箱打包 |
 | `vm-files` | 双节点设备证书认证与撤销、HTTPS 登录和会话、WebDAV、加密 SMB、随机访问码输入与描述文件交付、OpenSSL 3 证书导出、临时分享及请求日志 |
 | `e2e` | `vm-network`、`vm-desktop`、`vm-applications`、`vm-backup`、`vm-files`、`vm-vps` 六项 VM 结果的聚合 |
@@ -151,7 +151,7 @@ VM 测试驱动通过控制通道发送命令。无需输入的 SSH 探测使用
 
 动态创建的 timer 从调度服务入口控制。异步结果通过对应的操作 ID、消息或状态记录确认，完成记录以原子替换发布。DNS 竞速、备份中断和壁纸下载使用夹具的到达与释放信号：请求进入目标阶段后，再改变网络、停止服务或注销会话。
 
-应用 VM 在 SDDM 登录后的真实会话中运行。三个桌面均验证 Firefox 页面与拼音输入、Kitty，以及 VS Code 编辑器和终端、Bitwarden 界面的中文输入。两个 WM 另外通过各自快捷键操作 Rofi。Sway 执行完整 DevContainer 工作区和自托管 Vaultwarden 登录、搜索；其他桌面使用本地工作区和登录界面输入框。输入经过 VM 键盘与 Fcitx，不用直接写入控件代替中文输入验证。
+应用 VM 在 SDDM 登录后的真实会话中运行。三个桌面均验证 Firefox 页面与拼音输入、Kitty，以及 VS Code 编辑器和终端的中文输入。两个 WM 另外通过各自快捷键操作 Rofi。Sway 执行完整 DevContainer 工作区；其他桌面使用本地工作区。输入经过 VM 键盘与 Fcitx，不用直接写入控件代替中文输入验证。
 
 每个应用使用独立的 systemd unit，结束时停止启动 unit、GUI 创建的桌面 scope 和测试容器，再执行下一个应用。应用失败完成清理后继续独立场景；桌面初始化或清理失败时，汇总结果注明该桌面未执行的场景及原因，其他桌面继续运行。`application-results.json` 保存整轮结果。
 

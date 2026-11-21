@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 import sys
 
+from mullvad_contract import EXCLUSION_CGROUP
+
 
 def excluded(cgroups):
     for line in cgroups.splitlines():
@@ -11,10 +13,10 @@ def excluded(cgroups):
         if len(parts) != 3:
             continue
         hierarchy, controllers, path = parts
-        if "net_cls" in controllers.split(",") and path == "/mullvad-exclusions":
+        if "net_cls" in controllers.split(",") and path == EXCLUSION_CGROUP:
             return True
         if hierarchy == "0" and controllers == "" and (
-            path == "/mullvad-exclusions" or path.endswith("/mullvad-exclusions")
+            path == EXCLUSION_CGROUP or path.endswith(EXCLUSION_CGROUP)
         ):
             return True
     return False

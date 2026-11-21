@@ -23,6 +23,8 @@ let
   identityFixture = "${
     pkgs.python3.withPackages (ps: [ ps.pyyaml ])
   }/bin/python3 ${../fixtures/gpg_identity.py}";
+  swayKernelPackages = pkgs.linuxPackages_6_18;
+  swayKernelPrefix = lib.escapeRegex (lib.versions.majorMinor swayKernelPackages.kernel.version);
   bingCert = pkgs.runCommand "bing-wallpaper-cert" { nativeBuildInputs = [ pkgs.openssl ]; } ''
     mkdir -p "$out"
     openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
@@ -201,7 +203,7 @@ in
         ../../profiles/laptop/boot.nix
         ../../modules/services/virtualbox.nix
       ];
-      boot.kernelPackages = pkgs.linuxPackages_6_18;
+      boot.kernelPackages = swayKernelPackages;
       site.virtualbox.enable = true;
       virtualisation = {
         diskSize = 2048;
@@ -361,7 +363,7 @@ in
                     # input. Wait for the clock, then reveal the password form.
                     visible(machine, r"\d{1,2}:\d{2}", timeout=30, region=(0.2, 0.02, 0.6, 0.36))
                     machine.send_key("ctrl")
-                    visible(machine, "Switch User", timeout=30, region=(0.2, 0.25, 0.6, 0.7))
+                    visible(machine, "Switch User", timeout=30, region=(0.2, 0.25, 0.6, 0.7), consecutive=2)
                     machine.send_key("ctrl", delay=timedelta(milliseconds=150))
                     pid = machine.succeed(process(locker)).strip().splitlines()[-1]
                     gui["qt_password_focus"](machine, pid, time.monotonic() + 30)
@@ -538,7 +540,7 @@ in
         width, height = struct.unpack(">II", frame.read_bytes()[16:24])
         with raw.open("wb") as stream:
             subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=10)
-        pixels = subprocess.check_output(["magick", str(raw), "-crop", f"{width}x1+0+2", "-depth", "8", "RGB:-"], timeout=10)
+        pixels = subprocess.check_output(["magick", str(raw), "-crop", f"{width}x1+0+3", "-depth", "8", "RGB:-"], timeout=10)
         return width, height, pixels
 
     def wallpaper_visible(machine, session):
@@ -597,15 +599,15 @@ in
             x = positions[len(positions)//2]
             machine.click(x, 12, width, height)
             deadline = time.monotonic() + 10
-            while True:
+            while time.monotonic() < deadline:
                 machine.screenshot(str(frame), timeout=gui["remaining"](deadline))
                 with raw.open("wb") as stream:
                     subprocess.run(["pngtopnm", str(frame)], stdout=stream, check=True, timeout=gui["remaining"](deadline))
-                pixel = subprocess.check_output(["magick", str(raw), "-crop", f"1x1+{x}+2", "-depth", "8", "RGB:-"], timeout=gui["remaining"](deadline))
+                pixel = subprocess.check_output(["magick", str(raw), "-crop", f"1x1+{x}+3", "-depth", "8", "RGB:-"], timeout=gui["remaining"](deadline))
                 if pixel == bytes.fromhex(expected):
-                    break
-                assert time.monotonic() < deadline, "Idle inhibitor button did not change state"
+                    return
                 time.sleep(0.1)
+            raise AssertionError("Idle inhibitor button did not change state")
 
     def hover_status(machine):
         output = json.loads(user(machine, "swaymsg -t get_outputs"))[0]
@@ -637,7 +639,7 @@ in
             "/run/wrappers/bin/sudo --version | grep -qi sudo-rs"
         )
         if session == "sway":
-            machine.succeed("uname -r | grep -E '^6\\.18\\.' && modprobe vboxdrv && test -c /dev/vboxdrv")
+            machine.succeed("uname -r | grep -E '^${swayKernelPrefix}\\.' && modprobe vboxdrv && test -c /dev/vboxdrv")
         if session in ("sway", "i3"):
             now = int(machine.succeed("date +%s"))
             saved_fetch = {"lastAttempt": datetime.fromtimestamp(now, timezone.utc).isoformat(), "result": "unchanged"}

@@ -8,21 +8,24 @@
 let
   cfg = config.virtualisation.virtualbox.host;
   siteCfg = config.site.virtualbox;
-  virtualbox = cfg.package.override {
-    inherit (cfg)
-      enableHardening
-      headless
-      enableWebService
-      enableKvm
-      ;
-    extensionPack = if cfg.enableExtensionPack then pkgs.virtualboxExtpack else null;
-  };
+  virtualbox =
+    if config.security.wrappers ? VBoxHeadless then
+      lib.removeSuffix "/libexec/virtualbox/VBoxHeadless" config.security.wrappers.VBoxHeadless.source
+    else
+      cfg.package;
   exportedEnv = lib.concatStringsSep "\n" (
     lib.mapAttrsToList (name: value: "export ${name}=${lib.escapeShellArg value}") siteCfg.environment
   );
-  virtualboxLauncher = pkgs.writeShellScriptBin "VirtualBox" ''
+  virtualboxLauncher = pkgs.runCommand "VirtualBox" { } ''
+    test -x "${virtualbox}/bin/VirtualBox"
+    mkdir -p "$out/bin"
+    cat > "$out/bin/VirtualBox" <<'EOF'
+    #!${pkgs.runtimeShell}
     ${exportedEnv}
     exec ${virtualbox}/bin/VirtualBox "$@"
+    EOF
+    sed -i 's/^    //' "$out/bin/VirtualBox"
+    chmod +x "$out/bin/VirtualBox"
   '';
 in
 {

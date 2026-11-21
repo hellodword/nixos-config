@@ -115,7 +115,7 @@ in
           # remove setup capabilities before starting the network engine.
           (lib.optionalString cfg.lockdown.enable (
             "!${config.services.mullvad-vpn.package}/bin/mullvad-exclude "
-            + "${pkgs.python3}/bin/python3 ${../../scripts/network/run_excluded.py} "
+            + "${pkgs.python3}/bin/python3 ${../../scripts/network}/run_excluded.py "
             + "${pkgs.util-linux}/bin/setpriv --reuid=sing-box --regid=sing-box --init-groups "
             + "--inh-caps=-all,+net_admin,+net_raw --ambient-caps=-all,+net_admin,+net_raw "
             + "--bounding-set=-setuid,-setgid,-setpcap "

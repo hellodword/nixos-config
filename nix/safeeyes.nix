@@ -57,7 +57,9 @@ pkgs.symlinkJoin {
   paths = [ command ];
   meta.priority = -10;
   postBuild = ''
+    icons=( ${pkgs.safeeyes}/lib/python*/site-packages/safeeyes/platform/icons )
+    test "''${#icons[@]}" -eq 1 && test -d "''${icons[0]}"
     mkdir -p "$out/share"
-    ln -s ${pkgs.safeeyes}/${pkgs.python3.sitePackages}/safeeyes/platform/icons "$out/share/icons"
+    ln -s "''${icons[0]}" "$out/share/icons"
   '';
 }

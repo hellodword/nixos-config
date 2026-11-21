@@ -11,6 +11,7 @@ import subprocess
 import sys
 
 import ipv6
+from mullvad_contract import CT_MARK_HEX, MARK_HEX
 
 TABLE = "site_containers"
 ROUTE_TABLE = "64500"
@@ -117,7 +118,7 @@ def firewall(bridges, routes, lockdown):
             prefixes = sorted(prefix for version, prefix in routes if version == family)
             if prefixes:
                 local_output.append(f"{protocol} daddr {{ {', '.join(prefixes)} }} "
-                                    "ct mark set 0xf41 meta mark set 0x6d6f6c65")
+                                    f"ct mark set {CT_MARK_HEX} meta mark set {MARK_HEX}")
     contents = f"""table inet {TABLE} {{
     set bridges {{ type ifname; {('elements = { ' + interfaces + ' };') if bridges else ''} }}
     chain output {{
@@ -126,11 +127,11 @@ def firewall(bridges, routes, lockdown):
     }}
     chain prerouting {{
         type filter hook prerouting priority -160; policy accept;
-        {('iifname "br-site-direct" ct mark set 0xf41 meta mark set 0x6d6f6c65') if lockdown else ''}
+        {(f'iifname "br-site-direct" ct mark set {CT_MARK_HEX} meta mark set {MARK_HEX}') if lockdown else ''}
     }}
     chain forward {{
         type filter hook forward priority -15; policy accept;
-        {('iifname @bridges oifname @bridges ct mark set 0xf41') if lockdown else ''}
+        {(f'iifname @bridges oifname @bridges ct mark set {CT_MARK_HEX}') if lockdown else ''}
     }}
 }}
 """

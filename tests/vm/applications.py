@@ -1,9 +1,6 @@
 """Exercise the installed applications inside the logged-in synthetic desktop."""
 
 import argparse
-import base64
-import hashlib
-import hmac
 import json
 import os
 from pathlib import Path
@@ -14,7 +11,6 @@ import signal
 import subprocess
 import sys
 import time
-import urllib.request
 from contextlib import contextmanager
 
 from playwright.sync_api import Error as PlaywrightError, TimeoutError as PlaywrightTimeoutError, expect, sync_playwright
@@ -22,9 +18,6 @@ from playwright.sync_api import Error as PlaywrightError, TimeoutError as Playwr
 
 ROOT = Path.home() / "application-workspace"
 ARTIFACTS = ROOT / "artifacts"
-VAULT_URL = "https://vault.test.nix"
-EMAIL = "desktop@example.test"
-PASSWORD = "Synthetic-vault-passphrase-2026!"
 STARTED = time.monotonic()
 RUN = {"phases": []}
 
@@ -111,7 +104,7 @@ def attach(playwright, port, check_alive):
 
 def gui_pids(name, port, namespace_pid=None):
     """Find this debuggee across desktop scopes and sandbox PID namespaces."""
-    executable = "code" if name == "vscode" else "bitwarden"
+    executable = "code"
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
             continue
@@ -149,8 +142,7 @@ def retain_windows(name):
 
 @contextmanager
 def electron(playwright, name, arguments, port):
-    network_log = (Path.home() / ".config/Bitwarden/e2e-network.json"
-                   if name == "bitwarden" else ARTIFACTS / (name + "-network.json"))
+    network_log = ARTIFACTS / (name + "-network.json")
     network_log.parent.mkdir(parents=True, exist_ok=True)
     phase("launch", command=arguments, executable=shutil.which(arguments[0]),
           session=os.environ.get("XDG_CURRENT_DESKTOP"),
@@ -208,7 +200,7 @@ def electron(playwright, name, arguments, port):
                 alive()
                 for context in browser.contexts:
                     for candidate in context.pages:
-                        if ("index.html" if name == "bitwarden" else "workbench") in candidate.url:
+                        if "workbench" in candidate.url:
                             return candidate
                 # Dispatch navigation events while waiting for the workbench.
                 if browser.contexts:
@@ -275,9 +267,6 @@ def electron(playwright, name, arguments, port):
             except subprocess.TimeoutExpired:
                 pass
             phase("closed", launcherExit=process.poll())
-            if name == "bitwarden" and network_log.exists():
-                with cleanup("retaining Bitwarden network log"):
-                    shutil.copyfile(network_log, ARTIFACTS / "bitwarden-network.json")
 
 
 def input_observer(evaluate, expected="你好"):
@@ -507,74 +496,10 @@ def firefox(*, full):
     return {"profile": str(profile), "page": "loaded and rendered", "input": "你好"}
 
 
-def register_vault():
-    from cryptography.hazmat.primitives import hashes, padding, serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
-    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-    from cryptography.hazmat.primitives.kdf.hkdf import HKDFExpand
-    def b64(value):
-        return base64.b64encode(value).decode()
-    def encrypt(value, key):
-        iv = os.urandom(16)
-        padder = padding.PKCS7(128).padder()
-        padded = padder.update(value) + padder.finalize()
-        cipher = Cipher(algorithms.AES(key[:32]), modes.CBC(iv)).encryptor()
-        encrypted = cipher.update(padded) + cipher.finalize()
-        mac = hmac.new(key[32:], iv + encrypted, hashlib.sha256).digest()
-        return "2." + "|".join(map(b64, (iv, encrypted, mac)))
-    def post(path, value):
-        request = urllib.request.Request(VAULT_URL + path, json.dumps(value).encode(), {"Content-Type": "application/json", "Accept": "application/json"})
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
-    master = hashlib.pbkdf2_hmac("sha256", PASSWORD.encode(), EMAIL.encode(), 600000, 32)
-    stretched = b"".join(HKDFExpand(algorithm=hashes.SHA256(), length=32, info=info).derive(master) for info in (b"enc", b"mac"))
-    user_key = os.urandom(64)
-    asymmetric = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    token = post("/identity/accounts/register/send-verification-email", {"email": EMAIL, "name": "Desktop fixture"})
-    post("/identity/accounts/register/finish", {
-        "email": EMAIL, "emailVerificationToken": token,
-        "masterPasswordHash": b64(hashlib.pbkdf2_hmac("sha256", master, PASSWORD.encode(), 1, 32)),
-        "key": encrypt(user_key, stretched), "kdf": 0, "kdfIterations": 600000,
-        "keys": {
-            "publicKey": b64(asymmetric.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)),
-            "encryptedPrivateKey": encrypt(asymmetric.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()), user_key),
-        },
-    })
-
-
-def bitwarden(*, full):
-    if full:
-        register_vault()
-    with sync_playwright() as playwright:
-        with electron(playwright, "bitwarden", ["bitwarden"], 9224) as page:
-            phase("vault-login" if full else "login-input")
-            if full:
-                page.get_by_role("button", name="bitwarden.com", exact=True).click()
-                page.get_by_text("self-hosted", exact=True).click()
-                page.get_by_label("Server URL").fill(VAULT_URL)
-                page.get_by_role("button", name="Save", exact=True).click()
-                page.get_by_label("Email address").fill(EMAIL)
-                page.get_by_role("button", name="Continue", exact=True).click()
-                page.get_by_label(re.compile(r"^Master password\b")).fill(PASSWORD)
-                page.get_by_role("button", name="Log in", exact=True).click()
-                page.get_by_text("No items in the vault", exact=True).wait_for()
-                search = page.get_by_placeholder(re.compile(r"Search vault", re.I))
-                search.click()
-                ui_input({"pinyin": "nihao"}, window="bitwarden", observe=input_observer(search.evaluate))
-                assert search.input_value() == "你好", repr(search.input_value())
-            else:
-                field = page.get_by_label("Email address")
-                field.click()
-                ui_input({"pinyin": "nihao"}, window="bitwarden", observe=input_observer(field.evaluate))
-                assert field.input_value() == "你好", repr(field.input_value())
-            ui_input({"powerGuard": "Bitwarden"}, window="bitwarden")
-    return {"flow": "local Vaultwarden login and search" if full else "login screen input", "input": "你好"}
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("application", choices=("vscode", "firefox", "bitwarden"))
-    parser.add_argument("--full", action="store_true", help="exercise shared container and vault workflows")
+    parser.add_argument("application", choices=("vscode", "firefox"))
+    parser.add_argument("--full", action="store_true", help="exercise the shared development container workflow")
     args = parser.parse_args()
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     RUN.update(application=args.application, started=time.time(), result="running")

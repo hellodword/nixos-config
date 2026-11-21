@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 
 from domain_policy import read_json
+from mullvad_contract import TUNNEL_TABLE
 from provider_groups import grouped_outbounds, purpose_group
 
 
@@ -184,7 +185,7 @@ def bind_underlay(config, underlay):
     import ipaddress
     # The socket's initial route lookup precedes nftables' cgroup marking.
     # Use the same locked Mullvad mark before that lookup as well.
-    bind = {"bind_interface": interface, "routing_mark": 0x6D6F6C65}
+    bind = {"bind_interface": interface, "routing_mark": TUNNEL_TABLE}
     for version, key in ((4, "ipv4"), (6, "ipv6")):
         if key in underlay:
             address = ipaddress.ip_address(underlay[key])

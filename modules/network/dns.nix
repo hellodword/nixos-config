@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.site.network;
+  lockdown = import ../../lib/lockdown.nix;
   resolver4 = cfg.dns.ingressIPv4;
   resolver6 = cfg.dns.ingressIPv6;
   tailnet = config.services.tailscale.enable;
@@ -101,14 +102,14 @@ in
       content = ''
         set docker_bridges { type ifname; }
         chain dns_dnat {
-          ip daddr { 127.0.0.0/8, ${resolver4}${lib.optionalString tailnet ", 100.100.100.100"}${lib.optionalString cfg.lockdown.enable ", 10.67.0.1"} } return
-          ip6 daddr { ::1, ${resolver6}${lib.optionalString tailnet ", fd7a:115c:a1e0::53"}${lib.optionalString cfg.lockdown.enable ", fd66:105::1"} } return
-          meta nfproto ipv4 ct mark set 0xf41 meta mark set 0x6d6f6c65 dnat ip to ${resolver4}
-          meta nfproto ipv6 ct mark set 0xf41 meta mark set 0x6d6f6c65 dnat ip6 to ${resolver6}
+          ip daddr { 127.0.0.0/8, ${resolver4}${lib.optionalString tailnet ", 100.100.100.100"}${lib.optionalString cfg.lockdown.enable ", ${lockdown.peer.gatewayIPv4}"} } return
+          ip6 daddr { ::1, ${resolver6}${lib.optionalString tailnet ", fd7a:115c:a1e0::53"}${lib.optionalString cfg.lockdown.enable ", ${lockdown.peer.gatewayIPv6}"} } return
+          meta nfproto ipv4 ct mark set ${lockdown.ctMark} meta mark set ${lockdown.mark} dnat ip to ${resolver4}
+          meta nfproto ipv6 ct mark set ${lockdown.ctMark} meta mark set ${lockdown.mark} dnat ip6 to ${resolver6}
         }
         chain output {
           type nat hook output priority -105; policy accept;
-          ${lib.optionalString cfg.lockdown.enable "meta mark 0x6d6f6c65 return"}
+          ${lib.optionalString cfg.lockdown.enable "meta mark ${lockdown.mark} return"}
           meta l4proto { tcp, udp } th dport 53 jump dns_dnat
         }
         chain prerouting {
@@ -121,9 +122,9 @@ in
           ${lib.optionalString tailnet ''iifname "${tailInterface}" meta l4proto { tcp, udp } th dport 53 jump dns_dnat''}
         }
         chain clients {
-          iifname "lo" ct mark set 0xf41 accept
-          iifname @docker_bridges ct mark set 0xf41 accept
-          ${lib.optionalString tailnet ''iifname "${tailInterface}" ct mark set 0xf41 accept''}
+          iifname "lo" ct mark set ${lockdown.ctMark} accept
+          iifname @docker_bridges ct mark set ${lockdown.ctMark} accept
+          ${lib.optionalString tailnet ''iifname "${tailInterface}" ct mark set ${lockdown.ctMark} accept''}
           drop
         }
         chain input {
@@ -147,8 +148,8 @@ in
       '';
     };
     networking.firewall.extraInputRules = ''
-      ip daddr ${resolver4} meta l4proto { tcp, udp } th dport 53 ct mark 0xf41 accept
-      ip6 daddr ${resolver6} meta l4proto { tcp, udp } th dport 53 ct mark 0xf41 accept
+      ip daddr ${resolver4} meta l4proto { tcp, udp } th dport 53 ct mark ${lockdown.ctMark} accept
+      ip6 daddr ${resolver6} meta l4proto { tcp, udp } th dport 53 ct mark ${lockdown.ctMark} accept
     '';
     users.groups.site-network-logs = { };
     systemd.services = {

@@ -7,6 +7,35 @@
 let
   cfg = config.services.tailscale;
   interface = cfg.interfaceName;
+  lockdown = import ../../lib/lockdown.nix;
+  wrappedTailscale = pkgs.symlinkJoin {
+    name = "${pkgs.tailscale.name}-excluded";
+    inherit (pkgs.tailscale) pname version meta;
+    paths = [ pkgs.tailscale ];
+    postBuild = ''
+      ln -sf "${pkgs.tailscale}/bin/tailscale" "$out/bin/tailscale"
+      rm "$out/bin/tailscaled"
+      printf '%s\n' \
+        '#!${pkgs.runtimeShell}' \
+        'if [[ "$(basename "$0")" != "tailscaled" ]]; then' \
+        '  exec "${pkgs.tailscale}/bin/$(basename "$0")" "$@"' \
+        'fi' \
+        'for arg in "$@"; do' \
+        '  if [[ "$arg" == "--cleanup" ]]; then' \
+        '    exec ${pkgs.tailscale}/bin/tailscaled "$@"' \
+        '  fi' \
+        'done' \
+        'exec ${config.services.mullvad-vpn.package}/bin/mullvad-exclude ${pkgs.python3}/bin/python3 ${../../scripts/network}/run_excluded.py ${pkgs.tailscale}/bin/tailscaled "$@"' \
+        > "$out/bin/tailscaled"
+      chmod +x "$out/bin/tailscaled"
+      "$out/bin/tailscale" up --help >/dev/null
+      rm "$out/lib/systemd/system/tailscaled.service"
+      substitute \
+        "${pkgs.tailscale}/lib/systemd/system/tailscaled.service" \
+        "$out/lib/systemd/system/tailscaled.service" \
+        --replace-fail "${pkgs.tailscale}" "$out"
+    '';
+  };
   rules =
     action:
     lib.concatMapStringsSep "\n"
@@ -37,6 +66,7 @@ in
       }
       (lib.mkIf config.site.network.lockdown.enable {
         services.tailscale.openFirewall = true;
+        services.tailscale.package = wrappedTailscale;
         networking.nftables.tables.site-tailnet = {
           family = "inet";
           content = ''
@@ -46,19 +76,19 @@ in
               type route hook output priority -140; policy accept;
               # Both daemons use mangle priority (-150). Tailscale saves part of
               # the packet mark into conntrack; Mullvad expects its exact ct mark.
-              meta mark 0x6d6f6c65 ct mark set 0xf41
-              oifname "${interface}" ip daddr 100.64.0.0/10 ct mark set 0xf41 meta mark set 0x6d6f6c65
-              oifname "${interface}" ip6 daddr fd7a:115c:a1e0::/48 ct mark set 0xf41 meta mark set 0x6d6f6c65
+              meta mark ${lockdown.mark} ct mark set ${lockdown.ctMark}
+              oifname "${interface}" ip daddr 100.64.0.0/10 ct mark set ${lockdown.ctMark} meta mark set ${lockdown.mark}
+              oifname "${interface}" ip6 daddr fd7a:115c:a1e0::/48 ct mark set ${lockdown.ctMark} meta mark set ${lockdown.mark}
             }
             chain prerouting {
               type filter hook prerouting priority -160; policy accept;
-              iifname != "${interface}" fib daddr type local udp dport ${toString cfg.port} ct mark set 0xf41 meta mark set 0x6d6f6c65
+              iifname != "${interface}" fib daddr type local udp dport ${toString cfg.port} ct mark set ${lockdown.ctMark} meta mark set ${lockdown.mark}
             }
             chain input {
               type filter hook input priority -10; policy accept;
               # Classify after routing so exit-node traffic never gains this mark.
-              iifname "${interface}" ip saddr 100.64.0.0/10 ct mark set 0xf41
-              iifname "${interface}" ip6 saddr fd7a:115c:a1e0::/48 ct mark set 0xf41
+              iifname "${interface}" ip saddr 100.64.0.0/10 ct mark set ${lockdown.ctMark}
+              iifname "${interface}" ip6 saddr fd7a:115c:a1e0::/48 ct mark set ${lockdown.ctMark}
             }
           '';
         };
@@ -88,13 +118,6 @@ in
           serviceConfig = {
             ProtectControlGroups = false;
             RestartSec = "3s";
-            ExecStart = lib.mkForce [
-              ""
-              (
-                "${config.services.mullvad-vpn.package}/bin/mullvad-exclude ${pkgs.python3}/bin/python3 ${../../scripts/network/run_excluded.py} ${cfg.package}/bin/tailscaled"
-                + " --state=/var/lib/tailscale/tailscaled.state --socket=/run/tailscale/tailscaled.sock --port=\${PORT} $FLAGS"
-              )
-            ];
           };
         };
       })

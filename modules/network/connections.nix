@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.site.connections;
+  lockdown = import ../../lib/lockdown.nix;
 in
 {
   options.site.connections.enable = lib.mkEnableOption "NetworkManager connections with persistent local profiles";
@@ -13,7 +14,7 @@ in
     networking.networkmanager = {
       enable = true;
       unmanaged = [
-        "interface-name:wg0-mullvad"
+        "interface-name:${lockdown.interface}"
         "interface-name:tailscale0"
         "interface-name:docker0"
         "interface-name:br-*"

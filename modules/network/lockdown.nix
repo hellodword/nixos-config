@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.site.network;
+  lockdown = import ../../lib/lockdown.nix;
   mullvad = import ../../nix/mullvad.nix { inherit pkgs; };
   command = "${pkgs.python3}/bin/python3 ${../../scripts/network}/lockdown.py";
   controlEnvironment = {
@@ -41,7 +42,7 @@ in
   imports = [ ../core/reserved-ports.nix ];
   options.site.network.lockdown.enable = lib.mkEnableOption "protected transparent networking";
   config = lib.mkIf cfg.lockdown.enable {
-    site.reservedPorts = [ 51820 ];
+    site.reservedPorts = [ lockdown.peer.port ];
     networking.firewall = {
       enable = true;
       checkReversePath = "loose";
@@ -73,12 +74,12 @@ in
           type filter hook output priority -1; policy accept;
           # UDP sockets can reuse a tuple whose conntrack entry outlives its
           # excluded sender. Authorize each original packet by its current mark.
-          meta l4proto udp ct direction original ct mark 0xf41 meta mark != 0x6d6f6c65 ct mark set 0
+          meta l4proto udp ct direction original ct mark ${lockdown.ctMark} meta mark != ${lockdown.mark} ct mark set 0
         }
         chain postrouting {
           type filter hook postrouting priority 200; policy accept;
-          oifname != { "lo", "wg0-mullvad" } ip saddr 10.67.0.2 counter drop
-          oifname != { "lo", "wg0-mullvad" } ip6 saddr fd66:105::2 counter drop
+          oifname != { "lo", "${lockdown.interface}" } ip saddr ${lockdown.peer.clientIPv4} counter drop
+          oifname != { "lo", "${lockdown.interface}" } ip6 saddr ${lockdown.peer.clientIPv6} counter drop
         }
       '';
     };

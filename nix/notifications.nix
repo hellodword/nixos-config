@@ -5,49 +5,12 @@
 let
   py = pkgs.python3Packages;
   apprise = py.apprise;
-  api = py.buildPythonPackage {
-    pname = "apprise-api";
-    version = "2.1.0";
-    src = pkgs.fetchFromGitHub {
-      owner = "caronc";
-      repo = "apprise-api";
-      tag = "v2.1.0";
-      hash = "sha256-ZQoI3r5sW4aLZRSynGNI7fPqLDQHyTMBeP3Wi5jFcEs=";
-    };
-    pyproject = true;
-    build-system = [ py.setuptools ];
-    pythonRelaxDeps = [ "apprise" ];
-    dependencies = [
-      apprise
-      py.django
-      py.gevent
-      py.gunicorn
-      py.requests
-      py.paho-mqtt
-      py.gntp
-      py.cryptography
-      py.django-prometheus
-      py.pgpy
-      py.smpplib
-      py.slixmpp
-      py.pika
-    ];
-    # Upstream starts this Django tree with core/api as top-level packages.
-    postInstall = ''
-      cp -r apprise_api/static "$out/${pkgs.python3.sitePackages}/apprise_api/"
-      cp -r apprise_api/api/templates "$out/${pkgs.python3.sitePackages}/apprise_api/api/"
-    '';
-    pythonImportsCheck = [ "apprise_api" ];
-    meta.license = pkgs.lib.licenses.mit;
-  };
   python = pkgs.python3.withPackages (_: [
-    api
+    apprise
     py.pyyaml
   ]);
-  apiRoot = "${api}/${pkgs.python3.sitePackages}/apprise_api";
-  bootstrap = pkgs.writeShellScript "apprise-api-start" ''
-    export PYTHONPATH=${apiRoot}
-    exec ${python}/bin/python3 ${../scripts/notifications/bootstrap.py} ${python}/bin/gunicorn ${apiRoot}
+  bootstrap = pkgs.writeShellScript "apprise-start" ''
+    exec ${python}/bin/python3 ${../scripts/notifications/bootstrap.py}
   '';
   barkStart = pkgs.writeShellScript "bark-start" ''
     export BARK_KEY=local
@@ -81,31 +44,11 @@ let
 in
 {
   inherit
-    api
     apprise
     python
-    apiRoot
     ;
   apiImage = image "site-apprise" 64110 bootstrap [
     "PYTHONDONTWRITEBYTECODE=1"
-    "DJANGO_SETTINGS_MODULE=core.settings"
-    "APPRISE_CONFIG_DIR=/tmp/config"
-    "APPRISE_STORAGE_DIR=/tmp/store"
-    "APPRISE_ATTACH_DIR=/tmp/attachments"
-    "APPRISE_PLUGIN_PATHS=/var/empty"
-    "APPRISE_STATEFUL_MODE=simple"
-    "APPRISE_STATELESS_MODE=disabled"
-    "APPRISE_CONFIG_LOCK=yes"
-    "APPRISE_AUTH_REQUIRED=yes"
-    "APPRISE_ADMIN=no"
-    "APPRISE_API_ONLY=yes"
-    "APPRISE_ALLOW_SERVICES=bark,wecombot,wechat,dingtalk,feishu"
-    "APPRISE_ATTACH_SIZE=0"
-    "APPRISE_ATTACH_ALLOW_URL="
-    "APPRISE_HTTP_REDIRECTS=no"
-    "APPRISE_ALLOW_TEMPLATES=yes"
-    "LOG_LEVEL=WARNING"
-    "ALLOWED_HOSTS=localhost"
     "REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt"
   ];
   barkImage = image "site-bark" 64111 barkStart [ ];

@@ -9,13 +9,17 @@ import stat
 import subprocess
 import tempfile
 import ipv6
+from mullvad_contract import (
+    CLIENT4,
+    CLIENT6,
+    GATE4,
+    GATE6,
+    PEER_PORT,
+    SETTINGS_VERSION,
+    TUNNEL_TABLE,
+)
 
-CLIENT4, CLIENT6 = "10.67.0.2", "fd66:105::2"
-GATE4, GATE6 = "10.67.0.1", "fd66:105::1"
 OWNER = "site-network-routing-v1"
-# Locked Mullvad 2026.5 constants. Its main-table suppression rule otherwise
-# lets connected/static routes avoid the tunnel and hit the LAN reject rule.
-TUNNEL_TABLE = 0x6D6F6C65
 # Mullvad deletes any inverted-fwmark lookup of its table while connecting,
 # regardless of priority. Positive rules keep our independently owned routing
 # intact: infrastructure uses main first, remaining traffic uses the tunnel.
@@ -76,7 +80,7 @@ def prepare(state):
     settings = state / "mullvad"
     settings.mkdir(mode=0o700, exist_ok=True)
     path = settings / "settings.json"
-    seed = json.dumps({"settings_version": 17, "lockdown_mode": True,
+    seed = json.dumps({"settings_version": SETTINGS_VERSION, "lockdown_mode": True,
                        "allow_lan": False, "auto_connect": False}) + "\n"
     if path.exists():
         if path.is_symlink():
@@ -119,7 +123,7 @@ def connect(state):
         # The peer is the local sing-box endpoint, also configured for 1280.
         # An explicit MTU keeps automatic probing from disabling IPv6 below 1280.
         ["tunnel", "set", "mtu", "1280"],
-        ["relay", "set", "custom", "127.0.0.1", "51820", public, CLIENT4,
+        ["relay", "set", "custom", "127.0.0.1", str(PEER_PORT), public, CLIENT4,
          *([] if only4 else [CLIENT6]), "--v4-gateway", GATE4,
          *([] if only4 else ["--v6-gateway", GATE6])],
         ["tunnel", "set", "ipv6", "off" if only4 else "on"], ["tunnel", "set", "quantum-resistant", "off"],

@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.site.network;
+  lockdown = import ../../lib/lockdown.nix;
   directDNS = map (
     upstream:
     let
@@ -104,8 +105,8 @@ in
       content = ''
         chain input {
           type filter hook input priority -20; policy accept;
-          ip daddr ${address} iifname "lo" ct mark set 0xf41 accept
-          ip daddr ${address} iifname "br-site-direct" meta l4proto { tcp, udp } th dport 53 ct mark set 0xf41 accept
+          ip daddr ${address} iifname "lo" ct mark set ${lockdown.ctMark} accept
+          ip daddr ${address} iifname "br-site-direct" meta l4proto { tcp, udp } th dport 53 ct mark set ${lockdown.ctMark} accept
           ip daddr ${address} drop
         }
       '';

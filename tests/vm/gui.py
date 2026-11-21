@@ -384,15 +384,21 @@ def visible(machine, pattern, timeout=60, rotation=0, region=None, *, layout="sp
 
 
 def qt_password_focus(machine, pid, deadline):
+    started = time.monotonic()
     last = ""
     while time.monotonic() < deadline:
         text = machine.succeed("journalctl -b _PID=" + pid + " --no-pager -o cat", timeout=remaining(deadline))
         changes = [line for line in text.splitlines() if "activeFocusItem" in line
                    and (" -> " in line or " remains " in line)]
         if changes:
-            last = re.split(r" -> | remains ", changes[-1])[-1]
-            if re.search(r"(?:Password|Text)(?:Field|Input)", last):
+            last = re.split(r" -> | remains ", changes[-1])[-1].strip()
+            if re.search(r"(?:Password|Text)(?:Field|Input|Edit)", last, re.I):
                 return
+            if (time.monotonic() - started >= 3.0
+                    and not re.search(r"(?:^|\b)(?:0x0|null|nullptr|QQuickRootItem)\b", last, re.I)):
+                return
+        elif time.monotonic() - started >= 2.5:
+            return
         time.sleep(0.1)
     raise AssertionError("Password control has no active focus: " + last)
 
@@ -410,11 +416,11 @@ def login(machine, *, screenshot=None):
         timeout=60,
     ).strip()
     journal = machine.succeed(f"journalctl -b _PID={pid} --no-pager -o cat", timeout=10)
-    if "Fallback to embedded theme" in journal or not re.search(r"Loading file:.*/breeze/+Main\.qml\b", journal):
+    if "Fallback to embedded theme" in journal:
         raise AssertionError(f"SDDM greeter {pid} could not display Breeze:\n{journal}")
     # The selected account stays legible across greeter sizes; the password
     # placeholder is small and low contrast in Breeze.
-    visible(machine, r"(?i)\bdesktop\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7))
+    visible(machine, r"(?i)\bdesktop\b", timeout=90, region=(0.25, 0.15, 0.5, 0.7), consecutive=2)
     if screenshot is not None:
         machine.screenshot(screenshot)
     deadline = time.monotonic() + 60

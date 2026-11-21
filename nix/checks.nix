@@ -34,6 +34,9 @@ let
   collector = (pkgs.formats.json { }).generate "dns-collector.json" (
     import ../lib/dns-collector.nix { }
   );
+  lockdownContract = (pkgs.formats.json { }).generate "lockdown-contract.json" (
+    import ../lib/lockdown.nix
+  );
   policy = pkgs.writeText "network-test-policy.json" (
     builtins.toJSON (import ../tests/fixtures/network-policy.nix { inherit (pkgs) lib; })
   );
@@ -99,9 +102,37 @@ rec {
         pkgs.dnsdist
         pkgs.dnsproxy
         pkgs.dns-collector
+        pkgs.mullvad
         pkgs.openssl
       ]
       ''
+        python3 - ${lockdownContract} ${pkgs.mullvad}/bin/mullvad <<'PY'
+        import json
+        from pathlib import Path
+        import subprocess
+        import sys
+
+        sys.path.insert(0, "scripts/network")
+        import mullvad_contract
+
+        expected = json.loads(Path(sys.argv[1]).read_text())
+        assert expected == mullvad_contract.CONTRACT, (expected, mullvad_contract.CONTRACT)
+        mullvad = sys.argv[2]
+        for subcommand, tokens in (
+            (["lockdown-mode", "set", "--help"], ("on", "off")),
+            (["lan", "set", "--help"], ("allow", "block")),
+            (["tunnel", "set", "--help"], ("mtu", "ipv6", "quantum-resistant")),
+            (["relay", "set", "custom", "--help"], ("--v4-gateway", "--v6-gateway")),
+            (["dns", "set", "default", "--help"], ()),
+            (["auto-connect", "set", "--help"], ("on", "off")),
+            (["connect", "--help"], ()),
+            (["disconnect", "--help"], ()),
+            (["status", "--help"], ()),
+        ):
+            help_text = subprocess.check_output([mullvad, *subcommand], text=True)
+            for token in tokens:
+                assert token in help_text, (subcommand, token)
+        PY
         python3 -m unittest tests.unit.test_network -v
         python3 -m tests.integration.dns --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} > $out
         python3 -m tests.integration.network --sing-box ${pkgs.sing-box}/bin/sing-box --template ${policy} --purpose-policy ${purposePolicy} --dnsdist ${pkgs.dnsdist}/bin/dnsdist --dnsproxy ${pkgs.dnsproxy}/bin/dnsproxy --dnscollector ${pkgs.dns-collector}/bin/go-dnscollector --collector-template ${collector} >> $out

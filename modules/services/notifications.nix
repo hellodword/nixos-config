@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.site.notifications;
+  lockdown = import ../../lib/lockdown.nix;
   prefix = cfg.networkPrefix;
   subnet = "${prefix}.0/29";
   gateway = "${prefix}.1";
@@ -323,22 +324,22 @@ in
         content = ''
           chain output {
             type route hook output priority -140; policy accept;
-            ip daddr ${apiAddress} tcp dport 8000 meta skuid ${toString config.users.users.haproxy.uid} ct mark set 0xf41 meta mark set 0x6d6f6c65 accept
+            ip daddr ${apiAddress} tcp dport 8000 meta skuid ${toString config.users.users.haproxy.uid} ct mark set ${lockdown.ctMark} meta mark set ${lockdown.mark} accept
             ip daddr ${subnet} ct state established,related accept
             ip daddr ${subnet} drop
           }
           chain input {
             type filter hook input priority -10; policy accept;
-            iifname "site-notify" ip saddr { ${apiAddress}, ${barkAddress} } ip daddr ${gateway} tcp dport 443 ct mark set 0xf41 accept
-            iifname "site-notify" ct state established,related ct mark set 0xf41 accept
+            iifname "site-notify" ip saddr { ${apiAddress}, ${barkAddress} } ip daddr ${gateway} tcp dport 443 ct mark set ${lockdown.ctMark} accept
+            iifname "site-notify" ct state established,related ct mark set ${lockdown.ctMark} accept
             iifname "site-notify" drop
           }
           chain forward {
             type filter hook forward priority -200; policy accept;
             # Bridge netfilter also visits the host's Internet firewall. Keep
             # this one local backend connection independent of tunnel capture.
-            iifname "site-notify" oifname "site-notify" ip saddr ${apiAddress} ip daddr ${barkAddress} tcp dport 8080 ct mark set 0xf41 accept
-            iifname "site-notify" oifname "site-notify" ip saddr ${barkAddress} ip daddr ${apiAddress} tcp sport 8080 ct state established ct mark set 0xf41 accept
+            iifname "site-notify" oifname "site-notify" ip saddr ${apiAddress} ip daddr ${barkAddress} tcp dport 8080 ct mark set ${lockdown.ctMark} accept
+            iifname "site-notify" oifname "site-notify" ip saddr ${barkAddress} ip daddr ${apiAddress} tcp sport 8080 ct state established ct mark set ${lockdown.ctMark} accept
             iifname "site-notify" oifname != "site-notify" drop
             oifname "site-notify" iifname != "site-notify" drop
           }

@@ -43,10 +43,8 @@ let
   chrome = wrap {
     package = pkgs.google-chrome;
     arguments = [ "--password-store=gnome-libsecret" ];
-    binaries = [
-      "google-chrome"
-      "google-chrome-stable"
-    ];
+    binaries = [ "google-chrome" ];
+    optionalBinaries = [ "google-chrome-stable" ];
     profile = profile "google-chrome" (
       desktopBus
       + keyring
@@ -141,8 +139,8 @@ in
         })
         (wrap {
           package = config.programs.mpv.finalPackage;
-          binaries = [
-            "mpv"
+          binaries = [ "mpv" ];
+          optionalBinaries = [
             "umpv"
             "mpv_identify.sh"
           ];
@@ -213,10 +211,8 @@ in
         })
         (wrap {
           package = pkgs.remmina;
-          binaries = [
-            "remmina"
-            "remmina-file-wrapper"
-          ];
+          binaries = [ "remmina" ];
+          optionalBinaries = [ "remmina-file-wrapper" ];
           profile = profile "remmina" (
             desktopBus
             + keyring

@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.site.network;
+  lockdown = import ../../lib/lockdown.nix;
   firewall = config.networking.firewall;
   private4 = "10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16";
   native4 = [
@@ -50,8 +51,8 @@ let
   );
   routes = action: ''
     # The local WireGuard peer is an internal DNS endpoint, not a LAN host.
-    ip -4 rule ${action} pref 88 to 10.67.0.1 lookup 1836018789 protocol 99
-    ip -4 rule ${action} pref 89 to 10.67.0.1 unreachable protocol 99
+    ip -4 rule ${action} pref 88 to ${lockdown.peer.gatewayIPv4} lookup ${toString lockdown.table} protocol 99
+    ip -4 rule ${action} pref 89 to ${lockdown.peer.gatewayIPv4} unreachable protocol 99
     ${lib.concatMapStringsSep "\n" (
       prefix: "ip -4 rule ${action} pref 92 to ${prefix} lookup main protocol 99"
     ) native4}
@@ -90,11 +91,11 @@ in
           # Docker's inventory service maintains only ordinary bridge names.
           set docker_bridges { type ifname; }
           chain admitted {
-            ct mark set 0xf41 meta mark set 0x6c6f636c accept
+            ct mark set ${lockdown.ctMark} meta mark set 0x6c6f636c accept
           }
           chain input {
             type filter hook input priority -14; policy accept;
-            ${lib.optionalString cfg.lockdown.enable ''iifname "wg0-mullvad" return''}
+            ${lib.optionalString cfg.lockdown.enable ''iifname "${lockdown.interface}" return''}
             meta l4proto { tcp, udp } jump services
           }
           chain services {
@@ -111,27 +112,27 @@ in
             type filter hook forward priority -14; policy accept;
             ct direction original ct status dnat oifname @docker_bridges jump published
             ${lib.optionalString cfg.lockdown.enable ''
-              ip saddr { ${private4} } ip daddr { ${private4}, 224.0.0.0/4, 255.255.255.255 } ct mark set 0xf41
-              ${lib.optionalString tailnet.enable ''iifname "${tailnet.interfaceName}" ip daddr { ${private4} } ct mark set 0xf41''}
+              ip saddr { ${private4} } ip daddr { ${private4}, 224.0.0.0/4, 255.255.255.255 } ct mark set ${lockdown.ctMark}
+              ${lib.optionalString tailnet.enable ''iifname "${tailnet.interfaceName}" ip daddr { ${private4} } ct mark set ${lockdown.ctMark}''}
             ''}
           }
           ${lib.optionalString cfg.lockdown.enable ''
             chain prerouting {
               type filter hook prerouting priority -135; policy accept;
-              ct direction reply ct mark 0xf41 meta mark set 0x6d6f6c65
+              ct direction reply ct mark ${lockdown.ctMark} meta mark set ${lockdown.mark}
             }
             chain output {
               type route hook output priority -90; policy accept;
-              ip daddr 10.67.0.1 return
-              ip daddr { ${private4}, 224.0.0.0/4, 255.255.255.255 } ct mark set 0xf41 meta mark set 0x6d6f6c65
-              ct direction reply ct mark 0xf41 meta mark set 0x6d6f6c65
+              ip daddr ${lockdown.peer.gatewayIPv4} return
+              ip daddr { ${private4}, 224.0.0.0/4, 255.255.255.255 } ct mark set ${lockdown.ctMark} meta mark set ${lockdown.mark}
+              ct direction reply ct mark ${lockdown.ctMark} meta mark set ${lockdown.mark}
             }
           ''}
         '';
       };
     };
     networking.firewall.extraInputRules = ''
-      meta mark 0x6c6f636c ct mark 0xf41 accept
+      meta mark 0x6c6f636c ct mark ${lockdown.ctMark} accept
     '';
     systemd.services.site-local-routes = lib.mkIf cfg.lockdown.enable {
       description = "Native IPv4 private-network and service reply routes";

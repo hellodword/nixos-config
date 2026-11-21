@@ -13,7 +13,6 @@
       python = pkgs.python3.withPackages (p: [
         p.playwright
         p.selenium
-        p.cryptography
       ]);
     in
     {
@@ -91,7 +90,6 @@
       { pkgs, ... }:
       let
         image = import ../fixtures/applications/container.nix { inherit pkgs; };
-        certificates = import (pkgs.path + /nixos/tests/nginx/proxyprotocol/snakeoil-certs.nix);
       in
       {
         imports = [ ../../modules/services/containers.nix ];
@@ -102,31 +100,6 @@
         };
         site.containers.enable = true;
         environment.etc."application-fixtures/container.tar.gz".source = image;
-        services.vaultwarden = {
-          enable = true;
-          config = {
-            DOMAIN = "https://vault.test.nix";
-            ROCKET_ADDRESS = "127.0.0.1";
-            ROCKET_PORT = 8222;
-            SIGNUPS_ALLOWED = true;
-            SIGNUPS_VERIFY = false;
-            WEB_VAULT_ENABLED = false;
-          };
-        };
-        networking.extraHosts = "127.0.0.1 vault.test.nix";
-        security.pki.certificateFiles = [ certificates.ca.cert ];
-        services.nginx = {
-          enable = true;
-          virtualHosts."vault.test.nix" = {
-            addSSL = true;
-            sslCertificate = certificates."*.test.nix".cert;
-            sslCertificateKey = certificates."*.test.nix".key;
-            locations."/" = {
-              proxyPass = "http://127.0.0.1:8222";
-              proxyWebsockets = true;
-            };
-          };
-        };
       };
     i3 = {
       services.displayManager.defaultSession = lib.mkForce "none+i3";
@@ -323,7 +296,7 @@
                 (machine, execution + "-core", "coredumpctl --no-pager --since=@" + started + " info COREDUMP_UID=1000"),
                 (machine, execution + "-kernel", "journalctl -b -k --no-pager --since=@" + started),
                 (machine, execution + "-processes", "ps -u desktop -o pid,ppid,stat,etimes,cgroup,args"),
-            ] + ([(machine, execution + "-vault", "journalctl -b -u nginx -u vaultwarden --no-pager --since=@" + started)] if application == "bitwarden" and full else []))
+            ])
             try:
                 machine.screenshot(machine.name + "-" + execution + "-failure", timeout=20)
             except Exception as capture_error:
@@ -406,9 +379,9 @@
     def exercise_firejail(machine):
         machine.succeed("printf firejail-persist-canary > /persist/firejail-canary.txt && chmod 0644 /persist/firejail-canary.txt")
         user(machine, "test -r /persist/firejail-canary.txt")
-        for wrapped in ("firefox", "bitwarden", "feh", "bw"):
+        for wrapped in ("firefox", "feh"):
             user(machine, f"grep -F '/run/wrappers/bin/firejail' \"$(command -v {wrapped})\"")
-        user(machine, "feh --version >/dev/null && bw --version >/dev/null")
+        user(machine, "feh --version >/dev/null")
         user(
             machine,
             "profile=$(sed -n 's/.*\\(--profile=[^ ]*\\).*/\\1/p' \"$(command -v firefox)\") && "
@@ -430,11 +403,8 @@
             )
             if session == "sway":
                 machine.wait_for_unit("docker.service")
-                machine.wait_for_unit("vaultwarden.service")
-                machine.wait_for_unit("nginx.service")
             else:
                 machine.fail("systemctl is-enabled docker.service")
-                machine.fail("systemctl is-enabled vaultwarden.service")
             gui["wait_for_session"](machine, session, user_command)
             if session == "KDE":
                 machine.wait_until_fails("pgrep -u 1000 -f '^([^ ]*/)?ksplashqml( |$)'", timeout=90)
@@ -456,7 +426,6 @@
                 ("rofi-kitty", lambda: exercise_launchers(machine, session)),
                 ("firefox", lambda: exercise_application(machine, "firefox")),
                 ("vscode", lambda: exercise_application(machine, "vscode", full=session == "sway")),
-                ("bitwarden", lambda: exercise_application(machine, "bitwarden", full=session == "sway")),
             ):
                 if blocked:
                     outcomes.append({"session": session, "application": name, "result": "not-run", "reason": blocked})

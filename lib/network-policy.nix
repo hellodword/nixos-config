@@ -11,6 +11,9 @@
   ipRuleSets ? [ ],
   tailscale ? false,
 }:
+let
+  lockdownContract = import ./lockdown.nix;
+in
 {
   log = {
     level = "debug";
@@ -73,16 +76,16 @@
     system = false;
     mtu = 1280;
     address = [
-      "10.67.0.1/32"
-      "fd66:105::1/128"
+      "${lockdownContract.peer.gatewayIPv4}/32"
+      "${lockdownContract.peer.gatewayIPv6}/128"
     ];
-    listen_port = 51820;
+    listen_port = lockdownContract.peer.port;
     bind_interface = "lo";
     peers = [
       {
         allowed_ips = [
-          "10.67.0.2/32"
-          "fd66:105::2/128"
+          "${lockdownContract.peer.clientIPv4}/32"
+          "${lockdownContract.peer.clientIPv6}/128"
         ];
       }
     ];
