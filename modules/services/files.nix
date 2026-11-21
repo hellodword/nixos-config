@@ -173,7 +173,7 @@ let
       http-request set-header X-Forwarded-Proto https
 
       http-response set-var(txn.upstream_status) status
-      http-after-response set-header X-Content-Type-Options nosniff
+      http-after-response set-header X-Content-Type-Options nosniff if !temporary
       http-after-response set-var(txn.response_headers) res.hdrs
       use_backend temporary if temporary
       default_backend browser

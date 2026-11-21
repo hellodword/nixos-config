@@ -1,22 +1,45 @@
 { pkgs }:
 let
   root = pkgs.runCommand "httpserver-root" { } ''
-    mkdir -p $out/share $out/socket $out/tmp $out/etc/nginx
+    mkdir -p $out/share $out/single $out/socket $out/tmp $out/etc/nginx
     ln -s ${pkgs.nginx}/conf/mime.types $out/etc/nginx/mime.types
     chmod 1777 $out/tmp
   '';
+  entrypoint = pkgs.writeShellScriptBin "httpserver-entry" ''
+    set -euo pipefail
+    ${pkgs.dufs}/bin/dufs "$@" >/dev/null &
+    dufs_pid=$!
+    nginx_pid=
+    cleanup() {
+      kill -TERM "$dufs_pid" ''${nginx_pid:+"$nginx_pid"} 2>/dev/null || true
+      wait "$dufs_pid" ''${nginx_pid:+"$nginx_pid"} 2>/dev/null || true
+    }
+    trap cleanup EXIT INT TERM HUP
+    for ((i = 0; i < 150; i++)); do
+      if [[ -S /tmp/dufs.sock ]]; then
+        break
+      fi
+      kill -0 "$dufs_pid" 2>/dev/null
+      ${pkgs.coreutils}/bin/sleep 0.02
+    done
+    [[ -S /tmp/dufs.sock ]]
+    ${pkgs.nginx}/bin/nginx -e stderr -c /etc/nginx/nginx.conf -g 'daemon off;' &
+    nginx_pid=$!
+    wait -n "$dufs_pid" "$nginx_pid" || true
+    exit 1
+  '';
   image = pkgs.dockerTools.buildLayeredImage {
     name = "site-httpserver";
-    contents = [ root ];
+    contents = [
+      root
+      entrypoint
+    ];
     config = {
-      Cmd = [
-        "${pkgs.nginx}/bin/nginx"
-        "-e"
-        "stderr"
-        "-c"
-        "/etc/nginx/nginx.conf"
+      Entrypoint = [
+        "${pkgs.tini}/bin/tini"
         "-g"
-        "daemon off;"
+        "--"
+        "${entrypoint}/bin/httpserver-entry"
       ];
       Labels."org.nixos-config.service" = "site-httpserver";
     };
@@ -31,6 +54,7 @@ in
       runtimeInputs = [
         pkgs.python3
         pkgs.docker
+        pkgs.file
         pkgs.iproute2
         pkgs.openssl
         pkgs.qrencode

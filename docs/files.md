@@ -122,21 +122,27 @@ sudo site-files-client revoke iphone
 httpserver
 httpserver ./report.pdf
 httpserver ~/Pictures/trip
+httpserver --spa ./dist
+httpserver --browse ./site
 httpserver --random-code ./iphone
 httpserver --code '自行指定的访问码' ./directory
 ```
 
-默认分享当前目录；传入文件时，根地址 `https://<地址>:8444/` 直接访问该文件。图片、PDF 和文本按类型显示，文件响应支持 HEAD 和 Range。HTML 与 SVG 在受限的浏览器环境中显示。
+`:8444` 临时分享在无网络只读 gVisor 容器（`runsc-files`）内采用 **Nginx 边界网关 + Dufs 文件/静态 Web 引擎**的分工选型：Dufs 原生支持 Unix socket 监听、响应式目录界面、静态站点与 SPA 渲染及运行时文件头嗅探；前置 Nginx 承担敏感路径正则硬 `404` 阻断、会话访问码登录网关、MIME 精细归一化、`gzip` 压缩与标准 CORS 控制。
+
+- **静态 Web 与目录浏览双栖服务**：默认分享当前目录；目录包含 `index.html` 时直接作为标准静态 Web 站点提供服务，不含 `index.html` 时展示响应式文件管理界面（支持跨子目录递归搜索、将当前目录或任意子目录流式打包为 `.zip` 下载、按名称/时间/体积排序、`?hash` 查看 SHA-256 校验值及只读 WebDAV；命令行 `curl` 访问自动返回精简 HTML 列表）。`--spa` 将未命中的前端路由回退至 `/index.html` 以支持单页应用预览；`--browse` 在含 `index.html` 的目录中强制打开文件管理界面。传入单文件时，根地址 `https://<地址>:8444/` 与 `/<文件名>` 直接返回该文件。
+- **智能 MIME 与传输策略**：结合扩展名映射、Dufs 运行时文件头字节嗅探与宿主机 `libmagic` 单文件魔数识别——现代前端资源（`.woff2`/`.ttf`/`.otf` 字体、`.mjs`/`.cjs` ES 模块、`.wasm`、`.webmanifest`）、图片、音视频、PDF 和 iOS `.mobileconfig` 按原生类型返回；Markdown、常见源码与配置文件（含 UTF-8 TypeScript `.ts`、Rust `.rs`、Nix `.nix` 等）及无后缀 UTF-8 文本文件（如 `README`、`LICENSE`、`Justfile`）均以 UTF-8 文本在浏览器内直接阅读；无后缀单文件优先按魔数返回已识别的二进制类型，其余未知二进制文件返回 `application/octet-stream`。文件响应支持 `HEAD`、`Range` 分片、`ETag` 协商缓存及文本/脚本/WASM 的 `gzip` 压缩；未设置访问码时默认开启标准 CORS 与 `OPTIONS` 预检响应，便于本地跨端口前端调试加载资源。
+- **安全边界与明确不纳入的威胁范围**：安全兜底由 HTTPS 传输与证书指纹人工核对、可选会话访问码、敏感路径与名称的 Nginx 硬 `404` 阻断，以及只读挂载、禁止外部软链逃逸的无网络 gVisor 沙箱共同承担，核心目标是防范**宿主机远程代码执行（RCE）、敏感文件越权泄漏、未授权访问与链路中间人替换（MITM）**。常规浏览器侧内容沙箱限制（如在 `:8444` 分享页面上施加 `Content-Security-Policy: sandbox`、`X-Content-Type-Options: nosniff` 或阻断同源/跨源子资源读取）不在防护范围内，分享页面中的脚本、字体、样式、存储与跨源请求均按标准 Web 环境运行；`:8443` 长期文件服务通过独立端口源、mTLS 客户端证书验证及 HAProxy 剥离非分享 Cookie 保持独立隔离。
 
 命令为活动的局域网网卡地址分别打印 URL 和二维码，包括由实际网卡承载的 bridge 或 VLAN；找不到这样的地址时显示 localhost。每个地址都会检查证书 SAN，缺少的地址仍会显示，并提示添加到 SOPS 的 `files.certificateNames`。将常用地址逐行加入该字段、部署并重新签发即可。
 
 `--random-code` 生成 12 位大写字母和数字，终端与网页输入框均以 `XXXX-XXXX-XXXX` 显示。输入框自动大写、分组，也可粘贴带或不带连字符的访问码。`--code` 使用自行指定的原值。
 
-访问码只用于当前分享；浏览器通过验证后持有 Secure、HttpOnly、SameSite=Lax 会话 Cookie。新分享生成新会话，二维码只包含地址。命令在前台显示请求概要，按 Ctrl+C 结束分享及正在传输的文件，一次只能运行一个分享；空闲入口返回 404。
+访问码只用于当前分享；浏览器通过验证后持有 Secure、HttpOnly、SameSite=Lax 会话 Cookie，且受控响应统一携带 `Cache-Control: no-store`。新分享生成新会话，二维码只包含地址。命令在前台显示请求概要，按 Ctrl+C 结束分享及正在传输的文件，一次只能运行一个分享；空闲入口返回 404。
 
-传入路径按实际文件系统位置检查，包括持久目录的 bind mount 别名。整个 home 等宽泛根目录需要改为具体子目录；敏感名称与路径由 [`site.files.temporary`](../modules/services/files.nix) 声明，可在主机配置中追加。目录浏览使用 Nginx 原生列表，普通点文件可通过具体 URL 访问。
+传入路径按实际文件系统位置检查，包括持久目录的 bind mount 别名。整个 home 等宽泛根目录需要改为具体子目录；敏感名称与路径由 [`site.files.temporary`](../modules/services/files.nix) 声明，可在主机配置中追加。前置 Nginx 对匹配的敏感路径直接返回 404，Dufs 同时将其从目录列表、搜索和 `.zip` 归档中排除；普通点文件可通过具体 URL 访问。
 
-临时容器以当前用户身份读取选定路径，只读挂载、禁止符号链接穿透，使用无网络的 gVisor 运行时。HTTPS 前端通过专用 Unix socket 转发请求，只向分享容器转交分享会话，证书私钥留在 HTTPS 服务内。
+临时容器以当前用户身份读取选定路径，只读挂载、禁止外部符号链接逃逸，使用无网络的 gVisor 运行时。HTTPS 前端通过专用 Unix socket 转发请求，只向分享容器转交分享会话，证书私钥留在 HTTPS 服务内。
 
 ## 访问与排查
 

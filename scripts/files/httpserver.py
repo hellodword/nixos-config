@@ -1,4 +1,4 @@
-"""Run a foreground, read-only Nginx share in the configured gVisor runtime."""
+"""Run a foreground, read-only HTTPS share backed by Nginx and Dufs in gVisor."""
 
 import argparse
 import base64
@@ -9,7 +9,6 @@ import hashlib
 import io
 import ipaddress
 import json
-import mimetypes
 import os
 from pathlib import Path
 import pwd
@@ -26,7 +25,6 @@ from urllib.parse import quote
 
 
 PROFILE_TYPE = "application/x-apple-aspen-config"
-mimetypes.add_type(PROFILE_TYPE, ".mobileconfig")
 
 
 def nginx_quote(value):
@@ -96,14 +94,57 @@ def login_page(settings, source, grouped_code):
             .replace("@GROUPED_CODE@", "true" if grouped_code else "false"))
 
 
+def single_mime_hints(source):
+    if not source.is_file():
+        return "", ""
+    suffix = source.suffix.lower()
+    if suffix == ".mobileconfig":
+        return PROFILE_TYPE, ""
+    if suffix in (".mjs", ".cjs"):
+        return "text/javascript; charset=utf-8", ""
+    if suffix in (".tsx", ".jsx", ".mts", ".cts"):
+        return "text/plain; charset=utf-8", ""
+    if not suffix:
+        result = subprocess.run(
+            ["file", "--brief", "--mime-type", "--", str(source)],
+            check=False, capture_output=True, text=True,
+        )
+        detected = result.stdout.strip() if result.returncode == 0 else ""
+        if (detected and detected not in ("application/octet-stream", "inode/x-empty")
+                and not detected.startswith("text/")):
+            return "", detected
+    return "", ""
+
+
+def dufs_arguments(settings, denied, source, mode):
+    args = ["--bind", "/tmp/dufs.sock", "--log-format", ""]
+    if source.is_dir():
+        args.extend(["--allow-search", "--allow-archive", "--allow-hash"])
+        hidden = [item for item in [*settings["blockedNames"], *denied] if "," not in item]
+        if hidden:
+            args.extend(["--hidden", ",".join(hidden)])
+        if mode == "spa":
+            args.append("--render-spa")
+        elif mode != "browse":
+            args.append("--render-try-index")
+        args.append("/share")
+    else:
+        args.append(f"/single/{source.name}")
+    return args
+
+
 def configuration(settings, denied, source, code, session, grouped_code):
     patterns = [fnmatch.translate(name).removesuffix(r"\z").removesuffix(r"\Z")
                 for name in settings["blockedNames"]]
     rules = [f"location ~ {nginx_quote('(?:^|/)(?:' + '|'.join(patterns) + ')(?:/|$)')} {{ return 404; }}"]
     rules += [f"location ~ {nginx_quote('^/' + re.escape(path) + '(?:/|$)')} {{ return 404; }}"
               for path in denied]
-    auth_maps = auth_locations = guard = ""
+    single_override, magic_fallback = single_mime_hints(source)
+    magic_rule = (f'"application/octet-stream" {nginx_quote(magic_fallback)};'
+                  if magic_fallback else "")
+    auth_maps = auth_locations = guard = cors_preflight = ""
     if code is not None:
+        allowed_methods = "GET PROPFIND"
         page = login_page(settings, source, grouped_code)
         script = re.search(r"<script>(.*?)</script>", page, re.S)[1]
         digest = base64.b64encode(hashlib.sha256(script.encode()).digest()).decode()
@@ -127,6 +168,7 @@ def configuration(settings, denied, source, code, session, grouped_code):
         error_page 401 =200 @login;
         location @login {{
             root /login;
+            add_header X-Content-Type-Options nosniff always;
             add_header Cache-Control "no-store" always;
             add_header Content-Security-Policy "default-src 'none'; script-src 'sha256-{digest}'; style-src 'unsafe-inline'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'" always;
             try_files /index.html =404;
@@ -147,68 +189,104 @@ def configuration(settings, denied, source, code, session, grouped_code):
             return 204;
         }}
 """
-    single = ""
-    if source.is_file():
-        content_type = mimetypes.guess_type(source.name)[0] or "application/octet-stream"
-        filename = re.sub(r"[^A-Za-z0-9_.-]", "_", source.name)
-        disposition = nginx_quote(f'inline; filename="{filename}"; filename*=UTF-8\'\'{quote(source.name, safe="")}')
-        for path in ("/", "/" + source.name):
-            single += f"""
-        location = {nginx_quote(path)} {{
-            {guard}
-            limit_except GET {{ deny all; }}
-            try_files /item =404;
-            types {{ }}
-            default_type {content_type};
-            add_header Content-Disposition {disposition};
-            add_header X-Content-Type-Options nosniff always;
-            add_header Content-Security-Policy $file_csp always;
-            add_header Cache-Control "no-store" always;
-        }}
-"""
-    listing = "return 404;" if source.is_file() else "try_files $uri $uri/ =404; autoindex on; autoindex_localtime off;"
-    return """
+        response_headers = """
+            proxy_hide_header Content-Type;
+            proxy_hide_header Cache-Control;
+            add_header Content-Type $final_content_type always;
+            add_header Cache-Control "no-store" always;"""
+    else:
+        allowed_methods = "GET OPTIONS PROPFIND"
+        cors_preflight = """
+            if ($request_method = OPTIONS) {
+                add_header Access-Control-Allow-Origin "*" always;
+                add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS, PROPFIND" always;
+                add_header Access-Control-Allow-Headers "Range, If-None-Match, If-Modified-Since, Content-Type, Depth" always;
+                add_header Access-Control-Max-Age "86400" always;
+                return 204;
+            }"""
+        response_headers = """
+            proxy_hide_header Content-Type;
+            add_header Content-Type $final_content_type always;
+            add_header Access-Control-Allow-Origin "*" always;
+            add_header Access-Control-Allow-Methods "GET, HEAD, OPTIONS, PROPFIND" always;
+            add_header Access-Control-Expose-Headers "Content-Length, Content-Range, Accept-Ranges, ETag, Last-Modified" always;"""
+    return f"""
 worker_processes 1;
 pid /tmp/nginx.pid;
 error_log /dev/stderr warn;
-events { worker_connections 128; }
-http {
+events {{ worker_connections 128; }}
+http {{
     log_format files escape=json
-        '{"time":"$time_iso8601","port":%d,"client":"$http_x_forwarded_for",'
+        '{{"time":"$time_iso8601","port":{settings["port"]},"client":"$http_x_forwarded_for",'
         '"method":"$request_method","url":"$request_uri","path":"$uri","status":$status,'
-        '"request_bytes":$request_length,"response_bytes":$bytes_sent,"seconds":$request_time}';
+        '"request_bytes":$request_length,"response_bytes":$bytes_sent,"seconds":$request_time}}';
     access_log /dev/stdout files;
     include /etc/nginx/mime.types;
-    types { %s mobileconfig; }
     default_type application/octet-stream;
     client_body_temp_path /tmp/body;
-    # HTML and SVG need isolation; PDFs and profiles use native browser handling.
-    map $sent_http_content_type $file_csp {
-        default "sandbox allow-downloads";
-        application/pdf "";
-        %s "";
-    }
-    %s
-    server {
+    proxy_temp_path /tmp/proxy;
+    fastcgi_temp_path /tmp/fcgi;
+    uwsgi_temp_path /tmp/uwsgi;
+    scgi_temp_path /tmp/scgi;
+
+    gzip on;
+    gzip_comp_level 4;
+    gzip_min_length 1024;
+    gzip_types text/plain text/css text/javascript application/javascript application/json application/manifest+json application/wasm text/markdown text/xml application/xml image/svg+xml text/csv;
+
+    map $uri $override_content_type {{
+        default {nginx_quote(single_override)};
+        ~*\\.mobileconfig$ "{PROFILE_TYPE}";
+        ~*\\.(?:mjs|cjs)$ "text/javascript; charset=utf-8";
+        ~*\\.(?:tsx|jsx|mts|cts)$ "text/plain; charset=utf-8";
+    }}
+    map $upstream_http_content_type $normalized_upstream_type {{
+        default $upstream_http_content_type;
+        "video/vnd.dlna.mpeg-tts; charset=UTF-8" "text/plain; charset=utf-8";
+        "application/rls-services+xml; charset=UTF-8" "text/plain; charset=utf-8";
+        {magic_rule}
+    }}
+    map $override_content_type $final_content_type {{
+        "" $normalized_upstream_type;
+        default $override_content_type;
+    }}
+    {auth_maps}
+    server {{
         listen unix:/socket/backend.sock;
         server_name _;
-        root /share;
-        disable_symlinks on;
-        add_header X-Content-Type-Options nosniff always;
-        add_header Content-Security-Policy $file_csp always;
-        add_header Cache-Control "no-store" always;
-        %s
-        %s
-        location / {
-            %s
-            limit_except GET { deny all; }
-            # try_files checks symlinks before the autoindex content handler.
-            %s
-        }
-        %s
-    }
-}
-""" % (settings["port"], PROFILE_TYPE, PROFILE_TYPE, auth_maps, auth_locations, single, guard, listing, "\n        ".join(rules))
+        absolute_redirect off;
+        {auth_locations}
+        {"\n        ".join(rules)}
+        location ~ ^/__dufs_[^/]+__/index\\.js$ {{
+            {guard}
+            {cors_preflight}
+            limit_except {allowed_methods} {{ deny all; }}
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Share-Session "";
+            proxy_set_header Accept-Encoding "";
+            sub_filter '`target="_blank"`' '""';
+            sub_filter_once on;
+            sub_filter_types *;
+            {response_headers}
+            proxy_pass http://unix:/tmp/dufs.sock;
+        }}
+        location / {{
+            {guard}
+            {cors_preflight}
+            limit_except {allowed_methods} {{ deny all; }}
+            proxy_http_version 1.1;
+            proxy_set_header Connection "";
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Share-Session "";
+            proxy_buffering off;
+            {response_headers}
+            proxy_pass http://unix:/tmp/dufs.sock;
+        }}
+    }}
+}}
+"""
 
 
 def lan_addresses():
@@ -294,7 +372,7 @@ def mount_argument(source, destination, readonly=True, recursive=False):
     return out.getvalue()
 
 
-def share(source, denied, settings, code, grouped_code):
+def share(source, denied, settings, code, grouped_code, mode):
     runtime = Path("/run/site-httpserver")
     with (runtime / "lock").open("w") as lock:
         try:
@@ -317,7 +395,16 @@ def share(source, denied, settings, code, grouped_code):
             socket_directory = runtime / "socket"
             socket = socket_directory / "backend.sock"
             socket.unlink(missing_ok=True)
-            target = "/share" if source.is_dir() else "/share/item"
+            if source.is_dir():
+                source_mounts = ["--mount", mount_argument(source, "/share")]
+            else:
+                single_dir = work / "single"
+                single_dir.mkdir(mode=0o755)
+                (single_dir / source.name).touch()
+                source_mounts = [
+                    "--mount", mount_argument(single_dir, "/single"),
+                    "--mount", mount_argument(source, f"/single/{source.name}"),
+                ]
             command = [
                 "docker", "run", "--cidfile", str(cidfile),
                 "--runtime=runsc-files", "--network=none", "--read-only",
@@ -325,7 +412,7 @@ def share(source, denied, settings, code, grouped_code):
                 "--memory=512m", "--memory-swap=512m", "--pids-limit=128",
                 "--user", f"{os.getuid()}:{os.getgid()}",
                 "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777",
-                "--mount", mount_argument(source, target),
+                *source_mounts,
                 "--mount", mount_argument(config, "/etc/nginx/nginx.conf"),
                 "--mount", mount_argument(login, "/login"),
                 "--mount", mount_argument(socket_directory, "/socket", readonly=False),
@@ -333,6 +420,7 @@ def share(source, denied, settings, code, grouped_code):
             for group in os.getgroups():
                 command.extend(["--group-add", str(group)])
             command.append(settings["image"])
+            command.extend(dufs_arguments(settings, denied, source, mode))
             process = None
             try:
                 process = subprocess.Popen(command, start_new_session=True)
@@ -361,6 +449,11 @@ def main():
     settings = json.loads(Path(sys.argv[1]).read_text())
     parser = argparse.ArgumentParser(prog="httpserver", description=__doc__)
     parser.add_argument("source", nargs="?", default=".", help="file or directory (default: current directory)")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--spa", action="store_const", dest="mode", const="spa",
+                      help="serve single-page application routes through index.html")
+    mode.add_argument("--browse", action="store_const", dest="mode", const="browse",
+                      help="open the file browser even when index.html is present")
     access = parser.add_mutually_exclusive_group()
     access.add_argument("--code", help="require this access code for the current share")
     access.add_argument("--random-code", action="store_true", help="generate a 12-character access code displayed as XXXX-XXXX-XXXX")
@@ -377,12 +470,14 @@ def main():
         source, denied = selection(args.source, settings)
     except (ValueError, OSError) as error:
         parser.error(str(error))
+    if args.mode and not source.is_dir():
+        parser.error(f"--{args.mode} requires a directory")
     def interrupted(signum, frame):
         raise KeyboardInterrupt
     for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
         signal.signal(sig, interrupted)
     try:
-        share(source, denied, settings, code, args.random_code)
+        share(source, denied, settings, code, args.random_code, args.mode)
     except KeyboardInterrupt:
         return 0
     except (ValueError, OSError, RuntimeError, subprocess.SubprocessError) as error:
