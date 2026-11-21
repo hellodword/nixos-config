@@ -21,9 +21,9 @@ if (($# == 0)); then
   exit 2
 fi
 
-# gawk sizes its pipe table from nofile; bound both descriptor limits.
+# Keep the soft nofile limit small for gawk while letting virtiofsd raise its own limit.
 exec docker run \
-  --ulimit nofile=65536:65536 \
+  --ulimit nofile=65536:1048576 \
   --workdir /workspace \
   --volume "$NIX_CI_STATE/gitconfig:/root/.gitconfig:ro" \
   --env NIX_USER_CONF_FILES \

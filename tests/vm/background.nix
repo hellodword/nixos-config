@@ -53,6 +53,8 @@ in
     ++ lib.optional (
       scenario == "vps" && config.systemd.services ? site-vps-certificate
     ) "site-vps-certificate"
+    ++ lib.optional (scenario == "vps" && config.systemd.services ? site-vps-gc) "site-vps-gc"
+    ++ lib.optional (config.nix.gc.automatic or false) "nix-gc"
     ++ lib.optional (config.virtualisation.docker.autoPrune.enable or false) "docker-prune"
   );
 

@@ -103,8 +103,10 @@ def current_vm_results(policy, events, pass_name):
             target = targets.get((attempt, item["name"]), {})
             matches = (target.get("drv") == item["drv"]
                        and set(target.get("outputs", [])) == set(item["outputs"]))
-            success = (matches and target.get("success", False) and batch.get("returncode") == 0
-                       and not batch.get("evidenceError"))
+            fresh_or_clean = (batch.get("returncode") == 0
+                              or target.get("source") in ("built", "substituted"))
+            success = (matches and target.get("success", False) and "returncode" in batch
+                       and fresh_or_clean and not batch.get("evidenceError"))
             results.append({**item, "phase": phase, "pass": pass_name,
                             "attempt": attempt, "success": success,
                             "source": target.get("source", "unknown") if matches else "unknown",
@@ -115,8 +117,14 @@ def current_vm_results(policy, events, pass_name):
 
 def verify_results(state, pass_name):
     policy = json.loads((state / "policy.json").read_text())
-    results = current_vm_results(policy, read_records(state / "timings.jsonl"), pass_name)
-    incomplete = sorted(item["name"] for item in results if not item["success"])
+    events = read_records(state / "timings.jsonl")
+    results = current_vm_results(policy, events, pass_name)
+    completed = {event["attempt"]: event for event in events
+                 if event.get("pass") == pass_name and event["kind"] == "build"}
+    incomplete = sorted(
+        item["name"] for item in results
+        if not item["success"] or completed.get(item["attempt"], {}).get("returncode") != 0
+    )
     record(state, {"kind": "verification", "pass": pass_name, "expected": len(results),
                    "incomplete": incomplete})
     if incomplete:
