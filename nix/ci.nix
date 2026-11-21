@@ -160,11 +160,9 @@ assert
     registry = cacheIdentity.registry or "ghcr.io";
     inherit (cacheIdentity) repository publicKey;
     mode = "incremental";
-    readSubstituters = [ "https://cache.nixos.org" ] ++ cacheConfig.ci.settings.substituters;
-    trustedPublicKeys = [
-      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-    ]
-    ++ cacheConfig.ci.settings.trusted-public-keys;
+    targetUri = cacheConfig.ci.uri;
+    readSubstituters = cacheConfig.ci.settings.substituters;
+    trustedPublicKeys = cacheConfig.ci.settings.trusted-public-keys;
     inherit (cachePolicy)
       excludedPaths
       excludedDerivations

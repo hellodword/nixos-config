@@ -1,42 +1,42 @@
+# Host, container, and CI cache configuration rendered through infra.lib.cache.
 let
-  publicSettings = (import ./public-caches.nix) // {
-    require-sigs = true;
-  };
-  project = (builtins.fromJSON (builtins.readFile ./cache-identity.json)) // {
+  cacheLib = import ../infra/nix/cache.nix;
+  identity = builtins.fromJSON (builtins.readFile ./cache-identity.json);
+  project = identity // {
     listenAddress = "172.17.0.1";
     port = 37515;
   };
-  render = settings: ''
-    extra-substituters = ${builtins.concatStringsSep " " settings.substituters}
-    extra-trusted-public-keys = ${builtins.concatStringsSep " " settings.trusted-public-keys}
-    require-sigs = true
-  '';
   withProject =
     {
       repository,
       publicKey,
-      listenAddress,
-      port,
+      listenAddress ? "172.17.0.1",
+      port ? 37515,
       registry ? "ghcr.io",
+      extraRepositories ? [ ],
+      publicDefaults ? cacheLib.publicSettings,
       ...
     }:
-    let
-      host = if builtins.match ".*:.*" listenAddress != null then "[${listenAddress}]" else listenAddress;
-      listen = "${host}:${toString port}";
-      uri = "http://${listen}/${registry}/${repository}";
-      settings = publicSettings // {
-        substituters = publicSettings.substituters ++ [ uri ];
-        trusted-public-keys = publicSettings.trusted-public-keys ++ [ publicKey ];
+    (cacheLib.mkCacheConfig {
+      target = {
+        inherit registry repository publicKey;
       };
-    in
-    {
-      inherit listen uri settings;
-      text = render settings;
-    };
+      inherit
+        extraRepositories
+        listenAddress
+        port
+        publicDefaults
+        ;
+    }).local;
+  configured = cacheLib.mkCacheConfig {
+    target = identity;
+    listenAddress = project.listenAddress;
+    ciListenAddress = "127.0.0.2";
+    port = project.port;
+  };
 in
 {
-  inherit project publicSettings withProject;
-  public.text = render publicSettings;
-  local = withProject project;
-  ci = withProject (project // { listenAddress = "127.0.0.2"; });
+  inherit project withProject;
+  publicSettings = cacheLib.publicSettings;
+  inherit (configured) public local ci;
 }

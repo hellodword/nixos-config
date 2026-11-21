@@ -20,6 +20,8 @@
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
+      lib.cache = import ./nix/cache.nix;
+
       overlays.vscode = import ./nix/vscode.nix;
 
       packages = forAllSystems (

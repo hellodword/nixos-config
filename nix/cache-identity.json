@@ -1,4 +1,5 @@
 {
+  "registry": "ghcr.io",
   "repository": "hellodword/nixos-config",
   "publicKey": "nixos-config-1:NfExPInFgDi/deX689T1M10hEORDGSZYRUapJMRbWM8="
 }
