@@ -78,8 +78,8 @@ def parse_trusted_public_keys(keys):
     return parsed
 
 
-def verify_narinfo_signature(narinfo_text, expected_store_path, trusted_keys):
-    """Parse .narinfo text and verify StorePath plus at least one trusted Ed25519 signature."""
+def classify_narinfo_signature(narinfo_text, expected_store_path, trusted_keys):
+    """Classify .narinfo text as ('VALID', signer), ('UNTRUSTED', None), or ('MALFORMED', reason)."""
     fields = {}
     signatures = []
     for raw_line in narinfo_text.splitlines():
@@ -96,8 +96,10 @@ def verify_narinfo_signature(narinfo_text, expected_store_path, trusted_keys):
     store_path = fields.get("StorePath")
     nar_hash = fields.get("NarHash")
     nar_size = fields.get("NarSize")
-    if store_path != expected_store_path or not nar_hash or not nar_size:
-        return None
+    if store_path != expected_store_path:
+        return ("MALFORMED", f"StorePath={store_path!r} != expected {expected_store_path!r}")
+    if not nar_hash or not nar_size or not nar_size.isdigit():
+        return ("MALFORMED", "missing NarHash or numeric NarSize")
 
     store_dir = "/" + "/".join(expected_store_path.lstrip("/").split("/")[:-1])
     refs = fields.get("References", "").split()
@@ -113,10 +115,16 @@ def verify_narinfo_signature(narinfo_text, expected_store_path, trusted_keys):
             continue
         try:
             public_key.verify(base64.b64decode(sig_b64), fingerprint)
-            return signer_name
+            return ("VALID", signer_name)
         except (InvalidSignature, ValueError):
             continue
-    return None
+    return ("UNTRUSTED", None)
+
+
+def verify_narinfo_signature(narinfo_text, expected_store_path, trusted_keys):
+    """Parse .narinfo text and return the verified trusted signer name, or None."""
+    state, detail = classify_narinfo_signature(narinfo_text, expected_store_path, trusted_keys)
+    return detail if state == "VALID" else None
 
 
 def discover_netrc_files():
@@ -302,29 +310,50 @@ class Publisher:
         except (URLError, TimeoutError, OSError) as net_err:
             raise RuntimeError(f"network error: {net_err}") from net_err
 
-    def _probe_substituter(self, uri, store_path):
+    def _probe_substituter(self, uri, store_path, *, bypass_cache=False, retry_on_miss=False):
         store_hash = Path(store_path).name.split("-", 1)[0]
         cache_key = (uri, store_hash)
-        with self.query_lock:
-            if cache_key in self.query_cache:
-                return self.query_cache[cache_key]
+        if not bypass_cache:
+            with self.query_lock:
+                if cache_key in self.query_cache:
+                    return self.query_cache[cache_key]
 
+        is_target = bool(self.target_uri and uri == self.target_uri)
         last_error = None
         for attempt in range(len(self.retry_delays) + 1):
             try:
                 status, body = self._fetch_narinfo_once(uri, store_hash)
                 if status == 404:
-                    outcome = ("MISS", None)
-                    with self.query_lock:
-                        self.query_cache[cache_key] = outcome
-                    return outcome
-                if status == 200 and body is not None:
-                    signer = verify_narinfo_signature(body, store_path, self.trusted_keys)
-                    outcome = ("HIT", signer) if signer else ("MISS", None)
-                    with self.query_lock:
-                        self.query_cache[cache_key] = outcome
-                    return outcome
-                last_error = f"unexpected HTTP status {status}"
+                    if retry_on_miss and attempt < len(self.retry_delays):
+                        last_error = "HTTP 404 after upload"
+                    else:
+                        outcome = ("MISS", None)
+                        with self.query_lock:
+                            self.query_cache[cache_key] = outcome
+                        return outcome
+                elif status == 200 and body is not None:
+                    sig_state, sig_detail = classify_narinfo_signature(
+                        body, store_path, self.trusted_keys
+                    )
+                    if sig_state == "VALID":
+                        outcome = ("HIT", sig_detail)
+                        with self.query_lock:
+                            self.query_cache[cache_key] = outcome
+                        return outcome
+                    if sig_state == "UNTRUSTED" and is_target:
+                        if retry_on_miss and attempt < len(self.retry_delays):
+                            last_error = "target narinfo lacks trusted signature after upload"
+                        else:
+                            outcome = ("MISS", None)
+                            with self.query_lock:
+                                self.query_cache[cache_key] = outcome
+                            return outcome
+                    elif sig_state == "UNTRUSTED":
+                        last_error = "HTTP 200 narinfo lacks trusted signature"
+                    else:
+                        last_error = f"HTTP 200 malformed narinfo ({sig_detail})"
+                else:
+                    last_error = f"unexpected HTTP status {status}"
             except Exception as error:
                 last_error = str(error)
 
@@ -478,6 +507,9 @@ class Publisher:
 
     def upload(self, *, drain):
         settings = self.configuration
+        # Pass an unmatchable pattern ('a^') to disable oranc's default
+        # '^cache\.nixos\.org-.*$' exclusion so locally signed paths missing on
+        # remote caches are uploaded; keep --max-retry >= 2.
         command = [
             settings.get("oranc", "oranc"),
             "push",
@@ -487,6 +519,8 @@ class Publisher:
             settings["repository"],
             "--no-closure",
             "--already-signed",
+            "--excluded-signing-key-pattern",
+            "a^",
             "--zstd-level",
             "3",
             "--max-retry",
@@ -525,13 +559,36 @@ class Publisher:
                 },
             )
             result.check_returncode()
+            if self.target_uri:
+                with ThreadPoolExecutor(max_workers=self.query_concurrency) as pool:
+                    verified = list(
+                        pool.map(
+                            lambda p: (
+                                p,
+                                *self._probe_substituter(
+                                    self.target_uri,
+                                    p,
+                                    bypass_cache=True,
+                                    retry_on_miss=True,
+                                ),
+                            ),
+                            group,
+                        )
+                    )
+                unverified = [
+                    f"{path} ({state}: {detail})"
+                    for path, state, detail in verified
+                    if state != "HIT"
+                ]
+                if unverified:
+                    raise RuntimeError(
+                        "Post-upload remote .narinfo verification failed on target cache: "
+                        + "; ".join(unverified[:10])
+                    )
             self.published.update(group)
             with self.query_lock:
                 for path in group:
                     del self.pending[path]
-                    if self.target_uri:
-                        store_hash = Path(path).name.split("-", 1)[0]
-                        self.query_cache[(self.target_uri, store_hash)] = ("HIT", self.target_key_name)
             atomic_json(self.state / "published-paths.json", sorted(self.published))
         if drain:
             self.assert_no_query_failures()

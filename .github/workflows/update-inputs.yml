@@ -40,14 +40,21 @@ jobs:
         run: |
           set -euo pipefail
           candidate_state="$RUNNER_TEMP/candidate-${SCOPE}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$candidate_state"
+          HOST_UID="$(id -u)"
+          HOST_GID="$(id -g)"
+          export HOST_UID HOST_GID
           bash infra/ci/container.sh --rm \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --volume "$NIX_CI_STATE:/ci:ro" \
             --volume "$candidate_state:/candidate" \
             --env SCOPE \
+            --env HOST_UID \
+            --env HOST_GID \
             --env GITHUB_RUN_ID \
             --env GITHUB_RUN_ATTEMPT \
             -- bash -euo pipefail -c '
+              trap "chown -R \"\$HOST_UID:\$HOST_GID\" /workspace /candidate" EXIT
               if [[ "$SCOPE" == remote ]]; then
                 nix flake update nixpkgs-remote colmena cloudflare-ips-v4 cloudflare-ips-v6
                 select_json="{\"scope\":\"remote\",\"hostName\":\"\"}"

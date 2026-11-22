@@ -272,10 +272,8 @@ def run_build(
                 source = "executed"
             elif restored:
                 source = "cache restored"
-            elif outputs_set <= present_before:
-                source = "local reuse"
             else:
-                source = "executed" if any_dependency_built else "local reuse"
+                source = "local reuse"
         else:
             if built or restored or not any_dependency_built:
                 source = "failed"

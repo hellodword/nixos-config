@@ -1,6 +1,5 @@
 # Reusable NixOS QEMU VM test constructors, container host fixture, and offline Sway + VS Code fixture.
 let
-  vscodeOverlay = import ./vscode.nix;
   testingDir = ../testing;
   runtimePy = ../testing/runtime.py;
   guiPy = ../testing/gui.py;
@@ -79,9 +78,35 @@ let
       homeDir = "/home/${user}";
       serverDownloadFolder = "${homeDir}/.cache/vscode-server-downloads";
       vscodeCommit = pkgs.vscode.rev;
+      hostSystem = pkgs.stdenv.hostPlatform.system;
+      serverPlat =
+        {
+          x86_64-linux = "linux-x64";
+          aarch64-linux = "linux-arm64";
+        }
+        .${hostSystem} or (throw "Unsupported system for mkSwayEditorModule: ${hostSystem}");
+
+      upstreamServerUrl = pkgs.vscode.vscodeServer.src.url or "";
+      vscodeServerSrc =
+        if lib.hasInfix "server-${serverPlat}" upstreamServerUrl then
+          pkgs.vscode.vscodeServer
+        else if
+          hostSystem == "aarch64-linux" && vscodeCommit == "8a14f0cc1b08d531eb83255ea3764ae22aa932b5"
+        then
+          pkgs.srcOnly {
+            name = "vscode-server-${vscodeCommit}-arm64.tar.gz";
+            src = pkgs.fetchurl {
+              name = "vscode-server-${vscodeCommit}-arm64.tar.gz";
+              url = "https://update.code.visualstudio.com/commit:${vscodeCommit}/server-linux-arm64/stable";
+              hash = "sha256-qiwuPMWZlr+5BCXG6Tn45op7iBrtvVOw1w7cTgbNnwQ=";
+            };
+            stdenv = pkgs.stdenvNoCC;
+          }
+        else
+          throw "pkgs.vscode.vscodeServer (${upstreamServerUrl}) does not match ${serverPlat} for commit ${vscodeCommit}";
 
       vscodeServerArchive =
-        pkgs.runCommand "vscode-server-${vscodeCommit}-offline.tar.gz"
+        pkgs.runCommand "vscode-server-${vscodeCommit}-${serverPlat}-offline.tar.gz"
           {
             nativeBuildInputs = [
               pkgs.jq
@@ -96,12 +121,12 @@ let
               echo "VS Code client commit $expected_commit != server rev ${vscodeCommit}" >&2
               exit 1
             fi
-            mkdir -p work/vscode-server-linux-x64
-            cp -r ${pkgs.vscode.vscodeServer}/. work/vscode-server-linux-x64/
-            find work/vscode-server-linux-x64 -type d -exec chmod 0755 {} +
-            find work/vscode-server-linux-x64 -type f -perm /0111 -exec chmod 0755 {} +
-            find work/vscode-server-linux-x64 -type f ! -perm /0111 -exec chmod 0644 {} +
-            tar --owner=0 --group=0 --numeric-owner -czf "$out" -C work vscode-server-linux-x64
+            mkdir -p work/vscode-server-${serverPlat}
+            cp -r ${vscodeServerSrc}/. work/vscode-server-${serverPlat}/
+            find work/vscode-server-${serverPlat} -type d -exec chmod 0755 {} +
+            find work/vscode-server-${serverPlat} -type f -perm /0111 -exec chmod 0755 {} +
+            find work/vscode-server-${serverPlat} -type f ! -perm /0111 -exec chmod 0644 {} +
+            tar --owner=0 --group=0 --numeric-owner -czf "$out" -C work vscode-server-${serverPlat}
           '';
 
       vscodeWithRemoteContainers = pkgs.vscode-with-extensions.override {
@@ -134,14 +159,22 @@ let
         output * resolution 1920x1080 position 0,0
         seat * xcursor_theme default 24
         default_border pixel 2
-        exec ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP
-        exec systemctl --user start sway-ready.target
+        exec sh -c '${pkgs.systemd}/bin/systemctl --user import-environment DISPLAY WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd DISPLAY WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP XDG_SESSION_TYPE && ${pkgs.systemd}/bin/systemctl --user start sway-ready.target'
+      '';
+
+      startSwaySession = pkgs.writeShellScript "start-sway-editor" ''
+        export XDG_RUNTIME_DIR="/run/user/${toString uid}"
+        export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${toString uid}/bus"
+        export XDG_CURRENT_DESKTOP=sway
+        export XDG_SESSION_TYPE=wayland
+        export WLR_RENDERER=pixman
+        export LIBGL_ALWAYS_SOFTWARE=1
+        exec ${pkgs.sway}/bin/sway --config ${swayConfig}
       '';
 
       playwrightPython = pkgs.python3.withPackages (p: [ p.playwright ]);
     in
     {
-      nixpkgs.overlays = [ vscodeOverlay ];
       nixpkgs.config.allowUnfreePackages = [
         "vscode"
         "vscode-with-extensions"
@@ -164,7 +197,7 @@ let
       services.greetd = {
         enable = true;
         settings.default_session = {
-          command = "${pkgs.dbus}/bin/dbus-run-session ${pkgs.sway}/bin/sway --config ${swayConfig}";
+          command = "${startSwaySession}";
           inherit user;
         };
       };
@@ -223,7 +256,7 @@ let
         "d ${homeDir}/.cache 0755 ${user} ${user} -"
         "d ${serverDownloadFolder} 0755 ${user} ${user} -"
         "d ${serverDownloadFolder}/${vscodeCommit} 0755 ${user} ${user} -"
-        "C+ ${serverDownloadFolder}/${vscodeCommit}/vscode-server-linux-x64.tar.gz 0644 ${user} ${user} - ${vscodeServerArchive}"
+        "C+ ${serverDownloadFolder}/${vscodeCommit}/vscode-server-${serverPlat}.tar.gz 0644 ${user} ${user} - ${vscodeServerArchive}"
         "d ${homeDir}/.config 0755 ${user} ${user} -"
         "d ${homeDir}/.config/Code 0755 ${user} ${user} -"
         "d ${homeDir}/.config/Code/User 0755 ${user} ${user} -"

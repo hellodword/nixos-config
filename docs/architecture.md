@@ -10,7 +10,7 @@
 | `modules/` | 能力选项、NixOS 服务和软件装配 |
 | `home/` | 随系统激活的用户配置，包括 CLI、应用、桌面与状态栏 |
 | `lib/` | 策略组合、凭据字段绑定和共享服务设置 |
-| `infra/` | 公共基础设施子 flake（共享 `nixpkgs`/`oranc`、VS Code overlay、`nix-ci` 执行器、Composite Action、`lib.cache` 与 `lib.testing`） |
+| `infra/` | 公共基础设施子 flake（共享 `nixpkgs`/`oranc`、`nix-ci` 执行器、Composite Action、`lib.cache` 与 `lib.testing`） |
 | `nix/` | 包定制、工具包装、检查和缓存清单 |
 | `scripts/` | 系统服务及本地维护命令的运行逻辑 |
 | `.github/workflows/` | GitHub 事件、权限与调用 `./infra/action` 的工作流编排 |

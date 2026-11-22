@@ -33,7 +33,7 @@
 ## 容器隔离与执行顺序
 
 每次运行按 `${RUNNER_TEMP}/nix-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}` 分配独立状态目录、独立 Docker 卷与容器名，并在 Ubuntu Runner 上清理冗余 SDK 目录、挂载 `8 GiB` swap 与 `/dev/kvm`：
-- **构建容器 `nix-ci-<run>-<attempt>`**：以只读方式挂载产品工作树 `/workspace:ro` 与公共基础设施 `/infra:ro`，统一注入 `--ulimit nofile=65536:1048576`，不注入任何缓存签名私钥或写凭据；
+- **构建容器 `nix-ci-<run>-<attempt>`**：以只读方式挂载产品工作树 `/workspace:ro` 与公共基础设施 `/infra:ro`，统一注入 `--ulimit nofile=65536:1048576`，使用当前 Job 自动签发的短期 `GITHUB_TOKEN` 访问 GitHub 与本地 `oranc` 读取代理，不注入缓存签名私钥 `NIX_CACHE_SIGNING_KEY`；
 - **发布旁路容器 `nix-ci-publisher-<run>-<attempt>`**：仅在增量发布模式下启动，独立持有 `ORANC_SIGNING_KEY`、`ORANC_USERNAME` 与 `ORANC_PASSWORD`，共享同一 `/nix` 卷并通过 `/ci/cache` 目录消费构建队列。
 
 | 阶段 | 内容 |

@@ -25,8 +25,6 @@
         testing = import ./nix/testing.nix;
       };
 
-      overlays.vscode = import ./nix/vscode.nix;
-
       packages = forAllSystems (
         system:
         let

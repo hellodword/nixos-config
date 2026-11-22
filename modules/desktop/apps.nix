@@ -1,7 +1,6 @@
 {
   config,
   lib,
-  inputs,
   ...
 }:
 {
@@ -15,7 +14,6 @@
     # The application is installed by Home Manager. Its LAN access follows
     # localAccess, while public ports use the host's explicit firewall policy.
     hardware.uinput.enable = lib.mkDefault true;
-    nixpkgs.overlays = [ inputs.infra.overlays.vscode ];
     nixpkgs.config.allowUnfreePackages = [
       "vscode"
       "vscode-extension-ms-vscode-remote-remote-containers"

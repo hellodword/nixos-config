@@ -44,10 +44,5 @@ in
     environment.systemPackages = lib.optional (siteCfg.environment != { }) (
       pkgs.lib.hiPrio virtualboxLauncher
     );
-    systemd.units."dev-vboxguest.device".text = ''
-      [Unit]
-      ConditionVirtualization=oracle
-    '';
-    boot.kernelParams = [ "kvm.enable_virt_at_load=0" ];
   };
 }

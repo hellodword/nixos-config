@@ -342,6 +342,112 @@ def main():
     assert "https://cache.nixos.org" in production_caches["publicSettings"]["substituters"]
     assert production_caches["ciUri"].startswith("http://127.0.0.2:37515/")
 
+    # Verify mkPolicy excludes BOTH an outer redistributable wrapper and its restricted unwrapped payload.
+    wrapper_policy = json.loads(
+        run([
+            "nix",
+            "eval",
+            "--impure",
+            "--json",
+            "--expr",
+            f"""
+            let
+              flake = builtins.getFlake ("git+file://" + toString {json.dumps(str(ROOT))});
+              pkgs = flake.inputs.{args.nixpkgs_input}.legacyPackages.x86_64-linux;
+              lib = pkgs.lib;
+              cacheLib = import {json.dumps(str(ROOT / "infra/nix/cache.nix"))};
+              inner = pkgs.runCommand "synthetic-unfree-inner" {{
+                meta.license = lib.licenses.unfree;
+              }} "echo secret > $out";
+              outer = pkgs.runCommand "synthetic-mit-wrapper" {{
+                passthru.unwrapped = inner;
+                meta.license = lib.licenses.mit;
+              }} "ln -s ${{inner}} $out";
+              pol = cacheLib.mkPolicy {{
+                inherit lib;
+                flakeOutPath = "/nix/store/00000000000000000000000000000000-source";
+                candidates = [ outer ];
+              }};
+            in {{
+              innerOut = toString inner;
+              outerOut = toString outer;
+              innerDrv = inner.drvPath;
+              outerDrv = outer.drvPath;
+              inherit (pol) excludedPaths excludedDerivations privateBuilds;
+            }}
+            """,
+        ])
+    )
+    assert wrapper_policy["innerOut"] in wrapper_policy["excludedPaths"], wrapper_policy
+    assert wrapper_policy["outerOut"] in wrapper_policy["excludedPaths"], wrapper_policy
+    assert wrapper_policy["innerDrv"] in wrapper_policy["excludedDerivations"], wrapper_policy
+    assert wrapper_policy["outerDrv"] in wrapper_policy["excludedDerivations"], wrapper_policy
+    assert {item["drv"] for item in wrapper_policy["privateBuilds"]} == {
+        wrapper_policy["innerDrv"],
+        wrapper_policy["outerDrv"],
+    }, wrapper_policy
+
+    # Verify report.verify_results rejects missing/empty manifests and tracks duplicate-name distinct-drv entries.
+    with tempfile.TemporaryDirectory(prefix="report-verify-contract-") as report_tmp:
+        rroot = Path(report_tmp)
+        empty_state = rroot / "missing-manifest"
+        empty_state.mkdir()
+        try:
+            report.verify_results(empty_state)
+        except RuntimeError as err:
+            assert "manifest not found" in str(err).lower(), err
+        else:
+            raise AssertionError("verify_results accepted a directory without manifest.json")
+
+        zero_state = rroot / "zero-targets"
+        zero_state.mkdir()
+        (zero_state / "manifest.json").write_text(json.dumps({"groups": []}))
+        try:
+            report.verify_results(zero_state)
+        except RuntimeError as err:
+            assert "no required ci targets" in str(err).lower(), err
+        else:
+            raise AssertionError("verify_results accepted an empty manifest")
+
+        dup_state = rroot / "duplicate-names"
+        dup_state.mkdir()
+        drv_a = "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-vscode-1.drv"
+        drv_b = "/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-vscode-2.drv"
+        out_a = ["/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-vscode-1"]
+        out_b = ["/nix/store/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-vscode-2"]
+        dup_manifest = {
+            "groups": [
+                {
+                    "name": "private",
+                    "required": True,
+                    "vm": None,
+                    "kvm": False,
+                    "maxJobs": 1,
+                    "entries": [
+                        {"name": "vscode", "drv": drv_a, "outputs": out_a, "required": True, "vm": False},
+                        {"name": "vscode", "drv": drv_b, "outputs": out_b, "required": True, "vm": False},
+                    ],
+                }
+            ]
+        }
+        (dup_state / "manifest.json").write_text(json.dumps(dup_manifest))
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a1", "kind": "build-start", "started": "2026-01-01T00:00:00Z", "log": "logs/a1.log"})
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a1", "kind": "target", "name": "vscode", "drv": drv_a, "outputs": out_a, "source": "failed", "success": False})
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a1", "kind": "target", "name": "vscode", "drv": drv_b, "outputs": out_b, "source": "executed", "success": True})
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a1", "kind": "build", "started": "2026-01-01T00:00:00Z", "seconds": 1.0, "returncode": 0})
+        try:
+            report.verify_results(dup_state)
+        except RuntimeError as err:
+            assert "vscode (aaaaaaaaaaaa)" in str(err), err
+        else:
+            raise AssertionError("second same-name target overwrote failed first target")
+
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a2", "kind": "build-start", "started": "2026-01-01T00:01:00Z", "log": "logs/a2.log"})
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a2", "kind": "target", "name": "vscode", "drv": drv_a, "outputs": out_a, "source": "executed", "success": True})
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a2", "kind": "target", "name": "vscode", "drv": drv_b, "outputs": out_b, "source": "executed", "success": True})
+        report.record(dup_state, {"pass": "candidate", "phase": "private", "attempt": "a2", "kind": "build", "started": "2026-01-01T00:01:00Z", "seconds": 1.0, "returncode": 0})
+        report.verify_results(dup_state)
+
     with (
         tempfile.TemporaryDirectory(prefix="cache-integration-") as temporary,
         build_gate() as (gate_url, entered, release),
@@ -538,25 +644,24 @@ def main():
             fixture["publicLocal"]["path"],
         ])
 
-        # CRITICAL SCENARIO: sign signedMissingRemote in local /nix/store SQLite with BOTH
-        # upstream_secret and target secret, WITHOUT uploading it to any remote cache!
+        # CRITICAL SCENARIO: sign signedMissingRemote in local /nix/store SQLite with
+        # cache.nixos.org-1 (exercising oranc's default excluded-signing-key-pattern),
+        # upstream_secret, and target secret, WITHOUT uploading it to any remote cache!
         # Because remote .narinfo returns 404 everywhere, Publisher MUST still upload it!
-        run([
-            "nix",
-            "store",
-            "sign",
-            "--key-file",
-            str(upstream_secret),
-            fixture["signedMissingRemote"]["path"],
-        ])
-        run([
-            "nix",
-            "store",
-            "sign",
-            "--key-file",
-            str(secret),
-            fixture["signedMissingRemote"]["path"],
-        ])
+        nixos_org_secret = work / "nixos-org.secret"
+        nixos_org_secret.write_bytes(
+            run(["nix", "key", "generate-secret", "--key-name", "cache.nixos.org-1"])
+        )
+        nixos_org_secret.chmod(0o600)
+        for key_file in (nixos_org_secret, upstream_secret, secret):
+            run([
+                "nix",
+                "store",
+                "sign",
+                "--key-file",
+                str(key_file),
+                fixture["signedMissingRemote"]["path"],
+            ])
 
         registry_port, proxy_port = free_port(), free_port()
         configuration = work / "registry.json"
@@ -814,6 +919,94 @@ def main():
                 # 1 initial + 3 retries = 4 requests to failing upstream, and zero upload to target!
                 assert len(bad_requests) == 4, bad_requests
                 assert not (err_state / "published-paths.json").exists()
+
+            # 3b. Upstream HTTP 200 with malformed body OR untrusted signature refuses blind upload,
+            #     while untrusted old-key HTTP 200 on target_uri is treated as MISS for key rotation.
+            untrusted_secret = work / "untrusted.secret"
+            untrusted_secret.write_bytes(
+                run(["nix", "key", "generate-secret", "--key-name", "untrusted-key-1"])
+            )
+            untrusted_secret.chmod(0o600)
+            untrusted_cache_dir = work / "untrusted-cache"
+            run([
+                "nix",
+                "copy",
+                "--to",
+                f"{untrusted_cache_dir.as_uri()}?secret-key={untrusted_secret}",
+                fixture["endPhaseItem"]["path"],
+            ])
+            end_phase_hash = Path(fixture["endPhaseItem"]["path"]).name.split("-", 1)[0]
+            untrusted_narinfo_body = (untrusted_cache_dir / f"{end_phase_hash}.narinfo").read_bytes()
+
+            for bad_200_kind, body_bytes in (
+                ("malformed-html", b"<html><body>gateway page with 200</body></html>\n"),
+                ("untrusted-sig", untrusted_narinfo_body),
+            ):
+                seen_200 = []
+
+                class Bad200Handler(BaseHTTPRequestHandler):
+                    def do_GET(self):
+                        seen_200.append(self.path)
+                        self.send_response(200)
+                        self.send_header("Content-Length", str(len(body_bytes)))
+                        self.end_headers()
+                        self.wfile.write(body_bytes)
+
+                    def log_message(self, *args):
+                        pass
+
+                bad_srv = ThreadingHTTPServer(("127.0.0.1", 0), Bad200Handler)
+                bad_thr = threading.Thread(target=bad_srv.serve_forever, daemon=True)
+                bad_thr.start()
+                try:
+                    bad_200_uri = f"http://127.0.0.1:{bad_srv.server_port}"
+                    bad_200_state = work / f"upstream-200-{bad_200_kind}"
+                    bad_200_cfg = {
+                        "inventory": {
+                            "outputs": [fixture["endPhaseItem"]["path"]],
+                            "derivations": [Path(fixture["endPhaseItem"]["drv"]).name],
+                            "excluded": [],
+                        },
+                        **publisher_settings,
+                        "read_substituters": [bad_200_uri, *read_substituters],
+                        "retry_delays": [0.02, 0.04],
+                    }
+                    with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                        try:
+                            cache.publish_once(bad_200_state, bad_200_cfg, phase=bad_200_kind)
+                        except RuntimeError as err:
+                            assert "unverified upstream narinfo error" in str(err), err
+                        else:
+                            raise AssertionError(f"upstream HTTP 200 ({bad_200_kind}) should block upload")
+                    assert len(seen_200) == 3, seen_200
+                    assert not (bad_200_state / "published-paths.json").exists()
+
+                    if bad_200_kind == "untrusted-sig":
+                        # When target_uri itself serves an old/untrusted signature, classify as MISS so key rotation re-uploads.
+                        rot_state = work / "target-rotation-probe"
+                        with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                            rot_pub = cache.Publisher(
+                                rot_state,
+                                {
+                                    "inventory": {
+                                        "outputs": [fixture["endPhaseItem"]["path"]],
+                                        "derivations": [],
+                                        "excluded": [],
+                                    },
+                                    **publisher_settings,
+                                    "target_uri": bad_200_uri,
+                                    "read_substituters": [bad_200_uri],
+                                    "retry_delays": [0.01],
+                                },
+                            )
+                            assert rot_pub._probe_substituter(bad_200_uri, fixture["endPhaseItem"]["path"]) == (
+                                "MISS",
+                                None,
+                            )
+                finally:
+                    bad_srv.shutdown()
+                    bad_srv.server_close()
+                    bad_thr.join()
 
             # 4. End-of-phase single-shot mode (`publish_once` / `nix-ci cache publish`) parity.
             eop_state = work / "end-of-phase"

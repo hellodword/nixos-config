@@ -371,8 +371,8 @@ runs:
         BASH
 
         if [[ -n "$INPUT_PRE_BUILD" ]]; then
-          docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
-            "export PATH=\"\$(cat /ci/tools)/bin:\$PATH\"; $INPUT_PRE_BUILD"
+          printf '%s\n' "$INPUT_PRE_BUILD" | docker exec -i "$NIX_CI_CONTAINER" \
+            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin:$PATH"; exec bash -euo pipefail -s'
         fi
 
     - name: Verify cache signing key and start incremental publisher

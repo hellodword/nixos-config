@@ -167,8 +167,10 @@ let
         package:
         outputsOf package ++ lib.optional (package ? src && package.src != null) (toString package.src);
 
+      hasRestrictedLayer = package: lib.any isRestricted (unwrap package);
+
       restrictedPackages = lib.unique (
-        (lib.filter isRestricted (lib.concatMap unwrap candidates))
+        (lib.concatMap (package: lib.optionals (hasRestrictedLayer package) (unwrap package)) candidates)
         ++ (lib.concatMap unwrap extraRestricted)
       );
 

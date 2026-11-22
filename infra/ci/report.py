@@ -116,6 +116,11 @@ def read_records(path):
     ]
 
 
+def has_manifest(state):
+    state = Path(state)
+    return any((state / name).exists() for name in ("manifest.json", "policy.json"))
+
+
 def load_manifest(state):
     state = Path(state)
     for name in ("manifest.json", "policy.json"):
@@ -144,15 +149,24 @@ def duration(seconds):
     return f"{seconds / 60:.2f} min"
 
 
+def _target_identity(attempt, item):
+    return (attempt, item["drv"], tuple(sorted(item.get("outputs") or ())))
+
+
 def evaluate_group_targets(manifest, events, pass_name, *, vm_only=False, required_only=False):
     scoped = [event for event in events if event.get("pass") == pass_name]
     attempts = {event["phase"]: event["attempt"] for event in scoped if event["kind"] == "build-start"}
     completed = {event["attempt"]: event for event in scoped if event["kind"] == "build"}
-    targets = {
-        (event["attempt"], event["name"]): event
-        for event in scoped
-        if event["kind"] == "target"
-    }
+    targets = {}
+    legacy_targets = {}
+    for event in scoped:
+        if event["kind"] != "target":
+            continue
+        if "drv" in event:
+            targets[_target_identity(event["attempt"], event)] = event
+        else:
+            legacy_targets[(event["attempt"], event["name"])] = event
+
     results = []
     for group in manifest.get("groups", []):
         group_name = group["name"]
@@ -180,7 +194,9 @@ def evaluate_group_targets(manifest, events, pass_name, *, vm_only=False, requir
                 })
                 continue
             batch = completed.get(attempt, {})
-            target = targets.get((attempt, item["name"]), {})
+            target = targets.get(_target_identity(attempt, item))
+            if target is None:
+                target = legacy_targets.get((attempt, item["name"]), {})
             matches = (
                 target.get("drv") == item["drv"]
                 and set(target.get("outputs", [])) == set(item["outputs"])
@@ -221,16 +237,29 @@ def current_vm_results(manifest, events, pass_name):
 
 def verify_results(state, pass_name="candidate"):
     state = Path(state)
+    if not has_manifest(state):
+        raise RuntimeError(f"CI manifest not found in {state}")
     manifest = load_manifest(state)
     events = read_records(state / "timings.jsonl")
     required_targets = evaluate_group_targets(manifest, events, pass_name, required_only=True)
+    if not required_targets:
+        raise RuntimeError(f"Manifest in {state} defines no required CI targets")
     completed = {
         event["attempt"]: event
         for event in events
         if event.get("pass") == pass_name and event["kind"] == "build"
     }
+    name_counts = {}
+    for item in required_targets:
+        name_counts[item["name"]] = name_counts.get(item["name"], 0) + 1
+
+    def label_for(item):
+        if name_counts.get(item["name"], 0) > 1 and item.get("drv"):
+            return f"{item['name']} ({Path(item['drv']).name[:12]})"
+        return item["name"]
+
     incomplete = sorted({
-        item["name"]
+        label_for(item)
         for item in required_targets
         if not item["success"] or completed.get(item["attempt"], {}).get("returncode") != 0
     })

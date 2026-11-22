@@ -443,6 +443,31 @@ class UpdateCandidate(unittest.TestCase):
                 head,
             )
 
+    def test_workflow_stdin_heredocs_require_interactive_flag(self):
+        import re
+
+        yaml_files = [
+            ROOT / "infra/action/action.yml",
+            *sorted((ROOT / ".github/workflows").glob("*.yml")),
+        ]
+        cmd_re = re.compile(
+            r"(?P<cmd>(?:docker\s+exec|container\.sh)(?:[^\n\\]|\\\s*\n)*?<<[-~]?['\"]?[A-Za-z_0-9]+['\"]?)"
+        )
+        for yaml_path in yaml_files:
+            text = yaml_path.read_text(encoding="utf-8")
+            for match in cmd_re.finditer(text):
+                snippet = match.group("cmd")
+                tokens = snippet.replace("\\\n", " ").split()
+                has_interactive = (
+                    "-i" in tokens
+                    or "--interactive" in tokens
+                    or any(t.startswith("-") and not t.startswith("--") and "i" in t[1:] for t in tokens)
+                )
+                self.assertTrue(
+                    has_interactive,
+                    f"Missing -i on heredoc container invocation in {yaml_path}:\n{snippet}",
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
