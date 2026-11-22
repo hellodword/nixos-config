@@ -51,6 +51,7 @@ in
           "temperature"
           "battery"
           "clock#local"
+          "clock#utc"
           "clock#la"
           "clock#cn"
           "tray"
@@ -156,6 +157,11 @@ in
             iso8601 = true;
             format.today = "<b><u>{}</u></b>";
           };
+        };
+        "clock#utc" = {
+          timezone = "UTC";
+          format = "{:%H:%M UTC}";
+          tooltip-format = "UTC\n{:%A, %Y-%m-%d %H:%M %Z}";
         };
         "clock#la" = {
           timezone = "America/Los_Angeles";
