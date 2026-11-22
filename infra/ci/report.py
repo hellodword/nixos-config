@@ -13,6 +13,7 @@ import time
 SOURCE_LABELS = {
     "executed": "executed",
     "local reuse": "local reuse",
+    "concurrent reuse": "concurrent reuse",
     "cache restored": "cache restored",
     "skipped": "skipped",
     "failed": "failed",

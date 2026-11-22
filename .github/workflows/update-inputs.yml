@@ -64,7 +64,7 @@ jobs:
                   reproducible-violentmonkey arkenfox-userjs home-manager nix-index-database sing-box-geoip
                 select_json="{\"scope\":\"laptop\",\"hostName\":\"laptop2\"}"
               fi
-              nix run ./infra#ci -- update prepare \
+              nix run --no-update-lock-file ./infra#ci -- update prepare \
                 --project-dir /workspace \
                 --select "$select_json" \
                 --state /candidate

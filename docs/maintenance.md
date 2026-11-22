@@ -89,4 +89,4 @@ journalctl -u docker-prune.service
 1. 在 `hosts/<名称>/` 声明硬件配置、Disko 分区、启动方案、主机名、用户名、UID，以及系统与 Home Manager 的 `stateVersion`。
 2. 导入 `profiles/laptop`（或所需功能模块，无头服务器可直接导入 `./modules` 并保持 `site.home.enable = false`），按实际预算设置备份目标与网络公告。
 3. 在 `.sops.yaml` 注册新主机的 age 公钥规则，准备 `hosts/<名称>/secrets/*.sops.yaml`，并通过 `lib/credentials.nix` 绑定运行时凭据。
-4. 在 `flake.nix` 的 `nixosConfigurations`（可选指定 `system = "x86_64-linux"` 或 `"aarch64-linux"`）注册主机，完成清单求值与构建验证；如需纳入托管 CI，同步更新 `.github/workflows/ci.yml` 矩阵。
+4. 在 `flake.nix` 的 `nixosConfigurations` 注册主机，完成清单求值与构建验证；如需纳入托管 CI，同步更新 `.github/workflows/ci.yml` 矩阵。

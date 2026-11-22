@@ -114,10 +114,9 @@ class Inventory:
                     path + ".udpSlot", f"use a unique integer between 0 and {UDP_LAST - UDP_FIRST}")
             slots.add(slot)
             field(node, "uefi", bool, path)
-            system = field(node, "system", str, path, "x86_64-linux")
-            require(system in {"x86_64-linux", "aarch64-linux"},
-                    path + ".system", "expected x86_64-linux or aarch64-linux")
-            node["system"] = system
+            if "system" in node:
+                system = field(node, "system", str, path)
+                require(system == "x86_64-linux", path + ".system", "expected x86_64-linux")
             sni = field(node, "serverName", str, path)
             require(re.fullmatch(r"[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?", sni) and sni not in snis,
                     path + ".serverName", "use a unique DNS server name")
@@ -369,7 +368,7 @@ class Inventory:
             release_inputs = [self.server(name), cert] + ([origin_prefix] if origin_prefix is not None else [])
             result["nodes"][name] = {
                 key: copy.deepcopy(value) for key, value in node.items()
-                if key in {"address", "serverName", "udpSlot", "uefi", "system", "disk", "interface", "dhcp",
+                if key in {"address", "serverName", "udpSlot", "uefi", "disk", "interface", "dhcp",
                            "addresses", "gateway", "nameservers", "sshHost", "sshServer",
                            "swapMiB", "tags", "modules", "web"}
             } | {"udpPort": self.port(name), "release": digest(release_inputs)[:32],

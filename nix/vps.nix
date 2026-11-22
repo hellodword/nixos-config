@@ -18,7 +18,7 @@ let
       }
     else
       builtins.fromJSON (builtins.readFile (directory + "/metadata.json"));
-  nodeSystem = node: node.system or "x86_64-linux";
+  system = "x86_64-linux";
   nodeModules = name: node: [
     ../modules/vps/node.nix
     {
@@ -32,15 +32,13 @@ let
   bootstrap = lib.mapAttrs (
     name: node:
     lib.nixosSystem {
-      modules = [ { nixpkgs.hostPlatform = nodeSystem node; } ] ++ nodeModules name node;
+      modules = [ { nixpkgs.hostPlatform = system; } ] ++ nodeModules name node;
     }
   ) inventory.nodes;
   hive = {
     meta = {
-      nixpkgs = inputs.nixpkgs-remote.legacyPackages.x86_64-linux;
-      nodeNixpkgs = lib.mapAttrs (
-        _: node: inputs.nixpkgs-remote.legacyPackages.${nodeSystem node}
-      ) inventory.nodes;
+      nixpkgs = inputs.nixpkgs-remote.legacyPackages.${system};
+      nodeNixpkgs = lib.mapAttrs (_: _: inputs.nixpkgs-remote.legacyPackages.${system}) inventory.nodes;
       specialArgs = { inherit inputs; };
     };
   }

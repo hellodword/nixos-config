@@ -5,7 +5,6 @@ import copy
 import json
 import os
 from pathlib import Path
-import platform
 import subprocess
 import time
 from urllib.parse import urlparse
@@ -16,12 +15,7 @@ def run(command, **kwargs):
 
 
 def default_system():
-    machine = platform.machine()
-    return {
-        "x86_64": "x86_64-linux",
-        "aarch64": "aarch64-linux",
-        "arm64": "aarch64-linux",
-    }.get(machine, f"{machine}-linux")
+    return "x86_64-linux"
 
 
 def nix_string_literal(value):
@@ -35,14 +29,16 @@ def load_update_policy(project_dir, manifest_rel="nix/ci.nix", select_obj=None, 
     manifest_path = project_dir / manifest_rel
     if not manifest_path.exists():
         raise RuntimeError(f"CI manifest not found: {manifest_path}")
+    scheme = "git+file://" if (project_dir / ".git").exists() else "path:"
     project_str = nix_string_literal(str(project_dir))
+    scheme_str = nix_string_literal(scheme)
     manifest_str = nix_string_literal(str(manifest_rel))
     select_str = nix_string_literal(json.dumps(select_obj, ensure_ascii=False))
     system_str = nix_string_literal(system)
     expr = (
         f"let"
         f" projectDir = {project_str};"
-        f" flake = builtins.getFlake (\"git+file://\" + projectDir);"
+        f" flake = builtins.getFlake ({scheme_str} + projectDir);"
         f" in (import (projectDir + \"/\" + {manifest_str}) {{"
         f"   inherit flake;"
         f"   system = {system_str};"

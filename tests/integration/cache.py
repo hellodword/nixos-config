@@ -502,7 +502,10 @@ def main():
             .replace("GATE_URL", json.dumps(gate_url))
         )
         fixture = json.loads(
-            run(["nix", "eval", "--impure", "--json", "--expr", fixture_expr], cwd=ROOT)
+            run(
+                ["nix", "eval", "--no-update-lock-file", "--impure", "--json", "--expr", fixture_expr],
+                cwd=ROOT,
+            )
         )
 
         # Verify evaluation failure handling with exit 0 from nix-eval-jobs.
@@ -1152,7 +1155,111 @@ def main():
                 proxy_log,
             )
 
-            # 7. Target registry outage during upload propagates failure cleanly.
+            # 8. Concurrent Nix build lock wait classifies waiter as concurrent reuse (never local reuse)
+            #    and non-Git path: directory evaluate_manifest succeeds.
+            concurrent_token = f"{work.name}-concurrent-{time.time_ns()}"
+            concurrent_info = json.loads(
+                run(
+                    [
+                        "nix",
+                        "eval",
+                        "--no-update-lock-file",
+                        "--impure",
+                        "--json",
+                        "--expr",
+                        (
+                            "let pkgs = (builtins.getFlake ("
+                            + json.dumps("git+file://" + str(ROOT))
+                            + ")).inputs."
+                            + args.nixpkgs_input
+                            + ".legacyPackages.x86_64-linux;"
+                            + " d = pkgs.runCommand "
+                            + json.dumps(concurrent_token)
+                            + ' {} "sleep 2; printf concurrent > $out";'
+                            + " in { drv = d.drvPath; out = d.outPath; }"
+                        ),
+                    ],
+                    cwd=ROOT,
+                )
+            )
+            concurrent_entry = {
+                "name": "concurrent-item",
+                "drv": concurrent_info["drv"],
+                "outputs": [concurrent_info["out"]],
+                "required": True,
+                "vm": False,
+            }
+            state_builder = work / "concurrent-builder"
+            state_waiter = work / "concurrent-waiter"
+            for st in (state_builder, state_waiter):
+                st.mkdir(parents=True, exist_ok=True)
+                (st / "manifest.json").write_text(
+                    json.dumps(
+                        {
+                            "groups": [
+                                {
+                                    "name": "concurrent",
+                                    "required": True,
+                                    "vm": None,
+                                    "kvm": False,
+                                    "maxJobs": 1,
+                                    "entries": [concurrent_entry],
+                                }
+                            ],
+                            "builds": {"concurrent": [concurrent_entry]},
+                        }
+                    )
+                )
+            builder_errors = []
+
+            def _run_primary():
+                try:
+                    run_build([concurrent_entry], state=state_builder, phase="concurrent")
+                except BaseException as exc:
+                    builder_errors.append(exc)
+
+            primary_thread = threading.Thread(target=_run_primary)
+            primary_thread.start()
+            time.sleep(0.4)
+            run_build([concurrent_entry], state=state_waiter, phase="concurrent")
+            primary_thread.join(timeout=30)
+            assert not builder_errors, builder_errors
+            primary_target = [
+                e for e in read_records(state_builder / "timings.jsonl") if e["kind"] == "target"
+            ][-1]
+            waiter_target = [
+                e for e in read_records(state_waiter / "timings.jsonl") if e["kind"] == "target"
+            ][-1]
+            assert primary_target["source"] == "executed" and primary_target["success"], primary_target
+            assert waiter_target["source"] == "concurrent reuse" and waiter_target["success"], waiter_target
+            report.verify_results(state_builder)
+            report.verify_results(state_waiter)
+
+            non_git_project = work / "non-git-project"
+            (non_git_project / "nix").mkdir(parents=True, exist_ok=True)
+            (non_git_project / "flake.nix").write_text(
+                "{\n"
+                "  outputs = { self }: {\n"
+                '    outPath = builtins.storePath "' + concurrent_info["out"] + '";\n'
+                "  };\n"
+                "}\n"
+            )
+            (non_git_project / "nix/ci.nix").write_text(
+                "{ flake, system ? \"x86_64-linux\", select ? {} }: {\n"
+                "  jobs = { sample = import " + json.dumps(concurrent_info["drv"]) + "; };\n"
+                "  groups = [ { name = \"build\"; jobs = [ \"sample\" ]; required = true; vm = null; kvm = false; maxJobs = 1; } ];\n"
+                "  cache = null;\n"
+                "  update = { allowedLockfiles = [ \"flake.lock\" ]; ignoreOnlyInputs = []; commitTitle = \"chore: update\"; branchPrefix = \"auto/upd\"; };\n"
+                "}\n"
+            )
+            non_git_state = work / "non-git-state"
+            non_git_manifest = evaluate.evaluate_manifest(
+                project_dir=non_git_project,
+                state=non_git_state,
+            )
+            assert len(non_git_manifest["builds"]["build"]) == 1, non_git_manifest
+
+            # 9. Target registry outage during upload propagates failure cleanly.
             failure_state = work / "publication-failure"
             with publishing(failure_state, inventory, secret=secret, **publisher_settings):
                 checkpoint(failure_state, "ready")

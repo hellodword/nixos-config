@@ -80,18 +80,12 @@
   outputs =
     { self, nixpkgs, ... }@inputs:
     let
-      supportedSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       mkHost =
         {
           host,
           userName,
-          system ? "x86_64-linux",
         }:
         nixpkgs.lib.nixosSystem {
           modules = [
@@ -116,14 +110,10 @@
       nixosModules.vps = import ./profiles/vps;
       colmenaHive = inputs.colmena.lib.makeHive vps.hive;
       vpsBootstrap = builtins.mapAttrs (_: node: node.config.system.build.image) vps.bootstrap;
-      packages = forAllSystems (
-        system:
-        import ./nix/packages.nix {
-          pkgs = nixpkgs.legacyPackages.${system};
-          inherit inputs system;
-        }
-      );
-      devShells = forAllSystems (system: import ./nix/dev-shells.nix { inherit inputs system; });
+      packages.${system} = import ./nix/packages.nix {
+        inherit pkgs inputs system;
+      };
+      devShells.${system} = import ./nix/dev-shells.nix { inherit inputs system; };
       checks.${system} = import ./nix/checks.nix {
         inherit pkgs inputs;
         laptop = synthetic;

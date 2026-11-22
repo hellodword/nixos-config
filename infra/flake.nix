@@ -13,11 +13,9 @@
       oranc,
     }:
     let
-      supportedSystems = [
-        "x86_64-linux"
-        "aarch64-linux"
-      ];
-      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      orancPkg = oranc.packages.${system}.default;
     in
     {
       lib = {
@@ -25,27 +23,18 @@
         testing = import ./nix/testing.nix;
       };
 
-      packages = forAllSystems (
-        system:
-        let
-          pkgs = nixpkgs.legacyPackages.${system};
-          orancPkg = oranc.packages.${system}.default;
-        in
-        {
+      packages.${system} = {
+        oranc = orancPkg;
+        ci-tools = import ./nix/ci-tools.nix {
+          inherit pkgs;
           oranc = orancPkg;
-          ci-tools = import ./nix/ci-tools.nix {
-            inherit pkgs;
-            oranc = orancPkg;
-            root = ./.;
-          };
-        }
-      );
-
-      apps = forAllSystems (system: {
-        ci = {
-          type = "app";
-          program = "${self.packages.${system}.ci-tools}/bin/nix-ci";
+          root = ./.;
         };
-      });
+      };
+
+      apps.${system}.ci = {
+        type = "app";
+        program = "${self.packages.${system}.ci-tools}/bin/nix-ci";
+      };
     };
 }

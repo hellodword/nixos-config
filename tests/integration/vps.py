@@ -42,36 +42,41 @@ class InventoryProtocol(unittest.TestCase):
     def test_node_declaration_validation_and_architectures(self):
         base = self.inventory()
         default_meta = model.Inventory(base).metadata()["nodes"]
-        self.assertEqual(default_meta["edge"]["system"], "x86_64-linux")
+        self.assertNotIn("system", default_meta["edge"])
 
-        arm = copy.deepcopy(base)
-        arm["nodes"]["west"]["system"] = "aarch64-linux"
-        arm["nodes"]["edge"].update(dhcp=False, addresses=["192.0.2.10/24"])
-        arm["nodes"]["edge"]["modules"] = ["modules/vps/http-origin.nix"]
-        arm["secrets"]["edge-http-origin-prefix"] = "/origin-segment_1"
-        arm_inv = model.Inventory(arm)
-        arm_meta = arm_inv.metadata()["nodes"]
-        self.assertEqual(arm_meta["west"]["system"], "aarch64-linux")
+        unsupported = copy.deepcopy(base)
+        unsupported["nodes"]["west"]["system"] = "aarch64-linux"
+        with self.assertRaises(model.DeclarationError):
+            model.Inventory(unsupported)
 
-        rotated = copy.deepcopy(arm)
+        static_origin = copy.deepcopy(base)
+        static_origin["nodes"]["west"]["system"] = "x86_64-linux"
+        static_origin["nodes"]["edge"].update(dhcp=False, addresses=["192.0.2.10/24"])
+        static_origin["nodes"]["edge"]["modules"] = ["modules/vps/http-origin.nix"]
+        static_origin["secrets"]["edge-http-origin-prefix"] = "/origin-segment_1"
+        origin_inv = model.Inventory(static_origin)
+        origin_meta = origin_inv.metadata()["nodes"]
+        self.assertNotIn("system", origin_meta["west"])
+
+        rotated = copy.deepcopy(static_origin)
         rotated["secrets"]["edge-http-origin-prefix"] = "/origin-segment_2"
         rotated_inv = model.Inventory(rotated)
-        self.assertNotEqual(arm_meta["edge"]["release"], rotated_inv.metadata()["nodes"]["edge"]["release"])
+        self.assertNotEqual(origin_meta["edge"]["release"], rotated_inv.metadata()["nodes"]["edge"]["release"])
 
         with tempfile.TemporaryDirectory() as temp:
             prep_root = Path(temp)
             subprocess.run(
                 [sys.executable, str(ROOT / "scripts/vps/prepare.py")],
-                input=yaml.safe_dump(arm),
+                input=yaml.safe_dump(static_origin),
                 text=True,
                 cwd=prep_root,
                 check=True,
                 capture_output=True,
             )
-            prefix_file = prep_root / "tmp/vps/nodes/edge" / arm_meta["edge"]["release"] / "http-origin-prefix"
+            prefix_file = prep_root / "tmp/vps/nodes/edge" / origin_meta["edge"]["release"] / "http-origin-prefix"
             self.assertEqual(prefix_file.read_text().strip(), "/origin-segment_1")
             self.assertEqual(prefix_file.stat().st_mode & 0o777, 0o600)
-            west_dir = prep_root / "tmp/vps/nodes/west" / arm_meta["west"]["release"]
+            west_dir = prep_root / "tmp/vps/nodes/west" / origin_meta["west"]["release"]
             self.assertFalse((west_dir / "http-origin-prefix").exists())
 
         with tempfile.TemporaryDirectory() as temp:

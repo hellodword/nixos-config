@@ -157,7 +157,7 @@ systemctl reboot
 
 ### 1. 核对参数与构建镜像
 
-节点默认架构 `system` 为 `x86_64-linux`，也可设为 `aarch64-linux`；`uefi` 选择 UEFI（`systemd-boot`）或 BIOS（`GRUB`）；静态网络设 `dhcp: false` 并提供 `addresses`（CIDR）、`gateway` 与 `nameservers`（`IP#TLS证书名`）。
+节点架构为 `x86_64-linux`；`uefi` 选择 UEFI（`systemd-boot`）或 BIOS（`GRUB`）；静态网络设 `dhcp: false` 并提供 `addresses`（CIDR）、`gateway` 与 `nameservers`（`IP#TLS证书名`）。
 
 ```sh
 ssh_host=$(jq -r --arg node "$node" '.nodes[$node].sshHost' tmp/vps/metadata.json)

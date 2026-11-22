@@ -4,7 +4,6 @@
 import json
 import os
 from pathlib import Path
-import platform
 import selectors
 import signal
 import subprocess
@@ -17,12 +16,7 @@ except ImportError:
 
 
 def default_system():
-    machine = platform.machine()
-    return {
-        "x86_64": "x86_64-linux",
-        "aarch64": "aarch64-linux",
-        "arm64": "aarch64-linux",
-    }.get(machine, f"{machine}-linux")
+    return "x86_64-linux"
 
 
 def nix_string_literal(value):
@@ -30,13 +24,16 @@ def nix_string_literal(value):
 
 
 def manifest_expression(project_dir, manifest_rel, select_obj, system):
-    project_str = nix_string_literal(str(Path(project_dir).resolve()))
+    resolved = Path(project_dir).resolve()
+    scheme = "git+file://" if (resolved / ".git").exists() else "path:"
+    project_str = nix_string_literal(str(resolved))
+    scheme_str = nix_string_literal(scheme)
     manifest_str = nix_string_literal(str(manifest_rel))
     select_str = nix_string_literal(json.dumps(select_obj, ensure_ascii=False))
     system_str = nix_string_literal(system)
     return (
         f"(import ({project_str} + \"/\" + {manifest_str}) {{"
-        f" flake = builtins.getFlake (\"git+file://\" + {project_str});"
+        f" flake = builtins.getFlake ({scheme_str} + {project_str});"
         f" system = {system_str};"
         f" select = builtins.fromJSON {select_str};"
         f" }})."

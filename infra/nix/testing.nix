@@ -1,9 +1,12 @@
 # Reusable NixOS QEMU VM test constructors, container host fixture, and offline Sway + VS Code fixture.
 let
-  testingDir = ../testing;
-  runtimePy = ../testing/runtime.py;
-  guiPy = ../testing/gui.py;
-  vscodeCdpPy = ../testing/vscode_cdp.py;
+  testingDir = builtins.path {
+    path = ../testing;
+    name = "infra-testing";
+  };
+  runtimePy = "${testingDir}/runtime.py";
+  guiPy = "${testingDir}/gui.py";
+  vscodeCdpPy = "${testingDir}/vscode_cdp.py";
 
   mkTest =
     pkgs: testModule:
@@ -80,28 +83,15 @@ let
       vscodeCommit = pkgs.vscode.rev;
       hostSystem = pkgs.stdenv.hostPlatform.system;
       serverPlat =
-        {
-          x86_64-linux = "linux-x64";
-          aarch64-linux = "linux-arm64";
-        }
-        .${hostSystem} or (throw "Unsupported system for mkSwayEditorModule: ${hostSystem}");
+        if hostSystem == "x86_64-linux" then
+          "linux-x64"
+        else
+          throw "Unsupported system for mkSwayEditorModule: ${hostSystem}";
 
       upstreamServerUrl = pkgs.vscode.vscodeServer.src.url or "";
       vscodeServerSrc =
         if lib.hasInfix "server-${serverPlat}" upstreamServerUrl then
           pkgs.vscode.vscodeServer
-        else if
-          hostSystem == "aarch64-linux" && vscodeCommit == "8a14f0cc1b08d531eb83255ea3764ae22aa932b5"
-        then
-          pkgs.srcOnly {
-            name = "vscode-server-${vscodeCommit}-arm64.tar.gz";
-            src = pkgs.fetchurl {
-              name = "vscode-server-${vscodeCommit}-arm64.tar.gz";
-              url = "https://update.code.visualstudio.com/commit:${vscodeCommit}/server-linux-arm64/stable";
-              hash = "sha256-qiwuPMWZlr+5BCXG6Tn45op7iBrtvVOw1w7cTgbNnwQ=";
-            };
-            stdenv = pkgs.stdenvNoCC;
-          }
         else
           throw "pkgs.vscode.vscodeServer (${upstreamServerUrl}) does not match ${serverPlat} for commit ${vscodeCommit}";
 
