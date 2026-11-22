@@ -25,7 +25,7 @@ sops decrypt secrets/vps.sops.yaml | python3 scripts/vps/prepare.py
 ```
 
 输出位于被 Git 忽略的 `tmp/vps/`（目录 `0700`、文件 `0600`）：
-- `metadata.json`：供 Nix 与 Colmena `--impure` 求值（含节点拓扑、架构 `system`、端口及根据节点服务配置计算出的 `release` 摘要）；
+- `metadata.json`：供 Nix 与 Colmena `--impure` 求值（含节点拓扑、端口及根据节点服务配置计算出的 `release` 摘要）；
 - `nodes/<节点>/<release>/`：`proxy.json`、`certificate.json` 及启用 `modules/vps/http-origin.nix` 时的 `http-origin-prefix`，由 Colmena `deployment.keys` 以 `0600` 权限直接上传至目标机 `/var/lib/site-vps/releases/<release>/`，密文文件本身不进入 `/nix/store`，部署阶段也无需再次调用 SOPS；
 - `workers/{certificates,subscriptions}/`：两个独立的 Cloudflare Worker 发布目录；
 - `subscriptions/<名称>/`：生成的 `hy2`、`trojan`、`trojan-chain` 各端配置。

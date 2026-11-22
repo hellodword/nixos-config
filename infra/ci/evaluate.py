@@ -1,18 +1,40 @@
 #!/usr/bin/env python3
 """Evaluate independent CI jobs via nix-eval-jobs and assemble manifest.json."""
 
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
 import selectors
 import signal
 import subprocess
+import tempfile
 import time
 
 try:
     from .report import record, utc_now
 except ImportError:
     from report import record, utc_now
+
+SANITIZED_NIXPKGS_VARS = (
+    "NIXPKGS_ALLOW_BROKEN",
+    "NIXPKGS_ALLOW_INSECURE",
+    "NIXPKGS_ALLOW_UNFREE",
+    "NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM",
+)
+
+
+@contextmanager
+def sanitized_nixpkgs_env(base_env=None):
+    """Isolate --impure flake/manifest evaluation from ambient host nixpkgs user settings."""
+    with tempfile.TemporaryDirectory(prefix="nix-ci-nixpkgs-cfg-") as cfg_dir:
+        empty_cfg = Path(cfg_dir) / "config.nix"
+        empty_cfg.write_text("{}\n", encoding="utf-8")
+        env = dict(os.environ if base_env is None else base_env)
+        for key in SANITIZED_NIXPKGS_VARS:
+            env.pop(key, None)
+        env["NIXPKGS_CONFIG"] = str(empty_cfg)
+        yield env
 
 
 def default_system():
@@ -63,7 +85,7 @@ def progress(state, started, completed, total):
     print(json.dumps(event), flush=True)
 
 
-def evaluate_jobs(command, expected, state, cwd=None):
+def evaluate_jobs(command, expected, state, cwd=None, env=None):
     """Evaluate derivations through nix-eval-jobs and fail on any attribute error or missing output."""
     state = Path(state)
     results, failures = {}, []
@@ -76,6 +98,7 @@ def evaluate_jobs(command, expected, state, cwd=None):
             stdout=subprocess.PIPE,
             start_new_session=True,
             cwd=cwd,
+            env=env,
         )
         selector.register(process.stdout, selectors.EVENT_READ)
         pending = b""
@@ -166,37 +189,40 @@ def evaluate_manifest(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None
     expr = manifest_expression(project_dir, manifest_rel, select_obj, system)
     eval_flags = ["--no-update-lock-file", "--impure"]
 
-    def query(attribute, wrapper=None):
+    def query(attribute, eval_env, wrapper=None):
         full_expr = f"{wrapper} ({expr}{attribute})" if wrapper else (expr + attribute)
         return json.loads(
             subprocess.check_output(
                 ["nix", "eval", "--json", *eval_flags, "--expr", full_expr],
                 cwd=project_dir,
+                env=eval_env,
             )
         )
 
     started, start = utc_now(), time.monotonic()
     status = 1
     try:
-        job_names = set(query("jobs", wrapper="builtins.attrNames"))
-        raw_groups = query("groups")
-        results = evaluate_jobs(
-            [
-                "nix-eval-jobs",
-                "--workers",
-                "2",
-                "--max-memory-size",
-                "5120",
-                "--impure",
-                "--expr",
-                expr + "jobs",
-            ],
-            job_names,
-            state,
-            cwd=project_dir,
-        )
-        cache_config = query("cache")
-        update_config = query("update")
+        with sanitized_nixpkgs_env() as eval_env:
+            job_names = set(query("jobs", eval_env, wrapper="builtins.attrNames"))
+            raw_groups = query("groups", eval_env)
+            results = evaluate_jobs(
+                [
+                    "nix-eval-jobs",
+                    "--workers",
+                    "2",
+                    "--max-memory-size",
+                    "5120",
+                    "--impure",
+                    "--expr",
+                    expr + "jobs",
+                ],
+                job_names,
+                state,
+                cwd=project_dir,
+                env=eval_env,
+            )
+            cache_config = query("cache", eval_env)
+            update_config = query("update", eval_env)
 
         private_builds = []
         if cache_config is not None:

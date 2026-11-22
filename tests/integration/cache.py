@@ -1259,6 +1259,73 @@ def main():
             )
             assert len(non_git_manifest["builds"]["build"]) == 1, non_git_manifest
 
+            # Ensure evaluate_manifest strips ambient NIXPKGS_ALLOW_UNFREE / NIXPKGS_CONFIG so
+            # unconfigured legacyPackages unfree leaks fail identically locally and in clean CI.
+            nixpkgs_out = (
+                run(
+                    [
+                        "nix",
+                        "eval",
+                        "--no-update-lock-file",
+                        "--impure",
+                        "--raw",
+                        "--expr",
+                        f'(builtins.getFlake ("git+file://" + toString ./. )).inputs.{args.nixpkgs_input}.outPath',
+                    ],
+                    cwd=ROOT,
+                )
+                .decode()
+                .strip()
+            )
+            unfree_leak_project = work / "unfree-leak-project"
+            (unfree_leak_project / "nix").mkdir(parents=True, exist_ok=True)
+            (unfree_leak_project / "flake.nix").write_text(
+                "{\n"
+                "  outputs = { self }: {\n"
+                '    outPath = builtins.storePath "' + concurrent_info["out"] + '";\n'
+                "  };\n"
+                "}\n"
+            )
+            (unfree_leak_project / "nix/ci.nix").write_text(
+                "{ flake, system ? \"x86_64-linux\", select ? {} }:\n"
+                "let\n"
+                "  pkgs = import (builtins.storePath " + json.dumps(nixpkgs_out) + ") { inherit system; };\n"
+                "in {\n"
+                "  jobs = { sample = import " + json.dumps(concurrent_info["drv"]) + "; };\n"
+                "  groups = [ { name = \"build\"; jobs = [ \"sample\" ]; required = true; vm = null; kvm = false; maxJobs = 1; } ];\n"
+                "  cache = {\n"
+                "    repository = \"synthetic/unfree-leak\";\n"
+                "    publicKey = \"synthetic-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";\n"
+                "    mode = \"end-of-phase\";\n"
+                "    excludedPaths = [ (toString pkgs.vscode) ];\n"
+                "    excludedDerivations = [];\n"
+                "    bundles = [];\n"
+                "    privateBuilds = [];\n"
+                "  };\n"
+                "  update = null;\n"
+                "}\n"
+            )
+            permissive_cfg = work / "permissive-nixpkgs-config.nix"
+            permissive_cfg.write_text("{ allowUnfree = true; }\n")
+            with patch.dict(
+                os.environ,
+                {
+                    "NIXPKGS_ALLOW_UNFREE": "1",
+                    "NIXPKGS_CONFIG": str(permissive_cfg),
+                },
+            ):
+                try:
+                    evaluate.evaluate_manifest(
+                        project_dir=unfree_leak_project,
+                        state=work / "unfree-leak-state",
+                    )
+                except subprocess.CalledProcessError:
+                    pass
+                else:
+                    raise AssertionError(
+                        "evaluate_manifest allowed unconfigured legacyPackages unfree package via ambient NIXPKGS_*"
+                    )
+
             # 9. Target registry outage during upload propagates failure cleanly.
             failure_state = work / "publication-failure"
             with publishing(failure_state, inventory, secret=secret, **publisher_settings):

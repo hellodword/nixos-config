@@ -9,6 +9,11 @@ import subprocess
 import time
 from urllib.parse import urlparse
 
+try:
+    from .evaluate import sanitized_nixpkgs_env
+except ImportError:
+    from evaluate import sanitized_nixpkgs_env
+
 
 def run(command, **kwargs):
     return subprocess.check_output(command, text=True, **kwargs).strip()
@@ -45,12 +50,14 @@ def load_update_policy(project_dir, manifest_rel="nix/ci.nix", select_obj=None, 
         f"   select = builtins.fromJSON {select_str};"
         f" }}).update"
     )
-    policy = json.loads(
-        run(
-            ["nix", "eval", "--no-update-lock-file", "--impure", "--json", "--expr", expr],
-            cwd=project_dir,
+    with sanitized_nixpkgs_env() as eval_env:
+        policy = json.loads(
+            run(
+                ["nix", "eval", "--no-update-lock-file", "--impure", "--json", "--expr", expr],
+                cwd=project_dir,
+                env=eval_env,
+            )
         )
-    )
     if not policy:
         raise RuntimeError(f"Manifest {manifest_rel} does not define an update policy")
     return policy

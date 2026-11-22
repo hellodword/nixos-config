@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import ssl
 import subprocess
 import sys
@@ -48,6 +49,33 @@ class InventoryProtocol(unittest.TestCase):
         unsupported["nodes"]["west"]["system"] = "aarch64-linux"
         with self.assertRaises(model.DeclarationError):
             model.Inventory(unsupported)
+
+        if shutil.which("nix") and (ROOT / "nix/vps.nix").is_file():
+            legacy_eval = subprocess.run(
+                [
+                    "nix",
+                    "--extra-experimental-features",
+                    "nix-command flakes",
+                    "eval",
+                    "--no-update-lock-file",
+                    "--impure",
+                    "--json",
+                    "--expr",
+                    (
+                        f"let flake = builtins.getFlake (\"git+file://\" + {json.dumps(str(ROOT))}); "
+                        f"vps = import {json.dumps(str(ROOT / 'nix/vps.nix'))} {{ "
+                        "inputs = flake.inputs; "
+                        "metadata = { nodes.west = { system = \"aarch64-linux\"; sshHost = \"203.0.113.10\"; release = \"r1\"; }; }; "
+                        "}; in builtins.attrNames vps.bootstrap"
+                    ),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertNotEqual(legacy_eval.returncode, 0)
+            self.assertIn("aarch64-linux", legacy_eval.stderr)
 
         static_origin = copy.deepcopy(base)
         static_origin["nodes"]["west"]["system"] = "x86_64-linux"

@@ -997,7 +997,7 @@ in
             user(machine, "cd ${identityDirectory}/repo && git verify-commit HEAD && git commit --allow-empty -m 'Identity after reboot' && git verify-commit HEAD")
             machine.wait_until_succeeds(user_command("nmcli -g 802-11-wireless.ssid connection show synthetic-baseline | grep -Fx synthetic-baseline"), timeout=60)
             assert user(machine, "nmcli -g 802-11-wireless.ssid connection show synthetic-saved").strip() == "synthetic-saved"
-            assert machine.succeed("nmcli -s -g 802-11-wireless-security.psk connection show synthetic-saved").strip() == "synthetic-passphrase-2"
+            machine.wait_until_succeeds("test \"$(nmcli -s -g 802-11-wireless-security.psk connection show synthetic-saved)\" = synthetic-passphrase-2", timeout=30)
             user(machine, "test -s /persist/home/desktop/.config/kwinoutputconfig.json")
             stop_session(machine, compositor)
 

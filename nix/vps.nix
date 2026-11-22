@@ -19,6 +19,15 @@ let
     else
       builtins.fromJSON (builtins.readFile (directory + "/metadata.json"));
   system = "x86_64-linux";
+  checkNodes = builtins.deepSeq (
+    lib.mapAttrsToList (
+      name: node:
+      if (node.system or system) == system then
+        true
+      else
+        throw "VPS node '${name}' declares unsupported system '${toString node.system}'; regenerate tmp/vps with scripts/vps/prepare.py for ${system}"
+    ) (inventory.nodes or { })
+  );
   nodeModules = name: node: [
     ../modules/vps/node.nix
     {
@@ -74,6 +83,6 @@ let
     };
   }) inventory.nodes;
 in
-{
+checkNodes {
   inherit bootstrap hive;
 }

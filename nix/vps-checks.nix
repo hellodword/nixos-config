@@ -7,7 +7,20 @@ let
     p.dnspython
     p.h2
   ]);
+  legacyArmEvaluation = builtins.tryEval (
+    (import ./vps.nix {
+      inherit inputs;
+      metadata = {
+        nodes.legacy = {
+          system = "aarch64-linux";
+          sshHost = "203.0.113.10";
+          release = "r1";
+        };
+      };
+    }).bootstrap
+  );
 in
+assert !legacyArmEvaluation.success;
 {
   vps =
     pkgs.runCommand "vps-protocols"
