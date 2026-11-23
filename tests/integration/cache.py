@@ -326,6 +326,11 @@ def main():
     parser.add_argument("--nixpkgs-input", choices=["nixpkgs", "nixpkgs-remote"], default="nixpkgs")
     args = parser.parse_args()
 
+    with evaluate.sanitized_nixpkgs_env() as clean_env, patch.dict(os.environ, clean_env, clear=True):
+        _run_suite(args)
+
+
+def _run_suite(args):
     # Verify production cache-config.nix renders expected scopes via infra.lib.cache.
     production_caches = json.loads(
         run([
@@ -354,7 +359,10 @@ def main():
             f"""
             let
               flake = builtins.getFlake ("git+file://" + toString {json.dumps(str(ROOT))});
-              pkgs = flake.inputs.{args.nixpkgs_input}.legacyPackages.x86_64-linux;
+              pkgs = import flake.inputs.{args.nixpkgs_input} {{
+                system = "x86_64-linux";
+                config.allowUnfree = true;
+              }};
               lib = pkgs.lib;
               cacheLib = import {json.dumps(str(ROOT / "infra/nix/cache.nix"))};
               inner = pkgs.runCommand "synthetic-unfree-inner" {{
@@ -1100,7 +1108,7 @@ def main():
             eop_cfg["inventory"]["outputs"] = [
                 path for path in eop_cfg["inventory"]["outputs"] if f"-{work.name}-" in path
             ]
-            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text()}):
                 eop_published = cache.publish_once(eop_state, eop_cfg, phase="end-of-phase")
             # Everything from incremental is already on target_uri -> only endPhaseItem is newly uploaded!
             assert eop_published == [fixture["endPhaseItem"]["path"]], eop_published

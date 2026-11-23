@@ -346,6 +346,7 @@ runs:
         python3 - <<'PY'
         import json
         from pathlib import Path
+        from urllib.error import HTTPError
         import urllib.request
 
         manifest = json.loads(Path("/ci/manifest.json").read_text())
@@ -355,10 +356,14 @@ runs:
             keys = cache.get("trustedPublicKeys") or []
             for uri in subs:
                 if uri.startswith("http://127.0.0.2:"):
-                    with urllib.request.urlopen(uri.rstrip("/") + "/nix-cache-info", timeout=30) as response:
-                        body = response.read().decode()
-                    if "StoreDir: /nix/store" not in body:
-                        raise SystemExit(f"Unexpected nix-cache-info from {uri}")
+                    try:
+                        with urllib.request.urlopen(uri.rstrip("/") + "/nix-cache-info", timeout=30) as response:
+                            body = response.read().decode()
+                        if "StoreDir: /nix/store" not in body:
+                            raise SystemExit(f"Unexpected nix-cache-info from {uri}")
+                    except HTTPError as error:
+                        if error.code != 404:
+                            raise
             base_lines = [
                 line for line in Path("/ci/nix-base.conf").read_text().splitlines()
                 if not line.startswith(("substituters =", "trusted-public-keys =", "extra-substituters =", "extra-trusted-public-keys ="))
@@ -389,6 +394,8 @@ runs:
         if [[ "$cache_mode" == none ]]; then
           exit 0
         fi
+        ORANC_SIGNING_KEY="$(printf '%s' "$ORANC_SIGNING_KEY" | tr -d '[:space:]')"
+        export ORANC_SIGNING_KEY
         bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i \
           --volume "$NIX_CI_STORE_VOLUME:/nix:ro" \
           --volume "$NIX_CI_PROJECT_DIR:/workspace:ro" \
@@ -468,6 +475,8 @@ runs:
           echo 'result=skipped' >> "$GITHUB_OUTPUT"
           exit 0
         fi
+        ORANC_SIGNING_KEY="$(printf '%s' "$ORANC_SIGNING_KEY" | tr -d '[:space:]')"
+        export ORANC_SIGNING_KEY
         if bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i \
           --network "container:$NIX_CI_CONTAINER" \
           --memory=12g --memory-swap=20g \
@@ -478,7 +487,19 @@ runs:
           --env ORANC_USERNAME \
           --env ORANC_PASSWORD \
           --env ORANC_SIGNING_KEY \
-          -- bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci cache publish --project-dir /workspace --state /ci'; then
+          -- bash -euo pipefail <<'BASH'; then
+        export PATH="$(cat /ci/tools)/bin:$PATH"
+        expected=$(jq -r '.cache.publicKey' /ci/manifest.json)
+        actual=$(printf '%s' "$ORANC_SIGNING_KEY" | nix key convert-secret-to-public)
+        if [[ "$actual" != "$expected" ]]; then
+          echo 'NIX_CACHE_SIGNING_KEY does not match the declared cache public key.' >&2
+          exit 1
+        fi
+        repository=$(jq -r '.cache.repository' /ci/manifest.json)
+        registry=$(jq -r '.cache.registry // "ghcr.io"' /ci/manifest.json)
+        "$(cat /ci/oranc)" push --registry "$registry" --repository "$repository" --parallel 1 initialize --priority 41
+        nix-ci cache publish --project-dir /workspace --state /ci
+        BASH
           echo 'result=success' >> "$GITHUB_OUTPUT"
         else
           echo 'result=failed' >> "$GITHUB_OUTPUT"

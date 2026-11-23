@@ -39,7 +39,7 @@
 | 阶段 | 内容 |
 | --- | --- |
 | 准备与启动缓存 | 磁盘清理、swap/KVM/Nix 卷初始化，按 `infra#oranc.outPath` 恢复或构建 `oranc` 闭包（`master` 未命中且归档不超过 `512 MiB` 时写回 Actions Cache） |
-| 缓存代理与清单求值 | 在 `127.0.0.2:37515` 启动本地 `oranc` 读取代理并通过匿名 `GET /nix-cache-info` 校验可读性，运行 `nix-ci evaluate` 写出 `manifest.json`，执行 `lint`、`cache` 与 `updates` 集成检查 |
+| 缓存代理与清单求值 | 在 `127.0.0.2:37515` 启动本地 `oranc` 读取代理并探测 `/nix-cache-info` 校验代理连通性，运行 `nix-ci evaluate` 写出 `manifest.json`，执行 `lint`、`cache` 与 `updates` 集成检查 |
 | `laptop` 执行组 | 依次构建 `private`、`dependencies`（含全部非 VM 检查与 5 个 VM `.driver`），完成依赖检查点后顺序执行 `vm-network-backup`、`vm-desktop`、`vm-applications` |
 | `remote` 执行组 | 先构建无 KVM 需求的 `dependencies`，再在 `kvm = true` 组构建 `vm-vps-driver`（含 `vpsBootstrap` BIOS/UEFI 磁盘镜像）并执行 `vm-vps` |
 | 汇总与发布收尾 | `nix-ci report verify` 核对必需目标，完成最终检查点上传、采样资源并输出 Markdown Summary |
@@ -47,7 +47,7 @@
 ## 首次启用步骤
 
 1. 在公开仓库 **Settings → Actions → General** 允许 GitHub 官方 Actions，并勾选允许工作流创建与批准 PR。
-2. 若 GHCR 缓存 package 尚未建立，在 **Actions → Verify and cache** 选择 `master` 并勾选 `initialize-cache` 运行一次。
+2. 若需在首次完整构建前单独建立 GHCR 缓存 package 以便配置权限，在 **Actions → Verify and cache** 选择 `master` 并勾选 `initialize-cache` 运行一次；常规 `master` 缓存发布阶段也会幂等初始化 `nix-cache-info`。
 3. 打开 GitHub **Packages → 缓存 package → Package settings**：将可见性设为 **Public**；取消 **Inherit access from repository**，在 **Manage Actions access** 中为本仓库显式设置 **Write** 角色（参见 [GitHub Package 权限说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)）。
 4. 按 [构建缓存签名密钥](cache.md#签名密钥管理) 生成密钥对，将公钥写入 `nix/cache-identity.json`，私钥写入仓库 Actions Secret `NIX_CACHE_SIGNING_KEY`。
 5. 在 `master` 手动运行一次不勾选 `initialize-cache` 的 **Verify and cache**，确认构建、VM 验收与旁路缓存发布全部通过。

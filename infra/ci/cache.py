@@ -248,9 +248,10 @@ class Publisher:
         self.derivations = set(self.inventory["derivations"])
         self.excluded = set(self.inventory["excluded"])
 
+        self.signing_key = os.environ["ORANC_SIGNING_KEY"].strip()
         actual = output(
             ["nix", "key", "convert-secret-to-public"],
-            input=os.environ["ORANC_SIGNING_KEY"],
+            input=self.signing_key,
         )
         if actual != configuration["public_key"]:
             raise RuntimeError("ORANC_SIGNING_KEY does not match the declared cache public key")
@@ -535,6 +536,7 @@ class Publisher:
             if drain
             else [("regular", 1, regular[:BACKGROUND_BATCH])]
         )
+        upload_env = os.environ | {"ORANC_SIGNING_KEY": self.signing_key}
         for name, parallel, group in groups:
             if not group:
                 continue
@@ -543,6 +545,7 @@ class Publisher:
                 [*command, "--parallel", str(parallel)],
                 input="".join(path + "\n" for path in group),
                 text=True,
+                env=upload_env,
             )
             record(
                 self.state,
