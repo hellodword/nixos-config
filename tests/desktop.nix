@@ -23,6 +23,7 @@ let
     builtins.toJSON {
       sway = home.xdg.configFile."sway/config".source;
       i3 = home.xdg.configFile."i3/config".source;
+      rofi = home.home.file."${home.xdg.configHome}/rofi/config.rasi".source;
     }
   );
 in

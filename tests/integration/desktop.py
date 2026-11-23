@@ -52,6 +52,8 @@ def main():
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     settings = json.loads(args.settings.read_text())
+    rofi_config = Path(settings["rofi"]).read_text()
+    assert "drun-show-actions: true;" in rofi_config, rofi_config
     args.output.mkdir(parents=True, exist_ok=True)
     # UNIX sockets have a 108-byte path limit; a Nix build TMPDIR can be long.
     with tempfile.TemporaryDirectory(prefix="desktop-", dir="/tmp") as temporary:

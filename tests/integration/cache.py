@@ -17,6 +17,7 @@ import tempfile
 import threading
 import time
 from unittest.mock import patch
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from tests.support import ROOT
@@ -573,7 +574,6 @@ def main():
                     "entries": [test],
                 },
             ],
-            "builds": {"dependencies": dependencies, "vm-fixture": [test]},
             "cache": {
                 "excludedPaths": [fixture[name]["path"] for name in ("source", "restricted")],
                 "excludedDerivations": [fixture["restricted"]["drv"]],
@@ -923,6 +923,73 @@ def main():
                 assert len(bad_requests) == 4, bad_requests
                 assert not (err_state / "published-paths.json").exists()
 
+                # 3c. Real oranc server surfaces upstream OCI 503 as HTTP 500 with --max-retry 1,
+                #     treats uninitialized OCI repository NAME_UNKNOWN as HTTP 404, and pushes with --max-retry 1.
+                oranc_one_port = free_port()
+                end_hash_probe = Path(fixture["endPhaseItem"]["path"]).name.split("-", 1)[0]
+                bad_oci_host = bad_upstream_uri.removeprefix("http://")
+                with listening(
+                    ["oranc", "server", "--no-ssl", "--max-retry", "1", "--listen", f"127.0.0.1:{oranc_one_port}"],
+                    oranc_one_port,
+                ):
+                    bad_requests.clear()
+                    oranc_503_uri = f"http://127.0.0.1:{oranc_one_port}/{bad_oci_host}/synthetic/broken"
+                    try:
+                        urlopen(f"{oranc_503_uri}/{end_hash_probe}.narinfo", timeout=10)
+                    except HTTPError as http_err:
+                        assert http_err.code == 500, http_err.code
+                    else:
+                        raise AssertionError("oranc server unexpectedly returned 200 on 503 OCI backend")
+                    assert len(bad_requests) >= 1, bad_requests
+
+                    oranc_503_state = work / "oranc-real-503"
+                    with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                        try:
+                            cache.publish_once(
+                                oranc_503_state,
+                                {
+                                    "inventory": {
+                                        "outputs": [fixture["endPhaseItem"]["path"]],
+                                        "derivations": [Path(fixture["endPhaseItem"]["drv"]).name],
+                                        "excluded": [],
+                                    },
+                                    **publisher_settings,
+                                    "read_substituters": [oranc_503_uri, *read_substituters],
+                                    "retry_delays": [0.02],
+                                },
+                                phase="oranc-real-503",
+                            )
+                        except RuntimeError as err:
+                            assert "unverified upstream narinfo error" in str(err), err
+                        else:
+                            raise AssertionError("oranc server 500 should block blind cache upload")
+
+                    uninit_url = (
+                        f"http://127.0.0.1:{oranc_one_port}/127.0.0.1:{registry_port}"
+                        f"/synthetic/uninitialized-repo/{end_hash_probe}.narinfo"
+                    )
+                    try:
+                        urlopen(uninit_url, timeout=10)
+                    except HTTPError as http_err:
+                        assert http_err.code == 404, http_err.code
+                    else:
+                        raise AssertionError("uninitialized OCI repo unexpectedly returned 200")
+
+                run([
+                    "oranc",
+                    "push",
+                    "--registry",
+                    f"127.0.0.1:{registry_port}",
+                    "--repository",
+                    "synthetic/max-retry-one",
+                    "--no-ssl",
+                    "--max-retry",
+                    "1",
+                    "initialize",
+                    "--priority",
+                    "41",
+                ])
+
             # 3b. Upstream HTTP 200 with malformed body OR untrusted signature refuses blind upload,
             #     while untrusted old-key HTTP 200 on target_uri is treated as MISS for key rotation.
             untrusted_secret = work / "untrusted.secret"
@@ -1206,7 +1273,6 @@ def main():
                                     "entries": [concurrent_entry],
                                 }
                             ],
-                            "builds": {"concurrent": [concurrent_entry]},
                         }
                     )
                 )
@@ -1257,7 +1323,7 @@ def main():
                 project_dir=non_git_project,
                 state=non_git_state,
             )
-            assert len(non_git_manifest["builds"]["build"]) == 1, non_git_manifest
+            assert len(non_git_manifest["groups"][0]["entries"]) == 1, non_git_manifest
 
             # Ensure evaluate_manifest strips ambient NIXPKGS_ALLOW_UNFREE / NIXPKGS_CONFIG so
             # unconfigured legacyPackages unfree leaks fail identically locally and in clean CI.
@@ -1338,12 +1404,39 @@ def main():
                 except subprocess.CalledProcessError:
                     status = json.loads((failure_state / "cache/status.json").read_text())
                     assert status["result"] == "failure", status
+                    assert "unverified upstream narinfo error" in status["error"], status
                     assert any(
-                        event["kind"] == "cache-upload" and event["returncode"] != 0
+                        event["kind"] == "cache-error" and event["phase"] == "unavailable-registry"
                         for event in read_records(failure_state / "timings.jsonl")
                     )
                 else:
                     raise AssertionError("publication succeeded with an unavailable registry")
+
+            push_fail_state = work / "push-failure"
+            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                try:
+                    cache.publish_once(
+                        push_fail_state,
+                        {
+                            "inventory": {
+                                "outputs": [fixture["late"]["path"]],
+                                "derivations": [Path(fixture["late"]["drv"]).name],
+                                "excluded": [],
+                            },
+                            **publisher_settings,
+                            "target_uri": "",
+                            "read_substituters": [public_uri],
+                            "retry_delays": [0.02],
+                        },
+                        phase="push-unavailable-registry",
+                    )
+                except subprocess.CalledProcessError:
+                    assert any(
+                        event["kind"] == "cache-upload" and event["returncode"] != 0
+                        for event in read_records(push_fail_state / "timings.jsonl")
+                    )
+                else:
+                    raise AssertionError("oranc push succeeded with an unavailable registry")
 
         print(render(state))
     print(

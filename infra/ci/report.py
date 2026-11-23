@@ -17,11 +17,6 @@ SOURCE_LABELS = {
     "cache restored": "cache restored",
     "skipped": "skipped",
     "failed": "failed",
-    # Compatibility aliases if reading historical timing files:
-    "built": "executed",
-    "local": "local reuse",
-    "substituted": "cache restored",
-    "unknown": "failed",
 }
 
 
@@ -118,30 +113,14 @@ def read_records(path):
 
 
 def has_manifest(state):
-    state = Path(state)
-    return any((state / name).exists() for name in ("manifest.json", "policy.json"))
+    return (Path(state) / "manifest.json").exists()
 
 
 def load_manifest(state):
-    state = Path(state)
-    for name in ("manifest.json", "policy.json"):
-        candidate = state / name
-        if candidate.exists():
-            data = json.loads(candidate.read_text())
-            if "groups" not in data and "builds" in data:
-                data["groups"] = [
-                    {
-                        "name": group_name,
-                        "required": group_name != "private",
-                        "vm": "nixos" if any(item.get("vm") for item in entries) else None,
-                        "kvm": any(item.get("vm") for item in entries),
-                        "maxJobs": 1,
-                        "entries": entries,
-                    }
-                    for group_name, entries in data["builds"].items()
-                ]
-            return data
-    return {"groups": [], "builds": {}}
+    candidate = Path(state) / "manifest.json"
+    if candidate.exists():
+        return json.loads(candidate.read_text())
+    return {"groups": []}
 
 
 def duration(seconds):
@@ -158,15 +137,11 @@ def evaluate_group_targets(manifest, events, pass_name, *, vm_only=False, requir
     scoped = [event for event in events if event.get("pass") == pass_name]
     attempts = {event["phase"]: event["attempt"] for event in scoped if event["kind"] == "build-start"}
     completed = {event["attempt"]: event for event in scoped if event["kind"] == "build"}
-    targets = {}
-    legacy_targets = {}
-    for event in scoped:
-        if event["kind"] != "target":
-            continue
-        if "drv" in event:
-            targets[_target_identity(event["attempt"], event)] = event
-        else:
-            legacy_targets[(event["attempt"], event["name"])] = event
+    targets = {
+        _target_identity(event["attempt"], event): event
+        for event in scoped
+        if event["kind"] == "target" and "drv" in event
+    }
 
     results = []
     for group in manifest.get("groups", []):
@@ -195,9 +170,7 @@ def evaluate_group_targets(manifest, events, pass_name, *, vm_only=False, requir
                 })
                 continue
             batch = completed.get(attempt, {})
-            target = targets.get(_target_identity(attempt, item))
-            if target is None:
-                target = legacy_targets.get((attempt, item["name"]), {})
+            target = targets.get(_target_identity(attempt, item), {})
             matches = (
                 target.get("drv") == item["drv"]
                 and set(target.get("outputs", [])) == set(item["outputs"])
@@ -331,8 +304,8 @@ def render(state):
             checkpoints = [e for e in selected if e["kind"] == "cache-checkpoint"]
             candidates_total = sum(e.get("candidates", 0) for e in publications)
             excluded_total = sum(e.get("excluded", 0) for e in publications)
-            upstream_total = sum(e.get("upstreamHits", e.get("public", 0)) for e in publications)
-            target_total = sum(e.get("targetHits", e.get("project", 0)) for e in publications)
+            upstream_total = sum(e.get("upstreamHits", 0) for e in publications)
+            target_total = sum(e.get("targetHits", 0) for e in publications)
             successful = [e for e in uploads if e["returncode"] == 0]
             failed_any = (
                 any(e["returncode"] for e in uploads + checkpoints)

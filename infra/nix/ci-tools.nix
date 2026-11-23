@@ -42,7 +42,6 @@ let
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
     export PATH="\''${PATH:+\$PATH:}${lib.makeBinPath runtimeTools}"
-    export NIX_CI_INFRA_DIR="$out/libexec/infra"
     exec ${python}/bin/python3 "$out/libexec/infra/ci" "\$@"
     EOF
     chmod 0755 "$out/bin/nix-ci"

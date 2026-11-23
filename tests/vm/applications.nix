@@ -334,6 +334,13 @@
     def exercise_launchers(machine, session):
         if session != "KDE":
             with machine.input_lock:
+                for query in ("incognito", "private"):
+                    machine.send_key("meta_l-d", delay=key_delay)
+                    power_menu["ready"](machine, visible, "drun")
+                    machine.send_chars(query, delay=key_delay)
+                    power_menu["ready"](machine, visible, "drun", typed=query, unique=True)
+                    machine.send_key("esc", delay=key_delay)
+                    machine.wait_until_fails(r"pgrep -u 1000 -f '^([^ ]*/)?\.?rofi(-wrapped)?( |$)'", timeout=15)
                 machine.send_key("meta_l-d", delay=key_delay)
                 power_menu["ready"](machine, visible, "drun")
                 machine.send_chars("kitty", delay=key_delay)

@@ -296,7 +296,6 @@ def evaluate_manifest(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None
                 "entries": entries,
             })
 
-        builds = {group["name"]: group["entries"] for group in resolved_groups}
         roots = sorted({
             entry["drv"]
             for group in resolved_groups
@@ -309,7 +308,6 @@ def evaluate_manifest(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None
             "system": system,
             "select": select_obj,
             "groups": resolved_groups,
-            "builds": builds,
             "roots": roots,
             "cache": cache_config,
             "update": update_config,

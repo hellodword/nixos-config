@@ -332,15 +332,16 @@ in
     programs.rofi = {
       package = pkgs.rofi;
       enable = true;
-      settings.terminal = "${pkgs.kitty}/bin/kitty";
-      settings.font = "${sans} 16";
       plugins = [
         pkgs.rofi-calc
         pkgs.rofi-emoji
       ];
       settings = {
+        terminal = "${pkgs.kitty}/bin/kitty";
+        font = "${sans} 16";
         modi = "drun,run,calc,emoji";
         show-icons = true;
+        drun-show-actions = true;
         calc-command = "${tools.copy}/bin/desktop-copy '{result}'";
         emoji-mode = "copy";
       };

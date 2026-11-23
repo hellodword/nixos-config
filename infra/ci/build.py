@@ -317,19 +317,12 @@ def build_group(*, state, group_name, pass_name="candidate", jobs=None, github_a
     manifest = load_manifest(state)
     group = next((g for g in manifest.get("groups", []) if g["name"] == group_name), None)
     if group is None:
-        if group_name in manifest.get("builds", {}):
-            entries = manifest["builds"][group_name]
-            effective_jobs = jobs
-            kvm = False
-            vm_mode = "nixos" if any(e.get("vm") for e in entries) else None
-        else:
-            available = ", ".join(g["name"] for g in manifest.get("groups", [])) or "(none)"
-            raise RuntimeError(f"Unknown build group '{group_name}'; available groups: {available}")
-    else:
-        entries = group.get("entries", [])
-        effective_jobs = jobs if jobs is not None else group.get("maxJobs")
-        kvm = bool(group.get("kvm", False))
-        vm_mode = group.get("vm")
+        available = ", ".join(g["name"] for g in manifest.get("groups", [])) or "(none)"
+        raise RuntimeError(f"Unknown build group '{group_name}'; available groups: {available}")
+    entries = group.get("entries", [])
+    effective_jobs = jobs if jobs is not None else group.get("maxJobs")
+    kvm = bool(group.get("kvm", False))
+    vm_mode = group.get("vm")
     run_build(
         entries,
         state=state,

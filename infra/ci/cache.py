@@ -460,8 +460,6 @@ class Publisher:
                 "excluded": len(excluded),
                 "upstreamHits": len(upstream_hits),
                 "targetHits": len(target_hits),
-                "public": len(upstream_hits),
-                "project": len(target_hits),
                 "pending": len(newly_pending),
                 "queryFailures": len(phase_errors),
                 "narBytes": sum(info["narSize"] for info in newly_pending.values()),
@@ -509,7 +507,7 @@ class Publisher:
         settings = self.configuration
         # Pass an unmatchable pattern ('a^') to disable oranc's default
         # '^cache\.nixos\.org-.*$' exclusion so locally signed paths missing on
-        # remote caches are uploaded; keep --max-retry >= 2.
+        # remote caches are uploaded.
         command = [
             settings.get("oranc", "oranc"),
             "push",
