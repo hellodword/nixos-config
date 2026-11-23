@@ -52,6 +52,7 @@ pkgs.buildEnv {
   paths = [
     nixCi
     python
+    pkgs.nix
     pkgs.git
     pkgs.gh
     pkgs.jq

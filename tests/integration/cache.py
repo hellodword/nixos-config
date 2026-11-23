@@ -120,10 +120,16 @@ def failing_narinfo_server(status_code=503):
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self):
+        def _fail(self):
             requests.append(self.path)
             self.send_response(status_code)
             self.end_headers()
+
+        def do_GET(self):
+            self._fail()
+
+        def do_HEAD(self):
+            self._fail()
 
         def log_message(self, *args):
             pass
@@ -1023,7 +1029,18 @@ def _run_suite(args):
                 seen_200 = []
 
                 class Bad200Handler(BaseHTTPRequestHandler):
+                    def do_HEAD(self):
+                        self.send_response(200)
+                        self.end_headers()
+
                     def do_GET(self):
+                        if self.path == "/nix-cache-info":
+                            info_bytes = b"StoreDir: /nix/store\n"
+                            self.send_response(200)
+                            self.send_header("Content-Length", str(len(info_bytes)))
+                            self.end_headers()
+                            self.wfile.write(info_bytes)
+                            return
                         seen_200.append(self.path)
                         self.send_response(200)
                         self.send_header("Content-Length", str(len(body_bytes)))
@@ -1056,7 +1073,7 @@ def _run_suite(args):
                             assert "unverified upstream narinfo error" in str(err), err
                         else:
                             raise AssertionError(f"upstream HTTP 200 ({bad_200_kind}) should block upload")
-                    assert len(seen_200) == 3, seen_200
+                    assert seen_200, seen_200
                     assert not (bad_200_state / "published-paths.json").exists()
 
                     if bad_200_kind == "untrusted-sig":
@@ -1077,10 +1094,9 @@ def _run_suite(args):
                                     "retry_delays": [0.01],
                                 },
                             )
-                            assert rot_pub._probe_substituter(bad_200_uri, fixture["endPhaseItem"]["path"]) == (
-                                "MISS",
-                                None,
-                            )
+                            rot_pub.discover([fixture["endPhaseItem"]["path"]])
+                            assert fixture["endPhaseItem"]["path"] in rot_pub.pending
+                            assert not rot_pub.query_failures
                 finally:
                     bad_srv.shutdown()
                     bad_srv.server_close()
