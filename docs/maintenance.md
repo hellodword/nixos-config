@@ -27,7 +27,7 @@ sudo bootctl list
 
 ## Flake 输入与子 Flake 依赖更新
 
-根仓库声明 **20 个 Flake 输入**，其中 `infra` 指向仓内公共基础设施子 flake `./infra`（`infra/flake.lock` 锁定公共 `nixpkgs` 与独立依赖锁的 `oranc`），主包集 `nixpkgs` 跟随 `infra/nixpkgs`。按更新节奏与影响边界分为三组（自动更新工作流定义见 [update-inputs.yml](../.github/workflows/update-inputs.yml)）：
+根仓库声明 **20 个 Flake 输入**，其中 `infra` 指向仓内公共基础设施子 flake `./infra`（`infra/flake.lock` 锁定公共 `nixpkgs` 与独立依赖锁的 `oranc`），主包集 `nixpkgs` 跟随 `infra/nixpkgs`。按更新节奏与影响边界分为三组（自动更新目标与工作流定义见 [nix/ci.nix](../nix/ci.nix) 与 [update.yml](../.github/workflows/update.yml)）：
 
 | 分组 | 包含输入与锁文件 | 更新方式 |
 | --- | --- | --- |

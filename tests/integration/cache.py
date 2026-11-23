@@ -1233,70 +1233,76 @@ def _run_suite(args):
             # 8. Concurrent Nix build lock wait classifies waiter as concurrent reuse (never local reuse)
             #    and non-Git path: directory evaluate_manifest succeeds.
             concurrent_token = f"{work.name}-concurrent-{time.time_ns()}"
-            concurrent_info = json.loads(
-                run(
-                    [
-                        "nix",
-                        "eval",
-                        "--no-update-lock-file",
-                        "--impure",
-                        "--json",
-                        "--expr",
-                        (
-                            "let pkgs = (builtins.getFlake ("
-                            + json.dumps("git+file://" + str(ROOT))
-                            + ")).inputs."
-                            + args.nixpkgs_input
-                            + ".legacyPackages.x86_64-linux;"
-                            + " d = pkgs.runCommand "
-                            + json.dumps(concurrent_token)
-                            + ' {} "sleep 2; printf concurrent > $out";'
-                            + " in { drv = d.drvPath; out = d.outPath; }"
-                        ),
-                    ],
-                    cwd=ROOT,
-                )
-            )
-            concurrent_entry = {
-                "name": "concurrent-item",
-                "drv": concurrent_info["drv"],
-                "outputs": [concurrent_info["out"]],
-                "required": True,
-                "vm": False,
-            }
-            state_builder = work / "concurrent-builder"
-            state_waiter = work / "concurrent-waiter"
-            for st in (state_builder, state_waiter):
-                st.mkdir(parents=True, exist_ok=True)
-                (st / "manifest.json").write_text(
-                    json.dumps(
-                        {
-                            "groups": [
-                                {
-                                    "name": "concurrent",
-                                    "required": True,
-                                    "vm": None,
-                                    "kvm": False,
-                                    "maxJobs": 1,
-                                    "entries": [concurrent_entry],
-                                }
-                            ],
-                        }
+            with build_gate() as (conc_url, conc_entered, conc_release):
+                concurrent_info = json.loads(
+                    run(
+                        [
+                            "nix",
+                            "eval",
+                            "--no-update-lock-file",
+                            "--impure",
+                            "--json",
+                            "--expr",
+                            (
+                                "let pkgs = (builtins.getFlake ("
+                                + json.dumps("git+file://" + str(ROOT))
+                                + ")).inputs."
+                                + args.nixpkgs_input
+                                + ".legacyPackages.x86_64-linux;"
+                                + " d = pkgs.runCommand "
+                                + json.dumps(concurrent_token)
+                                + " {} ''"
+                                + "${pkgs.curl}/bin/curl --fail --max-time 60 "
+                                + json.dumps(conc_url)
+                                + "; sleep 1; printf concurrent > $out"
+                                + "'';"
+                                + " in { drv = d.drvPath; out = d.outPath; }"
+                            ),
+                        ],
+                        cwd=ROOT,
                     )
                 )
-            builder_errors = []
+                concurrent_entry = {
+                    "name": "concurrent-item",
+                    "drv": concurrent_info["drv"],
+                    "outputs": [concurrent_info["out"]],
+                    "required": True,
+                    "vm": False,
+                }
+                state_builder = work / "concurrent-builder"
+                state_waiter = work / "concurrent-waiter"
+                for st in (state_builder, state_waiter):
+                    st.mkdir(parents=True, exist_ok=True)
+                    (st / "manifest.json").write_text(
+                        json.dumps(
+                            {
+                                "groups": [
+                                    {
+                                        "name": "concurrent",
+                                        "required": True,
+                                        "vm": None,
+                                        "kvm": False,
+                                        "maxJobs": 1,
+                                        "entries": [concurrent_entry],
+                                    }
+                                ],
+                            }
+                        )
+                    )
+                builder_errors = []
 
-            def _run_primary():
-                try:
-                    run_build([concurrent_entry], state=state_builder, phase="concurrent")
-                except BaseException as exc:
-                    builder_errors.append(exc)
+                def _run_primary():
+                    try:
+                        run_build([concurrent_entry], state=state_builder, phase="concurrent")
+                    except BaseException as exc:
+                        builder_errors.append(exc)
 
-            primary_thread = threading.Thread(target=_run_primary)
-            primary_thread.start()
-            time.sleep(0.4)
-            run_build([concurrent_entry], state=state_waiter, phase="concurrent")
-            primary_thread.join(timeout=30)
+                primary_thread = threading.Thread(target=_run_primary)
+                primary_thread.start()
+                assert conc_entered.wait(60), "primary build did not reach gate"
+                conc_release.set()
+                run_build([concurrent_entry], state=state_waiter, phase="concurrent")
+                primary_thread.join(timeout=30)
             assert not builder_errors, builder_errors
             primary_target = [
                 e for e in read_records(state_builder / "timings.jsonl") if e["kind"] == "target"

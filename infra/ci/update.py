@@ -92,11 +92,32 @@ def write_github_outputs(**values):
                 stream.write(f"{name}={value}\n")
 
 
-def prepare(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None, state, system=None):
+def run_update_targets(project_dir, policy):
+    targets = policy.get("targets") or [{"flake": ".", "inputs": []}]
+    for target in targets:
+        rel_flake = target.get("flake") or "."
+        inputs = list(target.get("inputs") or [])
+        command = ["nix", "flake", "update", "--refresh", *inputs]
+        if rel_flake != ".":
+            command += ["--flake", rel_flake]
+        subprocess.run(command, cwd=project_dir, check=True)
+
+
+def prepare(
+    *,
+    project_dir,
+    manifest_rel="nix/ci.nix",
+    select_obj=None,
+    state,
+    system=None,
+    update_locks=False,
+):
     project_dir = Path(project_dir).resolve()
     state = Path(state).resolve()
     select_obj = select_obj or {}
     policy = load_update_policy(project_dir, manifest_rel, select_obj, system)
+    if update_locks:
+        run_update_targets(project_dir, policy)
     allowed = list(policy["allowedLockfiles"])
     ignore_only = list(policy.get("ignoreOnlyInputs") or [])
     commit_title = policy["commitTitle"]

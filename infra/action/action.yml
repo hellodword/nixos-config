@@ -1,9 +1,9 @@
 name: Shared Nix CI Runner
-description: Isolated Nix CI container setup, oranc bootstrap cache, manifest evaluation, build groups, signed OCI cache publication, and diagnostics
+description: Isolated Nix CI container setup, update candidate lifecycle, manifest evaluation, build groups, signed OCI cache publication, and diagnostics
 
 inputs:
   mode:
-    description: Execution mode (env, initialize-cache, verify, publish-cache, finalize)
+    description: Execution mode (prepare-update, verify, merge-update, publish-cache, finalize)
     required: false
     default: verify
   project-dir:
@@ -42,6 +42,10 @@ inputs:
     description: Optional shell command executed inside the build container after ci-tools and cache proxy are ready
     required: false
     default: ''
+  post-build-command:
+    description: Optional shell command executed inside the build container after required build groups succeed
+    required: false
+    default: ''
   keep-container:
     description: Keep the Nix build container and store volume alive after verify for subsequent release/cache steps
     required: false
@@ -58,9 +62,15 @@ outputs:
   container-name:
     description: Running Docker container name for subsequent workflow steps
     value: ${{ steps.export-env.outputs.container-name }}
-  cache-result:
-    description: Exit outcome of end-of-phase cache publication (success, failed, skipped)
-    value: ${{ steps.cache-publish.outputs.result }}
+  changed:
+    description: Whether prepare-update produced a substantive lockfile update candidate
+    value: ${{ steps.prepare-update.outputs.changed }}
+  candidate-sha:
+    description: Commit SHA of the prepared update candidate
+    value: ${{ steps.prepare-update.outputs.sha }}
+  merged:
+    description: Whether merge-update fast-forwarded master to the verified candidate
+    value: ${{ steps.merge-update.outputs.merged }}
 
 runs:
   using: composite
@@ -87,7 +97,7 @@ runs:
         nix_image="docker.io/nixos/nix@sha256:53b5ec518b696373829ea305c3c07a8c870113e44648c88ec484ef078550fd4f"
 
         mkdir -p "$state" "$build_tmp"
-        if [[ ! -f "$state/nix-base.conf" ]]; then
+        if [[ "$INPUT_MODE" == prepare-update || "$INPUT_MODE" == verify || ! -f "$state/nix-base.conf" ]]; then
           features="nixos-test benchmark big-parallel"
           if [[ "$INPUT_ENABLE_KVM" == true ]]; then
             features="$features kvm"
@@ -106,6 +116,8 @@ runs:
         trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g=
         require-sigs = true
         CONFIG
+        fi
+        if [[ "$INPUT_MODE" == prepare-update || "$INPUT_MODE" == verify || ! -f "$state/nix.conf" ]]; then
           cp "$state/nix-base.conf" "$state/nix.conf"
         fi
 
@@ -137,44 +149,50 @@ runs:
           printf 'container-name=%s\n' "$container_name"
         } >> "$GITHUB_OUTPUT"
 
-    - name: Initialize GHCR cache package
-      if: inputs.mode == 'initialize-cache'
+    - name: Update tracked flake inputs and prepare candidate
+      id: prepare-update
+      if: inputs.mode == 'prepare-update'
       shell: bash
       env:
-        ORANC_USERNAME: ${{ github.actor }}
-        ORANC_PASSWORD: ${{ github.token }}
         INPUT_MANIFEST: ${{ inputs.manifest }}
         INPUT_SELECT: ${{ inputs.select }}
       run: |
         set -euo pipefail
-        test "$GITHUB_REF" = refs/heads/master
-        bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i --memory=12g --memory-swap=20g \
-          --volume "$NIX_CI_PROJECT_DIR:/workspace:ro" \
+        update_state="$NIX_CI_STATE/update"
+        rm -rf -- "$update_state"
+        mkdir -p "$update_state"
+        HOST_UID="$(id -u)"
+        HOST_GID="$(id -g)"
+        export HOST_UID HOST_GID
+        bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm \
+          --volume "$NIX_CI_PROJECT_DIR:/workspace" \
           --volume "$NIX_CI_INFRA_DIR:/infra:ro" \
           --volume "$NIX_CI_STATE:/ci:ro" \
-          --env ORANC_USERNAME \
-          --env ORANC_PASSWORD \
+          --volume "$update_state:/candidate" \
           --env INPUT_MANIFEST \
           --env INPUT_SELECT \
-          -- bash -euo pipefail <<'BASH'
-        oranc_root=$(nix build --no-update-lock-file --no-link --print-out-paths /infra#oranc)
-        repository=$(nix eval --no-update-lock-file --impure --raw --expr '
-          let
-            flake = builtins.getFlake ("git+file:///workspace");
-            manifest = import ("/workspace/" + builtins.getEnv "INPUT_MANIFEST") {
-              inherit flake;
-              select = builtins.fromJSON (builtins.getEnv "INPUT_SELECT");
-            };
-          in manifest.cache.repository
-        ')
-        "$oranc_root/bin/oranc" push --repository "$repository" --parallel 1 initialize --priority 41
-        BASH
-        cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
-        ## Cache package initialized
-
-        Open GitHub Packages -> cache package -> Package settings.
-        Set visibility to Public, disable inherited repository access, and grant this repository Actions Write access.
-        SUMMARY
+          --env HOST_UID \
+          --env HOST_GID \
+          --env GITHUB_RUN_ID \
+          --env GITHUB_RUN_ATTEMPT \
+          -- bash -euo pipefail -c '
+            trap "chown -R \"\$HOST_UID:\$HOST_GID\" /workspace /candidate" EXIT
+            nix run --no-update-lock-file /infra#ci -- update prepare \
+              --update-locks \
+              --project-dir /workspace \
+              --manifest "$INPUT_MANIFEST" \
+              --select "$INPUT_SELECT" \
+              --state /candidate
+          '
+        if [[ -f "$update_state/update.json" ]]; then
+          sha="$(jq -r '.head' "$update_state/update.json")"
+          {
+            printf 'changed=true\n'
+            printf 'sha=%s\n' "$sha"
+          } >> "$GITHUB_OUTPUT"
+        else
+          echo 'changed=false' >> "$GITHUB_OUTPUT"
+        fi
 
     - name: Prepare disk, swap, KVM, and Nix container
       if: inputs.mode == 'verify'
@@ -438,6 +456,7 @@ runs:
       shell: bash
       env:
         INPUT_PUBLISH_CACHE: ${{ inputs.publish-cache }}
+        INPUT_POST_BUILD: ${{ inputs.post-build-command }}
       run: |
         set -euo pipefail
         cache_mode=$(jq -r '.cache.mode // "none"' "$NIX_CI_STATE/manifest.json")
@@ -452,16 +471,34 @@ runs:
           fi
           docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
             "export PATH=\"\$(cat /ci/tools)/bin:\$PATH\"; nix-ci build --group \"$group_name\" --state /ci --github-actions"
+          if [[ -n "$vm_kind" ]]; then
+            docker exec "$NIX_CI_CONTAINER" find /build -mindepth 1 -delete
+          fi
         done
         docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
           'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci report verify --state /ci'
+        if [[ -n "$INPUT_POST_BUILD" ]]; then
+          printf '%s\n' "$INPUT_POST_BUILD" | docker exec -i "$NIX_CI_CONTAINER" \
+            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin:$PATH"; exec bash -euo pipefail -s'
+        fi
         if [[ "$INPUT_PUBLISH_CACHE" == true && "$cache_mode" == incremental ]]; then
           docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
             'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci cache checkpoint --state /ci --phase publish-results --finish'
         fi
 
+    - name: Merge verified update candidate
+      id: merge-update
+      if: inputs.mode == 'merge-update'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        python3 "$NIX_CI_INFRA_DIR/ci" update merge \
+          --project-dir "$NIX_CI_PROJECT_DIR" \
+          --state "$NIX_CI_STATE/update"
+
     - name: Publish signed cache at end of phase
-      id: cache-publish
       if: inputs.mode == 'publish-cache'
       shell: bash
       env:
@@ -472,12 +509,11 @@ runs:
         set -euo pipefail
         cache_mode=$(jq -r '.cache.mode // "none"' "$NIX_CI_STATE/manifest.json")
         if [[ "$cache_mode" == none ]]; then
-          echo 'result=skipped' >> "$GITHUB_OUTPUT"
           exit 0
         fi
         ORANC_SIGNING_KEY="$(printf '%s' "$ORANC_SIGNING_KEY" | tr -d '[:space:]')"
         export ORANC_SIGNING_KEY
-        if bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i \
+        bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i \
           --network "container:$NIX_CI_CONTAINER" \
           --memory=12g --memory-swap=20g \
           --volume "$NIX_CI_STORE_VOLUME:/nix" \
@@ -487,7 +523,7 @@ runs:
           --env ORANC_USERNAME \
           --env ORANC_PASSWORD \
           --env ORANC_SIGNING_KEY \
-          -- bash -euo pipefail <<'BASH'; then
+          -- bash -euo pipefail <<'BASH'
         export PATH="$(cat /ci/tools)/bin:$PATH"
         expected=$(jq -r '.cache.publicKey' /ci/manifest.json)
         actual=$(printf '%s' "$ORANC_SIGNING_KEY" | nix key convert-secret-to-public)
@@ -500,11 +536,6 @@ runs:
         "$(cat /ci/oranc)" push --registry "$registry" --repository "$repository" --parallel 1 initialize --priority 41
         nix-ci cache publish --project-dir /workspace --state /ci
         BASH
-          echo 'result=success' >> "$GITHUB_OUTPUT"
-        else
-          echo 'result=failed' >> "$GITHUB_OUTPUT"
-          exit 1
-        fi
 
     - name: Stop incremental publisher, collect diagnostics, and render summary
       if: always() && ((inputs.mode == 'verify' && inputs.keep-container != 'true') || inputs.mode == 'finalize')

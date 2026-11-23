@@ -10,53 +10,16 @@ on:
         type: choice
         options: [all, laptop, remote]
         default: all
-      initialize-cache:
-        description: Create the cache package only; then configure Public and Actions Write in Package settings
-        type: boolean
-        default: false
-  workflow_call:
-    inputs:
-      scope:
-        type: string
-        default: all
-      candidate-artifact:
-        type: string
-        default: ''
-      candidate-sha:
-        type: string
-        default: ''
-    secrets:
-      NIX_CACHE_SIGNING_KEY:
-        required: true
 
 permissions:
   contents: read
 
 concurrency:
-  group: nixos-verify
+  group: nixos-pipeline
   cancel-in-progress: false
 
 jobs:
-  initialize-cache:
-    if: github.event_name == 'workflow_dispatch' && inputs.initialize-cache
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - name: Initialize GHCR cache package
-        uses: ./infra/action
-        with:
-          mode: initialize-cache
-          project-dir: .
-          select: '{"scope":"laptop","hostName":"laptop2"}'
-
   verify:
-    if: github.event_name != 'workflow_dispatch' || !inputs.initialize-cache
     strategy:
       max-parallel: 1
       fail-fast: false
@@ -77,19 +40,6 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@v8
-        if: inputs.candidate-artifact != '' && inputs.candidate-artifact != null
-        with:
-          name: ${{ inputs.candidate-artifact }}
-          path: ${{ runner.temp }}/candidate
-      - name: Check out candidate commit
-        if: inputs.candidate-artifact != '' && inputs.candidate-artifact != null
-        env:
-          CANDIDATE_SHA: ${{ inputs.candidate-sha }}
-        run: |
-          git fetch "$RUNNER_TEMP/candidate/candidate.bundle" HEAD
-          test "$(git rev-parse FETCH_HEAD)" = "$CANDIDATE_SHA"
-          git checkout --detach "$CANDIDATE_SHA"
       - name: Verify manifest, integration suites, VM checks, and signed cache
         uses: ./infra/action
         with:

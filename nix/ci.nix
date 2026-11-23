@@ -174,6 +174,16 @@ assert
   update =
     if remote then
       {
+        targets = [
+          {
+            inputs = [
+              "nixpkgs-remote"
+              "colmena"
+              "cloudflare-ips-v4"
+              "cloudflare-ips-v6"
+            ];
+          }
+        ];
         allowedLockfiles = [ "flake.lock" ];
         ignoreOnlyInputs = [ ];
         commitTitle = "chore: update remote flake inputs";
@@ -181,6 +191,26 @@ assert
       }
     else
       {
+        targets = [
+          {
+            flake = "./infra";
+            inputs = [ "nixpkgs" ];
+          }
+          {
+            inputs = [
+              "infra"
+              "catppuccin-fcitx5"
+              "nixos-hardware"
+              "plasma-manager"
+              "sing-box-geosite"
+              "reproducible-violentmonkey"
+              "arkenfox-userjs"
+              "home-manager"
+              "nix-index-database"
+              "sing-box-geoip"
+            ];
+          }
+        ];
         allowedLockfiles = [
           "flake.lock"
           "infra/flake.lock"

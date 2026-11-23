@@ -1,6 +1,6 @@
 # 自动更新、验收与缓存发布
 
-[ci.yml](../.github/workflows/ci.yml) 通过公共 Composite Action [infra/action/action.yml](../infra/action/action.yml) 与统一执行器 `infra#ci`（`nix-ci`）按 `laptop` 和 `remote` 两个范围执行清单求值、分组构建、VM 验收与签名缓存发布；[update.yml](../.github/workflows/update.yml) 与 [update-inputs.yml](../.github/workflows/update-inputs.yml) 定时推进依赖、验证候选提交并原子快进合并 `master`。
+[ci.yml](../.github/workflows/ci.yml) 与 [update.yml](../.github/workflows/update.yml) 通过公共 Composite Action [infra/action/action.yml](../infra/action/action.yml) 及统一执行器 `infra#ci`（`nix-ci`）按 `laptop` 和 `remote` 两个范围执行清单求值、分组构建、VM 验收、签名缓存发布与依赖自动推进，共用同一流水线并发组 `nixos-pipeline`。
 
 ## 触发入口与故障排障
 
@@ -9,9 +9,8 @@
 | 入口 | 行为 |
 | --- | --- |
 | `push` 到 `master` | 分别验证 `laptop` 和 `remote`，构建期间由独立旁路容器增量发布签名缓存 |
-| 手动运行 `Verify and cache` | 可选 `laptop`、`remote` 或 `all`；仅 `master` 分支发布缓存 |
-| 在 `master` 勾选 `initialize-cache` | 仅用当前 `GITHUB_TOKEN` 创建 GHCR 缓存索引（`nix-cache-info`），不执行构建与 VM |
-| 定时或手动运行 `Update flake inputs` | 先更新并验证 `remote`（`nixpkgs-remote`、`colmena`、`cloudflare-ips-v4/v6`，锁定于根 `flake.lock`），再以最新 `master` 为基线更新 `laptop`（同步推进 `infra/flake.lock` 的公共 `nixpkgs` 与根 `flake.lock` 的桌面输入） |
+| 手动运行 `Verify and cache` | 可选 `laptop`、`remote` 或 `all`；在 `master` 分支运行时同步发布缓存 |
+| 定时或手动运行 `Update flake inputs` | 按 [nix/ci.nix](../nix/ci.nix) 的 `update.targets` 先更新并验证 `remote`（锁定于根 `flake.lock`），合并后再以最新 `master` 为基线更新 `laptop`（同步推进 `infra/flake.lock` 的公共 `nixpkgs` 与根 `flake.lock` 的桌面输入） |
 
 仅当候选包含受管锁文件白名单（`update.allowedLockfiles`）内的实质输入变更（且不全为 `ignoreOnlyInputs` 声明的纯规则快照变化）时才进入验证。验证与缓存发布通过后，`nix-ci update merge` 在推送候选分支与创建 PR 前核对远端 `refs/heads/master` 是否仍等于候选基线 `base`：若 `master` 在验证期间已前进则记录原因并以退出码 `0` 正常结束；否则创建附带验证运行链接的 PR，调用非强制 `force=false` 原子快进合并并清理临时分支。
 
@@ -47,7 +46,6 @@
 ## 首次启用步骤
 
 1. 在公开仓库 **Settings → Actions → General** 允许 GitHub 官方 Actions，并勾选允许工作流创建与批准 PR。
-2. 若需在首次完整构建前单独建立 GHCR 缓存 package 以便配置权限，在 **Actions → Verify and cache** 选择 `master` 并勾选 `initialize-cache` 运行一次；常规 `master` 缓存发布阶段也会幂等初始化 `nix-cache-info`。
-3. 打开 GitHub **Packages → 缓存 package → Package settings**：将可见性设为 **Public**；取消 **Inherit access from repository**，在 **Manage Actions access** 中为本仓库显式设置 **Write** 角色（参见 [GitHub Package 权限说明](https://docs.github.com/en/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility)）。
-4. 按 [构建缓存签名密钥](cache.md#签名密钥管理) 生成密钥对，将公钥写入 `nix/cache-identity.json`，私钥写入仓库 Actions Secret `NIX_CACHE_SIGNING_KEY`。
-5. 在 `master` 手动运行一次不勾选 `initialize-cache` 的 **Verify and cache**，确认构建、VM 验收与旁路缓存发布全部通过。
+2. 按 [构建缓存签名密钥](cache.md#签名密钥管理) 生成密钥对，将公钥写入 `nix/cache-identity.json`，私钥写入仓库 Actions Secret `NIX_CACHE_SIGNING_KEY`。
+3. 推送或手动在 `master` 运行一次 **Verify and cache**：首次发布会自动创建 GHCR 缓存 package、写入 `nix-cache-info`，并默认启用 `Inherit access from source repository`（源仓库自动具备管理与写入权限）。
+4. 若新建缓存 package 默认可见性为私有，打开 GitHub **Packages → 缓存 package → Package settings** 将可见性设为 **Public**，供外部客户端匿名读取。

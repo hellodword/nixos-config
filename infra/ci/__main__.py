@@ -116,6 +116,11 @@ def build_parser():
     update_parser = subparsers.add_parser("update", help="Prepare or merge verified flake lockfile updates")
     add_common_arguments(update_parser, state_required=False, include_default=False)
     update_parser.add_argument("operation", choices=["prepare", "merge"])
+    update_parser.add_argument(
+        "--update-locks",
+        action="store_true",
+        help="Run nix flake update for configured update targets before preparing candidate",
+    )
 
     return parser
 
@@ -195,6 +200,7 @@ def main(argv=None):
                 select_obj=select_obj,
                 state=state,
                 system=args.system,
+                update_locks=args.update_locks,
             )
             return 0
         if args.operation == "merge":

@@ -146,7 +146,7 @@ class UpdateCandidate(unittest.TestCase):
                     return lock["nodes"][node]["locked"]["rev"]
                 return lock["nodes"][target]["locked"]["rev"]
 
-            def prepare(directory, scope, idx):
+            def prepare(directory, scope, idx, *, update_locks=False):
                 state = work / f"candidate-{scope}-{idx}"
                 output = work / f"output-{scope}-{idx}"
                 select_json = json.dumps({
@@ -158,6 +158,7 @@ class UpdateCandidate(unittest.TestCase):
                         *NIX_CI,
                         "update",
                         "prepare",
+                        *(["--update-locks"] if update_locks else []),
                         "--project-dir",
                         str(directory),
                         "--select",
@@ -251,38 +252,41 @@ class UpdateCandidate(unittest.TestCase):
             self.assertNotEqual(rejected.returncode, 0)
             (project / "README.md").unlink()
 
-            # 2. Remote update touches only root flake.lock.
-            subprocess.run(
-                ["nix", "flake", "update", "--refresh", "nixpkgs-remote"],
-                cwd=project,
-                check=True,
-                capture_output=True,
-                text=True,
+            # 2. Remote update touches only root flake.lock via declarative update.targets.
+            (project / "nix/ci.nix").write_text(
+                "{ flake, system ? \"x86_64-linux\", select ? {} }:\n"
+                "let remote = (select.scope or \"laptop\") == \"remote\"; in {\n"
+                "  update = if remote then {\n"
+                "    targets = [ { inputs = [ \"nixpkgs-remote\" ]; } ];\n"
+                "    allowedLockfiles = [ \"flake.lock\" ];\n"
+                "    ignoreOnlyInputs = [];\n"
+                "    commitTitle = \"chore: update remote flake inputs\";\n"
+                "    branchPrefix = \"automation/flake-update-remote\";\n"
+                "  } else {\n"
+                "    targets = [\n"
+                "      { flake = \"./infra\"; inputs = [ \"nixpkgs\" ]; }\n"
+                "      { inputs = [ \"infra\" ]; }\n"
+                "    ];\n"
+                "    allowedLockfiles = [ \"flake.lock\" \"infra/flake.lock\" ];\n"
+                "    ignoreOnlyInputs = [];\n"
+                "    commitTitle = \"chore: update laptop flake inputs\";\n"
+                "    branchPrefix = \"automation/flake-update-laptop\";\n"
+                "  };\n"
+                "}\n"
             )
+            git(project, "add", "--", "nix/ci.nix")
+            commit(project, "declare fixture update targets")
+
+            remote_rec, remote_out = prepare(project, "remote", 1, update_locks=True)
             self.assertEqual(locked_rev(project / "infra/flake.lock", "nixpkgs"), rev_v1)
             self.assertEqual(locked_rev(project / "flake.lock", "nixpkgs-remote"), rev_v2)
-            remote_rec, remote_out = prepare(project, "remote", 1)
             self.assertEqual(remote_rec["lockfiles"], ["flake.lock"])
 
             # 3. Laptop update starts from remote's merged head and updates BOTH infra/flake.lock and flake.lock.
             git(work, "clone", "--quiet", str(project), str(next_checkout))
-            subprocess.run(
-                ["nix", "flake", "update", "--refresh", "nixpkgs", "--flake", "./infra"],
-                cwd=next_checkout,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            subprocess.run(
-                ["nix", "flake", "update", "infra"],
-                cwd=next_checkout,
-                check=True,
-                capture_output=True,
-                text=True,
-            )
+            laptop_rec, laptop_out = prepare(next_checkout, "laptop", 2, update_locks=True)
             self.assertEqual(locked_rev(next_checkout / "infra/flake.lock", "nixpkgs"), rev_v2)
             self.assertEqual(locked_rev(next_checkout / "flake.lock", "nixpkgs"), rev_v2)
-            laptop_rec, laptop_out = prepare(next_checkout, "laptop", 2)
             self.assertEqual(laptop_rec["base"], remote_rec["head"])
             self.assertEqual(sorted(laptop_rec["lockfiles"]), ["flake.lock", "infra/flake.lock"])
             self.assertNotEqual(remote_rec["branch"], laptop_rec["branch"])

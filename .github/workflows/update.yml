@@ -15,31 +15,92 @@ permissions:
   contents: read
 
 concurrency:
-  group: nixos-update
+  group: nixos-pipeline
   cancel-in-progress: false
 
 jobs:
   remote:
     if: github.ref == 'refs/heads/master' && inputs.scope != 'laptop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
     permissions:
       contents: write
       pull-requests: write
       packages: write
-    uses: ./.github/workflows/update-inputs.yml
-    with:
-      scope: remote
-    secrets:
-      NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/heads/master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare remote input update candidate
+        id: prepare
+        uses: ./infra/action
+        with:
+          mode: prepare-update
+          project-dir: .
+          select: '{"scope":"remote","hostName":""}'
+      - name: Verify candidate and publish signed cache
+        if: steps.prepare.outputs.changed == 'true'
+        uses: ./infra/action
+        with:
+          mode: verify
+          project-dir: .
+          select: '{"scope":"remote","hostName":""}'
+          publish-cache: 'true'
+          signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+          artifact-suffix: update-remote
+          pre-build-command: |
+            nix build --no-link --print-build-logs --no-update-lock-file .#checks.x86_64-linux.lint
+            python3 -m tests.integration.cache --nixpkgs-input nixpkgs-remote
+            python3 -m tests.integration.updates
+      - name: Fast-forward master to verified candidate
+        if: steps.prepare.outputs.changed == 'true'
+        uses: ./infra/action
+        with:
+          mode: merge-update
+          project-dir: .
+
   laptop:
     needs: remote
-    # Each group starts from the current master, including any preceding merge.
+    # Start from current master, including any preceding remote merge.
     if: ${{ !cancelled() && github.ref == 'refs/heads/master' && inputs.scope != 'remote' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 330
     permissions:
       contents: write
       pull-requests: write
       packages: write
-    uses: ./.github/workflows/update-inputs.yml
-    with:
-      scope: laptop
-    secrets:
-      NIX_CACHE_SIGNING_KEY: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/heads/master
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prepare laptop input update candidate
+        id: prepare
+        uses: ./infra/action
+        with:
+          mode: prepare-update
+          project-dir: .
+          select: '{"scope":"laptop","hostName":"laptop2"}'
+      - name: Verify candidate and publish signed cache
+        if: steps.prepare.outputs.changed == 'true'
+        uses: ./infra/action
+        with:
+          mode: verify
+          project-dir: .
+          select: '{"scope":"laptop","hostName":"laptop2"}'
+          publish-cache: 'true'
+          signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
+          artifact-suffix: update-laptop-laptop2
+          pre-build-command: |
+            nix build --no-link --print-build-logs --no-update-lock-file .#checks.x86_64-linux.lint
+            python3 -m tests.integration.cache --nixpkgs-input nixpkgs
+            python3 -m tests.integration.updates
+      - name: Fast-forward master to verified candidate
+        if: steps.prepare.outputs.changed == 'true'
+        uses: ./infra/action
+        with:
+          mode: merge-update
+          project-dir: .
