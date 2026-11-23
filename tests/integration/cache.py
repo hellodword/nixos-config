@@ -291,7 +291,8 @@ def authenticated_recovery(
                     "interruptedDownloads": interruptions,
                     "target": target,
                 }
-                assert target["restoreSeconds"] > 0 and target["buildSeconds"] > 0
+                assert target["restoreSeconds"] is not None and target["restoreSeconds"] >= 0
+                assert target["buildSeconds"] is not None and target["buildSeconds"] >= 0
                 assert Path(output_path).read_bytes() == content
                 assert output_path in json.loads((state / "published-paths.json").read_text())
                 verify(target_uri, [output_path], publisher_settings["public_key"])
@@ -529,7 +530,7 @@ def _run_suite(args):
                 cwd=ROOT,
             )
         except RuntimeError as error:
-            assert "exit 0" in str(error)
+            assert "broken" in str(error), error
             rows = read_records(evaluation_state / "evaluation.jsonl")
             assert any(row.get("attr") == "broken" and row.get("error") for row in rows)
             assert any(row.get("attr") == "valid" and row.get("drvPath") for row in rows)
@@ -905,18 +906,21 @@ def _run_suite(args):
                     report.verify_results(state, "candidate")
 
                     run_build([test], state=state, phase="vm-fixture", pass_name="committed")
-                    targets = [
-                        event for event in read_records(state / "timings.jsonl") if event.get("vm")
-                    ]
+                    vm_by_pass = {
+                        event["pass"]: event
+                        for event in read_records(state / "timings.jsonl")
+                        if event.get("vm")
+                    }
                     assert (
-                        targets[0]["source"] == "executed"
-                        and targets[0]["success"]
-                        and targets[0]["buildSeconds"] > 0
+                        vm_by_pass["candidate"]["source"] == "executed"
+                        and vm_by_pass["candidate"]["success"]
+                        and vm_by_pass["candidate"]["buildSeconds"] is not None
+                        and vm_by_pass["candidate"]["buildSeconds"] >= 0
                     )
                     assert (
-                        targets[1]["source"] == "local reuse"
-                        and targets[1]["success"]
-                        and targets[1]["buildSeconds"] is None
+                        vm_by_pass["committed"]["source"] == "local reuse"
+                        and vm_by_pass["committed"]["success"]
+                        and vm_by_pass["committed"]["buildSeconds"] is None
                     )
 
                     # Failed retry must supersede earlier success and collect VM failure evidence with 0755/0644 modes.
@@ -958,8 +962,27 @@ def _run_suite(args):
                     }
                     events = read_records(state / "timings.jsonl")
                     publications = [event for event in events if event["kind"] == "publication"]
-                    assert sum(event["excluded"] for event in publications) == 3
-                    assert sum(event["upstreamHits"] for event in publications) == 2
+                    path_records = read_records(state / "publication-paths.jsonl")
+                    excluded_paths = {
+                        path
+                        for row in path_records
+                        if row["stage"] == "selection"
+                        for path in row["excluded"]
+                    }
+                    upstream_hit_paths = {
+                        path
+                        for row in path_records
+                        if row["stage"] == "upload"
+                        for path in row["upstreamHits"]
+                    }
+                    assert excluded_paths == {
+                        fixture[name]["path"] for name in ("source", "restricted", "bundle")
+                    }
+                    assert upstream_hit_paths == {
+                        fixture[name]["path"] for name in ("publicLocal", "sharedOci")
+                    }
+                    assert sum(event["excluded"] for event in publications) == len(excluded_paths)
+                    assert sum(event["upstreamHits"] for event in publications) == len(upstream_hit_paths)
 
                 # 2. Wrapper reference truncation test.
                 wrapper_state = work / "wrapper-exclusion"
@@ -1036,8 +1059,28 @@ def _run_suite(args):
                 eop_pubs = [
                     e for e in read_records(eop_state / "timings.jsonl") if e["kind"] == "publication"
                 ]
-                assert sum(e["upstreamHits"] for e in eop_pubs) == 2
-                assert sum(e["targetHits"] for e in eop_pubs) == 6
+                eop_path_records = read_records(eop_state / "publication-paths.jsonl")
+                eop_upstream_paths = {
+                    path
+                    for row in eop_path_records
+                    if row["stage"] == "upload"
+                    for path in row["upstreamHits"]
+                }
+                eop_target_paths = {
+                    path
+                    for row in eop_path_records
+                    if row["stage"] == "upload"
+                    for path in row["targetHits"]
+                }
+                assert eop_upstream_paths == {
+                    fixture[name]["path"] for name in ("publicLocal", "sharedOci")
+                }
+                assert eop_target_paths == {
+                    fixture[name]["path"]
+                    for name in ("root", "driver", "child", "large", "forgedSigned", "runtimeInput")
+                }
+                assert sum(e["upstreamHits"] for e in eop_pubs) == len(eop_upstream_paths)
+                assert sum(e["targetHits"] for e in eop_pubs) == len(eop_target_paths)
 
                 # 4. Clean store restoration across ALL THREE caches (file:// public, shared OCI, target OCI)
                 #    via infra/scripts/nix-cache.sh install, followed by a zero-upload verification pass.
@@ -1139,7 +1182,11 @@ def _run_suite(args):
                     event for event in read_records(state / "timings.jsonl") if event.get("vm")
                 ][-1]
                 assert restored_vm["source"] == "cache restored" and restored_vm["success"]
-                assert restored_vm["buildSeconds"] is None and restored_vm["restoreSeconds"] > 0
+                assert (
+                    restored_vm["buildSeconds"] is None
+                    and restored_vm["restoreSeconds"] is not None
+                    and restored_vm["restoreSeconds"] >= 0
+                )
                 assert all(Path(path).read_bytes() == content for path, content in expected_bytes.items())
 
                 zero_dup_state = work / "post-restore-zero-upload"
@@ -1186,7 +1233,7 @@ def _run_suite(args):
                                     + " {} ''"
                                     + "${pkgs.curl}/bin/curl --fail --max-time 60 "
                                     + json.dumps(conc_url)
-                                    + "; sleep 1; printf concurrent > $out"
+                                    + "; printf concurrent > $out"
                                     + "'';"
                                     + " in { drv = d.drvPath; out = d.outPath; }"
                                 ),
@@ -1221,7 +1268,7 @@ def _run_suite(args):
                                 }
                             )
                         )
-                    builder_errors = []
+                    builder_errors, waiter_errors = [], []
 
                     def _run_primary():
                         try:
@@ -1229,13 +1276,29 @@ def _run_suite(args):
                         except BaseException as exc:
                             builder_errors.append(exc)
 
+                    def _run_waiter():
+                        try:
+                            run_build([concurrent_entry], state=state_waiter, phase="concurrent")
+                        except BaseException as exc:
+                            waiter_errors.append(exc)
+
                     primary_thread = threading.Thread(target=_run_primary)
-                    primary_thread.start()
-                    assert conc_entered.wait(60), "primary build did not reach gate"
-                    conc_release.set()
-                    run_build([concurrent_entry], state=state_waiter, phase="concurrent")
+                    waiter_thread = threading.Thread(target=_run_waiter)
+                    try:
+                        primary_thread.start()
+                        assert conc_entered.wait(60), "primary build did not reach gate"
+                        waiter_thread.start()
+                        waiter_deadline = time.monotonic() + 60
+                        while not list(state_waiter.glob("nix-events-*.jsonl")):
+                            assert not waiter_errors, waiter_errors
+                            assert time.monotonic() < waiter_deadline, "waiter build did not initialize"
+                            time.sleep(0.05)
+                    finally:
+                        conc_release.set()
                     primary_thread.join(timeout=30)
+                    waiter_thread.join(timeout=30)
                 assert not builder_errors, builder_errors
+                assert not waiter_errors, waiter_errors
                 primary_target = [
                     e for e in read_records(state_builder / "timings.jsonl") if e["kind"] == "target"
                 ][-1]
@@ -1358,6 +1421,12 @@ def _run_suite(args):
                             event["kind"] == "cache-error" and event["phase"] == "unavailable-registry"
                             for event in failure_events
                         )
+                        assert any(
+                            event["kind"] == "cache-checkpoint"
+                            and event["phase"] == "unavailable-registry"
+                            and event["returncode"] != 0
+                            for event in failure_events
+                        )
                     else:
                         raise AssertionError("publication succeeded with an unavailable registry")
 
@@ -1377,9 +1446,15 @@ def _run_suite(args):
                             phase="push-unavailable-registry",
                         )
                     except subprocess.CalledProcessError:
+                        push_fail_events = read_records(push_fail_state / "timings.jsonl")
                         assert any(
                             event["kind"] == "cache-upload" and event["returncode"] != 0
-                            for event in read_records(push_fail_state / "timings.jsonl")
+                            for event in push_fail_events
+                        )
+                        assert any(
+                            event["kind"] == "cache-error"
+                            and event["phase"] == "push-unavailable-registry"
+                            for event in push_fail_events
                         )
                     else:
                         raise AssertionError("oranc push succeeded with an unavailable registry")

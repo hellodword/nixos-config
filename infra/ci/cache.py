@@ -27,7 +27,8 @@ except ImportError:
     from report import load_manifest, record
 
 
-PARALLEL = 16
+MAX_PARALLEL = 16
+MAX_INFLIGHT_NAR_BYTES = 512 * 1024 ** 2
 LARGE_NAR_BYTES = 512 * 1024 ** 2
 BACKGROUND_BATCH = 64
 NIX32_ALPHABET = "0123456789abcdfghijklmnpqrsvwxyz"
@@ -212,6 +213,8 @@ class Publisher:
         self.pending = {}
         self.published = set()
         self.phase = "background"
+        self.retry_failures = 0
+        self.next_background_upload = 0.0
 
     def discover(self, paths):
         """Traverse runtime references up to excluded boundaries and classify local Ed25519 signatures."""
@@ -322,17 +325,36 @@ class Publisher:
             command.append("--no-ssl")
         large_limit = settings.get("large_nar_bytes", LARGE_NAR_BYTES)
         large, regular = [], []
-        for path, info in sorted(self.pending.items()):
+        for path, info in sorted(
+            self.pending.items(),
+            key=lambda item: (item[1]["narSize"], item[0]),
+        ):
             (large if info["narSize"] > large_limit else regular).append(path)
-        groups = (
-            [("large", 1, large), ("regular", PARALLEL, regular)]
-            if drain
-            else [("regular", PARALLEL, regular[:BACKGROUND_BATCH])]
-        )
+        regular_batches = [
+            regular[index : index + BACKGROUND_BATCH]
+            for index in range(0, len(regular), BACKGROUND_BATCH)
+        ]
+        groups = []
+        if drain:
+            if large:
+                groups.append(("large", 1, large))
+            for batch in regular_batches:
+                max_nar = max(self.pending[path]["narSize"] for path in batch)
+                parallel = max(
+                    1,
+                    min(MAX_PARALLEL, len(batch), MAX_INFLIGHT_NAR_BYTES // max(1, max_nar)),
+                )
+                groups.append(("regular", parallel, batch))
+        elif regular_batches:
+            batch = regular_batches[0]
+            max_nar = max(self.pending[path]["narSize"] for path in batch)
+            parallel = max(
+                1,
+                min(MAX_PARALLEL, len(batch), MAX_INFLIGHT_NAR_BYTES // max(1, max_nar)),
+            )
+            groups.append(("regular", parallel, batch))
         upload_env = os.environ | {"ORANC_SIGNING_KEY": self.signing_key}
         for name, parallel, group in groups:
-            if not group:
-                continue
             started = time.monotonic()
             result = subprocess.run(
                 [*command, "--parallel", str(parallel)],
@@ -352,7 +374,16 @@ class Publisher:
                     "returncode": result.returncode,
                 },
             )
-            result.check_returncode()
+            if result.returncode != 0:
+                if drain:
+                    result.check_returncode()
+                self.retry_failures += 1
+                self.next_background_upload = time.monotonic() + min(
+                    30.0, 2.0 ** self.retry_failures
+                )
+                return
+            self.retry_failures = 0
+            self.next_background_upload = 0.0
             self.published.update(group)
             for path in group:
                 del self.pending[path]
@@ -473,37 +504,53 @@ def serve(state):
     signal.signal(signal.SIGTERM, terminate)
     with (directory / "worker.lock").open("w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        active_request = None
         try:
             publisher = Publisher(state, json.loads((directory / "configuration.json").read_text()))
             atomic_json(directory / "status.json", {"result": "running"})
             publisher.reconcile()
+            next_poll = 0.0
             while True:
                 requests = sorted((directory / "requests").glob("*.json"))
                 if requests:
-                    request_file = requests[0]
-                    request = json.loads(request_file.read_text())
+                    active_request = requests[0]
+                    request = json.loads(active_request.read_text())
                     publisher.phase = request["phase"]
+                    publisher.retry_failures = 0
+                    publisher.next_background_upload = 0.0
                     publisher.collect_queue()
                     publisher.reconcile()
                     publisher.upload(drain=True)
-                    atomic_json(directory / "responses" / request_file.name, {"result": "success"})
-                    request_file.unlink()
+                    atomic_json(directory / "responses" / active_request.name, {"result": "success"})
+                    active_request.unlink()
+                    active_request = None
                     if request["finish"]:
                         atomic_json(directory / "status.json", {"result": "success"})
                         return
                     publisher.phase = "background"
+                    next_poll = time.monotonic() + 1.0
                 else:
-                    publisher.collect_queue()
-                    publisher.upload(drain=False)
-                    time.sleep(1)
+                    now = time.monotonic()
+                    if now >= next_poll:
+                        publisher.collect_queue()
+                        if publisher.pending and now >= publisher.next_background_upload:
+                            publisher.upload(drain=False)
+                        next_poll = time.monotonic() + 1.0
+                    time.sleep(0.1)
         except BaseException as error:
             if isinstance(error, SystemExit) and (directory / "stop").exists():
                 atomic_json(directory / "status.json", {"result": "stopped"})
                 return
             phase = publisher.phase if publisher else "publisher-start"
             message = f"{type(error).__name__}: {error}"
-            atomic_json(directory / "status.json", {"result": "failure", "error": message})
             record(state, {"kind": "cache-error", "phase": phase, "error": message})
+            if active_request is not None:
+                atomic_json(
+                    directory / "responses" / active_request.name,
+                    {"result": "failure", "error": message},
+                )
+                active_request.unlink(missing_ok=True)
+            atomic_json(directory / "status.json", {"result": "failure", "error": message})
             traceback.print_exc()
             raise
 
@@ -522,8 +569,14 @@ def checkpoint(state, phase, *, finish=False):
             if status["result"] == "failure":
                 raise RuntimeError(f"Cache publisher failed: {status['error']}; see publisher.log")
             if not publisher_running(state) and not response.exists():
+                status = json.loads((directory / "status.json").read_text())
+                if status["result"] == "failure":
+                    raise RuntimeError(f"Cache publisher failed: {status['error']}; see publisher.log")
                 raise RuntimeError("Cache publisher exited before completing publication; see publisher.log")
-            time.sleep(0.2)
+            time.sleep(0.1)
+        reply = json.loads(response.read_text())
+        if reply["result"] == "failure":
+            raise RuntimeError(f"Cache publisher failed: {reply['error']}; see publisher.log")
         returncode = 0
         if finish:
             (directory / "post-build-hook").unlink(missing_ok=True)
@@ -575,8 +628,8 @@ def publish_once(state, configuration, *, phase="publish"):
         return sorted(publisher.published)
     except BaseException as error:
         message = f"{type(error).__name__}: {error}"
-        atomic_json(directory / "status.json", {"result": "failure", "error": message})
         record(state, {"kind": "cache-error", "phase": phase, "error": message})
+        atomic_json(directory / "status.json", {"result": "failure", "error": message})
         raise
     finally:
         record(

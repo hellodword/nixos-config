@@ -307,7 +307,7 @@ def render(state):
             target_total = sum(e.get("targetHits", 0) for e in publications)
             successful = [e for e in uploads if e["returncode"] == 0]
             failed_any = (
-                any(e["returncode"] for e in uploads + checkpoints)
+                any(e["returncode"] for e in checkpoints)
                 or any(e["kind"] == "cache-error" for e in selected)
             )
             status = "failed" if failed_any else ("complete" if checkpoints or uploads else "verified")
