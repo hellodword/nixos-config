@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Integration tests for remote .narinfo verification, multi-source deduplication, and signed OCI cache publication."""
+"""Integration tests for local Ed25519 signature provenance, multi-source deduplication, and signed OCI cache publication."""
 
 import argparse
 import base64
@@ -116,36 +116,6 @@ def build_gate():
 
 
 @contextmanager
-def failing_narinfo_server(status_code=503):
-    requests = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def _fail(self):
-            requests.append(self.path)
-            self.send_response(status_code)
-            self.end_headers()
-
-        def do_GET(self):
-            self._fail()
-
-        def do_HEAD(self):
-            self._fail()
-
-        def log_message(self, *args):
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}", requests
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
-
-
-@contextmanager
 def publishing(state, inventory, *, secret, **settings):
     with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
         cache.start_publisher(state, inventory, **settings, large_nar_bytes=4096)
@@ -213,12 +183,23 @@ def interrupted_download(origin):
         thread.join()
 
 
-def authenticated_recovery(work, entry, inventory, publisher_settings, secret, proxy_port, proxy_log):
+def authenticated_recovery(
+    work,
+    entry,
+    inventory,
+    publisher_settings,
+    target_uri,
+    secret,
+    shared_secret,
+    shared_public,
+    proxy_port,
+    proxy_log,
+):
     username, password = "synthetic", "synthetic-cache-token"
     credentials = {
         "ORANC_USERNAME": username,
         "ORANC_PASSWORD": password,
-        "ORANC_SIGNING_KEY": secret.read_text().strip(),
+        "ORANC_SIGNING_KEY": shared_secret.read_text().strip(),
     }
     htpasswd = work / "htpasswd"
     htpasswd.write_text(
@@ -258,21 +239,20 @@ def authenticated_recovery(work, entry, inventory, publisher_settings, secret, p
             run([*push, "--no-closure"], input=(output_path + "\n").encode())
         run(["nix-store", "--delete", output_path])
         config = os.environ.get("NIX_CONFIG", "") + f"\nnetrc-file = {netrc}\n"
-        config += f"trusted-public-keys = {publisher_settings['public_key']}\nextra-trusted-public-keys =\n"
-        with patch.dict(os.environ, {"NIX_CONFIG": config, "NIX_CI_NETRC": str(netrc)}):
-            # 1. Authenticated upstream .narinfo hit deduplicates without re-uploading.
+        config += (
+            f"trusted-public-keys = {shared_public} {publisher_settings['public_key']}\n"
+            "extra-trusted-public-keys =\n"
+        )
+        with patch.dict(os.environ, {"NIX_CONFIG": config}):
+            # 1. Authenticated upstream substitution preserves verified signature and skips re-upload.
             auth_dedup_state = work / "auth-dedup"
-            auth_settings = {
-                **publisher_settings,
-                "read_substituters": [*publisher_settings["read_substituters"], origin],
-            }
             run(["nix", "copy", "--from", origin, output_path])
             assert Path(output_path).read_bytes() == content
             with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
                 dedup_pub = cache.Publisher(
                     auth_dedup_state,
                     {
-                        **auth_settings,
+                        **publisher_settings,
                         "inventory": {
                             "outputs": [output_path],
                             "derivations": [],
@@ -283,6 +263,8 @@ def authenticated_recovery(work, entry, inventory, publisher_settings, secret, p
                 dedup_pub.phase = "auth-dedup"
                 dedup_pub.discover([output_path])
                 assert not dedup_pub.pending, "authenticated upstream hit should not be re-uploaded"
+                dedup_events = read_records(auth_dedup_state / "timings.jsonl")
+                assert dedup_events[-1]["upstreamHits"] == 1, dedup_events
 
             # 2. Interrupted NAR download falls back to local build and publishes to target.
             run(["nix-store", "--delete", output_path])
@@ -312,7 +294,7 @@ def authenticated_recovery(work, entry, inventory, publisher_settings, secret, p
                 assert target["restoreSeconds"] > 0 and target["buildSeconds"] > 0
                 assert Path(output_path).read_bytes() == content
                 assert output_path in json.loads((state / "published-paths.json").read_text())
-                verify(publisher_settings["target_uri"], [output_path], publisher_settings["public_key"])
+                verify(target_uri, [output_path], publisher_settings["public_key"])
 
         logs = [
             proxy_log,
@@ -472,21 +454,25 @@ def _run_suite(args):
             '''let
           pkgs = (builtins.getFlake ("git+file://" + toString ./.)).inputs.NIXPKGS_INPUT.legacyPackages.x86_64-linux;
           prefix = PREFIX;
-          child = pkgs.writeText "${prefix}-child" "synthetic project content";
-          large = pkgs.writeText "${prefix}-large" (builtins.concatStringsSep "" (builtins.genList (_: "data") 2048));
-          late = pkgs.writeText "${prefix}-late" "new result after registry interruption";
+          mkItem = suffix: content:
+            pkgs.runCommand "${prefix}-${suffix}" {} ''
+              printf '%s' ${pkgs.lib.escapeShellArg content} > $out
+            '';
+          child = mkItem "child" "synthetic project content";
+          large = mkItem "large" (builtins.concatStringsSep "" (builtins.genList (_: "data") 2048));
+          late = mkItem "late" "new result after registry interruption";
           recovered = pkgs.runCommand "${prefix}-recovered" {} ''
             printf 'result rebuilt after an interrupted cache download' > $out
           '';
-          endPhaseItem = pkgs.writeText "${prefix}-end-phase" "end-of-phase publication payload";
-          publicLocal = pkgs.writeText "${prefix}-public-local" "known public file cache signature";
-          sharedOci = pkgs.writeText "${prefix}-shared-oci" "secondary OCI upstream cache hit";
-          signedMissingRemote = pkgs.writeText "${prefix}-signed-missing-remote" "locally signed but 404 on remote";
+          endPhaseItem = mkItem "end-phase" "end-of-phase publication payload";
+          publicLocal = mkItem "public-local" "known public file cache signature";
+          sharedOci = mkItem "shared-oci" "secondary OCI upstream cache hit";
+          forgedSigned = mkItem "forged-signed" "locally signed with forged and rotated keys";
           buildInput = builtins.toFile "${prefix}-build-input" "build input";
-          runtimeInput = builtins.toFile "${prefix}-runtime-input" "runtime input";
+          runtimeInput = mkItem "runtime-input" "runtime input";
           innerPayload = builtins.toFile "${prefix}-inner-payload" "restricted inner payload";
           excludedWrapper = builtins.toFile "${prefix}-excluded-wrapper" "exec ${innerPayload}";
-          source = pkgs.writeText "${prefix}-source" "synthetic restricted content";
+          source = mkItem "source" "synthetic restricted content";
           restricted = pkgs.runCommand "${prefix}-restricted" {} "cp ${source} $out";
           bundle = pkgs.runCommand "${prefix}-bundle" {} "cp ${restricted} $out";
           driver = pkgs.runCommand "${prefix}-driver" {} ''
@@ -506,11 +492,11 @@ def _run_suite(args):
           root = pkgs.runCommand "${prefix}-result" {} ''
             test "$(cat ${driver})" = ready
             test "$(cat ${buildInput})" = 'build input'
-            printf '%s' '${child}; ${large}; ${publicLocal}; ${sharedOci}; ${signedMissingRemote}; ${runtimeInput}; prepared: ${bundle}' > $out
+            printf '%s' '${child}; ${large}; ${publicLocal}; ${sharedOci}; ${forgedSigned}; ${runtimeInput}; prepared: ${bundle}' > $out
           '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
-          { inherit child large late recovered endPhaseItem publicLocal sharedOci signedMissingRemote source restricted bundle driver root failure; }
-          // { buildInput.path = buildInput; runtimeInput.path = runtimeInput; innerPayload.path = innerPayload; excludedWrapper.path = excludedWrapper; }
+          { inherit child large late recovered endPhaseItem publicLocal sharedOci forgedSigned runtimeInput source restricted bundle driver root failure; }
+          // { buildInput.path = buildInput; innerPayload.path = innerPayload; excludedWrapper.path = excludedWrapper; }
         '''
             .replace("NIXPKGS_INPUT", args.nixpkgs_input)
             .replace("PREFIX", json.dumps(work.name))
@@ -562,7 +548,7 @@ def _run_suite(args):
             "large",
             "publicLocal",
             "sharedOci",
-            "signedMissingRemote",
+            "forgedSigned",
         )
         dependencies = [entry(name) for name in dependency_names]
         manifest = {
@@ -608,876 +594,813 @@ def _run_suite(args):
             Path(value["drv"]).name for value in fixture.values() if "drv" in value
         ]
 
-        # Realize upstream & locally-signed test derivations.
-        run([
-            "nix",
-            "build",
-            "--no-link",
-            *[
-                fixture[name]["drv"] + "^out"
-                for name in ("publicLocal", "sharedOci", "signedMissingRemote")
-            ],
-        ])
-
-        os.environ["XDG_CACHE_HOME"] = str(work / "nix-client-cache")
-
-        # Key 1: target cache key
-        secret = work / "target.secret"
-        secret.write_bytes(run(["nix", "key", "generate-secret", "--key-name", "synthetic-target-1"]))
-        secret.chmod(0o600)
-        public = run(["nix", "key", "convert-secret-to-public"], input=secret.read_bytes()).decode().strip()
-
-        # Key 2: public file:// cache key
-        upstream_secret = work / "upstream.secret"
-        upstream_secret.write_bytes(
-            run(["nix", "key", "generate-secret", "--key-name", "synthetic-public-1"])
-        )
-        upstream_secret.chmod(0o600)
-        upstream_public = (
-            run(["nix", "key", "convert-secret-to-public"], input=upstream_secret.read_bytes())
-            .decode()
-            .strip()
-        )
-
-        # Key 3: secondary shared OCI cache key (simulating core repo GHCR cache)
-        shared_secret = work / "shared.secret"
-        shared_secret.write_bytes(
-            run(["nix", "key", "generate-secret", "--key-name", "synthetic-shared-oci-1"])
-        )
-        shared_secret.chmod(0o600)
-        shared_public = (
-            run(["nix", "key", "convert-secret-to-public"], input=shared_secret.read_bytes())
-            .decode()
-            .strip()
-        )
-
-        # Populate publicLocal into file:// public cache.
-        public_uri = (work / "public-cache").as_uri()
-        run([
-            "nix",
-            "copy",
-            "--to",
-            f"{public_uri}?secret-key={upstream_secret}",
-            fixture["publicLocal"]["path"],
-        ])
-
-        # CRITICAL SCENARIO: sign signedMissingRemote in local /nix/store SQLite with
-        # cache.nixos.org-1 (exercising oranc's default excluded-signing-key-pattern),
-        # upstream_secret, and target secret, WITHOUT uploading it to any remote cache!
-        # Because remote .narinfo returns 404 everywhere, Publisher MUST still upload it!
-        nixos_org_secret = work / "nixos-org.secret"
-        nixos_org_secret.write_bytes(
-            run(["nix", "key", "generate-secret", "--key-name", "cache.nixos.org-1"])
-        )
-        nixos_org_secret.chmod(0o600)
-        for key_file in (nixos_org_secret, upstream_secret, secret):
+        created_store_paths = [
+            value["path"] for value in fixture.values() if "path" in value
+        ]
+        try:
+            # Seed upstream caches and forged/rotated local signatures.
             run([
                 "nix",
-                "store",
-                "sign",
-                "--key-file",
-                str(key_file),
-                fixture["signedMissingRemote"]["path"],
+                "build",
+                "--no-link",
+                *[
+                    fixture[name]["drv"] + "^out"
+                    for name in ("publicLocal", "sharedOci", "forgedSigned")
+                ],
             ])
 
-        registry_port, proxy_port = free_port(), free_port()
-        configuration = work / "registry.json"
-        configuration.write_text(
-            json.dumps({
-                "version": 0.1,
-                "log": {"level": "error"},
-                "storage": {"filesystem": {"rootdirectory": str(work / "registry")}},
-                "http": {"addr": f"127.0.0.1:{registry_port}"},
-            })
-        )
-        proxy_log = work / "oranc.log"
-        with (
-            patch.dict(os.environ, {"RUST_LOG": "oranc=info,oranc::registry=debug"}),
-            proxy_log.open("w") as log,
-            listening(["registry", "serve", str(configuration)], registry_port) as registry_process,
-            listening(
-                ["oranc", "server", "--no-ssl", "--listen", f"127.0.0.1:{proxy_port}"],
-                proxy_port,
-                log,
-            ),
-        ):
-            # Initialize both secondary shared OCI cache and target OCI cache.
-            for repo_name in ("synthetic/shared-core", "synthetic/cache-test"):
+            os.environ["XDG_CACHE_HOME"] = str(work / "nix-client-cache")
+
+            # Key 1: target cache key
+            secret = work / "target.secret"
+            secret.write_bytes(run(["nix", "key", "generate-secret", "--key-name", "synthetic-target-1"]))
+            secret.chmod(0o600)
+            public = run(["nix", "key", "convert-secret-to-public"], input=secret.read_bytes()).decode().strip()
+
+            # Key 2: public file:// cache key
+            upstream_secret = work / "upstream.secret"
+            upstream_secret.write_bytes(
+                run(["nix", "key", "generate-secret", "--key-name", "synthetic-public-1"])
+            )
+            upstream_secret.chmod(0o600)
+            upstream_public = (
+                run(["nix", "key", "convert-secret-to-public"], input=upstream_secret.read_bytes())
+                .decode()
+                .strip()
+            )
+
+            # Key 3: secondary shared OCI cache key (simulating core repo GHCR cache)
+            shared_secret = work / "shared.secret"
+            shared_secret.write_bytes(
+                run(["nix", "key", "generate-secret", "--key-name", "synthetic-shared-oci-1"])
+            )
+            shared_secret.chmod(0o600)
+            shared_public = (
+                run(["nix", "key", "convert-secret-to-public"], input=shared_secret.read_bytes())
+                .decode()
+                .strip()
+            )
+
+            # Populate publicLocal into file:// public cache and verify file:// binary-cache
+            # roundtrip preserves upstream signatures (matching CI's oranc bootstrap archive).
+            public_uri = (work / "public-cache").as_uri()
+            run([
+                "nix",
+                "copy",
+                "--to",
+                f"{public_uri}?secret-key={upstream_secret}&compression=none",
+                fixture["publicLocal"]["path"],
+            ])
+            bootstrap_cache = work / "bootstrap-cache"
+            run([
+                "nix",
+                "copy",
+                "--to",
+                f"{bootstrap_cache.as_uri()}?secret-key={upstream_secret}&compression=none",
+                fixture["publicLocal"]["path"],
+            ])
+            run([
+                "nix",
+                "copy",
+                "--to",
+                f"{bootstrap_cache.as_uri()}?compression=none",
+                fixture["forgedSigned"]["path"],
+            ])
+            run(["nix-store", "--delete", fixture["publicLocal"]["path"], fixture["forgedSigned"]["path"]])
+            run([
+                "nix",
+                "copy",
+                "--from",
+                bootstrap_cache.as_uri(),
+                "--no-check-sigs",
+                fixture["publicLocal"]["path"],
+                fixture["forgedSigned"]["path"],
+            ])
+            restored_info = cache.path_info([fixture["publicLocal"]["path"], fixture["forgedSigned"]["path"]])
+            assert cache.classify_path_info_signature(
+                fixture["publicLocal"]["path"],
+                restored_info[fixture["publicLocal"]["path"]],
+                cache.parse_trusted_public_keys([upstream_public]),
+            ) == ("VALID", "synthetic-public-1")
+            assert cache.classify_path_info_signature(
+                fixture["forgedSigned"]["path"],
+                restored_info[fixture["forgedSigned"]["path"]],
+                cache.parse_trusted_public_keys([upstream_public]),
+            ) == ("UNTRUSTED", None)
+            run(["nix-store", "--delete", fixture["publicLocal"]["path"]])
+
+            # Sign forgedSigned in local /nix/store with BOTH a forged key impersonating
+            # cache.nixos.org-1 and a rotated-out old target key (synthetic-target-0).
+            # In-memory Ed25519 verification against trusted_public_keys must reject both
+            # and upload forgedSigned with the active target key.
+            forged_nixos_org = work / "forged-nixos-org.secret"
+            forged_nixos_org.write_bytes(
+                run(["nix", "key", "generate-secret", "--key-name", "cache.nixos.org-1"])
+            )
+            forged_nixos_org.chmod(0o600)
+            rotated_old_secret = work / "rotated-old.secret"
+            rotated_old_secret.write_bytes(
+                run(["nix", "key", "generate-secret", "--key-name", "synthetic-target-0"])
+            )
+            rotated_old_secret.chmod(0o600)
+            for key_file in (forged_nixos_org, rotated_old_secret):
                 run([
-                    "oranc",
-                    "push",
-                    "--registry",
-                    f"127.0.0.1:{registry_port}",
-                    "--repository",
-                    repo_name,
-                    "--no-ssl",
-                    "initialize",
-                    "--priority",
-                    "41",
+                    "nix",
+                    "store",
+                    "sign",
+                    "--key-file",
+                    str(key_file),
+                    fixture["forgedSigned"]["path"],
                 ])
 
-            # Upload sharedOci ONLY to secondary shared OCI cache.
-            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": shared_secret.read_text().strip()}):
-                run(
-                    [
+            registry_port, proxy_port = free_port(), free_port()
+            configuration = work / "registry.json"
+            configuration.write_text(
+                json.dumps({
+                    "version": 0.1,
+                    "log": {"level": "error"},
+                    "storage": {"filesystem": {"rootdirectory": str(work / "registry")}},
+                    "http": {"addr": f"127.0.0.1:{registry_port}"},
+                })
+            )
+            proxy_log = work / "oranc.log"
+            with (
+                patch.dict(os.environ, {"RUST_LOG": "oranc=info,oranc::registry=debug"}),
+                proxy_log.open("w") as log,
+                listening(["registry", "serve", str(configuration)], registry_port) as registry_process,
+                listening(
+                    ["oranc", "server", "--no-ssl", "--listen", f"127.0.0.1:{proxy_port}"],
+                    proxy_port,
+                    log,
+                ),
+            ):
+                shared_uri = (
+                    f"http://127.0.0.1:{proxy_port}/127.0.0.1:{registry_port}/synthetic/shared-core"
+                )
+                target_uri = (
+                    f"http://127.0.0.1:{proxy_port}/127.0.0.1:{registry_port}/synthetic/cache-test"
+                )
+
+                # Uninitialized OCI repository returns HTTP 404 on /nix-cache-info (relied on by action.yml).
+                try:
+                    urlopen(target_uri + "/nix-cache-info", timeout=10)
+                except HTTPError as http_err:
+                    assert http_err.code == 404, http_err.code
+                else:
+                    raise AssertionError("uninitialized OCI repository unexpectedly returned 200")
+
+                # Initialize both secondary shared OCI cache and target OCI cache.
+                for repo_name in ("synthetic/shared-core", "synthetic/cache-test"):
+                    run([
                         "oranc",
                         "push",
                         "--registry",
                         f"127.0.0.1:{registry_port}",
                         "--repository",
-                        "synthetic/shared-core",
+                        repo_name,
                         "--no-ssl",
-                        "--no-closure",
-                    ],
-                    input=(fixture["sharedOci"]["path"] + "\n").encode(),
-                )
+                        "initialize",
+                        "--priority",
+                        "41",
+                    ])
 
-            shared_uri = (
-                f"http://127.0.0.1:{proxy_port}/127.0.0.1:{registry_port}/synthetic/shared-core"
-            )
-            target_uri = (
-                f"http://127.0.0.1:{proxy_port}/127.0.0.1:{registry_port}/synthetic/cache-test"
-            )
-            with urlopen(target_uri + "/nix-cache-info", timeout=10) as response:
-                assert b"StoreDir: /nix/store" in response.read()
-
-            read_substituters = [public_uri, shared_uri, target_uri]
-            trusted_public_keys = [upstream_public, shared_public, public]
-            publisher_settings = dict(
-                public_key=public,
-                registry=f"127.0.0.1:{registry_port}",
-                repository="synthetic/cache-test",
-                target_uri=target_uri,
-                read_substituters=read_substituters,
-                trusted_public_keys=trusted_public_keys,
-                no_ssl=True,
-            )
-
-            # 1. Incremental publication during live build + error reporting + checkpoints.
-            with publishing(state, inventory, secret=secret, **publisher_settings):
-                run_build([entry("large")], state=state, phase="preparation")
-                annotations = io.StringIO()
-                with ThreadPoolExecutor(max_workers=1) as pool, redirect_stderr(annotations):
-                    future = pool.submit(
-                        run_build,
-                        [*dependencies, entry("failure")],
-                        state=state,
-                        phase="dependencies",
-                        jobs=2,
-                        github_actions=True,
+                # Upload sharedOci ONLY to secondary shared OCI cache, then delete its local
+                # store path so nix build substitutes it with a verified upstream signature.
+                with patch.dict(os.environ, {"ORANC_SIGNING_KEY": shared_secret.read_text().strip()}):
+                    run(
+                        [
+                            "oranc",
+                            "push",
+                            "--registry",
+                            f"127.0.0.1:{registry_port}",
+                            "--repository",
+                            "synthetic/shared-core",
+                            "--no-ssl",
+                            "--no-closure",
+                        ],
+                        input=(fixture["sharedOci"]["path"] + "\n").encode(),
                     )
-                    try:
-                        assert entered.wait(180), "the dependent build did not reach its gate"
-                        deadline = time.monotonic() + 120
-                        receipt = state / "published-paths.json"
-                        while not receipt.exists() or fixture["child"]["path"] not in json.loads(
-                            receipt.read_text()
-                        ):
-                            status = json.loads((state / "cache/status.json").read_text())
-                            assert status["result"] == "running", status
-                            assert time.monotonic() < deadline, (
-                                "completed dependency was not published during the build"
-                            )
-                            time.sleep(0.2)
-                        verify(target_uri, [fixture["child"]["path"]], public)
-                        while not (
-                            errors := [
-                                event
-                                for event in read_records(state / "timings.jsonl")
-                                if event["kind"] == "build-error"
-                            ]
-                        ):
-                            assert time.monotonic() < deadline, (
-                                "build failure was not reported while the peer was running"
-                            )
-                            time.sleep(0.1)
-                        while "::error::" not in annotations.getvalue():
-                            assert time.monotonic() < deadline, "Actions error annotation was not emitted"
-                            time.sleep(0.1)
-                        assert errors[0]["phase"] == "dependencies"
-                        while True:
-                            retained = (state / errors[0]["log"]).read_text()
-                            if (
-                                "synthetic builder stdout" in retained
-                                and "synthetic builder stderr" in retained
-                            ):
-                                break
-                            assert time.monotonic() < deadline
-                            time.sleep(0.1)
-                        assert not future.done()
-                        assert fixture["large"]["path"] not in json.loads(receipt.read_text())
-                    finally:
-                        release.set()
+                run(["nix-store", "--delete", fixture["sharedOci"]["path"]])
 
-                    try:
-                        future.result()
-                    except RuntimeError:
-                        assert valid_paths(
-                            [fixture[name]["path"] for name in dependency_names]
-                        ) == {fixture[name]["path"] for name in dependency_names}
-                    else:
-                        raise AssertionError("synthetic failing build unexpectedly succeeded")
+                with urlopen(target_uri + "/nix-cache-info", timeout=10) as response:
+                    assert b"StoreDir: /nix/store" in response.read()
 
-                assert valid_paths([fixture["root"]["path"]]) == set()
-                checkpoint(state, "dependencies")
-                first = set(json.loads(receipt.read_text()))
-                # child, large, driver, AND signedMissingRemote (which had local sigs but 404 remotely!)
-                # must ALL be published, while publicLocal and sharedOci were deduplicated via remote .narinfo!
-                expected_first = {
-                    fixture[name]["path"]
-                    for name in ("child", "large", "driver", "signedMissingRemote")
-                }
-                assert first == expected_first, {"actual": first, "expected": expected_first}
-                verify(target_uri, first, public)
-
-                # Build root VM fixture & verify classification labels.
-                run_build([test], state=state, phase="vm-fixture")
-                # Fix dependencies group attempt so all required groups succeeded before verify_results:
-                run_build(dependencies, state=state, phase="dependencies")
-                report.verify_results(state, "candidate")
-
-                run_build([test], state=state, phase="vm-fixture", pass_name="committed")
-                targets = [
-                    event for event in read_records(state / "timings.jsonl") if event.get("vm")
+                read_substituters = [public_uri, shared_uri, target_uri]
+                real_nixos_org_key = (
+                    "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+                )
+                trusted_public_keys = [
+                    real_nixos_org_key,
+                    upstream_public,
+                    shared_public,
+                    public,
                 ]
-                assert (
-                    targets[0]["source"] == "executed"
-                    and targets[0]["success"]
-                    and targets[0]["buildSeconds"] > 0
+                publisher_settings = dict(
+                    public_key=public,
+                    registry=f"127.0.0.1:{registry_port}",
+                    repository="synthetic/cache-test",
+                    trusted_public_keys=trusted_public_keys,
+                    no_ssl=True,
                 )
-                assert (
-                    targets[1]["source"] == "local reuse"
-                    and targets[1]["success"]
-                    and targets[1]["buildSeconds"] is None
+                client_nix_config = (
+                    os.environ.get("NIX_CONFIG", "")
+                    + f"\nsubstituters = {' '.join(read_substituters)}\n"
+                    + "extra-substituters =\n"
+                    + f"trusted-public-keys = {' '.join(trusted_public_keys)}\n"
+                    + "extra-trusted-public-keys =\n"
+                    + "require-sigs = true\n"
+                    + "narinfo-cache-negative-ttl = 0\n"
                 )
 
-                # Failed retry must supersede earlier success and collect VM failure evidence with 0755/0644 modes.
-                failed = entry("failure", vm=True) | {"name": test["name"]}
-                try:
-                    run_build([failed], state=state, phase="vm-fixture")
-                except RuntimeError:
-                    pass
-                else:
-                    raise AssertionError("the retry should fail")
-                events = read_records(state / "timings.jsonl")
-                failed_attempt = [event for event in events if event["kind"] == "build"][-1]
-                assert failed_attempt["returncode"] != 0
-                failed_evidence = next(
-                    event
-                    for event in events
-                    if event["kind"] == "vm-evidence" and event["attempt"] == failed_attempt["attempt"]
-                )
-                retained = state / failed_evidence["path"] / Path(failed["outputs"][0]).name
-                assert json.loads((retained / "artifacts/network.json").read_text()) == {
-                    "fixture": "failed application network log"
-                }
-                assert (retained / "artifacts").stat().st_mode & 0o777 == 0o755
-                assert (retained / "artifacts/network.json").stat().st_mode & 0o777 == 0o644
-                try:
-                    report.verify_results(state, "candidate")
-                except RuntimeError:
-                    pass
-                else:
-                    raise AssertionError("previous success hid latest failed retry")
-
-                run_build([test], state=state, phase="vm-fixture")
-                report.verify_results(state, "candidate")
-
-                checkpoint(state, "results", finish=True)
-                published_incremental = set(json.loads(receipt.read_text()))
-                assert published_incremental - first == {
-                    fixture[name]["path"] for name in ("root", "runtimeInput")
-                }
-                events = read_records(state / "timings.jsonl")
-                publications = [event for event in events if event["kind"] == "publication"]
-                assert sum(event["excluded"] for event in publications) == 3
-                assert sum(event["upstreamHits"] for event in publications) == 2
-
-            # 2. Wrapper reference truncation test.
-            wrapper_state = work / "wrapper-exclusion"
-            wrapper_state.mkdir()
-            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
-                wrapper_publisher = cache.Publisher(
-                    wrapper_state,
-                    {
-                        "inventory": {
-                            "outputs": [fixture["excludedWrapper"]["path"]],
-                            "derivations": [],
-                            "excluded": [fixture["excludedWrapper"]["path"]],
-                        },
-                        **publisher_settings,
-                    },
-                )
-                wrapper_publisher.discover([fixture["excludedWrapper"]["path"]])
-            assert fixture["innerPayload"]["path"] not in wrapper_publisher.seen
-            assert not wrapper_publisher.pending
-
-            # 3. Upstream 5xx retry exhaustion refuses blind upload and fails publication.
-            run(["nix", "build", "--no-link", fixture["endPhaseItem"]["drv"] + "^*"])
-            with failing_narinfo_server(status_code=503) as (bad_upstream_uri, bad_requests):
-                err_state = work / "upstream-5xx"
-                err_cfg = {
-                    "inventory": {
-                        "outputs": [fixture["endPhaseItem"]["path"]],
-                        "derivations": [Path(fixture["endPhaseItem"]["drv"]).name],
-                        "excluded": [],
-                    },
-                    **publisher_settings,
-                    "read_substituters": [bad_upstream_uri, *read_substituters],
-                    "retry_delays": [0.05, 0.1, 0.15],
-                }
-                with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
-                    try:
-                        cache.publish_once(err_state, err_cfg, phase="upstream-5xx")
-                    except RuntimeError as err:
-                        assert "unverified upstream narinfo error" in str(err)
-                    else:
-                        raise AssertionError("upstream 503 should fail cache publication")
-                # 1 initial + 3 retries = 4 requests to failing upstream, and zero upload to target!
-                assert len(bad_requests) == 4, bad_requests
-                assert not (err_state / "published-paths.json").exists()
-
-                # 3c. Real oranc server surfaces upstream OCI 503 as HTTP 500 with --max-retry 1,
-                #     treats uninitialized OCI repository NAME_UNKNOWN as HTTP 404, and pushes with --max-retry 1.
-                oranc_one_port = free_port()
-                end_hash_probe = Path(fixture["endPhaseItem"]["path"]).name.split("-", 1)[0]
-                bad_oci_host = bad_upstream_uri.removeprefix("http://")
-                with listening(
-                    ["oranc", "server", "--no-ssl", "--max-retry", "1", "--listen", f"127.0.0.1:{oranc_one_port}"],
-                    oranc_one_port,
+                # 1. Incremental publication during live build + error reporting + checkpoints.
+                with (
+                    patch.dict(os.environ, {"NIX_CONFIG": client_nix_config}),
+                    publishing(state, inventory, secret=secret, **publisher_settings),
                 ):
-                    bad_requests.clear()
-                    oranc_503_uri = f"http://127.0.0.1:{oranc_one_port}/{bad_oci_host}/synthetic/broken"
-                    try:
-                        urlopen(f"{oranc_503_uri}/{end_hash_probe}.narinfo", timeout=10)
-                    except HTTPError as http_err:
-                        assert http_err.code == 500, http_err.code
-                    else:
-                        raise AssertionError("oranc server unexpectedly returned 200 on 503 OCI backend")
-                    assert len(bad_requests) >= 1, bad_requests
-
-                    oranc_503_state = work / "oranc-real-503"
-                    with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                    run_build([entry("large")], state=state, phase="preparation")
+                    annotations = io.StringIO()
+                    with ThreadPoolExecutor(max_workers=1) as pool, redirect_stderr(annotations):
+                        future = pool.submit(
+                            run_build,
+                            [*dependencies, entry("failure")],
+                            state=state,
+                            phase="dependencies",
+                            jobs=2,
+                            github_actions=True,
+                        )
                         try:
-                            cache.publish_once(
-                                oranc_503_state,
-                                {
-                                    "inventory": {
-                                        "outputs": [fixture["endPhaseItem"]["path"]],
-                                        "derivations": [Path(fixture["endPhaseItem"]["drv"]).name],
-                                        "excluded": [],
-                                    },
-                                    **publisher_settings,
-                                    "read_substituters": [oranc_503_uri, *read_substituters],
-                                    "retry_delays": [0.02],
-                                },
-                                phase="oranc-real-503",
-                            )
-                        except RuntimeError as err:
-                            assert "unverified upstream narinfo error" in str(err), err
+                            assert entered.wait(180), "the dependent build did not reach its gate"
+                            deadline = time.monotonic() + 120
+                            receipt = state / "published-paths.json"
+                            while not receipt.exists() or fixture["child"]["path"] not in json.loads(
+                                receipt.read_text()
+                            ):
+                                status = json.loads((state / "cache/status.json").read_text())
+                                assert status["result"] == "running", status
+                                assert time.monotonic() < deadline, (
+                                    "completed dependency was not published during the build"
+                                )
+                                time.sleep(0.2)
+                            verify(target_uri, [fixture["child"]["path"]], public)
+                            while not (
+                                errors := [
+                                    event
+                                    for event in read_records(state / "timings.jsonl")
+                                    if event["kind"] == "build-error"
+                                ]
+                            ):
+                                assert time.monotonic() < deadline, (
+                                    "build failure was not reported while the peer was running"
+                                )
+                                time.sleep(0.1)
+                            while "::error::" not in annotations.getvalue():
+                                assert time.monotonic() < deadline, "Actions error annotation was not emitted"
+                                time.sleep(0.1)
+                            assert errors[0]["phase"] == "dependencies"
+                            while True:
+                                retained = (state / errors[0]["log"]).read_text()
+                                if (
+                                    "synthetic builder stdout" in retained
+                                    and "synthetic builder stderr" in retained
+                                ):
+                                    break
+                                assert time.monotonic() < deadline
+                                time.sleep(0.1)
+                            assert not future.done()
+                            assert fixture["large"]["path"] not in json.loads(receipt.read_text())
+                        finally:
+                            release.set()
+
+                        try:
+                            future.result()
+                        except RuntimeError:
+                            assert valid_paths(
+                                [fixture[name]["path"] for name in dependency_names]
+                            ) == {fixture[name]["path"] for name in dependency_names}
                         else:
-                            raise AssertionError("oranc server 500 should block blind cache upload")
+                            raise AssertionError("synthetic failing build unexpectedly succeeded")
 
-                    uninit_url = (
-                        f"http://127.0.0.1:{oranc_one_port}/127.0.0.1:{registry_port}"
-                        f"/synthetic/uninitialized-repo/{end_hash_probe}.narinfo"
-                    )
-                    try:
-                        urlopen(uninit_url, timeout=10)
-                    except HTTPError as http_err:
-                        assert http_err.code == 404, http_err.code
-                    else:
-                        raise AssertionError("uninitialized OCI repo unexpectedly returned 200")
-
-                run([
-                    "oranc",
-                    "push",
-                    "--registry",
-                    f"127.0.0.1:{registry_port}",
-                    "--repository",
-                    "synthetic/max-retry-one",
-                    "--no-ssl",
-                    "--max-retry",
-                    "1",
-                    "initialize",
-                    "--priority",
-                    "41",
-                ])
-
-            # 3b. Upstream HTTP 200 with malformed body OR untrusted signature refuses blind upload,
-            #     while untrusted old-key HTTP 200 on target_uri is treated as MISS for key rotation.
-            untrusted_secret = work / "untrusted.secret"
-            untrusted_secret.write_bytes(
-                run(["nix", "key", "generate-secret", "--key-name", "untrusted-key-1"])
-            )
-            untrusted_secret.chmod(0o600)
-            untrusted_cache_dir = work / "untrusted-cache"
-            run([
-                "nix",
-                "copy",
-                "--to",
-                f"{untrusted_cache_dir.as_uri()}?secret-key={untrusted_secret}",
-                fixture["endPhaseItem"]["path"],
-            ])
-            end_phase_hash = Path(fixture["endPhaseItem"]["path"]).name.split("-", 1)[0]
-            untrusted_narinfo_body = (untrusted_cache_dir / f"{end_phase_hash}.narinfo").read_bytes()
-
-            for bad_200_kind, body_bytes in (
-                ("malformed-html", b"<html><body>gateway page with 200</body></html>\n"),
-                ("untrusted-sig", untrusted_narinfo_body),
-            ):
-                seen_200 = []
-
-                class Bad200Handler(BaseHTTPRequestHandler):
-                    def do_HEAD(self):
-                        self.send_response(200)
-                        self.end_headers()
-
-                    def do_GET(self):
-                        if self.path == "/nix-cache-info":
-                            info_bytes = b"StoreDir: /nix/store\n"
-                            self.send_response(200)
-                            self.send_header("Content-Length", str(len(info_bytes)))
-                            self.end_headers()
-                            self.wfile.write(info_bytes)
-                            return
-                        seen_200.append(self.path)
-                        self.send_response(200)
-                        self.send_header("Content-Length", str(len(body_bytes)))
-                        self.end_headers()
-                        self.wfile.write(body_bytes)
-
-                    def log_message(self, *args):
-                        pass
-
-                bad_srv = ThreadingHTTPServer(("127.0.0.1", 0), Bad200Handler)
-                bad_thr = threading.Thread(target=bad_srv.serve_forever, daemon=True)
-                bad_thr.start()
-                try:
-                    bad_200_uri = f"http://127.0.0.1:{bad_srv.server_port}"
-                    bad_200_state = work / f"upstream-200-{bad_200_kind}"
-                    bad_200_cfg = {
-                        "inventory": {
-                            "outputs": [fixture["endPhaseItem"]["path"]],
-                            "derivations": [Path(fixture["endPhaseItem"]["drv"]).name],
-                            "excluded": [],
-                        },
-                        **publisher_settings,
-                        "read_substituters": [bad_200_uri, *read_substituters],
-                        "retry_delays": [0.02, 0.04],
+                    assert valid_paths([fixture["root"]["path"]]) == set()
+                    checkpoint(state, "dependencies")
+                    first = set(json.loads(receipt.read_text()))
+                    # child, large, driver, and forgedSigned (forged cache.nixos.org-1 + rotated-out key)
+                    # are published, while publicLocal and sharedOci were substituted with trusted
+                    # upstream signatures and skipped as upstreamHits.
+                    expected_first = {
+                        fixture[name]["path"]
+                        for name in ("child", "large", "driver", "forgedSigned")
                     }
-                    with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
-                        try:
-                            cache.publish_once(bad_200_state, bad_200_cfg, phase=bad_200_kind)
-                        except RuntimeError as err:
-                            assert "unverified upstream narinfo error" in str(err), err
-                        else:
-                            raise AssertionError(f"upstream HTTP 200 ({bad_200_kind}) should block upload")
-                    assert seen_200, seen_200
-                    assert not (bad_200_state / "published-paths.json").exists()
+                    assert first == expected_first, {"actual": first, "expected": expected_first}
+                    verify(target_uri, first, public)
 
-                    if bad_200_kind == "untrusted-sig":
-                        # When target_uri itself serves an old/untrusted signature, classify as MISS so key rotation re-uploads.
-                        rot_state = work / "target-rotation-probe"
-                        with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
-                            rot_pub = cache.Publisher(
-                                rot_state,
-                                {
-                                    "inventory": {
-                                        "outputs": [fixture["endPhaseItem"]["path"]],
-                                        "derivations": [],
-                                        "excluded": [],
-                                    },
-                                    **publisher_settings,
-                                    "target_uri": bad_200_uri,
-                                    "read_substituters": [bad_200_uri],
-                                    "retry_delays": [0.01],
-                                },
-                            )
-                            rot_pub.discover([fixture["endPhaseItem"]["path"]])
-                            assert fixture["endPhaseItem"]["path"] in rot_pub.pending
-                            assert not rot_pub.query_failures
-                finally:
-                    bad_srv.shutdown()
-                    bad_srv.server_close()
-                    bad_thr.join()
+                    # Build root VM fixture & verify classification labels.
+                    run_build([test], state=state, phase="vm-fixture")
+                    # Re-run clean dependencies attempt so all required groups succeeded before verify_results:
+                    run_build(dependencies, state=state, phase="dependencies")
+                    report.verify_results(state, "candidate")
 
-            # 4. End-of-phase single-shot mode (`publish_once` / `nix-ci cache publish`) parity.
-            eop_state = work / "end-of-phase"
-            eop_manifest = {
-                "roots": [fixture["root"]["drv"], fixture["endPhaseItem"]["drv"]],
-                "cache": {
-                    "registry": f"127.0.0.1:{registry_port}",
-                    "repository": "synthetic/cache-test",
-                    "publicKey": public,
-                    "mode": "end-of-phase",
-                    "targetUri": target_uri,
-                    "readSubstituters": read_substituters,
-                    "trustedPublicKeys": trusted_public_keys,
-                    "excludedPaths": [fixture[name]["path"] for name in ("source", "restricted")],
-                    "excludedDerivations": [fixture["restricted"]["drv"]],
-                    "bundles": [fixture["bundle"]["drv"]],
-                },
-            }
-            eop_state.mkdir()
-            eop_cfg = cache.build_publisher_configuration(eop_manifest, no_ssl=True)
-            eop_cfg["inventory"]["outputs"] = [
-                path for path in eop_cfg["inventory"]["outputs"] if f"-{work.name}-" in path
-            ]
-            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text()}):
-                eop_published = cache.publish_once(eop_state, eop_cfg, phase="end-of-phase")
-            # Everything from incremental is already on target_uri -> only endPhaseItem is newly uploaded!
-            assert eop_published == [fixture["endPhaseItem"]["path"]], eop_published
-            eop_pubs = [
-                e for e in read_records(eop_state / "timings.jsonl") if e["kind"] == "publication"
-            ]
-            assert sum(e["upstreamHits"] for e in eop_pubs) == 2
-            assert sum(e["targetHits"] for e in eop_pubs) == 6
+                    run_build([test], state=state, phase="vm-fixture", pass_name="committed")
+                    targets = [
+                        event for event in read_records(state / "timings.jsonl") if event.get("vm")
+                    ]
+                    assert (
+                        targets[0]["source"] == "executed"
+                        and targets[0]["success"]
+                        and targets[0]["buildSeconds"] > 0
+                    )
+                    assert (
+                        targets[1]["source"] == "local reuse"
+                        and targets[1]["success"]
+                        and targets[1]["buildSeconds"] is None
+                    )
 
-            # 5. Clean store restoration across ALL THREE caches (file:// public, shared OCI, target OCI)
-            # followed by a fresh zero-upload verification pass!
-            restore_paths = [
-                fixture[name]["path"]
-                for name in (
-                    "root",
-                    "child",
-                    "large",
-                    "signedMissingRemote",
-                    "endPhaseItem",
-                    "publicLocal",
-                    "sharedOci",
-                )
-            ]
-            expected_bytes = {path: Path(path).read_bytes() for path in restore_paths}
-            run(["nix-store", "--delete", *restore_paths])
+                    # Failed retry must supersede earlier success and collect VM failure evidence with 0755/0644 modes.
+                    failed = entry("failure", vm=True) | {"name": test["name"]}
+                    try:
+                        run_build([failed], state=state, phase="vm-fixture")
+                    except RuntimeError:
+                        pass
+                    else:
+                        raise AssertionError("the retry should fail")
+                    events = read_records(state / "timings.jsonl")
+                    failed_attempt = [event for event in events if event["kind"] == "build"][-1]
+                    assert failed_attempt["returncode"] != 0
+                    failed_evidence = next(
+                        event
+                        for event in events
+                        if event["kind"] == "vm-evidence" and event["attempt"] == failed_attempt["attempt"]
+                    )
+                    retained = state / failed_evidence["path"] / Path(failed["outputs"][0]).name
+                    assert json.loads((retained / "artifacts/network.json").read_text()) == {
+                        "fixture": "failed application network log"
+                    }
+                    assert (retained / "artifacts").stat().st_mode & 0o777 == 0o755
+                    assert (retained / "artifacts/network.json").stat().st_mode & 0o777 == 0o644
+                    try:
+                        report.verify_results(state, "candidate")
+                    except RuntimeError:
+                        pass
+                    else:
+                        raise AssertionError("previous success hid latest failed retry")
 
-            # Exercise infra/scripts/nix-cache.sh install with custom cache-config.nix.
-            client = work / "client"
-            (client / "nix").mkdir(parents=True)
-            custom_cache_nix = client / "nix/cache-config.nix"
-            custom_cache_nix.write_text(
-                f"""
-                let
-                  cacheLib = import {json.dumps(str(ROOT / "infra/nix/cache.nix"))};
-                in
-                cacheLib.mkCacheConfig {{
-                  target = {{
-                    registry = "127.0.0.1:{registry_port}";
-                    repository = "synthetic/cache-test";
-                    publicKey = {json.dumps(public)};
-                  }};
-                  extraRepositories = [
-                    {{
-                      registry = "127.0.0.1:{registry_port}";
-                      repository = "synthetic/shared-core";
-                      publicKey = {json.dumps(shared_public)};
+                    run_build([test], state=state, phase="vm-fixture")
+                    report.verify_results(state, "candidate")
+
+                    checkpoint(state, "results", finish=True)
+                    published_incremental = set(json.loads(receipt.read_text()))
+                    assert published_incremental - first == {
+                        fixture[name]["path"] for name in ("root", "runtimeInput")
+                    }
+                    events = read_records(state / "timings.jsonl")
+                    publications = [event for event in events if event["kind"] == "publication"]
+                    assert sum(event["excluded"] for event in publications) == 3
+                    assert sum(event["upstreamHits"] for event in publications) == 2
+
+                # 2. Wrapper reference truncation test.
+                wrapper_state = work / "wrapper-exclusion"
+                wrapper_state.mkdir()
+                with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                    wrapper_publisher = cache.Publisher(
+                        wrapper_state,
+                        {
+                            "inventory": {
+                                "outputs": [fixture["excludedWrapper"]["path"]],
+                                "derivations": [],
+                                "excluded": [fixture["excludedWrapper"]["path"]],
+                            },
+                            **publisher_settings,
+                        },
+                    )
+                    wrapper_publisher.discover([fixture["excludedWrapper"]["path"]])
+                assert fixture["innerPayload"]["path"] not in wrapper_publisher.seen
+                assert not wrapper_publisher.pending
+
+                # 3. End-of-phase single-shot mode (`publish_once` / `nix-ci cache publish`) parity
+                #    after clean-store substitution of previously published paths + fresh build of endPhaseItem.
+                run([
+                    "nix-store",
+                    "--delete",
+                    *[
+                        fixture[name]["path"]
+                        for name in (
+                            "root",
+                            "driver",
+                            "child",
+                            "large",
+                            "forgedSigned",
+                            "runtimeInput",
+                            "publicLocal",
+                            "sharedOci",
+                        )
+                    ],
+                ])
+                with patch.dict(os.environ, {"NIX_CONFIG": client_nix_config}):
+                    run([
+                        "nix",
+                        "build",
+                        "--no-link",
+                        fixture["root"]["drv"] + "^*",
+                        fixture["driver"]["drv"] + "^*",
+                        fixture["endPhaseItem"]["drv"] + "^*",
+                    ])
+
+                eop_state = work / "end-of-phase"
+                eop_manifest = {
+                    "roots": [fixture["root"]["drv"], fixture["endPhaseItem"]["drv"]],
+                    "cache": {
+                        "registry": f"127.0.0.1:{registry_port}",
+                        "repository": "synthetic/cache-test",
+                        "publicKey": public,
+                        "mode": "end-of-phase",
+                        "targetUri": target_uri,
+                        "readSubstituters": read_substituters,
+                        "trustedPublicKeys": trusted_public_keys,
+                        "excludedPaths": [fixture[name]["path"] for name in ("source", "restricted")],
+                        "excludedDerivations": [fixture["restricted"]["drv"]],
+                        "bundles": [fixture["bundle"]["drv"]],
+                    },
+                }
+                eop_state.mkdir()
+                eop_cfg = cache.build_publisher_configuration(eop_manifest, no_ssl=True)
+                eop_cfg["inventory"]["outputs"] = [
+                    path for path in eop_cfg["inventory"]["outputs"] if f"-{work.name}-" in path
+                ]
+                with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text()}):
+                    eop_published = cache.publish_once(eop_state, eop_cfg, phase="end-of-phase")
+                assert eop_published == [fixture["endPhaseItem"]["path"]], eop_published
+                eop_pubs = [
+                    e for e in read_records(eop_state / "timings.jsonl") if e["kind"] == "publication"
+                ]
+                assert sum(e["upstreamHits"] for e in eop_pubs) == 2
+                assert sum(e["targetHits"] for e in eop_pubs) == 6
+
+                # 4. Clean store restoration across ALL THREE caches (file:// public, shared OCI, target OCI)
+                #    via infra/scripts/nix-cache.sh install, followed by a zero-upload verification pass.
+                restore_paths = [
+                    fixture[name]["path"]
+                    for name in (
+                        "root",
+                        "driver",
+                        "child",
+                        "large",
+                        "forgedSigned",
+                        "runtimeInput",
+                        "endPhaseItem",
+                        "publicLocal",
+                        "sharedOci",
+                    )
+                ]
+                expected_bytes = {path: Path(path).read_bytes() for path in restore_paths}
+                run(["nix-store", "--delete", *restore_paths])
+
+                client = work / "client"
+                (client / "nix").mkdir(parents=True)
+                custom_cache_nix = client / "nix/cache-config.nix"
+                custom_cache_nix.write_text(
+                    f"""
+                    let
+                      cacheLib = import {json.dumps(str(ROOT / "infra/nix/cache.nix"))};
+                    in
+                    cacheLib.mkCacheConfig {{
+                      target = {{
+                        registry = "127.0.0.1:{registry_port}";
+                        repository = "synthetic/cache-test";
+                        publicKey = {json.dumps(public)};
+                      }};
+                      extraRepositories = [
+                        {{
+                          registry = "127.0.0.1:{registry_port}";
+                          repository = "synthetic/shared-core";
+                          publicKey = {json.dumps(shared_public)};
+                        }}
+                      ];
+                      listenAddress = "127.0.0.1";
+                      port = {proxy_port};
+                      publicDefaults = {{
+                        substituters = [ {json.dumps(public_uri)} ];
+                        trusted-public-keys = [ {json.dumps(upstream_public)} ];
+                      }};
                     }}
-                  ];
-                  listenAddress = "127.0.0.1";
-                  port = {proxy_port};
-                  publicDefaults = {{
-                    substituters = [ {json.dumps(public_uri)} ];
-                    trusted-public-keys = [ {json.dumps(upstream_public)} ];
-                  }};
-                }}
-                """
-            )
-            config_home = work / "config"
-            nix_conf = config_home / "nix/nix.conf"
-            nix_conf.parent.mkdir(parents=True)
-            nix_conf.write_text("# Existing client settings\nconnect-timeout = 7\n")
-            with patch.dict(
-                os.environ,
-                {"XDG_CONFIG_HOME": str(config_home), "NIX_USER_CONF_FILES": str(nix_conf)},
-            ):
-                run([
-                    "bash",
-                    str(ROOT / "infra/scripts/nix-cache.sh"),
-                    "install",
-                    "--config-file",
-                    str(custom_cache_nix),
-                    "--fragment-name",
-                    "nixos-config-cache.conf",
-                ])
-                # Second install is idempotent.
-                run([
-                    "bash",
-                    str(ROOT / "infra/scripts/nix-cache.sh"),
-                    "install",
-                    "--config-file",
-                    str(custom_cache_nix),
-                    "--fragment-name",
-                    "nixos-config-cache.conf",
-                ])
-                lines = nix_conf.read_text().splitlines()
-                assert "# Existing client settings" in lines
-                assert lines.count("include nixos-config-cache.conf") == 1
-                settings = json.loads(run(["nix", "config", "show", "--json"]))
-                assert settings["connect-timeout"]["value"] == 7
-                assert target_uri in settings["substituters"]["value"]
-                assert shared_uri in settings["substituters"]["value"]
-                assert public_uri in settings["substituters"]["value"]
-                assert settings["require-sigs"]["value"]
+                    """
+                )
+                config_home = work / "config"
+                nix_conf = config_home / "nix/nix.conf"
+                nix_conf.parent.mkdir(parents=True)
+                nix_conf.write_text("# Existing client settings\nconnect-timeout = 7\n")
+                with patch.dict(
+                    os.environ,
+                    {
+                        "XDG_CACHE_HOME": str(work / "restored-client-cache"),
+                        "XDG_CONFIG_HOME": str(config_home),
+                        "NIX_USER_CONF_FILES": str(nix_conf),
+                    },
+                ):
+                    run([
+                        "bash",
+                        str(ROOT / "infra/scripts/nix-cache.sh"),
+                        "install",
+                        "--config-file",
+                        str(custom_cache_nix),
+                        "--fragment-name",
+                        "nixos-config-cache.conf",
+                    ])
+                    run([
+                        "bash",
+                        str(ROOT / "infra/scripts/nix-cache.sh"),
+                        "install",
+                        "--config-file",
+                        str(custom_cache_nix),
+                        "--fragment-name",
+                        "nixos-config-cache.conf",
+                    ])
+                    lines = nix_conf.read_text().splitlines()
+                    assert "# Existing client settings" in lines
+                    assert lines.count("include nixos-config-cache.conf") == 1
+                    settings = json.loads(run(["nix", "config", "show", "--json"]))
+                    assert settings["connect-timeout"]["value"] == 7
+                    assert target_uri in settings["substituters"]["value"]
+                    assert shared_uri in settings["substituters"]["value"]
+                    assert public_uri in settings["substituters"]["value"]
+                    assert settings["require-sigs"]["value"]
 
-                run_build([test, entry("endPhaseItem")], state=state, phase="vm-fixture", pass_name="restored")
+                    run_build(
+                        [test, entry("driver"), entry("endPhaseItem")],
+                        state=state,
+                        phase="vm-fixture",
+                        pass_name="restored",
+                    )
 
-            restored_vm = [
-                event for event in read_records(state / "timings.jsonl") if event.get("vm")
-            ][-1]
-            assert restored_vm["source"] == "cache restored" and restored_vm["success"]
-            assert restored_vm["buildSeconds"] is None and restored_vm["restoreSeconds"] > 0
-            assert all(Path(path).read_bytes() == content for path, content in expected_bytes.items())
+                restored_vm = [
+                    event for event in read_records(state / "timings.jsonl") if event.get("vm")
+                ][-1]
+                assert restored_vm["source"] == "cache restored" and restored_vm["success"]
+                assert restored_vm["buildSeconds"] is None and restored_vm["restoreSeconds"] > 0
+                assert all(Path(path).read_bytes() == content for path, content in expected_bytes.items())
 
-            # Fresh run after clean-store restore -> ZERO duplicate uploads!
-            zero_dup_state = work / "post-restore-zero-upload"
-            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
-                re_published = cache.publish_once(zero_dup_state, eop_cfg, phase="post-restore")
-            assert re_published == [], f"Expected zero duplicate uploads after restore, got {re_published}"
-            assert not (zero_dup_state / "published-paths.json").exists()
+                zero_dup_state = work / "post-restore-zero-upload"
+                with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                    re_published = cache.publish_once(zero_dup_state, eop_cfg, phase="post-restore")
+                assert re_published == [], f"Expected zero duplicate uploads after restore, got {re_published}"
+                assert not (zero_dup_state / "published-paths.json").exists()
 
-            # 6. Authenticated recovery & interrupted NAR fallback.
-            authenticated_recovery(
-                work,
-                entry("recovered"),
-                inventory,
-                publisher_settings,
-                secret,
-                proxy_port,
-                proxy_log,
-            )
+                # 5. Authenticated recovery & interrupted NAR fallback.
+                authenticated_recovery(
+                    work,
+                    entry("recovered"),
+                    inventory,
+                    publisher_settings,
+                    target_uri,
+                    secret,
+                    shared_secret,
+                    shared_public,
+                    proxy_port,
+                    proxy_log,
+                )
 
-            # 8. Concurrent Nix build lock wait classifies waiter as concurrent reuse (never local reuse)
-            #    and non-Git path: directory evaluate_manifest succeeds.
-            concurrent_token = f"{work.name}-concurrent-{time.time_ns()}"
-            with build_gate() as (conc_url, conc_entered, conc_release):
-                concurrent_info = json.loads(
+                # 6. Concurrent Nix build lock wait classifies waiter as concurrent reuse (never local reuse)
+                #    and non-Git path: directory evaluate_manifest succeeds.
+                concurrent_token = f"{work.name}-concurrent-{time.time_ns()}"
+                with build_gate() as (conc_url, conc_entered, conc_release):
+                    concurrent_info = json.loads(
+                        run(
+                            [
+                                "nix",
+                                "eval",
+                                "--no-update-lock-file",
+                                "--impure",
+                                "--json",
+                                "--expr",
+                                (
+                                    "let pkgs = (builtins.getFlake ("
+                                    + json.dumps("git+file://" + str(ROOT))
+                                    + ")).inputs."
+                                    + args.nixpkgs_input
+                                    + ".legacyPackages.x86_64-linux;"
+                                    + " d = pkgs.runCommand "
+                                    + json.dumps(concurrent_token)
+                                    + " {} ''"
+                                    + "${pkgs.curl}/bin/curl --fail --max-time 60 "
+                                    + json.dumps(conc_url)
+                                    + "; sleep 1; printf concurrent > $out"
+                                    + "'';"
+                                    + " in { drv = d.drvPath; out = d.outPath; }"
+                                ),
+                            ],
+                            cwd=ROOT,
+                        )
+                    )
+                    created_store_paths.append(concurrent_info["out"])
+                    concurrent_entry = {
+                        "name": "concurrent-item",
+                        "drv": concurrent_info["drv"],
+                        "outputs": [concurrent_info["out"]],
+                        "required": True,
+                        "vm": False,
+                    }
+                    state_builder = work / "concurrent-builder"
+                    state_waiter = work / "concurrent-waiter"
+                    for st in (state_builder, state_waiter):
+                        st.mkdir(parents=True, exist_ok=True)
+                        (st / "manifest.json").write_text(
+                            json.dumps(
+                                {
+                                    "groups": [
+                                        {
+                                            "name": "concurrent",
+                                            "required": True,
+                                            "vm": None,
+                                            "kvm": False,
+                                            "maxJobs": 1,
+                                            "entries": [concurrent_entry],
+                                        }
+                                    ],
+                                }
+                            )
+                        )
+                    builder_errors = []
+
+                    def _run_primary():
+                        try:
+                            run_build([concurrent_entry], state=state_builder, phase="concurrent")
+                        except BaseException as exc:
+                            builder_errors.append(exc)
+
+                    primary_thread = threading.Thread(target=_run_primary)
+                    primary_thread.start()
+                    assert conc_entered.wait(60), "primary build did not reach gate"
+                    conc_release.set()
+                    run_build([concurrent_entry], state=state_waiter, phase="concurrent")
+                    primary_thread.join(timeout=30)
+                assert not builder_errors, builder_errors
+                primary_target = [
+                    e for e in read_records(state_builder / "timings.jsonl") if e["kind"] == "target"
+                ][-1]
+                waiter_target = [
+                    e for e in read_records(state_waiter / "timings.jsonl") if e["kind"] == "target"
+                ][-1]
+                assert primary_target["source"] == "executed" and primary_target["success"], primary_target
+                assert waiter_target["source"] == "concurrent reuse" and waiter_target["success"], waiter_target
+                report.verify_results(state_builder)
+                report.verify_results(state_waiter)
+
+                non_git_project = work / "non-git-project"
+                (non_git_project / "nix").mkdir(parents=True, exist_ok=True)
+                (non_git_project / "flake.nix").write_text(
+                    "{\n"
+                    "  outputs = { self }: {\n"
+                    '    outPath = builtins.storePath "' + concurrent_info["out"] + '";\n'
+                    "  };\n"
+                    "}\n"
+                )
+                (non_git_project / "nix/ci.nix").write_text(
+                    "{ flake, system ? \"x86_64-linux\", select ? {} }: {\n"
+                    "  jobs = { sample = import " + json.dumps(concurrent_info["drv"]) + "; };\n"
+                    "  groups = [ { name = \"build\"; jobs = [ \"sample\" ]; required = true; vm = null; kvm = false; maxJobs = 1; } ];\n"
+                    "  cache = null;\n"
+                    "  update = { allowedLockfiles = [ \"flake.lock\" ]; ignoreOnlyInputs = []; commitTitle = \"chore: update\"; branchPrefix = \"auto/upd\"; };\n"
+                    "}\n"
+                )
+                non_git_state = work / "non-git-state"
+                non_git_manifest = evaluate.evaluate_manifest(
+                    project_dir=non_git_project,
+                    state=non_git_state,
+                )
+                assert len(non_git_manifest["groups"][0]["entries"]) == 1, non_git_manifest
+
+                # 7. Ensure evaluate_manifest strips ambient NIXPKGS_ALLOW_UNFREE / NIXPKGS_CONFIG.
+                nixpkgs_out = (
                     run(
                         [
                             "nix",
                             "eval",
                             "--no-update-lock-file",
                             "--impure",
-                            "--json",
+                            "--raw",
                             "--expr",
-                            (
-                                "let pkgs = (builtins.getFlake ("
-                                + json.dumps("git+file://" + str(ROOT))
-                                + ")).inputs."
-                                + args.nixpkgs_input
-                                + ".legacyPackages.x86_64-linux;"
-                                + " d = pkgs.runCommand "
-                                + json.dumps(concurrent_token)
-                                + " {} ''"
-                                + "${pkgs.curl}/bin/curl --fail --max-time 60 "
-                                + json.dumps(conc_url)
-                                + "; sleep 1; printf concurrent > $out"
-                                + "'';"
-                                + " in { drv = d.drvPath; out = d.outPath; }"
-                            ),
+                            f'(builtins.getFlake ("git+file://" + toString ./. )).inputs.{args.nixpkgs_input}.outPath',
                         ],
                         cwd=ROOT,
                     )
+                    .decode()
+                    .strip()
                 )
-                concurrent_entry = {
-                    "name": "concurrent-item",
-                    "drv": concurrent_info["drv"],
-                    "outputs": [concurrent_info["out"]],
-                    "required": True,
-                    "vm": False,
-                }
-                state_builder = work / "concurrent-builder"
-                state_waiter = work / "concurrent-waiter"
-                for st in (state_builder, state_waiter):
-                    st.mkdir(parents=True, exist_ok=True)
-                    (st / "manifest.json").write_text(
-                        json.dumps(
-                            {
-                                "groups": [
-                                    {
-                                        "name": "concurrent",
-                                        "required": True,
-                                        "vm": None,
-                                        "kvm": False,
-                                        "maxJobs": 1,
-                                        "entries": [concurrent_entry],
-                                    }
-                                ],
-                            }
-                        )
-                    )
-                builder_errors = []
-
-                def _run_primary():
+                unfree_leak_project = work / "unfree-leak-project"
+                (unfree_leak_project / "nix").mkdir(parents=True, exist_ok=True)
+                (unfree_leak_project / "flake.nix").write_text(
+                    "{\n"
+                    "  outputs = { self }: {\n"
+                    '    outPath = builtins.storePath "' + concurrent_info["out"] + '";\n'
+                    "  };\n"
+                    "}\n"
+                )
+                (unfree_leak_project / "nix/ci.nix").write_text(
+                    "{ flake, system ? \"x86_64-linux\", select ? {} }:\n"
+                    "let\n"
+                    "  pkgs = import (builtins.storePath " + json.dumps(nixpkgs_out) + ") { inherit system; };\n"
+                    "in {\n"
+                    "  jobs = { sample = import " + json.dumps(concurrent_info["drv"]) + "; };\n"
+                    "  groups = [ { name = \"build\"; jobs = [ \"sample\" ]; required = true; vm = null; kvm = false; maxJobs = 1; } ];\n"
+                    "  cache = {\n"
+                    "    repository = \"synthetic/unfree-leak\";\n"
+                    "    publicKey = \"synthetic-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";\n"
+                    "    mode = \"end-of-phase\";\n"
+                    "    excludedPaths = [ (toString pkgs.vscode) ];\n"
+                    "    excludedDerivations = [];\n"
+                    "    bundles = [];\n"
+                    "    privateBuilds = [];\n"
+                    "  };\n"
+                    "  update = null;\n"
+                    "}\n"
+                )
+                permissive_cfg = work / "permissive-nixpkgs-config.nix"
+                permissive_cfg.write_text("{ allowUnfree = true; }\n")
+                with patch.dict(
+                    os.environ,
+                    {
+                        "NIXPKGS_ALLOW_UNFREE": "1",
+                        "NIXPKGS_CONFIG": str(permissive_cfg),
+                    },
+                ):
                     try:
-                        run_build([concurrent_entry], state=state_builder, phase="concurrent")
-                    except BaseException as exc:
-                        builder_errors.append(exc)
+                        evaluate.evaluate_manifest(
+                            project_dir=unfree_leak_project,
+                            state=work / "unfree-leak-state",
+                        )
+                    except subprocess.CalledProcessError:
+                        pass
+                    else:
+                        raise AssertionError(
+                            "evaluate_manifest allowed unconfigured legacyPackages unfree package via ambient NIXPKGS_*"
+                        )
 
-                primary_thread = threading.Thread(target=_run_primary)
-                primary_thread.start()
-                assert conc_entered.wait(60), "primary build did not reach gate"
-                conc_release.set()
-                run_build([concurrent_entry], state=state_waiter, phase="concurrent")
-                primary_thread.join(timeout=30)
-            assert not builder_errors, builder_errors
-            primary_target = [
-                e for e in read_records(state_builder / "timings.jsonl") if e["kind"] == "target"
-            ][-1]
-            waiter_target = [
-                e for e in read_records(state_waiter / "timings.jsonl") if e["kind"] == "target"
-            ][-1]
-            assert primary_target["source"] == "executed" and primary_target["success"], primary_target
-            assert waiter_target["source"] == "concurrent reuse" and waiter_target["success"], waiter_target
-            report.verify_results(state_builder)
-            report.verify_results(state_waiter)
+                # 8. Target registry outage during upload propagates failure cleanly.
+                failure_state = work / "publication-failure"
+                with publishing(failure_state, inventory, secret=secret, **publisher_settings):
+                    checkpoint(failure_state, "ready")
+                    registry_process.terminate()
+                    registry_process.wait(timeout=10)
+                    run_build([entry("late")], state=failure_state, phase="new-output")
+                    try:
+                        checkpoint(failure_state, "unavailable-registry", finish=True)
+                    except subprocess.CalledProcessError:
+                        status = json.loads((failure_state / "cache/status.json").read_text())
+                        assert status["result"] == "failure", status
+                        failure_events = read_records(failure_state / "timings.jsonl")
+                        assert any(
+                            event["kind"] == "cache-upload" and event["returncode"] != 0
+                            for event in failure_events
+                        )
+                        assert any(
+                            event["kind"] == "cache-error" and event["phase"] == "unavailable-registry"
+                            for event in failure_events
+                        )
+                    else:
+                        raise AssertionError("publication succeeded with an unavailable registry")
 
-            non_git_project = work / "non-git-project"
-            (non_git_project / "nix").mkdir(parents=True, exist_ok=True)
-            (non_git_project / "flake.nix").write_text(
-                "{\n"
-                "  outputs = { self }: {\n"
-                '    outPath = builtins.storePath "' + concurrent_info["out"] + '";\n'
-                "  };\n"
-                "}\n"
-            )
-            (non_git_project / "nix/ci.nix").write_text(
-                "{ flake, system ? \"x86_64-linux\", select ? {} }: {\n"
-                "  jobs = { sample = import " + json.dumps(concurrent_info["drv"]) + "; };\n"
-                "  groups = [ { name = \"build\"; jobs = [ \"sample\" ]; required = true; vm = null; kvm = false; maxJobs = 1; } ];\n"
-                "  cache = null;\n"
-                "  update = { allowedLockfiles = [ \"flake.lock\" ]; ignoreOnlyInputs = []; commitTitle = \"chore: update\"; branchPrefix = \"auto/upd\"; };\n"
-                "}\n"
-            )
-            non_git_state = work / "non-git-state"
-            non_git_manifest = evaluate.evaluate_manifest(
-                project_dir=non_git_project,
-                state=non_git_state,
-            )
-            assert len(non_git_manifest["groups"][0]["entries"]) == 1, non_git_manifest
-
-            # Ensure evaluate_manifest strips ambient NIXPKGS_ALLOW_UNFREE / NIXPKGS_CONFIG so
-            # unconfigured legacyPackages unfree leaks fail identically locally and in clean CI.
-            nixpkgs_out = (
-                run(
-                    [
-                        "nix",
-                        "eval",
-                        "--no-update-lock-file",
-                        "--impure",
-                        "--raw",
-                        "--expr",
-                        f'(builtins.getFlake ("git+file://" + toString ./. )).inputs.{args.nixpkgs_input}.outPath',
-                    ],
-                    cwd=ROOT,
-                )
-                .decode()
-                .strip()
-            )
-            unfree_leak_project = work / "unfree-leak-project"
-            (unfree_leak_project / "nix").mkdir(parents=True, exist_ok=True)
-            (unfree_leak_project / "flake.nix").write_text(
-                "{\n"
-                "  outputs = { self }: {\n"
-                '    outPath = builtins.storePath "' + concurrent_info["out"] + '";\n'
-                "  };\n"
-                "}\n"
-            )
-            (unfree_leak_project / "nix/ci.nix").write_text(
-                "{ flake, system ? \"x86_64-linux\", select ? {} }:\n"
-                "let\n"
-                "  pkgs = import (builtins.storePath " + json.dumps(nixpkgs_out) + ") { inherit system; };\n"
-                "in {\n"
-                "  jobs = { sample = import " + json.dumps(concurrent_info["drv"]) + "; };\n"
-                "  groups = [ { name = \"build\"; jobs = [ \"sample\" ]; required = true; vm = null; kvm = false; maxJobs = 1; } ];\n"
-                "  cache = {\n"
-                "    repository = \"synthetic/unfree-leak\";\n"
-                "    publicKey = \"synthetic-1:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\";\n"
-                "    mode = \"end-of-phase\";\n"
-                "    excludedPaths = [ (toString pkgs.vscode) ];\n"
-                "    excludedDerivations = [];\n"
-                "    bundles = [];\n"
-                "    privateBuilds = [];\n"
-                "  };\n"
-                "  update = null;\n"
-                "}\n"
-            )
-            permissive_cfg = work / "permissive-nixpkgs-config.nix"
-            permissive_cfg.write_text("{ allowUnfree = true; }\n")
-            with patch.dict(
-                os.environ,
-                {
-                    "NIXPKGS_ALLOW_UNFREE": "1",
-                    "NIXPKGS_CONFIG": str(permissive_cfg),
-                },
-            ):
-                try:
-                    evaluate.evaluate_manifest(
-                        project_dir=unfree_leak_project,
-                        state=work / "unfree-leak-state",
-                    )
-                except subprocess.CalledProcessError:
-                    pass
-                else:
-                    raise AssertionError(
-                        "evaluate_manifest allowed unconfigured legacyPackages unfree package via ambient NIXPKGS_*"
-                    )
-
-            # 9. Target registry outage during upload propagates failure cleanly.
-            failure_state = work / "publication-failure"
-            with publishing(failure_state, inventory, secret=secret, **publisher_settings):
-                checkpoint(failure_state, "ready")
-                registry_process.terminate()
-                registry_process.wait(timeout=10)
-                run_build([entry("late")], state=failure_state, phase="new-output")
-                try:
-                    checkpoint(failure_state, "unavailable-registry", finish=True)
-                except subprocess.CalledProcessError:
-                    status = json.loads((failure_state / "cache/status.json").read_text())
-                    assert status["result"] == "failure", status
-                    assert "unverified upstream narinfo error" in status["error"], status
-                    assert any(
-                        event["kind"] == "cache-error" and event["phase"] == "unavailable-registry"
-                        for event in read_records(failure_state / "timings.jsonl")
-                    )
-                else:
-                    raise AssertionError("publication succeeded with an unavailable registry")
-
-            push_fail_state = work / "push-failure"
-            with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
-                try:
-                    cache.publish_once(
-                        push_fail_state,
-                        {
-                            "inventory": {
-                                "outputs": [fixture["late"]["path"]],
-                                "derivations": [Path(fixture["late"]["drv"]).name],
-                                "excluded": [],
+                push_fail_state = work / "push-failure"
+                with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
+                    try:
+                        cache.publish_once(
+                            push_fail_state,
+                            {
+                                "inventory": {
+                                    "outputs": [fixture["late"]["path"]],
+                                    "derivations": [Path(fixture["late"]["drv"]).name],
+                                    "excluded": [],
+                                },
+                                **publisher_settings,
                             },
-                            **publisher_settings,
-                            "target_uri": "",
-                            "read_substituters": [public_uri],
-                            "retry_delays": [0.02],
-                        },
-                        phase="push-unavailable-registry",
-                    )
-                except subprocess.CalledProcessError:
-                    assert any(
-                        event["kind"] == "cache-upload" and event["returncode"] != 0
-                        for event in read_records(push_fail_state / "timings.jsonl")
-                    )
-                else:
-                    raise AssertionError("oranc push succeeded with an unavailable registry")
+                            phase="push-unavailable-registry",
+                        )
+                    except subprocess.CalledProcessError:
+                        assert any(
+                            event["kind"] == "cache-upload" and event["returncode"] != 0
+                            for event in read_records(push_fail_state / "timings.jsonl")
+                        )
+                    else:
+                        raise AssertionError("oranc push succeeded with an unavailable registry")
 
-        print(render(state))
+            rendered_summary = render(state)
+            assert "Queries" not in rendered_summary
+            print(rendered_summary)
+        finally:
+            present = sorted(valid_paths(created_store_paths))
+            if present:
+                subprocess.run(
+                    ["nix-store", "--delete", *present],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+
     print(
         json.dumps({
             "result": "passed",
             "nixpkgsInput": args.nixpkgs_input,
             "scenarios": [
                 "infra.lib.cache mkCacheConfig and mkPolicy evaluation",
-                "multi-source remote .narinfo Ed25519 signature deduplication (file:// + shared OCI + target OCI)",
-                "locally signed path with remote 404 automatically re-uploaded",
-                "upstream 5xx retry exhaustion blocks blind upload and fails phase",
+                "local path-info Ed25519 signature provenance (file:// + shared OCI + target OCI)",
+                "forged key-name and rotated-out signing key rejected and re-uploaded",
+                "file:// bootstrap cache preserves upstream signatures",
                 "restricted bundle exclusion and runtime reference truncation",
                 "incremental and end-of-phase publication parity",
                 "clean store multi-cache restore and zero duplicate upload on rerun",

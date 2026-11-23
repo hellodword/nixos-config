@@ -284,7 +284,7 @@ def render(state):
     cache_events = [
         event
         for event in events
-        if event["kind"] in ("publication", "cache-query", "cache-upload", "cache-checkpoint", "cache-error")
+        if event["kind"] in ("publication", "cache-upload", "cache-checkpoint", "cache-error")
     ]
     if cache_events:
         lines += [
@@ -293,13 +293,12 @@ def render(state):
             "",
             "NAR sizes are uncompressed. Upstream hits cover read-only substituters; target hits already exist in the destination cache.",
             "",
-            "| Phase | Candidates | Excluded | Upstream hits | Target hits | Uploaded | NAR GiB | Queries | Uploads | Checkpoint wait | Result |",
-            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            "| Phase | Candidates | Excluded | Upstream hits | Target hits | Uploaded | NAR GiB | Uploads | Checkpoint wait | Result |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
         for phase in dict.fromkeys(event.get("phase", "publication") for event in cache_events):
             selected = [e for e in cache_events if e.get("phase", "publication") == phase]
             publications = [e for e in selected if e["kind"] == "publication"]
-            queries = [e for e in selected if e["kind"] == "cache-query"]
             uploads = [e for e in selected if e["kind"] == "cache-upload"]
             checkpoints = [e for e in selected if e["kind"] == "cache-checkpoint"]
             candidates_total = sum(e.get("candidates", 0) for e in publications)
@@ -310,7 +309,6 @@ def render(state):
             failed_any = (
                 any(e["returncode"] for e in uploads + checkpoints)
                 or any(e["kind"] == "cache-error" for e in selected)
-                or any(e.get("queryFailures", 0) > 0 for e in publications)
             )
             status = "failed" if failed_any else ("complete" if checkpoints or uploads else "verified")
             wait = sum(e["seconds"] for e in checkpoints) if checkpoints else None
@@ -318,7 +316,6 @@ def render(state):
                 f"| {phase} | {candidates_total} | {excluded_total} | {upstream_total} | "
                 f"{target_total} | {sum(e['paths'] for e in successful)} | "
                 f"{sum(e['narBytes'] for e in successful) / 1024 ** 3:.3f} | "
-                f"{duration(sum(e['seconds'] for e in queries))} | "
                 f"{duration(sum(e['seconds'] for e in uploads))} | {duration(wait)} | {status} |"
             )
         for event in cache_events:

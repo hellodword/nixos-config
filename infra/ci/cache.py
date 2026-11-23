@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify remote .narinfo availability with Ed25519 signatures and publish signed OCI caches."""
+"""Classify store paths via local Ed25519 signature provenance and publish signed OCI caches."""
 
 import argparse
 import base64
@@ -12,7 +12,6 @@ import signal
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import traceback
 import uuid
@@ -29,10 +28,8 @@ except ImportError:
 
 
 PARALLEL = 4
-PROBE_BATCH = 512
 LARGE_NAR_BYTES = 512 * 1024 ** 2
 BACKGROUND_BATCH = 64
-RETRY_DELAYS = (0.5, 1.5, 3.0)
 NIX32_ALPHABET = "0123456789abcdfghijklmnpqrsvwxyz"
 
 
@@ -211,215 +208,13 @@ class Publisher:
             trusted_list.append(self.public_key)
         self.trusted_keys = parse_trusted_public_keys(trusted_list)
 
-        target_uri = configuration.get("target_uri")
-        cleaned_target = target_uri.rstrip("/") if target_uri else None
-        raw_substituters = list(configuration.get("read_substituters") or [])
-        upstream_uris = []
-        for uri in raw_substituters:
-            cleaned = uri.rstrip("/")
-            if cleaned and cleaned != cleaned_target and cleaned not in upstream_uris:
-                upstream_uris.append(cleaned)
-        self.target_uri = cleaned_target
-        self.upstream_uris = upstream_uris
-        self.substituter_uris = [
-            *upstream_uris,
-            *([cleaned_target] if cleaned_target else []),
-        ]
-        self.retry_delays = tuple(configuration.get("retry_delays", RETRY_DELAYS))
-        self.request_timeout = float(configuration.get("request_timeout", 15.0))
-
-        self.query_cache = {}
-        self.query_lock = threading.Lock()
         self.seen = set()
         self.pending = {}
         self.published = set()
-        self.query_failures = {}
         self.phase = "background"
 
-    def _nix_store_options(self, *, positive_ttl=0):
-        options = [
-            "--option",
-            "narinfo-cache-negative-ttl",
-            "0",
-            "--option",
-            "narinfo-cache-positive-ttl",
-            str(positive_ttl),
-            "--option",
-            "download-attempts",
-            "1",
-            "--option",
-            "connect-timeout",
-            str(max(1, int(self.request_timeout))),
-        ]
-        if env_netrc := os.environ.get("NIX_CI_NETRC"):
-            options += ["--option", "netrc-file", env_netrc]
-        return options
-
-    def _probe_store_batch(self, uri, store_paths, *, bypass_cache=False, retry_on_miss=False):
-        results = {}
-        uncached = []
-        if not bypass_cache:
-            with self.query_lock:
-                for path in store_paths:
-                    key = (uri, path)
-                    if key in self.query_cache:
-                        results[path] = self.query_cache[key]
-                    else:
-                        uncached.append(path)
-        else:
-            uncached = list(store_paths)
-
-        if not uncached:
-            return results
-
-        is_target = bool(self.target_uri and uri == self.target_uri)
-        fresh_options = self._nix_store_options(positive_ttl=0)
-        cached_info_options = self._nix_store_options(positive_ttl=5)
-
-        for offset in range(0, len(uncached), PROBE_BATCH):
-            remaining = uncached[offset : offset + PROBE_BATCH]
-            last_error = None
-
-            for attempt in range(len(self.retry_delays) + 1):
-                info_options = (
-                    fresh_options if (attempt > 0 or bypass_cache) else cached_info_options
-                )
-                timeout_secs = max(60.0, len(remaining) * 0.25)
-                try:
-                    validity = subprocess.run(
-                        [
-                            "nix-store",
-                            "--check-validity",
-                            "--print-invalid",
-                            "--store",
-                            uri,
-                            *fresh_options,
-                            *remaining,
-                        ],
-                        capture_output=True,
-                        text=True,
-                        timeout=timeout_secs,
-                    )
-                except (subprocess.TimeoutExpired, OSError) as error:
-                    last_error = f"store query error: {error}"
-                    if attempt < len(self.retry_delays):
-                        time.sleep(self.retry_delays[attempt])
-                    continue
-
-                if validity.returncode != 0:
-                    stderr = validity.stderr.strip()
-                    if (
-                        is_target
-                        and not retry_on_miss
-                        and "does not appear to be a binary cache" in stderr
-                    ):
-                        with self.query_lock:
-                            for path in remaining:
-                                self.query_cache[(uri, path)] = ("MISS", None)
-                                results[path] = ("MISS", None)
-                        remaining = []
-                        break
-                    last_error = (
-                        stderr.splitlines()[-1]
-                        if stderr
-                        else f"nix-store exit {validity.returncode}"
-                    )
-                    if attempt < len(self.retry_delays):
-                        time.sleep(self.retry_delays[attempt])
-                    continue
-
-                invalid = {
-                    line.strip()
-                    for line in validity.stdout.splitlines()
-                    if line.strip()
-                }
-                present = [path for path in remaining if path not in invalid]
-                next_retry = []
-
-                for path in invalid:
-                    if retry_on_miss and attempt < len(self.retry_delays):
-                        last_error = "HTTP 404 after upload"
-                        next_retry.append(path)
-                    else:
-                        with self.query_lock:
-                            self.query_cache[(uri, path)] = ("MISS", None)
-                        results[path] = ("MISS", None)
-
-                if present:
-                    try:
-                        info_proc = subprocess.run(
-                            [
-                                "nix",
-                                "path-info",
-                                "--store",
-                                uri,
-                                *info_options,
-                                "--json",
-                                "--json-format",
-                                "1",
-                                "--stdin",
-                            ],
-                            input="".join(path + "\n" for path in present),
-                            capture_output=True,
-                            text=True,
-                            timeout=timeout_secs,
-                        )
-                    except (subprocess.TimeoutExpired, OSError) as error:
-                        last_error = f"path-info error: {error}"
-                        next_retry.extend(present)
-                    else:
-                        if info_proc.returncode != 0:
-                            stderr = info_proc.stderr.strip()
-                            last_error = (
-                                stderr.splitlines()[-1]
-                                if stderr
-                                else f"nix path-info exit {info_proc.returncode}"
-                            )
-                            next_retry.extend(present)
-                        else:
-                            try:
-                                info_map = json.loads(info_proc.stdout)
-                            except json.JSONDecodeError as error:
-                                last_error = f"invalid path-info JSON: {error}"
-                                next_retry.extend(present)
-                            else:
-                                for path in present:
-                                    sig_state, sig_detail = classify_path_info_signature(
-                                        path, info_map.get(path), self.trusted_keys
-                                    )
-                                    if sig_state == "VALID":
-                                        outcome = ("HIT", sig_detail)
-                                        with self.query_lock:
-                                            self.query_cache[(uri, path)] = outcome
-                                        results[path] = outcome
-                                    elif sig_state == "UNTRUSTED" and is_target:
-                                        if retry_on_miss and attempt < len(self.retry_delays):
-                                            last_error = "target narinfo lacks trusted signature after upload"
-                                            next_retry.append(path)
-                                        else:
-                                            with self.query_lock:
-                                                self.query_cache[(uri, path)] = ("MISS", None)
-                                            results[path] = ("MISS", None)
-                                    elif sig_state == "UNTRUSTED":
-                                        last_error = "narinfo lacks trusted signature"
-                                        next_retry.append(path)
-                                    else:
-                                        last_error = f"malformed narinfo ({sig_detail})"
-                                        next_retry.append(path)
-
-                remaining = next_retry
-                if not remaining:
-                    break
-                if attempt < len(self.retry_delays):
-                    time.sleep(self.retry_delays[attempt])
-
-            for path in remaining:
-                results[path] = ("ERROR", last_error or "unknown query failure")
-
-        return results
-
     def discover(self, paths):
-        """Traverse runtime references up to excluded boundaries and probe remote binary caches."""
+        """Traverse runtime references up to excluded boundaries and classify local Ed25519 signatures."""
         frontier = set(paths) - self.seen
         infos = {}
         while frontier:
@@ -451,70 +246,18 @@ class Publisher:
         upstream_hits = set()
         target_hits = set()
         newly_pending = {}
-        phase_errors = {}
 
-        if candidates:
-            started = time.monotonic()
-            sorted_candidates = sorted(candidates)
-            unresolved = list(sorted_candidates)
-            path_errors = {path: [] for path in sorted_candidates}
-
-            for uri in self.upstream_uris:
-                if not unresolved:
-                    break
-                batch_outcomes = self._probe_store_batch(uri, unresolved)
-                still_unresolved = []
-                for store_path in unresolved:
-                    state, detail = batch_outcomes[store_path]
-                    if state == "HIT":
-                        upstream_hits.add(store_path)
-                    else:
-                        if state == "ERROR":
-                            path_errors[store_path].append((uri, detail))
-                        still_unresolved.append(store_path)
-                unresolved = still_unresolved
-
-            if unresolved and self.target_uri:
-                target_outcomes = self._probe_store_batch(self.target_uri, unresolved)
-                still_unresolved = []
-                for store_path in unresolved:
-                    state, detail = target_outcomes[store_path]
-                    if state == "HIT":
-                        target_hits.add(store_path)
-                    else:
-                        if state == "ERROR":
-                            path_errors[store_path].append((self.target_uri, detail))
-                        still_unresolved.append(store_path)
-                unresolved = still_unresolved
-
-            query_elapsed = time.monotonic() - started
-            for store_path in unresolved:
-                errs = path_errors[store_path]
-                if errs:
-                    phase_errors[store_path] = [
-                        {"cache": err_uri, "error": err_msg} for err_uri, err_msg in errs
-                    ]
-                    for err_uri, err_msg in errs:
-                        self.query_failures[(err_uri, store_path)] = err_msg
-                else:
-                    newly_pending[store_path] = candidates[store_path]
-
-            record(
-                self.state,
-                {
-                    "kind": "cache-query",
-                    "phase": self.phase,
-                    "cache": ",".join(self.substituter_uris),
-                    "candidates": len(sorted_candidates),
-                    "seconds": query_elapsed,
-                    "returncode": 1 if phase_errors else 0,
-                    **(
-                        {"errors": {p: errs for p, errs in phase_errors.items()}}
-                        if phase_errors
-                        else {}
-                    ),
-                },
+        for store_path, info in sorted(candidates.items()):
+            sig_state, signer_name = classify_path_info_signature(
+                store_path, info, self.trusted_keys
             )
+            if sig_state == "VALID":
+                if signer_name == self.target_key_name:
+                    target_hits.add(store_path)
+                else:
+                    upstream_hits.add(store_path)
+            else:
+                newly_pending[store_path] = info
 
         self.pending.update(newly_pending)
         record(
@@ -527,7 +270,6 @@ class Publisher:
                 "upstreamHits": len(upstream_hits),
                 "targetHits": len(target_hits),
                 "pending": len(newly_pending),
-                "queryFailures": len(phase_errors),
                 "narBytes": sum(info["narSize"] for info in newly_pending.values()),
             },
         )
@@ -539,7 +281,6 @@ class Publisher:
                 "upstreamHits": sorted(upstream_hits),
                 "targetHits": sorted(target_hits),
                 "pending": {path: info["narSize"] for path, info in newly_pending.items()},
-                "queryFailures": phase_errors,
             },
             "publication-paths.jsonl",
         )
@@ -559,21 +300,8 @@ class Publisher:
     def reconcile(self):
         self.discover(valid_paths(sorted(self.outputs - self.seen)))
 
-    def assert_no_query_failures(self):
-        if self.query_failures:
-            summary = "; ".join(
-                f"{path} ({uri}: {msg})"
-                for (uri, path), msg in sorted(self.query_failures.items())[:10]
-            )
-            raise RuntimeError(
-                f"Refused cache upload due to {len(self.query_failures)} unverified upstream narinfo error(s): {summary}"
-            )
-
     def upload(self, *, drain):
         settings = self.configuration
-        # Pass an unmatchable pattern ('a^') to disable oranc's default
-        # '^cache\.nixos\.org-.*$' exclusion so locally signed paths missing on
-        # remote caches are uploaded.
         command = [
             settings.get("oranc", "oranc"),
             "push",
@@ -625,31 +353,10 @@ class Publisher:
                 },
             )
             result.check_returncode()
-            if self.target_uri:
-                verified = self._probe_store_batch(
-                    self.target_uri,
-                    group,
-                    bypass_cache=True,
-                    retry_on_miss=True,
-                )
-                unverified = [
-                    f"{path} ({state}: {detail})"
-                    for path in group
-                    for state, detail in [verified[path]]
-                    if state != "HIT"
-                ]
-                if unverified:
-                    raise RuntimeError(
-                        "Post-upload remote .narinfo verification failed on target cache: "
-                        + "; ".join(unverified[:10])
-                    )
             self.published.update(group)
-            with self.query_lock:
-                for path in group:
-                    del self.pending[path]
+            for path in group:
+                del self.pending[path]
             atomic_json(self.state / "published-paths.json", sorted(self.published))
-        if drain:
-            self.assert_no_query_failures()
 
 
 def enqueue(state):
@@ -677,7 +384,6 @@ def build_publisher_configuration(
     oranc="oranc",
     no_ssl=False,
     large_nar_bytes=LARGE_NAR_BYTES,
-    retry_delays=RETRY_DELAYS,
 ):
     cache_cfg = manifest.get("cache")
     if not cache_cfg:
@@ -688,13 +394,10 @@ def build_publisher_configuration(
         "public_key": cache_cfg["publicKey"],
         "registry": cache_cfg.get("registry", "ghcr.io"),
         "repository": cache_cfg["repository"],
-        "target_uri": cache_cfg.get("targetUri"),
-        "read_substituters": cache_cfg.get("readSubstituters") or [],
         "trusted_public_keys": cache_cfg.get("trustedPublicKeys") or [],
         "oranc": oranc,
         "no_ssl": no_ssl,
         "large_nar_bytes": large_nar_bytes,
-        "retry_delays": list(retry_delays),
     }
 
 
@@ -705,13 +408,10 @@ def start_publisher(
     public_key,
     registry,
     repository,
-    read_substituters,
     trusted_public_keys,
-    target_uri=None,
     oranc="oranc",
     no_ssl=False,
     large_nar_bytes=LARGE_NAR_BYTES,
-    retry_delays=RETRY_DELAYS,
 ):
     state = Path(state).resolve()
     directory = state / "cache"
@@ -725,13 +425,10 @@ def start_publisher(
             "public_key": public_key,
             "registry": registry,
             "repository": repository,
-            "target_uri": target_uri,
-            "read_substituters": list(read_substituters),
             "trusted_public_keys": list(trusted_public_keys),
             "oranc": oranc,
             "no_ssl": no_ssl,
             "large_nar_bytes": large_nar_bytes,
-            "retry_delays": list(retry_delays),
         },
     )
     hook = directory / "post-build-hook"
@@ -915,8 +612,6 @@ def run_cache_command(*, operation, state, project_dir=None, phase="publication"
             public_key=cfg["public_key"],
             registry=cfg["registry"],
             repository=cfg["repository"],
-            target_uri=cfg["target_uri"],
-            read_substituters=cfg["read_substituters"],
             trusted_public_keys=cfg["trusted_public_keys"],
             oranc=cfg["oranc"],
             no_ssl=cfg["no_ssl"],

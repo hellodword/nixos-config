@@ -42,16 +42,16 @@ PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input ni
 PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input nixpkgs-remote
 ```
 
-## 远端 `.narinfo` 探测与再分发过滤
+## 本地验签溯源与再分发过滤
 
-[nix/ci.nix](../nix/ci.nix) 声明构建组与缓存策略，[nix/cache-policy.nix](../nix/cache-policy.nix)（调用 `inputs.infra.lib.cache.mkPolicy`）与 [infra/ci/cache.py](../infra/ci/cache.py) 共同执行再分发裁剪与远端去重上传：
+[nix/ci.nix](../nix/ci.nix) 声明构建组与缓存策略，[nix/cache-policy.nix](../nix/cache-policy.nix)（调用 `inputs.infra.lib.cache.mkPolicy`）与 [infra/ci/cache.py](../infra/ci/cache.py) 共同完成再分发裁剪、可信签名分流与增量上传：
 
 - **源码树与受限载荷隔离**：`flake.outPath` 始终列入 `excludedPaths`；`mkPolicy` 对候选包与 `extraRestricted`（含 `anytype`、`anytype-heart`、`google-chrome`、`vscode` 与 `vscodeServer`）递归解包 `passthru.unwrapped` / `unwrapped` 检查许可证可再分发性，并对 `bundles`（测试容器镜像与 VM 启动磁盘）做输入图传染分析，一并排除复制了受限内容的中间产物。
 - **引用图边界截断**：`Publisher.discover()` 遇到 `excluded` 路径时记录排除统计并立即停止展开其内部运行时 `references`。
-- **批量校验远端 `.narinfo` 与 Ed25519 签名**：上传器不将本地 `/nix/store` SQLite 中的签名视为远端已缓存依据，而是按“只读公共 substituters 优先、目标缓存兜底”的级联顺序调用原生 `nix-store --check-validity` 与 `nix path-info --store` 批量查询未命中路径元数据，在内存中核验 `StorePath` 与可信公钥的 Ed25519 指纹签名：
-  - 任一可信源返回有效签名 `200` 即判定命中（区分 `targetHits` 与 `upstreamHits`）；
-  - 全部可信源返回 `404`（或 `targetUri` 仅存旧密钥签名）时使用 `oranc push --no-closure --already-signed --excluded-signing-key-pattern 'a^' --zstd-level 3 --max-retry 3` 精确签名上传，并在每批上传后回查目标缓存 `.narinfo` 验签通过后再记录成功清单（即使本地已有 `cache.nixos.org-1` 或项目签名而远端 `404` 也会自动补传）；
-  - 若某个待决路径在已响应源上为 `404`，但任一只读源返回损坏/未受信签名的 `200` 响应，或经指数退避重试后仍处于网络超时 / `5xx` 异常，则拒绝盲目将该路径上传至个人 GHCR 并在收尾阶段返回非零退出码留待重试。
+- **本地 `path-info` Ed25519 验签分流**：`nix build` 在 `require-sigs = true` 下统一从公共只读 substituters、共享缓存与目标缓存并发恢复已有产物并写入 `/nix/var/nix/db/db.sqlite`（CI 中 `oranc` 引导缓存同样通过 `file://` binary cache 格式保留闭包签名）。发布器读取本地 `nix path-info --json` 元数据，在内存中以 `trustedPublicKeys` 校验每条路径的 Ed25519 指纹签名：
+  - 通过当前目标缓存公钥验签的路径计入 `targetHits` 并跳过上传；
+  - 通过其他可信上游或共享缓存公钥验签的路径计入 `upstreamHits` 并跳过上传；
+  - 无可信签名的本地构建路径（含密钥轮换后仅带旧签名的路径）列入待上传队列，由 `oranc push --no-closure --already-signed --excluded-signing-key-pattern 'a^' --zstd-level 3 --max-retry 3` 签名推送至目标 GHCR 仓库。
 
 ## 旁路增量与阶段末双模式
 
