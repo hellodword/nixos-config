@@ -496,7 +496,12 @@ def _run_suite(args):
           '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
           { inherit child large late recovered endPhaseItem publicLocal sharedOci forgedSigned runtimeInput source restricted bundle driver root failure; }
-          // { buildInput.path = buildInput; innerPayload.path = innerPayload; excludedWrapper.path = excludedWrapper; }
+          // {
+            buildInput.path = buildInput;
+            innerPayload.path = innerPayload;
+            excludedWrapper.path = excludedWrapper;
+            curlBin = { path = "${pkgs.curl}"; drv = pkgs.curl.drvPath; };
+          }
         '''
             .replace("NIXPKGS_INPUT", args.nixpkgs_input)
             .replace("PREFIX", json.dumps(work.name))
@@ -591,18 +596,18 @@ def _run_suite(args):
             path for path in inventory["outputs"] if f"-{work.name}-" in path
         ]
         inventory["derivations"] = [
-            Path(value["drv"]).name for value in fixture.values() if "drv" in value
+            Path(value["drv"]).name
+            for key, value in fixture.items()
+            if "drv" in value and key != "curlBin"
         ]
 
-        created_store_paths = [
-            value["path"] for value in fixture.values() if "path" in value
-        ]
         try:
-            # Seed upstream caches and forged/rotated local signatures.
+            # Seed external build tools, upstream caches, and local signature fixtures.
             run([
                 "nix",
                 "build",
                 "--no-link",
+                fixture["curlBin"]["drv"] + "^bin",
                 *[
                     fixture[name]["drv"] + "^out"
                     for name in ("publicLocal", "sharedOci", "forgedSigned")
@@ -1086,7 +1091,7 @@ def _run_suite(args):
                 config_home = work / "config"
                 nix_conf = config_home / "nix/nix.conf"
                 nix_conf.parent.mkdir(parents=True)
-                nix_conf.write_text("# Existing client settings\nconnect-timeout = 7\n")
+                nix_conf.write_text("# Existing client settings\nconnect-timeout = 7\nsandbox-fallback = true\n")
                 with patch.dict(
                     os.environ,
                     {
@@ -1189,7 +1194,6 @@ def _run_suite(args):
                             cwd=ROOT,
                         )
                     )
-                    created_store_paths.append(concurrent_info["out"])
                     concurrent_entry = {
                         "name": "concurrent-item",
                         "drv": concurrent_info["drv"],
@@ -1384,10 +1388,12 @@ def _run_suite(args):
             assert "Queries" not in rendered_summary
             print(rendered_summary)
         finally:
-            present = sorted(valid_paths(created_store_paths))
-            if present:
+            candidates = sorted(
+                str(path) for path in Path("/nix/store").glob(f"*-{work.name}-*")
+            )
+            if candidates:
                 subprocess.run(
-                    ["nix-store", "--delete", *present],
+                    ["nix-store", "--delete", *candidates],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                 )

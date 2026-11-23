@@ -27,7 +27,7 @@ except ImportError:
     from report import load_manifest, record
 
 
-PARALLEL = 4
+PARALLEL = 16
 LARGE_NAR_BYTES = 512 * 1024 ** 2
 BACKGROUND_BATCH = 64
 NIX32_ALPHABET = "0123456789abcdfghijklmnpqrsvwxyz"
@@ -327,7 +327,7 @@ class Publisher:
         groups = (
             [("large", 1, large), ("regular", PARALLEL, regular)]
             if drain
-            else [("regular", 1, regular[:BACKGROUND_BATCH])]
+            else [("regular", PARALLEL, regular[:BACKGROUND_BATCH])]
         )
         upload_env = os.environ | {"ORANC_SIGNING_KEY": self.signing_key}
         for name, parallel, group in groups:
