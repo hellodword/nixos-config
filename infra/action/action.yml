@@ -330,7 +330,6 @@ runs:
         ORANC_PASSWORD: ${{ github.token }}
         INPUT_MANIFEST: ${{ inputs.manifest }}
         INPUT_SELECT: ${{ inputs.select }}
-        INPUT_PRE_BUILD: ${{ inputs.pre-build-command }}
       run: |
         set -euo pipefail
         (
@@ -363,45 +362,9 @@ runs:
         done
 
         nix-ci evaluate --project-dir /workspace --manifest "$INPUT_MANIFEST" --select "$INPUT_SELECT" --state /ci
-
-        python3 - <<'PY'
-        import json
-        from pathlib import Path
-        from urllib.error import HTTPError
-        import urllib.request
-
-        manifest = json.loads(Path("/ci/manifest.json").read_text())
-        cache = manifest.get("cache")
-        if cache:
-            subs = cache.get("readSubstituters") or []
-            keys = cache.get("trustedPublicKeys") or []
-            for uri in subs:
-                if uri.startswith("http://127.0.0.2:"):
-                    try:
-                        with urllib.request.urlopen(uri.rstrip("/") + "/nix-cache-info", timeout=30) as response:
-                            body = response.read().decode()
-                        if "StoreDir: /nix/store" not in body:
-                            raise SystemExit(f"Unexpected nix-cache-info from {uri}")
-                    except HTTPError as error:
-                        if error.code != 404:
-                            raise
-            base_lines = [
-                line for line in Path("/ci/nix-base.conf").read_text().splitlines()
-                if not line.startswith(("substituters =", "trusted-public-keys =", "extra-substituters =", "extra-trusted-public-keys ="))
-            ]
-            base_lines.append("substituters = " + " ".join(subs))
-            base_lines.append("trusted-public-keys = " + " ".join(keys))
-            base_lines.append("netrc-file = /ci/oranc.netrc")
-            Path("/ci/nix.conf").write_text("\n".join(base_lines) + "\n")
-        PY
         BASH
 
-        if [[ -n "$INPUT_PRE_BUILD" ]]; then
-          printf '%s\n' "$INPUT_PRE_BUILD" | docker exec -i "$NIX_CI_CONTAINER" \
-            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin:$PATH"; exec bash -euo pipefail -s'
-        fi
-
-    - name: Verify cache signing key and start incremental publisher
+    - name: Verify cache signing key, initialize target cache, and start incremental publisher
       id: publisher
       if: inputs.mode == 'verify' && inputs.publish-cache == 'true'
       shell: bash
@@ -452,6 +415,95 @@ runs:
             -- sleep infinity
           docker exec "$NIX_CI_PUBLISHER" bash -euo pipefail -c \
             'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci cache start --project-dir /workspace --state /ci'
+        fi
+
+    - name: Configure Nix substituters and run pre-build checks
+      if: inputs.mode == 'verify'
+      shell: bash
+      env:
+        INPUT_PUBLISH_CACHE: ${{ inputs.publish-cache }}
+        INPUT_PRE_BUILD: ${{ inputs.pre-build-command }}
+      run: |
+        set -euo pipefail
+        docker exec -i \
+          --env INPUT_PUBLISH_CACHE \
+          "$NIX_CI_CONTAINER" bash -euo pipefail <<'BASH'
+        export PATH="$(cat /ci/tools)/bin:$PATH"
+        python3 - <<'PY'
+        import base64
+        import json
+        import netrc
+        import os
+        from pathlib import Path
+        from urllib.error import HTTPError
+        import urllib.parse
+        import urllib.request
+
+        manifest = json.loads(Path("/ci/manifest.json").read_text())
+        cache = manifest.get("cache")
+        if cache:
+            subs = cache.get("readSubstituters") or []
+            keys = cache.get("trustedPublicKeys") or []
+            target_uri = (cache.get("targetUri") or "").rstrip("/")
+            publish_cache = os.environ.get("INPUT_PUBLISH_CACHE") == "true"
+
+            auth_header = {}
+            auth_entry = netrc.netrc("/ci/oranc.netrc").authenticators("127.0.0.2")
+            if auth_entry:
+                login, _, password = auth_entry
+                if login and password:
+                    encoded = base64.b64encode(f"{login}:{password}".encode()).decode("ascii")
+                    auth_header = {"Authorization": f"Basic {encoded}"}
+
+            def ghcr_package_missing(proxy_uri):
+                path = urllib.parse.urlsplit(proxy_uri).path.lstrip("/")
+                if not path.startswith("ghcr.io/"):
+                    return False
+                repo = path.removeprefix("ghcr.io/")
+                token_req = urllib.request.Request(
+                    f"https://ghcr.io/token?service=ghcr.io&scope=repository:{repo}:pull",
+                    headers=auth_header,
+                )
+                try:
+                    with urllib.request.urlopen(token_req, timeout=30):
+                        return False
+                except HTTPError as token_error:
+                    return token_error.code in (401, 403)
+
+            active_subs = []
+            for uri in subs:
+                cleaned = uri.rstrip("/")
+                if not cleaned.startswith("http://127.0.0.2:"):
+                    active_subs.append(uri)
+                    continue
+                req = urllib.request.Request(cleaned + "/nix-cache-info", headers=auth_header)
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as response:
+                        body = response.read().decode()
+                    if "StoreDir: /nix/store" not in body:
+                        raise SystemExit(f"Unexpected nix-cache-info from {uri}")
+                    active_subs.append(uri)
+                except HTTPError as error:
+                    if not publish_cache and cleaned == target_uri and (
+                        error.code == 404 or (error.code == 500 and ghcr_package_missing(cleaned))
+                    ):
+                        continue
+                    raise
+
+            base_lines = [
+                line for line in Path("/ci/nix-base.conf").read_text().splitlines()
+                if not line.startswith(("substituters =", "trusted-public-keys =", "extra-substituters =", "extra-trusted-public-keys ="))
+            ]
+            base_lines.append("substituters = " + " ".join(active_subs))
+            base_lines.append("trusted-public-keys = " + " ".join(keys))
+            base_lines.append("netrc-file = /ci/oranc.netrc")
+            Path("/ci/nix.conf").write_text("\n".join(base_lines) + "\n")
+        PY
+        BASH
+
+        if [[ -n "$INPUT_PRE_BUILD" ]]; then
+          printf '%s\n' "$INPUT_PRE_BUILD" | docker exec -i "$NIX_CI_CONTAINER" \
+            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin:$PATH"; exec bash -euo pipefail -s'
         fi
 
     - name: Build manifest execution groups and verify required targets
