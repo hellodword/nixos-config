@@ -227,7 +227,6 @@ runs:
         docker volume create "$NIX_CI_STORE_VOLUME" >/dev/null
         bash "$NIX_CI_INFRA_DIR/ci/container.sh" --detach --name "$NIX_CI_CONTAINER" \
           "${kvm_args[@]}" \
-          --memory=12g --memory-swap=20g \
           --volume "$NIX_CI_STORE_VOLUME:/nix" \
           --volume "$NIX_CI_PROJECT_DIR:/workspace:ro" \
           --volume "$NIX_CI_INFRA_DIR:/infra:ro" \
@@ -507,7 +506,8 @@ runs:
           export ORANC_SIGNING_KEY
           bash "$NIX_CI_INFRA_DIR/ci/container.sh" --detach --name "$NIX_CI_PUBLISHER" \
             --network "container:$NIX_CI_CONTAINER" \
-            --memory=6g --memory-swap=10g \
+            --cpu-shares=256 \
+            --memory=4g --memory-swap=8g \
             --volume "$NIX_CI_STORE_VOLUME:/nix" \
             --volume "$NIX_CI_PROJECT_DIR:/workspace:ro" \
             --volume "$NIX_CI_INFRA_DIR:/infra:ro" \
@@ -574,7 +574,7 @@ runs:
         export ORANC_SIGNING_KEY
         bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i \
           --network "container:$NIX_CI_CONTAINER" \
-          --memory=6g --memory-swap=10g \
+          --memory=4g --memory-swap=8g \
           --volume "$NIX_CI_STORE_VOLUME:/nix" \
           --volume "$NIX_CI_PROJECT_DIR:/workspace:ro" \
           --volume "$NIX_CI_INFRA_DIR:/infra:ro" \

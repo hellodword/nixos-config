@@ -531,7 +531,7 @@ class InventoryProtocol(unittest.TestCase):
                     while True:
                         self.assertIsNone(process.poll(), (root / "wrangler.log").read_text())
                         try:
-                            with urllib.request.urlopen(request, timeout=2, context=tls) as response:
+                            with urllib.request.urlopen(request, timeout=5, context=tls) as response:
                                 self.assertEqual(json.load(response), vps.provider("primary"))
                                 self.assertEqual(response.headers["Cache-Control"], "private, no-store")
                             break
@@ -548,7 +548,7 @@ class InventoryProtocol(unittest.TestCase):
                     ):
                         with self.subTest(agent=agent):
                             request = urllib.request.Request(url, headers={"User-Agent": agent})
-                            with urllib.request.urlopen(request, timeout=2, context=tls) as response:
+                            with urllib.request.urlopen(request, timeout=15, context=tls) as response:
                                 self.assertEqual(response.read().decode(), (root / "subscriptions/primary" / filename).read_text())
                     for mode in model.MODES:
                         directory = root / "subscriptions/primary" / ("" if mode == "hy2" else mode)
@@ -558,7 +558,7 @@ class InventoryProtocol(unittest.TestCase):
                                                  ("shadowrocket-subscribe", "shadowrocket.txt"),
                                                  ("shadowrocket-config", "shadowrocket-config.conf")):
                             request = urllib.request.Request(f"{url}?client={client}&mode={mode}", headers={"User-Agent": "SFI"})
-                            with urllib.request.urlopen(request, timeout=2, context=tls) as response:
+                            with urllib.request.urlopen(request, timeout=15, context=tls) as response:
                                 self.assertEqual(response.read().decode(), (directory / filename).read_text())
                                 if client in {"shadowrocket", "shadowrocket-config", "sing-box"}:
                                     suffix = Path(filename).suffix
@@ -574,9 +574,12 @@ class InventoryProtocol(unittest.TestCase):
                         f"https://127.0.0.1:{port}{route}/00000000-0000-4000-8000-000000000000?client=linux&mode=invalid",
                     ):
                         with self.assertRaises(urllib.error.HTTPError) as denied:
-                            urllib.request.urlopen(probe_url, timeout=2, context=tls)
+                            urllib.request.urlopen(probe_url, timeout=15, context=tls)
                         self.assertEqual(denied.exception.code, 404)
                         denied.exception.close()
+                except BaseException:
+                    print((root / "wrangler.log").read_text(), file=sys.stderr)
+                    raise
                 finally:
                     process.terminate()
                     process.wait(timeout=10)
