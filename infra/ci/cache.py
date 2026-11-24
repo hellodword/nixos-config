@@ -126,6 +126,16 @@ def classify_path_info_signature(store_path, info, trusted_keys):
     return ("UNTRUSTED", None)
 
 
+def derivation_allows_substitutes(node):
+    structured = node.get("structuredAttrs")
+    if isinstance(structured, dict) and "allowSubstitutes" in structured:
+        return bool(structured["allowSubstitutes"])
+    env = node.get("env") or {}
+    if "allowSubstitutes" in env:
+        return env["allowSubstitutes"] not in ("", "0", "false")
+    return True
+
+
 def prepare_inventory(manifest_or_policy):
     roots = manifest_or_policy.get("roots") or []
     cache_cfg = manifest_or_policy.get("cache") or manifest_or_policy
@@ -138,12 +148,6 @@ def prepare_inventory(manifest_or_policy):
         if roots
         else {}
     )
-    outputs = {
-        "/nix/store/" + value["path"]
-        for node in graph.values()
-        for value in node["outputs"].values()
-        if value.get("path")
-    }
     excluded = {store_root(path) for path in excluded_paths}
     if bundles_list:
         bundles = json.loads(
@@ -167,8 +171,21 @@ def prepare_inventory(manifest_or_policy):
             for value in node["outputs"].values()
             if value.get("path")
         )
+    substitutable_drvs = []
+    outputs = set()
+    for drv, node in graph.items():
+        if not derivation_allows_substitutes(node):
+            continue
+        drv_outputs = {
+            "/nix/store/" + value["path"]
+            for value in node["outputs"].values()
+            if value.get("path")
+        }
+        if drv_outputs:
+            substitutable_drvs.append(drv)
+            outputs.update(drv_outputs)
     return {
-        "derivations": sorted(graph),
+        "derivations": sorted(substitutable_drvs),
         "outputs": sorted(outputs),
         "excluded": sorted(excluded),
     }
@@ -327,31 +344,38 @@ class Publisher:
         large, regular = [], []
         for path, info in sorted(
             self.pending.items(),
-            key=lambda item: (item[1]["narSize"], item[0]),
+            key=lambda item: (-item[1]["narSize"], item[0]),
         ):
             (large if info["narSize"] > large_limit else regular).append(path)
-        regular_batches = [
-            regular[index : index + BACKGROUND_BATCH]
-            for index in range(0, len(regular), BACKGROUND_BATCH)
-        ]
-        groups = []
-        if drain:
-            if large:
-                groups.append(("large", 1, large))
-            for batch in regular_batches:
-                max_nar = max(self.pending[path]["narSize"] for path in batch)
-                parallel = max(
-                    1,
-                    min(MAX_PARALLEL, len(batch), MAX_INFLIGHT_NAR_BYTES // max(1, max_nar)),
-                )
-                groups.append(("regular", parallel, batch))
-        elif regular_batches:
-            batch = regular_batches[0]
+        regular_batches = []
+        index = 0
+        while index < len(regular):
+            first_nar = self.pending[regular[index]]["narSize"]
+            first_parallel = max(
+                1,
+                min(MAX_PARALLEL, MAX_INFLIGHT_NAR_BYTES // max(1, first_nar)),
+            )
+            batch_size = (
+                BACKGROUND_BATCH
+                if first_parallel >= MAX_PARALLEL
+                else max(1, first_parallel * 2)
+            )
+            batch = regular[index : index + batch_size]
             max_nar = max(self.pending[path]["narSize"] for path in batch)
             parallel = max(
                 1,
                 min(MAX_PARALLEL, len(batch), MAX_INFLIGHT_NAR_BYTES // max(1, max_nar)),
             )
+            regular_batches.append((parallel, batch))
+            index += len(batch)
+        groups = []
+        if drain:
+            if large:
+                groups.append(("large", 1, large))
+            for parallel, batch in regular_batches:
+                groups.append(("regular", parallel, batch))
+        elif regular_batches:
+            parallel, batch = regular_batches[0]
             groups.append(("regular", parallel, batch))
         upload_env = os.environ | {"ORANC_SIGNING_KEY": self.signing_key}
         for name, parallel, group in groups:

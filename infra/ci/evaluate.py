@@ -266,7 +266,7 @@ def evaluate_manifest(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None
                     for item in private_builds
                 )
             for job_ref in group.get("jobs", []):
-                if isinstance(job_ref, dict):
+                if isinstance(job_ref, dict) and "job" not in job_ref:
                     entries.append({
                         "name": job_ref["name"],
                         "drv": job_ref["drv"],
@@ -275,18 +275,36 @@ def evaluate_manifest(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None
                         "vm": bool(group_vm),
                     })
                 else:
-                    if job_ref not in results:
+                    if isinstance(job_ref, dict):
+                        target_name = job_ref["job"]
+                        prepares_name = job_ref.get("prepares")
+                    else:
+                        target_name = job_ref
+                        prepares_name = None
+                    if target_name not in results:
                         raise RuntimeError(
-                            f"Group '{group_name}' references unknown job '{job_ref}'"
+                            f"Group '{group_name}' references unknown job '{target_name}'"
                         )
-                    evaluated = results[job_ref]
-                    entries.append({
-                        "name": job_ref,
+                    evaluated = results[target_name]
+                    entry_item = {
+                        "name": target_name,
                         "drv": evaluated["drvPath"],
                         "outputs": list(evaluated["outputs"].values()),
                         "required": group_required,
                         "vm": bool(group_vm),
-                    })
+                    }
+                    if prepares_name is not None:
+                        if prepares_name not in results:
+                            raise RuntimeError(
+                                f"Job '{target_name}' in group '{group_name}' prepares unknown job '{prepares_name}'"
+                            )
+                        prepared_eval = results[prepares_name]
+                        entry_item["prepares"] = {
+                            "name": prepares_name,
+                            "drv": prepared_eval["drvPath"],
+                            "outputs": list(prepared_eval["outputs"].values()),
+                        }
+                    entries.append(entry_item)
             resolved_groups.append({
                 "name": group_name,
                 "required": group_required,

@@ -23,7 +23,7 @@
 | Summary、`manifest.json`、`timings.jsonl` | 清单任务组定义、各阶段墙钟耗时、来源归类（`executed` / `cache restored` / `local reuse` / `skipped` / `failed`）与检查点等待时间 |
 | `logs/<pass>/<group>/<attempt>.log` | 普通检查与 VM 的完整构建及串口控制台输出 |
 | `evaluation.jsonl` | `nix-eval-jobs` 逐项求值的 derivation、输出路径、耗时与报错详情 |
-| `publication-paths.jsonl`、`published-paths.json`、`publisher.log`、`cache/status.json` | 远端 `.narinfo` 命中/排除统计、已上传对象清单、NAR 体积及旁路发布容器状态 |
+| `publication-paths.jsonl`、`published-paths.json`、`publisher.log`、`cache/status.json` | 本地签名验签命中/排除统计、已上传对象清单、NAR 体积及旁路发布容器状态 |
 | `resources.jsonl`、`oom-*.log`、`oranc.log`、`monitor.log` | CPU/内存/swap/磁盘采样、容器 cgroup 内存峰值与 `oom_kill` 计数及本地缓存代理请求日志 |
 | `vm/<pass>/<check>/<attempt>/` | VM 测试导出的截图、OCR 记录、分阶段流量统计、应用工作流状态与失败现场 |
 
@@ -37,10 +37,10 @@
 
 | 阶段 | 内容 |
 | --- | --- |
-| 准备与启动缓存 | 磁盘清理、swap/KVM/Nix 卷初始化，按 `infra#oranc.outPath` 恢复或构建 `oranc` 闭包（`master` 未命中且归档不超过 `512 MiB` 时写回 Actions Cache） |
-| 缓存代理与清单求值 | 在 `127.0.0.2:37515` 启动本地 `oranc` 读取代理并探测 `/nix-cache-info` 校验代理连通性，运行 `nix-ci evaluate` 写出 `manifest.json`，执行 `lint`、`cache` 与 `updates` 集成检查 |
-| `laptop` 执行组 | 依次构建 `private`、`dependencies`（含全部非 VM 检查与 5 个 VM `.driver`），完成依赖检查点后顺序执行 `vm-network-backup`、`vm-desktop`、`vm-applications` |
-| `remote` 执行组 | 先构建无 KVM 需求的 `dependencies`，再在 `kvm = true` 组构建 `vm-vps-driver`（含 `vpsBootstrap` BIOS/UEFI 磁盘镜像）并执行 `vm-vps` |
+| 准备与启动缓存 | 磁盘清理、swap/KVM/Nix 卷初始化，按 `infra#oranc.outPath` 恢复或构建 `oranc` 闭包（`master` 发布完成后将未命中且归档不超过 `512 MiB` 的签名引导缓存写回 Actions Cache） |
+| 缓存代理与清单求值 | 在 `127.0.0.2:37515` 启动本地 `oranc` 读取代理，运行 `nix-ci evaluate` 写出 `manifest.json`，完成目标缓存初始化与 `/nix-cache-info` 连通性探测后执行 `lint`、`cache` 与 `updates` 集成检查 |
+| `laptop` 执行组 | 依次构建 `private`、`dependencies`（含全部非 VM 检查与未命中缓存 VM 的 `.driver` 准备目标），完成依赖检查点后顺序执行 `vm-network-backup`、`vm-desktop`、`vm-applications` |
+| `remote` 执行组 | 先构建无 KVM 需求的 `dependencies`，当 `vm-vps` 未命中缓存时在 `kvm = true` 组构建 `vm-vps-driver`（含 `vpsBootstrap` BIOS/UEFI 磁盘镜像）并执行 `vm-vps` |
 | 汇总与发布收尾 | `nix-ci report verify` 核对必需目标，完成最终检查点上传、采样资源并输出 Markdown Summary |
 
 ## 首次启用步骤

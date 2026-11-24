@@ -33,8 +33,11 @@ in
     install -m 0600 ${vmSopsFixture}/keys.txt ${pkgs.lib.escapeShellArg keyDestination}
   '';
   system.activationScripts.setupSecrets.deps = [ "vmSopsKey" ];
-  sops.secrets.vm-smoke = {
-    sopsFile = "${vmSopsFixture}/smoke.sops.yaml";
-    key = "smoke";
+  sops = {
+    validateSopsFiles = false;
+    secrets.vm-smoke = {
+      sopsFile = "${vmSopsFixture}/smoke.sops.yaml";
+      key = "smoke";
+    };
   };
 }

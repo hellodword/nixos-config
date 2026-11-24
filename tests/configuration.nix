@@ -150,15 +150,25 @@ let
         (if name == "headless" then minimalHeadless.config.system.build.toplevel.drvPath else "")
       ]
       (
-        pkgs.runCommand "configuration-${name}.json" (
-          {
-            scenario = pkgs.writeText "scenario.json" (builtins.toJSON { inherit name actual; });
-          }
-          // lib.optionalAttrs (name == "full") {
-            credentials = config.system.build.sops-nix-manifest;
-            loginCredentials = config.system.build.sops-nix-users-manifest;
-          }
-        ) ''cp "$scenario" "$out"''
+        pkgs.runCommand "configuration-${name}.json"
+          (
+            {
+              scenario = pkgs.writeText "scenario.json" (builtins.toJSON { inherit name actual; });
+            }
+            // lib.optionalAttrs (name == "full") {
+              credentials = config.system.build.sops-nix-manifest;
+              loginCredentials = config.system.build.sops-nix-users-manifest;
+            }
+          )
+          (
+            ''
+              cp "$scenario" "$out"
+            ''
+            + lib.optionalString (name == "full") ''
+              ${config.sops.validationPackage}/bin/sops-install-secrets -check-mode=sopsfile "$credentials"
+              ${config.sops.validationPackage}/bin/sops-install-secrets -check-mode=sopsfile "$loginCredentials"
+            ''
+          )
       );
 in
 lib.mapAttrs' (name: spec: lib.nameValuePair "configuration-${name}" (evaluate name spec)) cases

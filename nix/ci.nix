@@ -59,6 +59,10 @@ let
       value = checks.${name}.driver;
     }) vmNames
   );
+  driverJobs = map (name: {
+    job = "${name}-driver";
+    prepares = name;
+  }) vmNames;
   cacheIdentity = builtins.fromJSON (builtins.readFile ./cache-identity.json);
   cacheConfig = import ./cache-config.nix;
   cachePolicy = import ./cache-policy.nix { inherit flake hostName scope; };
@@ -93,7 +97,7 @@ assert
         }
         {
           name = "vm-vps-driver";
-          jobs = [ "vm-vps-driver" ];
+          jobs = driverJobs;
           required = true;
           vm = null;
           kvm = true;
@@ -120,7 +124,7 @@ assert
         }
         {
           name = "dependencies";
-          jobs = builtins.attrNames products ++ checkNames ++ builtins.attrNames drivers;
+          jobs = builtins.attrNames products ++ checkNames ++ driverJobs;
           required = true;
           vm = null;
           kvm = false;

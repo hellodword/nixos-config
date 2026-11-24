@@ -471,6 +471,11 @@ def _run_suite(args):
           forgedSigned = mkItem "forged-signed" "locally signed with forged and rotated keys";
           buildInput = builtins.toFile "${prefix}-build-input" "build input";
           runtimeInput = mkItem "runtime-input" "runtime input";
+          localOnly = pkgs.writeText "${prefix}-local-only" "standalone local wrapper";
+          referencedLocal = pkgs.writeText "${prefix}-referenced-local" "runtime-referenced local config";
+          mediumRegular = mkItem "medium-regular" (builtins.concatStringsSep "" (builtins.genList (_: "m") 1024));
+          tinyRegular = mkItem "tiny-regular" "t";
+          uncachedTarget = mkItem "uncached-target" "target not yet in cache";
           innerPayload = builtins.toFile "${prefix}-inner-payload" "restricted inner payload";
           excludedWrapper = builtins.toFile "${prefix}-excluded-wrapper" "exec ${innerPayload}";
           source = mkItem "source" "synthetic restricted content";
@@ -493,10 +498,10 @@ def _run_suite(args):
           root = pkgs.runCommand "${prefix}-result" {} ''
             test "$(cat ${driver})" = ready
             test "$(cat ${buildInput})" = 'build input'
-            printf '%s' '${child}; ${large}; ${publicLocal}; ${sharedOci}; ${forgedSigned}; ${runtimeInput}; prepared: ${bundle}' > $out
+            printf '%s' '${child}; ${large}; ${publicLocal}; ${sharedOci}; ${forgedSigned}; ${runtimeInput}; ${referencedLocal}; prepared: ${bundle}' > $out
           '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
-          { inherit child large late recovered endPhaseItem publicLocal sharedOci forgedSigned runtimeInput source restricted bundle driver root failure; }
+          { inherit child large late recovered endPhaseItem publicLocal sharedOci forgedSigned runtimeInput localOnly referencedLocal mediumRegular tinyRegular uncachedTarget source restricted bundle driver root failure; }
           // {
             buildInput.path = buildInput;
             innerPayload.path = innerPayload;
@@ -560,7 +565,7 @@ def _run_suite(args):
         manifest = {
             "roots": [
                 fixture[name]["drv"]
-                for name in ("root", "late", "recovered", "endPhaseItem")
+                for name in ("root", "localOnly", "late", "recovered", "endPhaseItem")
             ],
             "groups": [
                 {
@@ -593,13 +598,14 @@ def _run_suite(args):
         assert {fixture[name]["path"] for name in ("source", "restricted", "bundle")} <= set(
             inventory["excluded"]
         )
+        assert {fixture[name]["path"] for name in ("localOnly", "referencedLocal")}.isdisjoint(
+            inventory["outputs"]
+        )
         inventory["outputs"] = [
             path for path in inventory["outputs"] if f"-{work.name}-" in path
         ]
         inventory["derivations"] = [
-            Path(value["drv"]).name
-            for key, value in fixture.items()
-            if "drv" in value and key != "curlBin"
+            drv for drv in inventory["derivations"] if f"-{work.name}-" in drv
         ]
 
         try:
@@ -611,7 +617,7 @@ def _run_suite(args):
                 fixture["curlBin"]["drv"] + "^bin",
                 *[
                     fixture[name]["drv"] + "^out"
-                    for name in ("publicLocal", "sharedOci", "forgedSigned")
+                    for name in ("publicLocal", "sharedOci", "forgedSigned", "localOnly")
                 ],
             ])
 
@@ -958,8 +964,10 @@ def _run_suite(args):
                     checkpoint(state, "results", finish=True)
                     published_incremental = set(json.loads(receipt.read_text()))
                     assert published_incremental - first == {
-                        fixture[name]["path"] for name in ("root", "runtimeInput")
+                        fixture[name]["path"] for name in ("root", "runtimeInput", "referencedLocal")
                     }
+                    assert fixture["localOnly"]["path"] not in published_incremental
+                    verify(target_uri, [fixture["root"]["path"]], public)
                     events = read_records(state / "timings.jsonl")
                     publications = [event for event in events if event["kind"] == "publication"]
                     path_records = read_records(state / "publication-paths.jsonl")
@@ -1017,6 +1025,7 @@ def _run_suite(args):
                             "large",
                             "forgedSigned",
                             "runtimeInput",
+                            "referencedLocal",
                             "publicLocal",
                             "sharedOci",
                         )
@@ -1034,7 +1043,11 @@ def _run_suite(args):
 
                 eop_state = work / "end-of-phase"
                 eop_manifest = {
-                    "roots": [fixture["root"]["drv"], fixture["endPhaseItem"]["drv"]],
+                    "roots": [
+                        fixture["root"]["drv"],
+                        fixture["localOnly"]["drv"],
+                        fixture["endPhaseItem"]["drv"],
+                    ],
                     "cache": {
                         "registry": f"127.0.0.1:{registry_port}",
                         "repository": "synthetic/cache-test",
@@ -1077,7 +1090,15 @@ def _run_suite(args):
                 }
                 assert eop_target_paths == {
                     fixture[name]["path"]
-                    for name in ("root", "driver", "child", "large", "forgedSigned", "runtimeInput")
+                    for name in (
+                        "root",
+                        "driver",
+                        "child",
+                        "large",
+                        "forgedSigned",
+                        "runtimeInput",
+                        "referencedLocal",
+                    )
                 }
                 assert sum(e["upstreamHits"] for e in eop_pubs) == len(eop_upstream_paths)
                 assert sum(e["targetHits"] for e in eop_pubs) == len(eop_target_paths)
@@ -1093,6 +1114,7 @@ def _run_suite(args):
                         "large",
                         "forgedSigned",
                         "runtimeInput",
+                        "referencedLocal",
                         "endPhaseItem",
                         "publicLocal",
                         "sharedOci",
@@ -1194,6 +1216,95 @@ def _run_suite(args):
                     re_published = cache.publish_once(zero_dup_state, eop_cfg, phase="post-restore")
                 assert re_published == [], f"Expected zero duplicate uploads after restore, got {re_published}"
                 assert not (zero_dup_state / "published-paths.json").exists()
+
+                # 4b. Background priority uploads larger regular artifacts ahead of smaller ones,
+                #     and `prepares` skips driver realization when its downstream target is cached.
+                run([
+                    "nix",
+                    "build",
+                    "--no-link",
+                    fixture["mediumRegular"]["drv"] + "^out",
+                    fixture["tinyRegular"]["drv"] + "^out",
+                ])
+                priority_state = work / "background-priority"
+                with (
+                    patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}),
+                    patch.object(cache, "BACKGROUND_BATCH", 1),
+                ):
+                    priority_pub = cache.Publisher(
+                        priority_state,
+                        {
+                            "inventory": {
+                                "outputs": [
+                                    fixture["mediumRegular"]["path"],
+                                    fixture["tinyRegular"]["path"],
+                                ],
+                                "derivations": [],
+                                "excluded": [],
+                            },
+                            **publisher_settings,
+                        },
+                    )
+                    priority_pub.reconcile()
+                    priority_pub.upload(drain=False)
+                    assert priority_pub.published == {fixture["mediumRegular"]["path"]}
+                    assert set(priority_pub.pending) == {fixture["tinyRegular"]["path"]}
+
+                run(["nix-store", "--delete", fixture["root"]["path"], fixture["driver"]["path"]])
+                prepares_project = work / "prepares-project"
+                (prepares_project / "nix").mkdir(parents=True, exist_ok=True)
+                (prepares_project / "flake.nix").write_text(
+                    "{\n"
+                    "  outputs = { self }: {\n"
+                    '    outPath = builtins.storePath "' + fixture["endPhaseItem"]["path"] + '";\n'
+                    "  };\n"
+                    "}\n"
+                )
+                (prepares_project / "nix/ci.nix").write_text(
+                    "{ flake, system ? \"x86_64-linux\", select ? {} }: {\n"
+                    "  jobs = {\n"
+                    "    cached-vm = import " + json.dumps(fixture["root"]["drv"]) + ";\n"
+                    "    cached-vm-driver = import " + json.dumps(fixture["driver"]["drv"]) + ";\n"
+                    "    uncached-vm = import " + json.dumps(fixture["uncachedTarget"]["drv"]) + ";\n"
+                    "    uncached-vm-driver = import " + json.dumps(fixture["tinyRegular"]["drv"]) + ";\n"
+                    "  };\n"
+                    "  groups = [\n"
+                    "    {\n"
+                    "      name = \"drivers\";\n"
+                    "      jobs = [\n"
+                    "        { job = \"cached-vm-driver\"; prepares = \"cached-vm\"; }\n"
+                    "        { job = \"uncached-vm-driver\"; prepares = \"uncached-vm\"; }\n"
+                    "      ];\n"
+                    "      required = true; vm = null; kvm = false; maxJobs = 1;\n"
+                    "    }\n"
+                    "    {\n"
+                    "      name = \"vms\";\n"
+                    "      jobs = [ \"cached-vm\" \"uncached-vm\" ];\n"
+                    "      required = true; vm = \"nixos\"; kvm = false; maxJobs = 1;\n"
+                    "    }\n"
+                    "  ];\n"
+                    "  cache = null;\n"
+                    "  update = null;\n"
+                    "}\n"
+                )
+                run(["nix-store", "--delete", fixture["tinyRegular"]["path"]])
+                prepares_state = work / "prepares-state"
+                evaluate.evaluate_manifest(project_dir=prepares_project, state=prepares_state)
+                with patch.dict(os.environ, {"NIX_CONFIG": client_nix_config}):
+                    build.build_group(state=prepares_state, group_name="drivers")
+                    assert valid_paths([fixture["driver"]["path"]]) == set()
+                    assert valid_paths([fixture["tinyRegular"]["path"]]) == {fixture["tinyRegular"]["path"]}
+                    build.build_group(state=prepares_state, group_name="vms")
+                prepares_targets = {
+                    event["name"]: event
+                    for event in read_records(prepares_state / "timings.jsonl")
+                    if event["kind"] == "target"
+                }
+                assert prepares_targets["cached-vm-driver"]["source"] == "cache restored"
+                assert prepares_targets["uncached-vm-driver"]["source"] == "executed"
+                assert prepares_targets["cached-vm"]["source"] == "cache restored"
+                assert prepares_targets["uncached-vm"]["source"] == "executed"
+                report.verify_results(prepares_state)
 
                 # 5. Authenticated recovery & interrupted NAR fallback.
                 authenticated_recovery(

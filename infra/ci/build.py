@@ -35,6 +35,54 @@ def valid_paths(paths):
     return set(paths) - set(result.stdout.splitlines())
 
 
+def resolve_prepared_entries(entries):
+    """Partition entries into active build entries and bypassed entries whose prepared targets are cached."""
+    prepared_candidates = [entry for entry in entries if entry.get("prepares")]
+    if not prepared_candidates:
+        return list(entries), {}, 0.0
+
+    check_start = time.monotonic()
+    target_outputs = [
+        path for entry in prepared_candidates for path in entry["prepares"]["outputs"]
+    ]
+    already_valid = valid_paths(target_outputs)
+    cached_drvs = set()
+    pending_drvs = []
+    for entry in prepared_candidates:
+        prep = entry["prepares"]
+        if set(prep["outputs"]) <= already_valid:
+            cached_drvs.add(prep["drv"])
+        elif prep["drv"] not in pending_drvs:
+            pending_drvs.append(prep["drv"])
+
+    if pending_drvs:
+        probe = subprocess.run(
+            ["nix", "build", "--dry-run", *(drv + "^*" for drv in pending_drvs)],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0:
+            will_build = {
+                line.strip()
+                for line in probe.stderr.splitlines()
+                if line.strip().startswith("/") and line.strip().endswith(".drv")
+            }
+            for drv in pending_drvs:
+                if drv not in will_build:
+                    cached_drvs.add(drv)
+
+    elapsed = time.monotonic() - check_start
+    active = []
+    bypassed = {}
+    for entry in entries:
+        prep = entry.get("prepares")
+        if prep and prep["drv"] in cached_drvs:
+            bypassed[(entry["drv"], tuple(sorted(entry.get("outputs") or ())))] = elapsed
+        else:
+            active.append(entry)
+    return active, bypassed, elapsed
+
+
 def collect_vm_evidence(entries, state, context):
     """Copy guest screenshots, OCR JSON, and diagnostics from realized/retained VM outputs."""
     state = Path(state)
@@ -106,7 +154,8 @@ def run_build(
     started, start = utc_now(), time.monotonic()
     record(state, {**context, "kind": "build-start", "started": started, "log": str(log_path)})
 
-    paths = [path for entry in entries for path in entry["outputs"]]
+    active_entries, bypassed_entries, _ = resolve_prepared_entries(entries)
+    paths = [path for entry in active_entries for path in entry["outputs"]]
     present_before = valid_paths(paths)
     active, activities, build_groups = {}, [], set()
     command = ["nix", "build", "--no-link", "--print-build-logs", "--keep-going"]
@@ -115,12 +164,12 @@ def run_build(
         command += ["--option", "post-build-hook", str(hook.resolve())]
     if kvm:
         command += ["--option", "system-features", "nixos-test benchmark big-parallel kvm"]
-    has_vm = vm_mode is not None or any(entry.get("vm") for entry in entries)
+    has_vm = vm_mode is not None or any(entry.get("vm") for entry in active_entries)
     if has_vm:
         command += ["--keep-failed"]
     if jobs is not None:
         command += ["--max-jobs", str(jobs)]
-    command += [entry["drv"] + "^*" for entry in entries]
+    command += [entry["drv"] + "^*" for entry in active_entries]
 
     collection_error = None
     first_error = None
@@ -169,65 +218,69 @@ def run_build(
             if "raw_msg" in event or message.startswith("error:"):
                 report_error(event.get("raw_msg", message), now)
 
-    with tempfile.NamedTemporaryFile(dir=state, prefix="nix-events-", suffix=".jsonl") as log:
-        with Path(log.name).open() as stream:
-            relay = subprocess.Popen(["tee", str(console_log)], stdin=subprocess.PIPE)
-            process = None
-            pending = ""
-            try:
-                process = subprocess.Popen(
-                    [*command, "--json-log-path", log.name],
-                    stdout=relay.stdin,
-                    stderr=subprocess.STDOUT,
-                )
-                relay.stdin.close()
-                while True:
-                    finished = process.poll() is not None
-                    pending += stream.read()
-                    lines = pending.split("\n")
-                    pending = lines.pop()
-                    for line in lines:
-                        if line.strip():
-                            consume(line)
-                    if finished:
-                        break
-                    time.sleep(0.05)
-                returncode = process.wait()
-                if returncode:
-                    report_error(
-                        f"Nix exited with status {returncode} in {pass_name}/{phase}. Log: {log_path}",
-                        time.monotonic(),
-                    )
-            finally:
-                relay.stdin.close()
-                if process is not None and process.poll() is None:
-                    process.terminate()
-                    try:
-                        process.wait(timeout=10)
-                    except subprocess.TimeoutExpired:
-                        process.kill()
-                        process.wait()
+    if not active_entries:
+        console_log.write_text("All prepared targets in group are already cached.\n")
+        returncode = 0
+    else:
+        with tempfile.NamedTemporaryFile(dir=state, prefix="nix-events-", suffix=".jsonl") as log:
+            with Path(log.name).open() as stream:
+                relay = subprocess.Popen(["tee", str(console_log)], stdin=subprocess.PIPE)
+                process = None
+                pending = ""
                 try:
-                    relay_status = relay.wait(timeout=10)
-                    if relay_status:
-                        raise RuntimeError(f"Build log capture exited with status {relay_status}: {log_path}")
-                except Exception as error:
-                    relay.kill()
-                    relay.wait()
-                    collection_error = error
-                    record(state, {**context, "kind": "evidence-error", "error": str(error)})
-                    print(f"Build log capture failed: {error}", flush=True)
-                if has_vm:
+                    process = subprocess.Popen(
+                        [*command, "--json-log-path", log.name],
+                        stdout=relay.stdin,
+                        stderr=subprocess.STDOUT,
+                    )
+                    relay.stdin.close()
+                    while True:
+                        finished = process.poll() is not None
+                        pending += stream.read()
+                        lines = pending.split("\n")
+                        pending = lines.pop()
+                        for line in lines:
+                            if line.strip():
+                                consume(line)
+                        if finished:
+                            break
+                        time.sleep(0.05)
+                    returncode = process.wait()
+                    if returncode:
+                        report_error(
+                            f"Nix exited with status {returncode} in {pass_name}/{phase}. Log: {log_path}",
+                            time.monotonic(),
+                        )
+                finally:
+                    relay.stdin.close()
+                    if process is not None and process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.wait()
                     try:
-                        vm_entries = [
-                            {**entry, "vm": True} if vm_mode is not None else entry
-                            for entry in entries
-                        ]
-                        collect_vm_evidence(vm_entries, state, context)
+                        relay_status = relay.wait(timeout=10)
+                        if relay_status:
+                            raise RuntimeError(f"Build log capture exited with status {relay_status}: {log_path}")
                     except Exception as error:
+                        relay.kill()
+                        relay.wait()
                         collection_error = error
                         record(state, {**context, "kind": "evidence-error", "error": str(error)})
-                        print(f"VM evidence collection failed: {error}", flush=True)
+                        print(f"Build log capture failed: {error}", flush=True)
+                    if has_vm:
+                        try:
+                            vm_entries = [
+                                {**entry, "vm": True} if vm_mode is not None else entry
+                                for entry in active_entries
+                            ]
+                            collect_vm_evidence(vm_entries, state, context)
+                        except Exception as error:
+                            collection_error = error
+                            record(state, {**context, "kind": "evidence-error", "error": str(error)})
+                            print(f"VM evidence collection failed: {error}", flush=True)
 
     end = time.monotonic()
     realized = valid_paths(paths)
@@ -262,6 +315,21 @@ def run_build(
 
     any_dependency_built = any(a["type"] == BUILD for a in activities)
     for entry in entries:
+        entry_key = (entry["drv"], tuple(sorted(entry.get("outputs") or ())))
+        if entry_key in bypassed_entries:
+            result = {
+                **context,
+                "kind": "target",
+                **entry,
+                **({"vm": True} if vm_mode is not None else {}),
+                "source": "cache restored",
+                "success": True,
+                "buildSeconds": None,
+                "restoreSeconds": bypassed_entries[entry_key],
+            }
+            record(state, result)
+            continue
+
         outputs_set = set(entry["outputs"])
         all_realized = outputs_set <= realized
         built = [a for a in activities if a["type"] == BUILD and a["path"] == entry["drv"]]

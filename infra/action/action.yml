@@ -248,7 +248,9 @@ runs:
         docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
           'nix eval --no-update-lock-file --raw /infra#oranc.outPath > /ci/oranc-root'
         oranc_root=$(cat "$NIX_CI_STATE/oranc-root")
-        printf 'key=oranc-%s\n' "${oranc_root##*/}" >> "$GITHUB_OUTPUT"
+        cache_key="oranc-signed-${oranc_root##*/}"
+        printf '%s\n' "$cache_key" > "$NIX_CI_STATE/oranc-cache-key"
+        printf 'key=%s\n' "$cache_key" >> "$GITHUB_OUTPUT"
 
     - name: Restore oranc bootstrap cache
       id: oranc-restore
@@ -263,8 +265,11 @@ runs:
       id: oranc
       if: inputs.mode == 'verify'
       shell: bash
+      env:
+        ORANC_RESTORE_HIT: ${{ steps.oranc-restore.outputs.cache-hit }}
       run: |
         set -euo pipefail
+        printf '%s\n' "$ORANC_RESTORE_HIT" > "$NIX_CI_STATE/oranc-cache-hit"
         python3 "$NIX_CI_INFRA_DIR/ci" report run --state "$NIX_CI_STATE" --phase oranc -- \
           docker exec -i "$NIX_CI_CONTAINER" bash -euo pipefail <<'BASH'
         expected_oranc=$(cat /ci/oranc-root)
@@ -283,43 +288,6 @@ runs:
         printf '%s\n' "$oranc_root/bin/oranc" > /ci/oranc
         nix path-info --closure-size "$oranc_root" > /ci/oranc-size
         BASH
-
-    - name: Export oranc bootstrap archive
-      id: oranc-export
-      if: inputs.mode == 'verify' && github.ref == 'refs/heads/master' && steps.oranc-restore.outputs.cache-hit != 'true'
-      continue-on-error: true
-      shell: bash
-      run: |
-        set -euo pipefail
-        read -r _ closure_bytes < "$NIX_CI_STATE/oranc-size"
-        if (( closure_bytes > ORANC_CACHE_MAX_BYTES )); then
-          echo 'skip-reason=Runtime closure exceeds the size limit' >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-        HOST_UID="$(id -u)"
-        HOST_GID="$(id -g)"
-        docker exec --env HOST_UID="$HOST_UID" --env HOST_GID="$HOST_GID" "$NIX_CI_CONTAINER" bash -euo pipefail -c '
-          rm -rf /oranc-cache/*
-          nix copy --to "file:///oranc-cache?compression=none" "$(cat /ci/oranc-root)"
-          chown -R "$HOST_UID:$HOST_GID" /oranc-cache
-        '
-        archive_bytes=$(du -sb "$NIX_CI_ORANC_CACHE" | cut -f1)
-        echo "archive-bytes=$archive_bytes" >> "$GITHUB_OUTPUT"
-        if (( archive_bytes > ORANC_CACHE_MAX_BYTES )); then
-          rm -rf -- "$NIX_CI_ORANC_CACHE"/*
-          echo 'skip-reason=Exported cache exceeds the size limit' >> "$GITHUB_OUTPUT"
-          exit 0
-        fi
-        echo 'ready=true' >> "$GITHUB_OUTPUT"
-
-    - name: Save oranc bootstrap cache
-      id: oranc-save
-      if: inputs.mode == 'verify' && github.ref == 'refs/heads/master' && steps.oranc-export.outputs.ready == 'true'
-      uses: actions/cache/save@v6
-      continue-on-error: true
-      with:
-        path: ${{ runner.temp }}/nix-ci-oranc-cache
-        key: ${{ steps.oranc-key.outputs.key }}
 
     - name: Start local oranc proxy, build ci-tools, and evaluate manifest
       if: inputs.mode == 'verify'
@@ -595,6 +563,67 @@ runs:
         "$(cat /ci/oranc)" push --registry "$registry" --repository "$repository" --parallel 1 initialize --priority 41
         nix-ci cache publish --project-dir /workspace --state /ci
         BASH
+
+    - name: Export signed oranc bootstrap archive
+      id: oranc-export
+      if: github.ref == 'refs/heads/master' && ((inputs.mode == 'verify' && inputs.publish-cache == 'true') || inputs.mode == 'publish-cache')
+      continue-on-error: true
+      shell: bash
+      env:
+        ORANC_SIGNING_KEY: ${{ inputs.signing-key }}
+      run: |
+        set -euo pipefail
+        if [[ "$(cat "$NIX_CI_STATE/oranc-cache-hit" 2>/dev/null || true)" == true ]]; then
+          exit 0
+        fi
+        if [[ ! -f "$NIX_CI_STATE/oranc-size" || ! -f "$NIX_CI_STATE/oranc-cache-key" ]]; then
+          exit 0
+        fi
+        read -r _ closure_bytes < "$NIX_CI_STATE/oranc-size"
+        if (( closure_bytes > ORANC_CACHE_MAX_BYTES )); then
+          echo 'skip-reason=Runtime closure exceeds the size limit' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        ORANC_SIGNING_KEY="$(printf '%s' "$ORANC_SIGNING_KEY" | tr -d '[:space:]')"
+        if [[ -z "$ORANC_SIGNING_KEY" ]]; then
+          exit 0
+        fi
+        HOST_UID="$(id -u)"
+        HOST_GID="$(id -g)"
+        export ORANC_SIGNING_KEY HOST_UID HOST_GID
+        bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i \
+          --volume "$NIX_CI_STORE_VOLUME:/nix:ro" \
+          --volume "$NIX_CI_STATE:/ci:ro" \
+          --volume "$NIX_CI_ORANC_CACHE:/oranc-cache" \
+          --env ORANC_SIGNING_KEY \
+          --env HOST_UID \
+          --env HOST_GID \
+          -- bash -euo pipefail <<'BASH'
+        key_file=$(mktemp)
+        trap 'rm -f -- "$key_file"; chown -R "$HOST_UID:$HOST_GID" /oranc-cache' EXIT
+        chmod 600 "$key_file"
+        printf '%s\n' "$ORANC_SIGNING_KEY" > "$key_file"
+        rm -rf /oranc-cache/*
+        nix copy --to "file:///oranc-cache?secret-key=$key_file&compression=none" "$(cat /ci/oranc-root)"
+        BASH
+        archive_bytes=$(du -sb "$NIX_CI_ORANC_CACHE" | cut -f1)
+        echo "archive-bytes=$archive_bytes" >> "$GITHUB_OUTPUT"
+        if (( archive_bytes > ORANC_CACHE_MAX_BYTES )); then
+          rm -rf -- "$NIX_CI_ORANC_CACHE"/*
+          echo 'skip-reason=Exported cache exceeds the size limit' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        printf 'key=%s\n' "$(cat "$NIX_CI_STATE/oranc-cache-key")" >> "$GITHUB_OUTPUT"
+        echo 'ready=true' >> "$GITHUB_OUTPUT"
+
+    - name: Save oranc bootstrap cache
+      id: oranc-save
+      if: steps.oranc-export.outputs.ready == 'true'
+      uses: actions/cache/save@v6
+      continue-on-error: true
+      with:
+        path: ${{ runner.temp }}/nix-ci-oranc-cache
+        key: ${{ steps.oranc-export.outputs.key }}
 
     - name: Stop incremental publisher, collect diagnostics, and render summary
       if: always() && ((inputs.mode == 'verify' && inputs.keep-container != 'true') || inputs.mode == 'finalize')

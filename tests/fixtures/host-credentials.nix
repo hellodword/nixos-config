@@ -60,6 +60,7 @@ in
       ];
     })
   ];
+  sops.validateSopsFiles = false;
   networking.networkmanager.ensureProfiles.profiles.fixture = {
     connection = {
       id = "fixture";
