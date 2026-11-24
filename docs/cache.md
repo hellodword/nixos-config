@@ -48,7 +48,7 @@ PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input ni
 
 - **源码树、受限载荷隔离与可替代性裁剪**：`flake.outPath` 始终列入 `excludedPaths`；`mkPolicy` 对候选包与 `extraRestricted`（含 `anytype`、`anytype-heart`、`google-chrome`、`vscode` 与 `vscodeServer`）递归解包 `passthru.unwrapped` / `unwrapped` 检查许可证可再分发性，并对 `bundles`（测试容器镜像与 VM 启动磁盘）做输入图传染分析，一并排除复制了受限内容的中间产物。`prepare_inventory()` 仅将允许二进制替代（`allowSubstitutes != false`）且未排除的 derivation 输出作为发布种子；仅在本地拼装且未被任何可替代产物运行时引用的包装与单元文件不进入上传队列。
 - **引用图边界截断**：`Publisher.discover()` 递归展开可替代产物的运行时 `references` 以保证二进制缓存闭包完整，遇到 `excluded` 路径时记录排除统计并立即停止展开其内部引用。
-- **本地 `path-info` Ed25519 验签分流**：`nix build` 在 `require-sigs = true` 下统一从公共只读 substituters、共享缓存与目标缓存并发恢复已有产物并写入 `/nix/var/nix/db/db.sqlite`（CI 中 `oranc` 引导缓存同样通过签名 `file://` binary cache 格式保留目标签名）。发布器读取本地 `nix path-info --json` 元数据，在内存中以 `trustedPublicKeys` 校验每条路径的 Ed25519 指纹签名：
+- **本地 `path-info` Ed25519 验签分流**：`nix build` 在 `require-sigs = true` 下统一从公共只读 substituters、共享缓存与目标缓存并发恢复已有产物并写入 `/nix/var/nix/db/db.sqlite`。发布器读取本地 `nix path-info --json` 元数据，在内存中以 `trustedPublicKeys` 校验每条路径的 Ed25519 指纹签名：
   - 通过当前目标缓存公钥验签的路径计入 `targetHits` 并跳过上传；
   - 通过其他可信上游或共享缓存公钥验签的路径计入 `upstreamHits` 并跳过上传；
   - 无可信签名的本地构建路径（含密钥轮换后仅带旧签名的路径）列入待上传队列，常规产物按 NAR 体积从大到小优先推送，超大镜像（`> 512 MiB`）在检查点阶段串行推送，统一由 `oranc push --no-closure --already-signed --excluded-signing-key-pattern 'a^' --zstd-level 3 --max-retry 3` 签名写入目标 GHCR 仓库。

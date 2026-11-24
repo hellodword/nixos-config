@@ -37,7 +37,7 @@
 
 | 阶段 | 内容 |
 | --- | --- |
-| 准备与启动缓存 | 磁盘清理、swap/KVM/Nix 卷初始化，按 `infra#oranc.outPath` 恢复或构建 `oranc` 闭包（`master` 发布完成后将未命中且归档不超过 `512 MiB` 的签名引导缓存写回 Actions Cache） |
+| 准备与启动缓存 | 磁盘清理、swap/KVM/Nix 卷初始化，按 `infra#oranc.outPath` 恢复或构建 `oranc` 闭包（`master` 未命中且归档不超过 `512 MiB` 时写回 Actions Cache） |
 | 缓存代理与清单求值 | 在 `127.0.0.2:37515` 启动本地 `oranc` 读取代理，运行 `nix-ci evaluate` 写出 `manifest.json`，完成目标缓存初始化与 `/nix-cache-info` 连通性探测后执行 `lint`、`cache` 与 `updates` 集成检查 |
 | `laptop` 执行组 | 依次构建 `private`、`dependencies`（含全部非 VM 检查与未命中缓存 VM 的 `.driver` 准备目标），完成依赖检查点后顺序执行 `vm-network-backup`、`vm-desktop`、`vm-applications` |
 | `remote` 执行组 | 先构建无 KVM 需求的 `dependencies`，当 `vm-vps` 未命中缓存时在 `kvm = true` 组构建 `vm-vps-driver`（含 `vpsBootstrap` BIOS/UEFI 磁盘镜像）并执行 `vm-vps` |
