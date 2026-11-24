@@ -136,6 +136,25 @@ def derivation_allows_substitutes(node):
     return True
 
 
+def derivation_prefers_local_build(node):
+    structured = node.get("structuredAttrs")
+    if isinstance(structured, dict) and "preferLocalBuild" in structured:
+        return bool(structured["preferLocalBuild"])
+    env = node.get("env") or {}
+    if "preferLocalBuild" in env:
+        return env["preferLocalBuild"] not in ("", "0", "false")
+    return False
+
+
+def derivation_system_features(node):
+    structured = node.get("structuredAttrs")
+    if isinstance(structured, dict) and "requiredSystemFeatures" in structured:
+        features = structured["requiredSystemFeatures"] or []
+        return set(features.split() if isinstance(features, str) else features)
+    env = node.get("env") or {}
+    return set((env.get("requiredSystemFeatures") or "").split())
+
+
 def prepare_inventory(manifest_or_policy):
     roots = manifest_or_policy.get("roots") or []
     cache_cfg = manifest_or_policy.get("cache") or manifest_or_policy
@@ -171,10 +190,13 @@ def prepare_inventory(manifest_or_policy):
             for value in node["outputs"].values()
             if value.get("path")
         )
+    root_drvs = {Path(drv).name for drv in roots}
     substitutable_drvs = []
     outputs = set()
     for drv, node in graph.items():
-        if not derivation_allows_substitutes(node):
+        if not derivation_allows_substitutes(node) or derivation_prefers_local_build(node):
+            continue
+        if drv not in root_drvs and "kvm" in derivation_system_features(node):
             continue
         drv_outputs = {
             "/nix/store/" + value["path"]
@@ -370,8 +392,8 @@ class Publisher:
             index += len(batch)
         groups = []
         if drain:
-            if large:
-                groups.append(("large", 1, large))
+            for path in large:
+                groups.append(("large", 1, [path]))
             for parallel, batch in regular_batches:
                 groups.append(("regular", parallel, batch))
         elif regular_batches:

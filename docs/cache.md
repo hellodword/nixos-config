@@ -46,12 +46,12 @@ PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input ni
 
 [nix/ci.nix](../nix/ci.nix) 声明构建组与缓存策略，[nix/cache-policy.nix](../nix/cache-policy.nix)（调用 `inputs.infra.lib.cache.mkPolicy`）与 [infra/ci/cache.py](../infra/ci/cache.py) 共同完成再分发裁剪、可信签名分流与增量上传：
 
-- **源码树、受限载荷隔离与可替代性裁剪**：`flake.outPath` 始终列入 `excludedPaths`；`mkPolicy` 对候选包、`extraRestricted` 与 `extraExcluded`（含 `anytype`、`anytype-heart`、`google-chrome`、`vscode`、`vscodeServer` 及其外层包装）递归解包 `passthru.unwrapped` / `unwrapped` 检查可再分发性，并对 `bundles`（系统闭包、测试容器镜像与含受限内容的 VM 测试驱动）做输入图传染分析，一并排除内嵌受限内容的聚合产物。`prepare_inventory()` 仅将允许二进制替代（`allowSubstitutes != false`）且未排除的 derivation 输出作为发布种子；仅在本地拼装且未被任何可替代产物运行时引用的包装与单元文件不进入上传队列。
+- **源码树、受限载荷隔离与发布种子筛选**：`flake.outPath` 始终列入 `excludedPaths`；`mkPolicy` 对候选包、`extraRestricted` 与 `extraExcluded`（含 `anytype`、`anytype-heart`、`google-chrome`、`vscode`、`vscodeServer` 及其外层包装）递归解包 `passthru.unwrapped` / `unwrapped` 检查可再分发性，并对 `bundles` 声明的聚合镜像做输入图传染分析，排除内嵌受限内容的产物。`prepare_inventory()` 选择允许二进制替代（`allowSubstitutes`）、非本地拼装（`!preferLocalBuild`）且非中间 `kvm` 建盘步骤（仅保留 `manifest.roots` 顶层任务中的 `kvm` 测试结果）的 derivation 输出作为发布种子。
 - **引用图边界截断**：`Publisher.discover()` 递归展开可替代产物的运行时 `references` 以保证二进制缓存闭包完整，遇到 `excluded` 路径时记录排除统计并立即停止展开其内部引用。
 - **本地 `path-info` Ed25519 验签分流**：`nix build` 在 `require-sigs = true` 下统一从公共只读 substituters、共享缓存与目标缓存并发恢复已有产物并写入 `/nix/var/nix/db/db.sqlite`。发布器读取本地 `nix path-info --json` 元数据，在内存中以 `trustedPublicKeys` 校验每条路径的 Ed25519 指纹签名：
   - 通过当前目标缓存公钥验签的路径计入 `targetHits` 并跳过上传；
   - 通过其他可信上游或共享缓存公钥验签的路径计入 `upstreamHits` 并跳过上传；
-  - 无可信签名的本地构建路径（含密钥轮换后仅带旧签名的路径）列入待上传队列，常规产物按 NAR 体积从大到小优先推送，超大镜像（`> 512 MiB`）在检查点阶段串行推送，统一由 `oranc push --no-closure --already-signed --excluded-signing-key-pattern 'a^' --zstd-level 3 --max-retry 3` 签名写入目标 GHCR 仓库。
+  - 无可信签名的本地构建路径（含密钥轮换后仅带旧签名的路径）列入待上传队列，常规产物按 NAR 体积从大到小在受控内存预算内并发推送，大体积产物（`> 512 MiB`）在检查点阶段逐条由独立子进程串行推送，统一通过 `oranc push --no-closure --already-signed --excluded-signing-key-pattern 'a^' --zstd-level 3 --max-retry 3` 签名写入目标 GHCR 仓库。
 
 ## 旁路增量与阶段末双模式
 

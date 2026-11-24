@@ -498,6 +498,7 @@ def _run_suite(args):
             '';
           child = mkItem "child" "synthetic project content";
           large = mkItem "large" (builtins.concatStringsSep "" (builtins.genList (_: "data") 2048));
+          largePeer = mkItem "large-peer" (builtins.concatStringsSep "" (builtins.genList (_: "peer") 1536));
           late = mkItem "late" "new result after registry interruption";
           recovered = pkgs.runCommand "${prefix}-recovered" {} ''
             printf 'result rebuilt after an interrupted cache download' > $out
@@ -508,8 +509,11 @@ def _run_suite(args):
           forgedSigned = mkItem "forged-signed" "locally signed with forged and rotated keys";
           buildInput = builtins.toFile "${prefix}-build-input" "build input";
           runtimeInput = mkItem "runtime-input" "runtime input";
-          localOnly = pkgs.writeText "${prefix}-local-only" "standalone local wrapper";
+          localOnly = pkgs.runCommandLocal "${prefix}-local-only" {} "printf 'standalone local wrapper' > $out";
           referencedLocal = pkgs.writeText "${prefix}-referenced-local" "runtime-referenced local config";
+          vmDisk = pkgs.runCommand "${prefix}-vm-disk" { requiredSystemFeatures = [ "kvm" ]; } "printf disk > $out";
+          vmLauncher = pkgs.runCommandLocal "${prefix}-vm-launcher" {} "ln -s ${vmDisk} $out";
+          vmVerdict = pkgs.runCommand "${prefix}-vm-verdict" { requiredSystemFeatures = [ "kvm" "nixos-test" ]; } "printf pass > $out";
           mediumRegular = mkItem "medium-regular" (builtins.concatStringsSep "" (builtins.genList (_: "m") 1024));
           tinyRegular = mkItem "tiny-regular" "t";
           uncachedTarget = mkItem "uncached-target" "target not yet in cache";
@@ -535,10 +539,10 @@ def _run_suite(args):
           root = pkgs.runCommand "${prefix}-result" {} ''
             test "$(cat ${driver})" = ready
             test "$(cat ${buildInput})" = 'build input'
-            printf '%s' '${child}; ${large}; ${publicLocal}; ${sharedOci}; ${forgedSigned}; ${runtimeInput}; ${referencedLocal}; prepared: ${bundle}' > $out
+            printf '%s' '${child}; ${large}; ${largePeer}; ${publicLocal}; ${sharedOci}; ${forgedSigned}; ${runtimeInput}; ${referencedLocal}; prepared: ${bundle}' > $out
           '';
         in builtins.mapAttrs (_: value: { path = value.outPath; drv = value.drvPath; })
-          { inherit child large late recovered endPhaseItem publicLocal sharedOci forgedSigned runtimeInput localOnly referencedLocal mediumRegular tinyRegular uncachedTarget source restricted bundle driver root failure; }
+          { inherit child large largePeer late recovered endPhaseItem publicLocal sharedOci forgedSigned runtimeInput localOnly referencedLocal vmDisk vmLauncher vmVerdict mediumRegular tinyRegular uncachedTarget source restricted bundle driver root failure; }
           // {
             buildInput.path = buildInput;
             innerPayload.path = innerPayload;
@@ -594,6 +598,7 @@ def _run_suite(args):
             "driver",
             "child",
             "large",
+            "largePeer",
             "publicLocal",
             "sharedOci",
             "forgedSigned",
@@ -602,7 +607,15 @@ def _run_suite(args):
         manifest = {
             "roots": [
                 fixture[name]["drv"]
-                for name in ("root", "localOnly", "late", "recovered", "endPhaseItem")
+                for name in (
+                    "root",
+                    "localOnly",
+                    "vmLauncher",
+                    "vmVerdict",
+                    "late",
+                    "recovered",
+                    "endPhaseItem",
+                )
             ],
             "groups": [
                 {
@@ -635,9 +648,11 @@ def _run_suite(args):
         assert {fixture[name]["path"] for name in ("source", "restricted", "bundle")} <= set(
             inventory["excluded"]
         )
-        assert {fixture[name]["path"] for name in ("localOnly", "referencedLocal")}.isdisjoint(
-            inventory["outputs"]
-        )
+        assert fixture["vmVerdict"]["path"] in inventory["outputs"]
+        assert {
+            fixture[name]["path"]
+            for name in ("localOnly", "referencedLocal", "vmLauncher", "vmDisk")
+        }.isdisjoint(inventory["outputs"])
         inventory["outputs"] = [
             path for path in inventory["outputs"] if f"-{work.name}-" in path
         ]
@@ -916,7 +931,10 @@ def _run_suite(args):
                                 assert time.monotonic() < deadline
                                 time.sleep(0.1)
                             assert not future.done()
-                            assert fixture["large"]["path"] not in json.loads(receipt.read_text())
+                            assert {
+                                fixture["large"]["path"],
+                                fixture["largePeer"]["path"],
+                            }.isdisjoint(json.loads(receipt.read_text()))
                         finally:
                             release.set()
 
@@ -932,14 +950,21 @@ def _run_suite(args):
                     assert valid_paths([fixture["root"]["path"]]) == set()
                     checkpoint(state, "dependencies")
                     first = set(json.loads(receipt.read_text()))
-                    # child, large, driver, and forgedSigned (forged cache.nixos.org-1 + rotated-out key)
-                    # are published, while publicLocal and sharedOci were substituted with trusted
-                    # upstream signatures and skipped as upstreamHits.
+                    # child, large, largePeer, driver, and forgedSigned (forged cache.nixos.org-1 +
+                    # rotated-out key) are published, while publicLocal and sharedOci were substituted
+                    # with trusted upstream signatures and skipped as upstreamHits.
                     expected_first = {
                         fixture[name]["path"]
-                        for name in ("child", "large", "driver", "forgedSigned")
+                        for name in ("child", "large", "largePeer", "driver", "forgedSigned")
                     }
                     assert first == expected_first, {"actual": first, "expected": expected_first}
+                    large_uploads = [
+                        event
+                        for event in read_records(state / "timings.jsonl")
+                        if event["kind"] == "cache-upload" and event["group"] == "large"
+                    ]
+                    assert [event["paths"] for event in large_uploads] == [1, 1], large_uploads
+                    assert large_uploads[0]["narBytes"] > large_uploads[1]["narBytes"], large_uploads
                     verify(target_uri, first, public)
 
                     # Build root VM fixture & verify classification labels.
@@ -1060,6 +1085,7 @@ def _run_suite(args):
                             "driver",
                             "child",
                             "large",
+                            "largePeer",
                             "forgedSigned",
                             "runtimeInput",
                             "referencedLocal",
@@ -1132,6 +1158,7 @@ def _run_suite(args):
                         "driver",
                         "child",
                         "large",
+                        "largePeer",
                         "forgedSigned",
                         "runtimeInput",
                         "referencedLocal",
@@ -1149,6 +1176,7 @@ def _run_suite(args):
                         "driver",
                         "child",
                         "large",
+                        "largePeer",
                         "forgedSigned",
                         "runtimeInput",
                         "referencedLocal",

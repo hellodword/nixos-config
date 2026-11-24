@@ -79,12 +79,6 @@ else
       pkgs.vscode
       pkgs.vscode.vscodeServer
     ];
-    bundles = [
-      image.drvPath
-      host.config.system.build.toplevel.drvPath
-      fixture.config.system.build.toplevel.drvPath
-      flake.checks.${system}.vm-desktop.driver.drvPath
-      flake.checks.${system}.vm-applications.driver.drvPath
-    ];
+    bundles = [ image.drvPath ];
     extraPrivateBuilds = [ image ];
   }
