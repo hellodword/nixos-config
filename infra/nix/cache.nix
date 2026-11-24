@@ -167,15 +167,6 @@ let
         package:
         outputsOf package ++ lib.optional (package ? src && package.src != null) (toString package.src);
 
-      hasRestrictedLayer = package: lib.any isRestricted (unwrap package);
-
-      restrictedPackages = lib.unique (
-        (lib.concatMap (package: lib.optionals (hasRestrictedLayer package) (unwrap package)) candidates)
-        ++ (lib.concatMap unwrap extraRestricted)
-      );
-
-      excludedPackages = lib.unique (restrictedPackages ++ (lib.concatMap unwrap extraExcluded));
-
       uniqueByDrv =
         pkgsList:
         builtins.foldl' (
@@ -185,6 +176,32 @@ let
           else
             acc
         ) [ ] pkgsList;
+
+      explicitRestricted = lib.concatMap unwrap extraRestricted;
+      explicitRestrictedDrvs = map (package: package.drvPath) explicitRestricted;
+
+      explicitExcluded = lib.concatMap unwrap extraExcluded;
+      explicitExcludedDrvs = map (package: package.drvPath) explicitExcluded;
+
+      hasRestrictedLayer =
+        package:
+        lib.any (layer: isRestricted layer || builtins.elem layer.drvPath explicitRestrictedDrvs) (
+          unwrap package
+        );
+
+      hasExcludedLayer =
+        package: lib.any (layer: builtins.elem layer.drvPath explicitExcludedDrvs) (unwrap package);
+
+      restrictedPackages = uniqueByDrv (
+        (lib.concatMap (package: lib.optionals (hasRestrictedLayer package) (unwrap package)) candidates)
+        ++ explicitRestricted
+      );
+
+      excludedPackages = uniqueByDrv (
+        restrictedPackages
+        ++ (lib.concatMap (package: lib.optionals (hasExcludedLayer package) (unwrap package)) candidates)
+        ++ explicitExcluded
+      );
     in
     {
       excludedPaths = lib.unique (

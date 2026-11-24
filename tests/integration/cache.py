@@ -337,7 +337,7 @@ def _run_suite(args):
     assert "https://cache.nixos.org" in production_caches["publicSettings"]["substituters"]
     assert production_caches["ciUri"].startswith("http://127.0.0.2:37515/")
 
-    # Verify mkPolicy excludes BOTH an outer redistributable wrapper and its restricted unwrapped payload.
+    # Verify mkPolicy excludes outer wrappers around license-restricted, extraRestricted, and extraExcluded payloads.
     wrapper_policy = json.loads(
         run([
             "nix",
@@ -361,28 +361,65 @@ def _run_suite(args):
                 passthru.unwrapped = inner;
                 meta.license = lib.licenses.mit;
               }} "ln -s ${{inner}} $out";
+              extraInner = pkgs.runCommand "synthetic-extra-restricted-inner" {{
+                meta.license = {{ free = false; }};
+              }} "echo extra > $out";
+              extraOuter = pkgs.runCommand "synthetic-extra-restricted-wrapper" {{
+                passthru.unwrapped = extraInner;
+                meta.license = {{ free = false; }};
+              }} "ln -s ${{extraInner}} $out";
+              excludedInner = pkgs.runCommand "synthetic-extra-excluded-inner" {{}} "echo excluded > $out";
+              excludedOuter = pkgs.runCommand "synthetic-extra-excluded-wrapper" {{
+                passthru.unwrapped = excludedInner;
+              }} "ln -s ${{excludedInner}} $out";
               pol = cacheLib.mkPolicy {{
                 inherit lib;
                 flakeOutPath = "/nix/store/00000000000000000000000000000000-source";
-                candidates = [ outer ];
+                candidates = [ outer extraOuter excludedOuter ];
+                extraRestricted = [ extraInner ];
+                extraExcluded = [ excludedInner ];
               }};
             in {{
               innerOut = toString inner;
               outerOut = toString outer;
+              extraInnerOut = toString extraInner;
+              extraOuterOut = toString extraOuter;
+              excludedInnerOut = toString excludedInner;
+              excludedOuterOut = toString excludedOuter;
               innerDrv = inner.drvPath;
               outerDrv = outer.drvPath;
+              extraInnerDrv = extraInner.drvPath;
+              extraOuterDrv = extraOuter.drvPath;
+              excludedInnerDrv = excludedInner.drvPath;
+              excludedOuterDrv = excludedOuter.drvPath;
               inherit (pol) excludedPaths excludedDerivations privateBuilds;
             }}
             """,
         ])
     )
-    assert wrapper_policy["innerOut"] in wrapper_policy["excludedPaths"], wrapper_policy
-    assert wrapper_policy["outerOut"] in wrapper_policy["excludedPaths"], wrapper_policy
-    assert wrapper_policy["innerDrv"] in wrapper_policy["excludedDerivations"], wrapper_policy
-    assert wrapper_policy["outerDrv"] in wrapper_policy["excludedDerivations"], wrapper_policy
+    for out_key in (
+        "innerOut",
+        "outerOut",
+        "extraInnerOut",
+        "extraOuterOut",
+        "excludedInnerOut",
+        "excludedOuterOut",
+    ):
+        assert wrapper_policy[out_key] in wrapper_policy["excludedPaths"], (out_key, wrapper_policy)
+    for drv_key in (
+        "innerDrv",
+        "outerDrv",
+        "extraInnerDrv",
+        "extraOuterDrv",
+        "excludedInnerDrv",
+        "excludedOuterDrv",
+    ):
+        assert wrapper_policy[drv_key] in wrapper_policy["excludedDerivations"], (drv_key, wrapper_policy)
     assert {item["drv"] for item in wrapper_policy["privateBuilds"]} == {
         wrapper_policy["innerDrv"],
         wrapper_policy["outerDrv"],
+        wrapper_policy["extraInnerDrv"],
+        wrapper_policy["extraOuterDrv"],
     }, wrapper_policy
 
     # Verify report.verify_results rejects missing/empty manifests and tracks duplicate-name distinct-drv entries.

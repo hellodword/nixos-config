@@ -81,7 +81,10 @@ else
     ];
     bundles = [
       image.drvPath
-      flake.checks.${system}.vm-desktop.nodes.sway.system.build.vm.drvPath
+      host.config.system.build.toplevel.drvPath
+      fixture.config.system.build.toplevel.drvPath
+      flake.checks.${system}.vm-desktop.driver.drvPath
+      flake.checks.${system}.vm-applications.driver.drvPath
     ];
     extraPrivateBuilds = [ image ];
   }

@@ -1,5 +1,6 @@
 {
   config,
+  inputs,
   lib,
   pkgs,
   userName,
@@ -16,6 +17,8 @@ in
     ../../profiles/laptop
   ];
 
+  system.configurationRevision = inputs.self.rev or (inputs.self.dirtyRev or "uncommitted");
+  environment.etc."flake-inputs/self".source = inputs.self.outPath;
   site.storage.persistRoot = "/persist";
   site.cache = caches.project // {
     enable = true;

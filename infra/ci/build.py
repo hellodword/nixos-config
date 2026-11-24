@@ -46,30 +46,31 @@ def resolve_prepared_entries(entries):
         path for entry in prepared_candidates for path in entry["prepares"]["outputs"]
     ]
     already_valid = valid_paths(target_outputs)
-    cached_drvs = set()
-    pending_drvs = []
-    for entry in prepared_candidates:
-        prep = entry["prepares"]
-        if set(prep["outputs"]) <= already_valid:
-            cached_drvs.add(prep["drv"])
-        elif prep["drv"] not in pending_drvs:
-            pending_drvs.append(prep["drv"])
-
-    if pending_drvs:
+    pending_outputs = sorted(set(target_outputs) - already_valid)
+    fetchable = set()
+    if pending_outputs:
         probe = subprocess.run(
-            ["nix", "build", "--dry-run", *(drv + "^*" for drv in pending_drvs)],
+            ["nix", "build", "--dry-run", "--keep-going", *pending_outputs],
             capture_output=True,
             text=True,
         )
         if probe.returncode == 0:
-            will_build = {
-                line.strip()
-                for line in probe.stderr.splitlines()
-                if line.strip().startswith("/") and line.strip().endswith(".drv")
-            }
-            for drv in pending_drvs:
-                if drv not in will_build:
-                    cached_drvs.add(drv)
+            in_fetch_block = False
+            for raw_line in probe.stderr.splitlines():
+                stripped = raw_line.strip()
+                if not stripped:
+                    continue
+                if not raw_line[:1].isspace():
+                    in_fetch_block = "will be fetched" in stripped
+                elif in_fetch_block and stripped.startswith("/nix/store/"):
+                    fetchable.add(stripped)
+
+    available = already_valid | fetchable
+    cached_drvs = {
+        entry["prepares"]["drv"]
+        for entry in prepared_candidates
+        if set(entry["prepares"]["outputs"]) <= available
+    }
 
     elapsed = time.monotonic() - check_start
     active = []

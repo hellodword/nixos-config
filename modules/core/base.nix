@@ -22,8 +22,6 @@ in
         message = "Enabling site.core requires specialArgs.userName.";
       }
     ];
-    system.configurationRevision = inputs.self.rev or (inputs.self.dirtyRev or "uncommitted");
-    environment.etc."flake-inputs/self".source = inputs.self.outPath;
     users.mutableUsers = false;
     users.users.${userName} = {
       isNormalUser = true;
