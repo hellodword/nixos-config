@@ -6,7 +6,7 @@
 - `/` 为 `16 GiB` tmpfs；`/tmp` 上限为内存的 `80%`。日常空间排查与临时目录持久化见 [本机配置](../../docs/local-state.md#tmpfs-占用与临时持久化)。
 - 备份仓库仅由本机独占使用，开启受控陈旧锁恢复。各目标的检查分片与频率在 [default.nix](default.nix) 中按下方账户预算设置，凭据绑定见 [secrets.nix](secrets.nix)。
 - Tailscale 公告出口节点与三个 RFC1918 私网段，同时关闭远端 DNS 与路由接受；转发流量遵循 [网络策略](../../docs/network.md)。
-- Docker 使用固定网桥地址，供宿主与容器共用本地 `oranc` 二进制缓存代理，见 [构建缓存](../../docs/cache.md)。
+- Docker 使用固定网桥地址 `172.17.0.1/16`，供宿主与容器共用本地 `oranc` 二进制缓存代理及面向容器的 `harmonia` 只读 `/nix/store` 缓存，见 [构建缓存](../../docs/cache.md)。
 
 日常构建、升级与回退见 [主机维护](../../docs/maintenance.md)。
 

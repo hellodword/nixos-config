@@ -70,6 +70,7 @@
     agents-misc = {
       url = "github:hellodword/agents-misc";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.oranc.follows = "infra/oranc";
     };
     colmena = {
       url = "github:nix-community/colmena";

@@ -865,6 +865,29 @@ in
                 command += "zstd -dc /tmp/cache-payload.nar.zst | sha256sum | cut -d' ' -f1 | grep -Fx " + cache_nar_hash
                 container_request(node, prefix + "sh -c " + shlex.quote(command))
 
+            node.wait_for_unit("harmonia.socket")
+            node.wait_for_unit("harmonia.service")
+            cache_info = node.succeed("curl --max-time 5 -fsS ${caches.hostStore.uri}/nix-cache-info")
+            info_fields = dict(line.split(": ", 1) for line in cache_info.splitlines() if ": " in line)
+            assert info_fields.get("StoreDir") == "/nix/store" and info_fields.get("Priority") == "${toString caches.hostStore.priority}", info_fields
+            system_path = node.succeed("readlink -f /run/current-system").strip()
+            system_hash = system_path.removeprefix("/nix/store/")[:32]
+            store_narinfo = node.succeed(f"curl --max-time 10 -fsS ${caches.hostStore.uri}/{system_hash}.narinfo")
+            store_fields = dict(line.split(": ", 1) for line in store_narinfo.splitlines() if ": " in line)
+            assert store_fields["StorePath"] == system_path, store_fields
+            store_nar_url = "${caches.hostStore.uri}/" + store_fields["URL"]
+            for prefix in ("", "docker exec ordinary ", compose_exec + " "):
+                command = "set -eu; curl --max-time 15 -fsS -H 'Accept-Encoding: zstd' " + shlex.quote(store_nar_url) + " -o /tmp/host-store.nar.zst; "
+                command += "test -s /tmp/host-store.nar.zst"
+                container_request(node, prefix + "sh -c " + shlex.quote(command))
+            if node == client:
+                target.succeed("ip route replace ${caches.hostStore.listenAddress}/32 via 192.168.1.10 dev eth1")
+                try:
+                    target.fail("curl --max-time 2 -fsS ${caches.hostStore.uri}/nix-cache-info")
+                finally:
+                    target.execute("ip route del ${caches.hostStore.listenAddress}/32 via 192.168.1.10 dev eth1")
+                node.succeed("systemctl start site-devcontainer-cache-prune.service", timeout=60)
+
         def intercepted_dns(node, name, prefixes, dual=False):
             expected = fake_address(node, name) if node in (client, peer) else "198.51.100.30"
             servers = ["203.0.113.53"] + (["2001:db8:ffff::53"] if dual else [])

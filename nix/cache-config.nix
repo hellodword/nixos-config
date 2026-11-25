@@ -6,6 +6,12 @@ let
     listenAddress = "172.17.0.1";
     port = 37515;
   };
+  hostStore = {
+    listenAddress = project.listenAddress;
+    port = 37516;
+    priority = 20;
+    uri = "http://${project.listenAddress}:37516";
+  };
   withProject =
     {
       repository,
@@ -36,7 +42,7 @@ let
   };
 in
 {
-  inherit project withProject;
+  inherit hostStore project withProject;
   publicSettings = cacheLib.publicSettings;
   inherit (configured) public local ci;
 }

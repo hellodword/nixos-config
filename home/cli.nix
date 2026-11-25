@@ -130,6 +130,58 @@ in
           unset BW_SESSION
           return "$status"
         }
+        _devc_run() {
+          local variant="$1"
+          shift
+          local workdir repo_name state_root guard target
+          local tty_flags=(-i) ro_mounts=()
+          workdir="$(pwd -P)" || return 1
+          repo_name="$(basename "$workdir")"
+          [[ -n "$repo_name" && "$repo_name" != "/" ]] || repo_name="workspace"
+          state_root="''${XDG_STATE_HOME:-$HOME/.local/state}/devcontainers"
+
+          install -d -m 0700 \
+            "$state_root" \
+            "$state_root/codex" \
+            "$state_root/gemini" \
+            "$state_root/opencode" \
+            "$state_root/cache" \
+            "$state_root/cache/xdg" \
+            "$state_root/cache/cargo" || return 1
+          install -d -m 0755 "$state_root/cache/nix" || return 1
+
+          if [[ -t 0 && -t 1 ]]; then
+            tty_flags+=(-t)
+          fi
+
+          for guard in .devcontainer AGENTS.md .agents; do
+            if [[ -e "$workdir/$guard" ]]; then
+              target="$(realpath "$workdir/$guard")" || return 1
+              ro_mounts+=(-v "$target:/workspaces/$repo_name/$guard:ro")
+            fi
+          done
+
+          docker run --rm "''${tty_flags[@]}" --init \
+            --cap-drop=ALL \
+            --security-opt=no-new-privileges:true \
+            -v "$workdir:/workspaces/$repo_name" \
+            "''${ro_mounts[@]}" \
+            -v "$state_root/codex:/home/vscode/.codex" \
+            -v "$state_root/gemini:/home/vscode/.gemini" \
+            -v "$state_root/opencode:/home/vscode/.config/opencode" \
+            -v "$state_root/cache/nix:/var/cache/devcontainer-nix" \
+            -v "$state_root/cache/xdg:/home/vscode/.cache" \
+            -v "$state_root/cache/cargo:/home/vscode/.local/share/cargo" \
+            -w "/workspaces/$repo_name" \
+            "ghcr.io/hellodword/devcontainers-dev:$variant" \
+            "$@"
+        }
+        devc() {
+          _devc_run latest "$@"
+        }
+        devc-agent() {
+          _devc_run agent "$@"
+        }
       '';
     };
     programs.zoxide = {

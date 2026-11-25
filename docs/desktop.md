@@ -190,7 +190,7 @@ Shell 便利入口见 [home/cli.nix](../home/cli.nix)。其中 `nixos-rebuild-bo
 
 先用 `bw login` 登录账户，再调用 `bw-unlock` 解锁并将会话 token 留在当前 shell 的 `BW_SESSION`；`bw-lock` 清理变量并锁定 CLI。提示符显示 `BW_SESSION` 是否存在，实际请求仍以 Bitwarden 的状态和响应为准，token 不写入历史或提示内容。
 
-`,` 使用 nix-index 数据库运行缺少的命令。`coderadio`、`suno-radio` 播放电台；`docker-pull-my-images` 更新本机镜像，失败时有限重试并返回失败状态。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
+`,` 使用 nix-index 数据库运行缺少的命令。`coderadio`、`suno-radio` 播放电台；`docker-pull-my-images` 更新本机镜像，失败时有限重试并返回失败状态；`devc` 与 `devc-agent` 以当前目录启动 `devcontainers-dev` 的 `:latest` 或 `:agent` 容器，自动挂载持久化的 `~/.local/state/devcontainers/{codex,gemini,opencode,cache}` 并对工作区已存在的 `.devcontainer`、`AGENTS.md`、`.agents` 施加只读覆盖。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
 
 ## 应用隔离
 

@@ -36,6 +36,7 @@ Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户�
 | 桌面电源菜单 | [桌面配置](../home/desktop.nix) | [进程提醒与电源操作](../scripts/desktop/power.py) |
 | 壁纸 | [会话与定时任务](../modules/desktop/wallpaper.nix) | [恢复、轮换与下载](../scripts/desktop/wallpaper.py) |
 | SSH/GPG | [系统和用户服务](../modules/core/cli.nix) | [公钥发布与身份注册](../scripts/secrets/identity.py) |
+| 开发容器缓存回收 | [容器服务与定时任务](../modules/services/containers.nix) | [空闲检测与隔离容器清理](../scripts/containers/prune_caches.py) |
 | CI | [工作流](../.github/workflows)、[Composite Action](../infra/action/action.yml) | [清单求值、构建、缓存与更新](../infra/ci) |
 | VPS 与订阅 | [节点和服务](../modules/vps)、[部署](../nix/vps.nix) | [部署材料与客户端生成](../scripts/vps)、[Worker](../workers) |
 
@@ -59,7 +60,7 @@ laptop profile 的持久清单独立于功能开关。禁用应用后数据仍�
 
 桌面应用的文件访问范围集中在[桌面指南](desktop.md#应用隔离)。Firejail 保护处理外部内容的应用，复用上游 profile 并保留浏览器的原生沙箱。VS Code Dev Containers 和 Kitty 需要完整开发环境，由常规桌面入口运行。
 
-后台桌面服务以 systemd 隔离各自的 home 状态和运行目录。dnsdist、dnsproxy、DNS Collector、oranc 处理网络输入，使用独立身份、只读系统及设备/能力限制；LuaJIT 所需的内存执行能力仅对 dnsdist 保留。整机接管由 Mullvad 完成，sing-box 通过用户态 WireGuard endpoint 接收流量，并用 FakeIP 恢复域名。引擎以专用用户运行，保留物理出口绑定及可选原生 endpoint 所需的网络能力；配置生成先在无网络、只读输入的独立沙箱完成，发布进程仅控制声明的服务。
+后台桌面服务以 systemd 隔离各自的 home 状态和运行目录。dnsdist、dnsproxy、DNS Collector、oranc、harmonia 处理网络输入，使用独立身份、只读系统及设备/能力限制；harmonia 进一步通过套接字激活运行在独立私有网络命名空间，并由容器缓存回收服务在 `--network none` 的临时容器内清理容器可写缓存树。LuaJIT 所需的内存执行能力仅对 dnsdist 保留。整机接管由 Mullvad 完成，sing-box 通过用户态 WireGuard endpoint 接收流量，并用 FakeIP 恢复域名。引擎以专用用户运行，保留物理出口绑定及可选原生 endpoint 所需的网络能力；配置生成先在无网络、只读输入的独立沙箱完成，发布进程仅控制声明的服务。
 
 Restic 按仓库分离可写状态与 cache，源目录只读。Apprise/Bark 使用各自的 gVisor 容器和运行时凭据，Waydroid 使用上游 LXC 边界。常见基础服务继续使用 NixOS 上游单元定义。
 

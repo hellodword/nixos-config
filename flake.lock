@@ -5,14 +5,18 @@
         "nixpkgs": [
           "nixpkgs"
         ],
+        "oranc": [
+          "infra",
+          "oranc"
+        ],
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1794208137,
-        "narHash": "sha256-ykfpwXBFGRTLxVqHTKNeTrdAnyGgef18nbnxAXB0mZE=",
+        "lastModified": 1795526505,
+        "narHash": "sha256-et6vGyceJM5KHShn7Uud8Ano4oFzH0tkjPVJGuZxEJA=",
         "owner": "hellodword",
         "repo": "agents-misc",
-        "rev": "2e09715d81135ab03c3f480832103e94f6d07556",
+        "rev": "c1a41af40035177fe1b1db113bf846ffba00b8ee",
         "type": "github"
       },
       "original": {

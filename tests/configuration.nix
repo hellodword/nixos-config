@@ -12,6 +12,8 @@ let
     proxy = true;
     backup = true;
     cache = true;
+    hostStoreCache = true;
+    devcontainerPrune = true;
     displayManager = true;
     browser = true;
     cli = true;
@@ -108,6 +110,8 @@ let
         proxy = (config.systemd.services.sing-box.serviceConfig or { }) ? ExecStart;
         backup = config.systemd.services ? site-backup-b2-backup;
         cache = config.systemd.services ? oranc;
+        hostStoreCache = config.systemd.services ? harmonia;
+        devcontainerPrune = config.systemd.timers ? site-devcontainer-cache-prune;
         displayManager = config.systemd.services ? display-manager;
         browser = config.programs.chromium.enable;
         cli = config.programs.nix-index.enable;

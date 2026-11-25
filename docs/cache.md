@@ -6,19 +6,20 @@
 
 ### NixOS 主机与容器
 
-启用 `site.cache` 的主机自动配置本地 `oranc` 代理、Nix substituters 与签名公钥（当监听地址位于 Docker 网桥且启用了 Docker 时，`oranc.service` 排在 `docker.service` 之后启动；默认开启 `fallback = true` 与 5 秒连接超时，本地代理不可达时自动回退）：
+启用 `site.cache` 的主机自动配置本地 `oranc` 代理、Nix substituters 与签名公钥（当监听地址位于 Docker 网桥且启用了 Docker 时，`oranc.service` 排在 `docker.service` 之后启动；默认开启 `fallback = true` 与 5 秒连接超时，本地代理不可达时自动回退）。同时，启用 `site.containers` 的主机通过 [modules/services/containers.nix](../modules/services/containers.nix) 在容器网桥 `172.17.0.1:37516` 运行只读 `harmonia` 服务（`FreeBind` 套接字激活并随 `docker.service` 预热，`PrivateNetwork` 隔离进程网络，nftables 仅放行回环与本地容器网桥），直接向本机开发容器导出已验签的宿主 `/nix/store`：
 
 ```sh
-systemctl status oranc
-journalctl -u oranc -n 50 --no-pager
+systemctl status oranc harmonia.socket harmonia.service
+journalctl -u oranc -u harmonia -n 50 --no-pager
 nix config show | rg 'substituters|trusted-public-keys|require-sigs'
 cache_url=$(nix eval --store dummy:// --raw --file nix/cache-config.nix local.uri)
 nix store info --store "$cache_url"
+curl -fsS http://172.17.0.1:37516/nix-cache-info
 ```
 
 ### 开发容器及其他 Nix 客户端
 
-宿主机提供可达的 `oranc` 代理后，在仓库根目录通过 [scripts/nix-cache.sh](../scripts/nix-cache.sh)（委托 [infra/scripts/nix-cache.sh](../infra/scripts/nix-cache.sh)）查看或安装持久配置：
+开发容器挂载宿主持久化的 `~/.local/state/devcontainers/cache/nix`（容器内 `/var/cache/devcontainer-nix`）并连接宿主网桥时，按优先级依次复用镜像层、跨容器共享 `file://` 缓存、宿主 `harmonia`（`172.17.0.1:37516`）与 `oranc`（`172.17.0.1:37515`）。其他通用 Nix 客户端在仓库根目录通过 [scripts/nix-cache.sh](../scripts/nix-cache.sh)（委托 [infra/scripts/nix-cache.sh](../infra/scripts/nix-cache.sh)）查看或安装持久配置：
 
 ```sh
 bash scripts/nix-cache.sh print

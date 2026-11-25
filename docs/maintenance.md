@@ -76,12 +76,13 @@ journalctl -b -u "home-manager-${login_user}.service"
 
 ## Docker 维护
 
-[容器模块](../modules/services/containers.nix) 启用 `local` 轮转日志驱动、`live-restore` 及每周自动 `docker-prune`，清理停止的容器、未使用网络、悬空镜像和构建缓存（保留命名卷及带 `org.nixos-config.service` 标签的通知服务资源）：
+[容器模块](../modules/services/containers.nix) 启用 `local` 轮转日志驱动、`live-restore`、每周自动 `docker-prune`（清理停止的容器、未使用网络、悬空镜像与构建缓存，保留命名卷及带 `org.nixos-config.service` 标签的通知服务资源），以及每日 `site-devcontainer-cache-prune.timer`。后者以普通用户身份调用 `devcontainer-cache-prune`（[scripts/containers/prune_caches.py](../scripts/containers/prune_caches.py)），在无网络、降权隔离的 `devcontainers-dev:agent` 容器内执行 `devcontainer-runtime prune-caches`（无活动容器挂载 `~/.local/state/devcontainers/cache` 时自动启用 `--idle` 深度回收，本地尚未拉取 `:agent` 镜像时跳过）：
 
 ```sh
 docker system df
-systemctl list-timers docker-prune.timer
-journalctl -u docker-prune.service
+systemctl list-timers docker-prune.timer site-devcontainer-cache-prune.timer
+journalctl -u docker-prune.service -u site-devcontainer-cache-prune.service -n 50 --no-pager
+devcontainer-cache-prune --dry-run
 ```
 
 ## 增加主机
