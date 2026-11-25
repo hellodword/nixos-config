@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -246,7 +247,7 @@ class RepositoryTest(unittest.TestCase):
             policy.write_text(json.dumps({"host": "fixture", "roots": [{"path": "directory-0", "required": True}],
                                           "checkPartitions": 1, "recoverStaleLocks": True}))
             state = root / "state"
-            command = [shutil.which("python3"), str(ROOT / "scripts/backup/runner.py")]
+            command = [sys.executable, str(ROOT / "scripts/backup/runner.py")]
             options = ["--policy", str(policy), "--source", str(source), "--state", str(state)]
 
             def run(operation, success=True):
@@ -469,7 +470,7 @@ class RepositoryTest(unittest.TestCase):
                 state = root / f"state-{index}"
                 args = ["--policy", str(policy), "--source", str(source), "--state", str(state), "--restic", binary]
                 def run(operation, override=None, success=True):
-                    result = subprocess.run([shutil.which("python3"), str(script), operation, *args], env=override or current, capture_output=True)
+                    result = subprocess.run([sys.executable, str(script), operation, *args], env=override or current, capture_output=True)
                     self.assertEqual(result.returncode, 0 if success else 1, result.stderr.decode() + ((state / "last-command.log").read_text() if (state / "last-command.log").exists() else ""))
                     return result
                 # One unavailable destination must not invalidate the other two.

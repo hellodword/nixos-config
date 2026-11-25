@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import pwd
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -14,7 +15,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 class DeclaredIdentity(unittest.TestCase):
     def test_identity_publication_signing_and_rotation(self):
-        with tempfile.TemporaryDirectory() as temporary, ExitStack() as cleanup:
+        socket_base = "/tmp" if Path("/tmp").is_dir() else None
+        with tempfile.TemporaryDirectory(dir=socket_base) as temporary, ExitStack() as cleanup:
             root = Path(temporary)
             home = root / "gpg"
             home.mkdir(mode=0o700)
@@ -34,7 +36,7 @@ class DeclaredIdentity(unittest.TestCase):
                 f"module.SSH_DIRECTORY = pathlib.Path({str(public_directory)!r})\n"
                 "sys.exit(module.main())\n"
             )
-            worker = ["python3", str(runner)]
+            worker = [sys.executable, str(runner)]
 
             def publish():
                 subprocess.run(worker + ["prepare", "--source", str(fixture / "identity.yaml"),

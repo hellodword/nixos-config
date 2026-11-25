@@ -22,6 +22,7 @@ let
         export GOCACHE="$devtools_cache/go/build"
         export GOPATH="$devtools_cache/go"
         export npm_config_cache="$devtools_cache/npm"
+        export PYTHONNOUSERSITE=1
         export EDITOR=vim
         mkdir -p -m 700 "$XDG_CACHE_HOME" "$TMPDIR" "$HOME/.cache/nix"
         if [[ "''${NIXOS_CONFIG_ALLOW_TMPFS:-0}" != 1 ]]; then
@@ -48,8 +49,10 @@ let
           gnupg
           git
           openssh
+          nix
           nixfmt
           nix-eval-jobs
+          ruff
           shellcheck
           curl
           bubblewrap
@@ -73,7 +76,6 @@ let
           laptop && inputs.agents-misc.packages.${system} ? vm-test-submit
         ) inputs.agents-misc.packages.${system}.vm-test-submit
         ++ lib.optionals (!laptop) [
-          nix
           netcat-openbsd
           nodejs
           wireguard-tools

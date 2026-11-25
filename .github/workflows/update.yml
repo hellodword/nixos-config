@@ -52,8 +52,8 @@ jobs:
           artifact-suffix: update-remote
           pre-build-command: |
             nix build --no-link --print-build-logs --no-update-lock-file .#checks.x86_64-linux.lint
-            python3 -m tests.integration.cache --nixpkgs-input nixpkgs-remote
-            python3 -m tests.integration.updates
+            python3 -sE -m tests.integration.cache --nixpkgs-input nixpkgs-remote
+            python3 -sE -m tests.integration.updates
       - name: Fast-forward master to verified candidate
         if: steps.prepare.outputs.changed == 'true'
         uses: ./infra/action
@@ -96,8 +96,8 @@ jobs:
           artifact-suffix: update-laptop-laptop2
           pre-build-command: |
             nix build --no-link --print-build-logs --no-update-lock-file .#checks.x86_64-linux.lint
-            python3 -m tests.integration.cache --nixpkgs-input nixpkgs
-            python3 -m tests.integration.updates
+            python3 -sE -m tests.integration.cache --nixpkgs-input nixpkgs
+            python3 -sE -m tests.integration.updates
       - name: Fast-forward master to verified candidate
         if: steps.prepare.outputs.changed == 'true'
         uses: ./infra/action

@@ -52,5 +52,5 @@ jobs:
           pre-build-command: |
             nix build --no-link --print-build-logs --no-update-lock-file .#checks.x86_64-linux.lint
             if [[ "${{ matrix.scope }}" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
-            python3 -m tests.integration.cache --nixpkgs-input "$nixpkgs_input"
-            python3 -m tests.integration.updates
+            python3 -sE -m tests.integration.cache --nixpkgs-input "$nixpkgs_input"
+            python3 -sE -m tests.integration.updates

@@ -33,6 +33,10 @@ let
     pkgs.findutils
     pkgs.gnugrep
     pkgs.gnused
+    pkgs.gnutar
+    pkgs.gzip
+    pkgs.xz
+    pkgs.zstd
     pkgs.bash
   ];
   nixCi = pkgs.runCommand "nix-ci" { } ''
@@ -41,27 +45,14 @@ let
     cat > "$out/bin/nix-ci" <<EOF
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
-    export PATH="\''${PATH:+\$PATH:}${lib.makeBinPath runtimeTools}"
-    exec ${python}/bin/python3 "$out/libexec/infra/ci" "\$@"
+    export NIX_CI_CALLER_PATH="\''${PATH:-}"
+    export PATH="${lib.makeBinPath runtimeTools}"
+    exec ${python}/bin/python3 -I "$out/libexec/infra/ci" "\$@"
     EOF
     chmod 0755 "$out/bin/nix-ci"
   '';
 in
 pkgs.buildEnv {
   name = "ci-tools";
-  paths = [
-    nixCi
-    python
-    pkgs.nix
-    pkgs.git
-    pkgs.gh
-    pkgs.jq
-    pkgs.skopeo
-    pkgs.actionlint
-    pkgs.shellcheck
-    pkgs.nixfmt
-    pkgs.nix-eval-jobs
-    pkgs.distribution
-    oranc
-  ];
+  paths = [ nixCi ] ++ runtimeTools;
 }

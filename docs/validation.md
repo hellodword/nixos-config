@@ -93,14 +93,15 @@ nix run ./infra#ci -- evaluate \
 nix build --no-link .#checks.x86_64-linux.identity
 ```
 
-需要更快反馈时，可在开发环境运行对应的 Python 场景：
+需要更快反馈时，可在开发环境运行不依赖 Nix 生成夹具的单元测试与进程场景：
 
 ```sh
-nix develop .#laptop --command python3 -m unittest tests.unit.test_backup -v
-nix develop .#laptop --command python3 -m tests.integration.backup -v
+nix develop .#laptop --command python3 -sE -m unittest tests.unit.test_backup -v
+nix develop .#laptop --command python3 -sE -m tests.integration.backup -v
+nix develop .#laptop --command python3 -sE -m unittest tests.integration.secrets -v
 ```
 
-这些入口执行同一份测试，不要求本地命令和 Nix 检查都重复运行。SSH 自动注册与会话生命周期之间的集成由桌面 VM 负责；字体匹配和实际 Kitty 渲染各有独立边界。
+`network`、`desktop` 与 `vps` 检查依赖 Nix 构建生成的策略或双输入客户端/服务端二进制夹具，直接通过对应的 `nix build .#checks.x86_64-linux.<name>` 运行；不要求本地命令和 Nix 检查重复执行。SSH 自动注册与会话生命周期之间的集成由桌面 VM 负责；字体匹配和实际 Kitty 渲染各有独立边界。
 
 进程场景在所需能力就绪后开始断言。DNS 夹具在统一时间预算内等待普通入口与 bootstrap 入口的 UDP、TCP 解析应答，并持续检查子进程状态；启动失败、场景异常和正常退出都回收已启动的进程。进程诊断输出到 stderr，成功结果通过 stdout 输出，便于 Nix 检查保存结果并同时显示错误现场。
 
@@ -116,12 +117,12 @@ nix run ./infra#ci -- build --group dependencies --state "$state"
 
 只验证 VPS 时，构建 `checks.x86_64-linux.vps` 和 `checks.x86_64-linux.vm-vps.driver`，再执行 `checks.x86_64-linux.vm-vps`。其 bootstrap 镜像和完整系统都使用 `nixpkgs-remote`；测试通过 SSH 操作真实镜像启动的来宾，覆盖部署、重启和回滚。
 
-OCI 和更新候选集成需要创建临时 Nix store、registry 与 Git 上游，使用与 Actions 相同的原生 CI 工具：
+OCI 和更新候选集成需要创建临时 Nix store、registry 与 Git 上游，使用与 Actions 相同的封闭 CI 工具集：
 
 ```sh
 ci_tools=$(nix build --no-link --print-out-paths ./infra#ci-tools)
-PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input nixpkgs-remote
-PATH="$ci_tools/bin:$PATH" python3 -m unittest tests.integration.updates -v
+env PATH="$ci_tools/bin" PYTHONNOUSERSITE=1 "$ci_tools/bin/python3" -sE -m tests.integration.cache --nixpkgs-input nixpkgs-remote
+env PATH="$ci_tools/bin" PYTHONNOUSERSITE=1 "$ci_tools/bin/python3" -sE -m unittest tests.integration.updates -v
 ```
 
 本机具备 x86_64 Linux KVM 和所需 Nix system features 时，先准备 VM 环境，再执行测试：

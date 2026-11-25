@@ -89,7 +89,13 @@ if [[ -z $fragment_name ]]; then
 fi
 
 render() {
-  nix --extra-experimental-features nix-command eval --store dummy:// --raw \
+  env \
+    -u NIXPKGS_CONFIG \
+    -u NIXPKGS_ALLOW_BROKEN \
+    -u NIXPKGS_ALLOW_INSECURE \
+    -u NIXPKGS_ALLOW_UNFREE \
+    -u NIXPKGS_ALLOW_UNSUPPORTED_SYSTEM \
+    nix --extra-experimental-features nix-command eval --store dummy:// --raw \
     --file "$config_file" "$scope.text"
 }
 

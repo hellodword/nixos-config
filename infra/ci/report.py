@@ -4,6 +4,7 @@
 from datetime import datetime, timezone
 import fcntl
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -483,7 +484,14 @@ def render(state):
 
 def run_phase(state, phase, command):
     started, start = utc_now(), time.monotonic()
-    result = subprocess.run(command)
+    caller_path = os.environ.get("NIX_CI_CALLER_PATH")
+    child_env = None
+    if caller_path is not None:
+        child_env = dict(os.environ)
+        child_env.pop("NIX_CI_CALLER_PATH", None)
+        if caller_path:
+            child_env["PATH"] = caller_path
+    result = subprocess.run(command, env=child_env)
     record(
         state,
         {

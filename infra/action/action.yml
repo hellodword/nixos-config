@@ -118,7 +118,7 @@ runs:
         require-sigs = true
         CONFIG
         fi
-        if [[ "$INPUT_MODE" == prepare-update || "$INPUT_MODE" == verify || ! -f "$state/nix.conf" ]]; then
+        if [[ "$INPUT_MODE" == prepare-update || "$INPUT_MODE" == verify || ! -f "$state/nix.conf" || ! -f "$state/oranc.netrc" ]]; then
           cp "$state/nix-base.conf" "$state/nix.conf"
         fi
 
@@ -344,7 +344,8 @@ runs:
         tools_root=$(nix build --no-update-lock-file --no-link --print-out-paths /infra#ci-tools)
         printf '%s\n' "$tools_root" > /ci/tools
         printf '%s/bin/python3\n' "$tools_root" > /ci/python
-        export PATH="$tools_root/bin:$PATH"
+        export PATH="$tools_root/bin"
+        export PYTHONNOUSERSITE=1
 
         RUST_LOG=oranc=info,oranc::registry=debug \
           "$(cat /ci/oranc)" server --listen 127.0.0.2:37515 < /dev/null 2>&1 | \
@@ -388,7 +389,8 @@ runs:
           --env ORANC_PASSWORD \
           --env ORANC_SIGNING_KEY \
           -- bash -euo pipefail <<'BASH'
-        export PATH="$(cat /ci/tools)/bin:$PATH"
+        export PATH="$(cat /ci/tools)/bin"
+        export PYTHONNOUSERSITE=1
         expected=$(jq -r '.cache.publicKey' /ci/manifest.json)
         actual=$(printf '%s' "$ORANC_SIGNING_KEY" | nix key convert-secret-to-public)
         if [[ "$actual" != "$expected" ]]; then
@@ -411,8 +413,9 @@ runs:
         docker exec -i \
           --env INPUT_PUBLISH_CACHE \
           "$NIX_CI_CONTAINER" bash -euo pipefail <<'BASH'
-        export PATH="$(cat /ci/tools)/bin:$PATH"
-        python3 - <<'PY'
+        export PATH="$(cat /ci/tools)/bin"
+        export PYTHONNOUSERSITE=1
+        python3 -sE - <<'PY'
         import base64
         import json
         import netrc
@@ -486,7 +489,7 @@ runs:
 
         if [[ -n "$INPUT_PRE_BUILD" ]]; then
           printf '%s\n' "$INPUT_PRE_BUILD" | docker exec -i "$NIX_CI_CONTAINER" \
-            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin:$PATH"; exec bash -euo pipefail -s'
+            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin" PYTHONNOUSERSITE=1; exec bash -euo pipefail -s'
         fi
 
     - name: Build manifest execution groups and verify required targets
@@ -517,7 +520,7 @@ runs:
             --env ORANC_SIGNING_KEY \
             -- sleep infinity
           docker exec "$NIX_CI_PUBLISHER" bash -euo pipefail -c \
-            'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci cache start --project-dir /workspace --state /ci'
+            'export PATH="$(cat /ci/tools)/bin" PYTHONNOUSERSITE=1; nix-ci cache start --project-dir /workspace --state /ci'
         fi
         checkpointed_deps=false
         mapfile -t group_rows < <(jq -r '.groups[] | "\(.name)\t\(.vm // "")"' "$NIX_CI_STATE/manifest.json")
@@ -525,24 +528,25 @@ runs:
           IFS=$'\t' read -r group_name vm_kind <<< "$row"
           if [[ -n "$vm_kind" && "$checkpointed_deps" == false && "$INPUT_PUBLISH_CACHE" == true && "$cache_mode" == incremental ]]; then
             docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
-              'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci cache checkpoint --state /ci --phase publish-dependencies'
+              'export PATH="$(cat /ci/tools)/bin" PYTHONNOUSERSITE=1; nix-ci cache checkpoint --state /ci --phase publish-dependencies'
             checkpointed_deps=true
           fi
           docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
-            "export PATH=\"\$(cat /ci/tools)/bin:\$PATH\"; nix-ci build --group \"$group_name\" --state /ci --github-actions"
+            "export PATH=\"\$(cat /ci/tools)/bin\" PYTHONNOUSERSITE=1; nix-ci build --group \"$group_name\" --state /ci --github-actions"
           if [[ -n "$vm_kind" ]]; then
-            docker exec "$NIX_CI_CONTAINER" find /build -mindepth 1 -delete
+            docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
+              'export PATH="$(cat /ci/tools)/bin"; find /build -mindepth 1 -delete'
           fi
         done
         docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
-          'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci report verify --state /ci'
+          'export PATH="$(cat /ci/tools)/bin" PYTHONNOUSERSITE=1; nix-ci report verify --state /ci'
         if [[ -n "$INPUT_POST_BUILD" ]]; then
           printf '%s\n' "$INPUT_POST_BUILD" | docker exec -i "$NIX_CI_CONTAINER" \
-            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin:$PATH"; exec bash -euo pipefail -s'
+            bash -euo pipefail -c 'export PATH="$(cat /ci/tools)/bin" PYTHONNOUSERSITE=1; exec bash -euo pipefail -s'
         fi
         if [[ "$INPUT_PUBLISH_CACHE" == true && "$cache_mode" == incremental ]]; then
           docker exec "$NIX_CI_CONTAINER" bash -euo pipefail -c \
-            'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci cache checkpoint --state /ci --phase publish-results --finish'
+            'export PATH="$(cat /ci/tools)/bin" PYTHONNOUSERSITE=1; nix-ci cache checkpoint --state /ci --phase publish-results --finish'
         fi
 
     - name: Merge verified update candidate
@@ -553,9 +557,41 @@ runs:
         GH_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
-        python3 "$NIX_CI_INFRA_DIR/ci" update merge \
-          --project-dir "$NIX_CI_PROJECT_DIR" \
-          --state "$NIX_CI_STATE/update"
+        HOST_UID="$(id -u)"
+        HOST_GID="$(id -g)"
+        export HOST_UID HOST_GID
+        rm -f -- "$NIX_CI_STATE/merge-github-output" "$NIX_CI_STATE/merge-step-summary.md"
+        store_args=()
+        if docker volume inspect "$NIX_CI_STORE_VOLUME" >/dev/null 2>&1; then
+          store_args+=(--volume "$NIX_CI_STORE_VOLUME:/nix:ro")
+        fi
+        bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm \
+          "${store_args[@]}" \
+          --volume "$NIX_CI_PROJECT_DIR:/workspace" \
+          --volume "$NIX_CI_INFRA_DIR:/infra:ro" \
+          --volume "$NIX_CI_STATE:/ci" \
+          --env GH_TOKEN \
+          --env GITHUB_REPOSITORY \
+          --env GITHUB_SERVER_URL \
+          --env GITHUB_RUN_ID \
+          --env GITHUB_OUTPUT=/ci/merge-github-output \
+          --env GITHUB_STEP_SUMMARY=/ci/merge-step-summary.md \
+          --env HOST_UID \
+          --env HOST_GID \
+          -- bash -euo pipefail -c '
+            trap '\''chown -R "$HOST_UID:$HOST_GID" /workspace /ci/update; chown "$HOST_UID:$HOST_GID" /ci/merge-github-output /ci/merge-step-summary.md 2>/dev/null || true'\'' EXIT
+            if [[ -f /ci/tools && -x "$(cat /ci/tools)/bin/nix-ci" ]]; then
+              "$(cat /ci/tools)/bin/nix-ci" update merge --project-dir /workspace --state /ci/update
+            else
+              nix run --no-update-lock-file /infra#ci -- update merge --project-dir /workspace --state /ci/update
+            fi
+          '
+        if [[ -f "$NIX_CI_STATE/merge-github-output" ]]; then
+          cat "$NIX_CI_STATE/merge-github-output" >> "$GITHUB_OUTPUT"
+        fi
+        if [[ -f "$NIX_CI_STATE/merge-step-summary.md" ]]; then
+          cat "$NIX_CI_STATE/merge-step-summary.md" >> "$GITHUB_STEP_SUMMARY"
+        fi
 
     - name: Publish signed cache at end of phase
       if: inputs.mode == 'publish-cache'
@@ -583,7 +619,8 @@ runs:
           --env ORANC_PASSWORD \
           --env ORANC_SIGNING_KEY \
           -- bash -euo pipefail <<'BASH'
-        export PATH="$(cat /ci/tools)/bin:$PATH"
+        export PATH="$(cat /ci/tools)/bin"
+        export PYTHONNOUSERSITE=1
         expected=$(jq -r '.cache.publicKey' /ci/manifest.json)
         actual=$(printf '%s' "$ORANC_SIGNING_KEY" | nix key convert-secret-to-public)
         if [[ "$actual" != "$expected" ]]; then
@@ -607,7 +644,7 @@ runs:
         fi
         if [[ -n "${NIX_CI_PUBLISHER:-}" ]] && docker inspect "$NIX_CI_PUBLISHER" >/dev/null 2>&1; then
           docker exec "$NIX_CI_PUBLISHER" bash -euo pipefail -c \
-            'export PATH="$(cat /ci/tools)/bin:$PATH"; nix-ci cache stop --state /ci' || true
+            'export PATH="$(cat /ci/tools)/bin" PYTHONNOUSERSITE=1; nix-ci cache stop --state /ci' || true
           docker rm -f "$NIX_CI_PUBLISHER" >/dev/null 2>&1 || true
         fi
         rm -f -- "$state/oranc.netrc"
