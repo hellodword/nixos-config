@@ -14,7 +14,7 @@ let
       port = lib.optionalString (upstream.port != defaultPort) ":${toString upstream.port}";
     in
     "${upstream.protocol}://${upstream.address}${port}${upstream.path or ""}"
-  ) (builtins.fromTOML (builtins.readFile ../../data/network/direct-dns.toml)).upstreams;
+  ) (builtins.fromTOML (builtins.readFile ../../data/network/dns-upstreams.toml)).direct;
   state = "/run/site-network-exclude";
   address = "169.254.53.54";
   policy = pkgs.writeText "network-exclude.json" (

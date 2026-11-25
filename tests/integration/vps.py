@@ -1,6 +1,7 @@
 """Exercise generated credentials, native proxy protocols and client artifacts."""
 import argparse
 import base64
+import configparser
 import contextlib
 import copy
 import json
@@ -14,6 +15,7 @@ import sys
 import tempfile
 import threading
 import time
+import tomllib
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
@@ -173,7 +175,7 @@ class InventoryProtocol(unittest.TestCase):
             key, cert = certificate(root)
             origin = stack.enter_context(http_server())
             resolvers, upstreams = [], []
-            for branch, upstream in enumerate(clients.DIRECT_DNS):
+            for branch, upstream in enumerate(clients.DNS_UPSTREAMS["direct"]):
                 resolver = Resolver("cn", branch)
                 resolver.ipv4 = f"127.0.0.{branch + 1}"
                 port = free_port()
@@ -199,7 +201,7 @@ class InventoryProtocol(unittest.TestCase):
                  "action": "route", "outbound": "direct"},
             ]}
             sing_box_policy = clients.purposes.sing_box
-            with patch.object(clients, "DIRECT_DNS", upstreams), patch.object(
+            with patch.dict(clients.DNS_UPSTREAMS, direct=upstreams), patch.object(
                     clients.purposes, "sing_box", side_effect=lambda groups: sing_box_policy(groups, catalog)):
                 config = clients.mobile(provider)
             dns_port, socks_port = free_port(), free_port()
@@ -351,6 +353,7 @@ class InventoryProtocol(unittest.TestCase):
                             self.assertTrue(any(call["name"] == "sf.fixture.example." for call in resolver.calls))
 
     def test_prepared_deployments_and_native_clients(self):
+        dns_upstreams = tomllib.loads((ROOT / "data/network/dns-upstreams.toml").read_text())
         inventory = self.inventory()
         inventory["exits"]["west-native"]["udp"] = False
         inventory["subscriptions"]["primary"]["name"] = "个人网络 (iPhone)"
@@ -430,7 +433,12 @@ class InventoryProtocol(unittest.TestCase):
                 expected_udp = "false" if node["tag"] in provider["exits"]["west-native"]["paths"] else "true"
                 self.assertEqual(options["udp-relay"], expected_udp)
                 self.assertEqual(options.get("chain"), node.get("detour"))
-            self.assertEqual(full.partition("[Rule]\n")[2], separate.partition("[Rule]\n")[2])
+            rule_section = full.partition("[Rule]\n")[2]
+            self.assertEqual(rule_section, separate.partition("[Rule]\n")[2])
+            rules = [line for line in rule_section.splitlines() if line and not line.startswith("#")]
+            final = mobile["route"]["final"]
+            self.assertEqual(rules[0], "DST-PORT,53,REJECT")
+            self.assertEqual(rules[-2:], [f"DOMAIN-KEYWORD,.,{final}", f"FINAL,{final}"])
             payment = next(rule for rule in mobile["route"]["rules"] if "geosite-paypal" in rule.get("rule_set", []))
             payment_dns = next(rule for rule in mobile["dns"]["rules"] if "geosite-paypal" in rule.get("rule_set", []))
             self.assertEqual((payment["outbound"], payment_dns["server"]), ("hideme", "dns-hideme"))
@@ -448,6 +456,20 @@ class InventoryProtocol(unittest.TestCase):
                 expected = set(provider["exits"][binding["default"]]["paths"]) if "default" in binding else allowed
                 self.assertEqual(tests.get(default, {default}), expected)
             for config, embedded in ((full, True), (separate, False)):
+                settings = configparser.ConfigParser(interpolation=None)
+                settings.read_string(config.partition("\n[Proxy")[0])
+                general = settings["General"]
+                for setting, group, protocol, default_port, fragment in (
+                    ("direct-dns-server", "direct", "https", 443, ""),
+                    ("dns-server", "proxy", "https", 443, "proxy"),
+                    ("fallback-dns-server", "proxy", "tls", 853, "proxy"),
+                ):
+                    urls = [urllib.parse.urlsplit(url.strip()) for url in general[setting].split(",")]
+                    actual = [(url.scheme, url.hostname, url.port or default_port, url.path, url.fragment)
+                              for url in urls]
+                    expected = [(protocol, item["address"], item["port"], item.get("path", ""), fragment)
+                                for item in dns_upstreams[group] if item["protocol"] == protocol]
+                    self.assertEqual(actual, expected, setting)
                 group_section = config.partition("[Proxy Group]\n")[2].partition("\n[Rule]")[0]
                 groups = dict(line.split(" = ", 1) for line in group_section.splitlines() if line)
                 self.assertEqual(set(groups), set(native))

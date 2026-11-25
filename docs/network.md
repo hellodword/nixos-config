@@ -94,7 +94,7 @@ network-exclude dns reset
 systemctl status site-network-exclude-dns
 ```
 
-默认共用 DNS 读取 [direct-dns.toml](../data/network/direct-dns.toml)，`dns set` 立即更新 `/run` 中的运行时列表，重启后恢复声明默认值；`--dns` 则为当次命令建立临时解析器并在退出后回收。
+排除环境的共用 DNS 和引导解析器默认读取 `direct` 组。`dns set` 立即更新 `/run` 中的共用 DNS 列表，重启后恢复声明值。`--dns` 为当次命令建立临时解析器，命令退出后即回收。[DNS 上游声明](../data/network/dns-upstreams.toml)
 
 桌面提供 `firefox-direct` 和 `google-chrome-direct`（均支持 `--dns SERVER`），保留 Firejail 沙箱并使用持久化的独立配置与缓存目录，可与普通受保护浏览器并行运行；无终端启动鉴权失败或已有实例占用同一配置文件锁时通过桌面通知提示。
 
@@ -227,7 +227,7 @@ laptop profile 启用 `site.network.localAccess.enable`，统一作用于宿主�
 
 启用 DNS 后，本机、普通 Docker bridge 与 Tailscale 出口节点客户端发往任意外部地址 TCP/UDP 53 的明文查询均被重定向至本机 `169.254.53.53`（双栈另含 `fd53:53:53::53`）。
 
-缓存未命中时，dnsproxy 对组内所有加密分支并发查询（4 秒预算），首个返回的 `NOERROR`（含 `NODATA`）或 `NXDOMAIN` 胜出；`SERVFAIL`、`REFUSED` 或 TLS 失败留待其他分支完成，全败返回 `SERVFAIL`。默认拒绝客户端自带 ECS，对外发送 `/0`；CN 默认并发查询 [direct-dns.toml](../data/network/direct-dns.toml) 中的阿里与 DNSPod 双栈 DoH/DoT（字面 IP 直连），GLOBAL 默认并发查询 Google DoT 与 Cloudflare DoH。
+缓存未命中时，dnsproxy 对组内所有加密分支并发查询，等待预算为 4 秒。首个返回的 `NOERROR`（含 `NODATA`）或 `NXDOMAIN` 胜出。`SERVFAIL`、`REFUSED` 或 TLS 失败会留待其他分支完成，全部失败时返回 `SERVFAIL`。默认拒绝客户端自带 ECS，对外发送 `/0`。CN 默认直连 `direct` 组的 DoH 和 DoT 端点，GLOBAL 默认并发查询 Google DoT 与 Cloudflare DoH。[DNS 上游声明](../data/network/dns-upstreams.toml)
 
 ## Tailscale
 

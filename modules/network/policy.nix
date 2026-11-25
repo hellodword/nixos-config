@@ -224,7 +224,7 @@ in
       description = "DNS listeners, encrypted upstream groups and ECS settings.";
       default = {
         groups = {
-          cn.upstreams = (builtins.fromTOML (builtins.readFile ../../data/network/direct-dns.toml)).upstreams;
+          cn.upstreams = (builtins.fromTOML (builtins.readFile ../../data/network/dns-upstreams.toml)).direct;
           global.upstreams = [
             {
               protocol = "tls";

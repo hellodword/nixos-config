@@ -1,0 +1,53 @@
+# laptop 和移动 sing-box 并发查询直连上游。Shadowrocket 用其中的 DoH 解析直连域名。
+[[direct]]
+protocol = "https"
+address = "120.53.53.53"
+port = 443
+serverName = "doh.pub"
+path = "/dns-query"
+
+[[direct]]
+protocol = "https"
+address = "223.5.5.5"
+port = 443
+serverName = "dns.alidns.com"
+path = "/dns-query"
+
+[[direct]]
+protocol = "tls"
+address = "120.53.53.53"
+port = 853
+serverName = "dot.pub"
+
+[[direct]]
+protocol = "tls"
+address = "223.5.5.5"
+port = 853
+serverName = "dns.alidns.com"
+
+# Shadowrocket 经首页节点使用这些上游，默认用 DoH，备用用 DoT。
+[[proxy]]
+protocol = "https"
+address = "1.1.1.1"
+port = 443
+serverName = "cloudflare-dns.com"
+path = "/dns-query"
+
+[[proxy]]
+protocol = "https"
+address = "8.8.8.8"
+port = 443
+serverName = "dns.google"
+path = "/dns-query"
+
+[[proxy]]
+protocol = "tls"
+address = "1.1.1.1"
+port = 853
+serverName = "one.one.one.one"
+
+[[proxy]]
+protocol = "tls"
+address = "8.8.8.8"
+port = 853
+serverName = "dns.google"

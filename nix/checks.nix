@@ -85,7 +85,7 @@ rec {
       [
         ../scripts/network
         ../data/network/purposes.toml
-        ../data/network/direct-dns.toml
+        ../data/network/dns-upstreams.toml
         ../tests/unit/test_network.py
         ../tests/integration/dns.py
         ../tests/integration/network.py

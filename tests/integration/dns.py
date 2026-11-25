@@ -31,7 +31,7 @@ def main():
         for group in ("cn", "global"):
             groups[group] = {"upstreams": []}
             resolvers[group] = []
-            upstreams = (tomllib.loads((ROOT / "data/network/direct-dns.toml").read_text())["upstreams"]
+            upstreams = (tomllib.loads((ROOT / "data/network/dns-upstreams.toml").read_text())["direct"]
                          if group == "cn" else [{"protocol": protocol} for protocol in ("tls", "https")])
             for branch, upstream in enumerate(upstreams):
                 protocol = upstream["protocol"]

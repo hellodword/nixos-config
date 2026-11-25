@@ -13,7 +13,7 @@ from provider_groups import grouped_outbounds, purpose_group
 import purposes
 
 DATA = Path(__file__).resolve().parents[2] / "data/network"
-DIRECT_DNS = tomllib.loads((DATA / "direct-dns.toml").read_text())["upstreams"]
+DNS_UPSTREAMS = tomllib.loads((DATA / "dns-upstreams.toml").read_text())
 
 
 def direct_dns_rules(rules, servers):
@@ -71,7 +71,7 @@ def mobile(provider, cache_id=None):
     if cache_id is not None:
         config["experimental"]["cache_file"]["cache_id"] = cache_id
     direct_servers = []
-    for index, upstream in enumerate(DIRECT_DNS):
+    for index, upstream in enumerate(DNS_UPSTREAMS["direct"]):
         tag = f"dns-direct-{index}"
         direct_servers.append(tag)
         server = {"tag": tag, "type": upstream["protocol"], "server": upstream["address"],
@@ -122,6 +122,22 @@ def shadowrocket_nodes(provider):
     return base64.b64encode(("\n".join(lines) + "\n").encode()).decode() + "\n"
 
 
+def shadowrocket_dns_servers(group, protocol):
+    default_port = {"https": 443, "tls": 853}[protocol]
+    suffix = "#proxy" if group == "proxy" else ""
+    urls = []
+    for upstream in DNS_UPSTREAMS[group]:
+        if upstream["protocol"] != protocol:
+            continue
+        host = upstream["address"]
+        if ":" in host:
+            host = f"[{host}]"
+        if upstream["port"] != default_port:
+            host += f":{upstream['port']}"
+        urls.append(f"{protocol}://{host}{upstream.get('path', '')}{suffix}")
+    return ", ".join(urls)
+
+
 def shadowrocket(provider, subscription_name=None):
     parts = re.split(r"(?m)^\[Rule\][ \t]*(?:\r?\n|$)", (DATA / "shadowrocket-client.conf").read_text(), maxsplit=1)
     if len(parts) != 2:
@@ -130,13 +146,11 @@ def shadowrocket(provider, subscription_name=None):
     lines = [general.rstrip()]
     if any("detour" in node for node in provider["outbounds"]):
         lines.append("close-if-proxy-chain-missing = true")
-    for protocol, setting in (("https", "dns-server"), ("tls", "fallback-dns-server")):
-        urls = []
-        for upstream in DIRECT_DNS:
-            if upstream["protocol"] == protocol:
-                port = "" if upstream["port"] == (443 if protocol == "https" else 853) else f":{upstream['port']}"
-                urls.append(f"{protocol}://{upstream['address']}{port}{upstream.get('path', '')}")
-        lines.append(setting + " = " + ", ".join(urls))
+    lines.extend([
+        "direct-dns-server = " + shadowrocket_dns_servers("direct", "https"),
+        "dns-server = " + shadowrocket_dns_servers("proxy", "https"),
+        "fallback-dns-server = " + shadowrocket_dns_servers("proxy", "tls"),
+    ])
     udp_by_path = {
         path: exit_.get("udp", True)
         for exit_ in provider.get("exits", {}).values()

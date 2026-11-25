@@ -263,6 +263,25 @@ ssh "$ssh_host" 'systemctl reboot'
   PY
   ```
 
+更换 Shadowrocket 的 DNS 上游时，在共享声明中编辑直连用的 `direct` 组或经首页节点查询的 `proxy` 组。重新生成并发布订阅 Worker 后，完整导入的客户端刷新完整配置。分离导入时，DNS 和规则随分流配置更新，节点随节点订阅更新。[DNS 上游声明](../data/network/dns-upstreams.toml)
+
+### Shadowrocket 的连接与 DNS
+
+在「全局路由」选「配置」，保持首页节点和用途组的选择不变。选一个有 TXT 记录的域名，分别打开网站和查询 TXT，按时间和完整域名对照连接日志与 DNS 日志。使用未缓存的查询才能观察上游请求。
+
+| 操作 | 如何读日志 |
+| --- | --- |
+| 打开网站 | 普通 A 查询先返回 Fake IP。应用连接这个地址时，Shadowrocket 按域名匹配规则。直连需要真实地址时使用 `direct-dns-server`。代理连接将域名交给节点，由节点通过所选出口解析。 |
+| 单独查询同一域名的 TXT | 即使网站连接命中 `DIRECT`，独立的 TXT 查询仍可走 `dns-server`。应用也会查询 `SRV` 来发现服务，或查询 `HTTPS` 记录取得连接参数。 |
+
+连接日志显示 `FINAL` 时，手机可能已经查询过该域名。`DOMAIN-KEYWORD,.,…` 放在 `FINAL` 前，让其余含点域名也能按域名匹配代理组。对于列在 `always-real-ip` 中的域名，A 查询本身就需要真实地址。
+
+默认 DoH 和备用 DoT 都通过 `#proxy` 使用首页节点。切换用途组会改变匹配该组的连接出口，切换首页节点才会改变这两项 DNS 的代理路径。若使用 `#proxy=名称`，名称须指向具体节点。
+
+排查明文 DNS 时，用 `nslookup -type=TXT "$domain"` 查询默认解析器，再用 `dig @"$server" "$domain" TXT` 显式查询 UDP 53，加 `+tcp` 可测 TCP 53。选一个由隧道接管的地址作为 `$server`，显式查询会命中 `REJECT`，默认 TXT 查询仍可经加密 DNS 得到应答。
+
+外部 DNS 探测记录的是递归解析器向权威服务器查询时使用的地址。要确认手机实际发出的明文 DNS，可在 Wi-Fi 网关的局域网接口按设备抓取目的端口为 53 的流量。这也能查到发往 `tun-excluded-routes` 中地址、绕过隧道的查询。
+
 ## 服务端 DNS 与泛域名证书更新
 
 - **DNS**：VPS 宿主系统服务使用 `systemd-resolved` 严格 DoT（`resolvectl status` 查看）；代理目标的域名解析由承载 VPS 的 `sing-box` 经对应逻辑出口并发查询 [vps-dns.json](../data/network/vps-dns.json)（或 `exits.*.dns`）。

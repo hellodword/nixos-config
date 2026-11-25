@@ -92,5 +92,6 @@ def shadowrocket(groups, catalog=CATALOG):
             # Only literal IP traffic reaches the service/CN IP fallback.
             line = f"{match},{destination}" + (",no-resolve" if ip_rule else "")
             lines.append(line)
-    lines.append("FINAL," + outbound(catalog["final"], groups))
+    final = outbound(catalog["final"], groups)
+    lines.extend([f"DOMAIN-KEYWORD,.,{final}", f"FINAL,{final}"])
     return lines
