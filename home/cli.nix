@@ -131,24 +131,31 @@ in
           return "$status"
         }
         _devc_run() {
-          local variant="$1"
-          shift
-          local workdir repo_name state_root guard target
-          local tty_flags=(-i) ro_mounts=()
+          local mode="$1"
+          local variant="$2"
+          shift 2
+          if [[ "''${1:-}" == "--dry-run" ]]; then
+            mode="dry"
+            shift
+          elif [[ "''${1:-}" == "--" ]]; then
+            shift
+          fi
+
+          local workdir repo_name name_prefix rand_hex container_name state_root guard target rendered
+          local tty_flags=(-i) ro_mounts=() cmd=()
           workdir="$(pwd -P)" || return 1
           repo_name="$(basename "$workdir")"
           [[ -n "$repo_name" && "$repo_name" != "/" ]] || repo_name="workspace"
+          rand_hex="$(od -vAn -N4 -tx1 /dev/urandom | tr -d ' \n' | tr '[:lower:]' '[:upper:]')"
+          [[ -n "$rand_hex" ]] || return 1
+          name_prefix="$(printf '%s' "$repo_name" | tr -cs '[:alnum:]_.-' '-')"
+          name_prefix="''${name_prefix#"''${name_prefix%%[[:alnum:]]*}"}"
+          while [[ "$name_prefix" == *[-.] ]]; do
+            name_prefix="''${name_prefix%?}"
+          done
+          [[ -n "$name_prefix" ]] || name_prefix="workspace"
+          container_name="''${name_prefix}-''${rand_hex}"
           state_root="''${XDG_STATE_HOME:-$HOME/.local/state}/devcontainers"
-
-          install -d -m 0700 \
-            "$state_root" \
-            "$state_root/codex" \
-            "$state_root/gemini" \
-            "$state_root/opencode" \
-            "$state_root/cache" \
-            "$state_root/cache/xdg" \
-            "$state_root/cache/cargo" || return 1
-          install -d -m 0755 "$state_root/cache/nix" || return 1
 
           if [[ -t 0 && -t 1 ]]; then
             tty_flags+=(-t)
@@ -161,26 +168,56 @@ in
             fi
           done
 
-          docker run --rm "''${tty_flags[@]}" --init \
-            --cap-drop=ALL \
-            --security-opt=no-new-privileges:true \
-            -v "$workdir:/workspaces/$repo_name" \
-            "''${ro_mounts[@]}" \
-            -v "$state_root/codex:/home/vscode/.codex" \
-            -v "$state_root/gemini:/home/vscode/.gemini" \
-            -v "$state_root/opencode:/home/vscode/.config/opencode" \
-            -v "$state_root/cache/nix:/var/cache/devcontainer-nix" \
-            -v "$state_root/cache/xdg:/home/vscode/.cache" \
-            -v "$state_root/cache/cargo:/home/vscode/.local/share/cargo" \
-            -w "/workspaces/$repo_name" \
-            "ghcr.io/hellodword/devcontainers-dev:$variant" \
+          cmd=(
+            docker run --rm
+            --name "$container_name"
+            "''${tty_flags[@]}"
+            --init
+            --cap-drop=ALL
+            --security-opt=no-new-privileges:true
+            -v "$workdir:/workspaces/$repo_name"
+            "''${ro_mounts[@]}"
+            -v "$state_root/codex:/home/vscode/.codex"
+            -v "$state_root/gemini:/home/vscode/.gemini"
+            -v "$state_root/opencode:/home/vscode/.config/opencode"
+            -v "$state_root/cache/nix:/var/cache/devcontainer-nix"
+            -v "$state_root/cache/xdg:/home/vscode/.cache"
+            -v "$state_root/cache/cargo:/home/vscode/.local/share/cargo"
+            -w "/workspaces/$repo_name"
+            "ghcr.io/hellodword/devcontainers-dev:$variant"
             "$@"
+          )
+          printf -v rendered '%q ' "''${cmd[@]}"
+
+          if [[ "$mode" == "dry" ]]; then
+            printf '%s\n' "''${rendered% }"
+            return 0
+          fi
+
+          install -d -m 0700 \
+            "$state_root" \
+            "$state_root/codex" \
+            "$state_root/gemini" \
+            "$state_root/opencode" \
+            "$state_root/cache" \
+            "$state_root/cache/xdg" \
+            "$state_root/cache/cargo" || return 1
+          install -d -m 0755 "$state_root/cache/nix" || return 1
+
+          printf '%s\n' "''${rendered% }" >&2
+          "''${cmd[@]}"
         }
         devc() {
-          _devc_run latest "$@"
+          _devc_run run latest "$@"
+        }
+        devc-dry() {
+          _devc_run dry latest "$@"
         }
         devc-agent() {
-          _devc_run agent "$@"
+          _devc_run run agent "$@"
+        }
+        devc-agent-dry() {
+          _devc_run dry agent "$@"
         }
       '';
     };
