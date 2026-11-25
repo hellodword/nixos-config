@@ -3,17 +3,16 @@
 import argparse
 import json
 import os
-from pathlib import Path
+import re
 import stat
 import subprocess
 import sys
+from pathlib import Path
 
-DEFAULT_IMAGE = "ghcr.io/hellodword/devcontainers-dev:agent"
-SUBDIRS = (
-    ("nix", 0o755),
-    ("xdg", 0o700),
-    ("cargo", 0o700),
-)
+DEFAULT_IMAGE = "ghcr.io/hellodword/devcontainers-dev:latest"
+CACHE_LAYOUT_LABEL = "devcontainers.nix.cache-layout"
+MOUNT_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+MODE_RE = re.compile(r"^0[0-7]{3}$")
 
 
 def reject_symlink(path: Path) -> None:
@@ -27,26 +26,107 @@ def reject_symlink(path: Path) -> None:
         raise RuntimeError(f"cache path is not a directory: {path}")
 
 
-def prepare_cache_dirs(cache_root: Path) -> None:
+def parse_cache_layout(raw_json: str, source: str) -> list[tuple[str, str, int]]:
+    try:
+        data = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"invalid cache layout JSON from {source}: {exc}") from exc
+
+    if not isinstance(data, dict):
+        raise TypeError(f"cache layout in {source} must be a JSON object")
+    if data.get("version") != 1:
+        raise RuntimeError(f"unsupported cache layout version in {source}")
+    mounts = data.get("mounts")
+    if not isinstance(mounts, list):
+        raise TypeError(f"cache layout mounts in {source} must be a list")
+    if not mounts:
+        raise RuntimeError(f"empty cache layout mounts in {source}")
+
+    seen_ids: set[str] = set()
+    seen_targets: set[str] = set()
+    parsed: list[tuple[str, str, int]] = []
+    for entry in mounts:
+        if not isinstance(entry, dict):
+            raise TypeError(f"invalid cache mount entry in {source}")
+        mount_id = entry.get("id")
+        target = entry.get("target")
+        mode_str = entry.get("mode")
+        if not isinstance(mount_id, str):
+            raise TypeError(f"cache mount id in {source} must be a string")
+        if not MOUNT_ID_RE.match(mount_id):
+            raise RuntimeError(f"invalid cache mount id in {source}: {mount_id!r}")
+        if mount_id in seen_ids:
+            raise RuntimeError(f"duplicate cache mount id in {source}: {mount_id!r}")
+        if not isinstance(target, str):
+            raise TypeError(f"cache mount target in {source} must be a string")
+        if (
+            not target.startswith(("/home/vscode/", "/var/cache/"))
+            or ".." in Path(target).parts
+        ):
+            raise RuntimeError(f"invalid cache mount target in {source}: {target!r}")
+        if target in seen_targets:
+            raise RuntimeError(f"duplicate cache mount target in {source}: {target!r}")
+        if not isinstance(mode_str, str):
+            raise TypeError(f"cache mount mode in {source} must be a string")
+        if not MODE_RE.match(mode_str):
+            raise RuntimeError(f"invalid cache mount mode in {source}: {mode_str!r}")
+        seen_ids.add(mount_id)
+        seen_targets.add(target)
+        parsed.append((mount_id, target, int(mode_str, 8)))
+    return parsed
+
+
+def inspect_image_layout(image: str) -> tuple[bool, str]:
+    result = subprocess.run(
+        [
+            "docker",
+            "image",
+            "inspect",
+            "--format",
+            f'{{{{ index .Config.Labels "{CACHE_LAYOUT_LABEL}" }}}}',
+            image,
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False, ""
+    return True, result.stdout.strip()
+
+
+def resolve_cache_mounts(
+    *,
+    label_json: str,
+    explicit_layout: Path | None,
+    cache_root: Path,
+) -> list[tuple[str, str, int]]:
+    if explicit_layout is not None:
+        return parse_cache_layout(
+            explicit_layout.read_text(encoding="utf-8"), str(explicit_layout)
+        )
+    if label_json:
+        return parse_cache_layout(label_json, f"image label {CACHE_LAYOUT_LABEL}")
+    fallback_file = cache_root.parent / "cache-layout.json"
+    if fallback_file.is_file():
+        return parse_cache_layout(
+            fallback_file.read_text(encoding="utf-8"), str(fallback_file)
+        )
+    raise RuntimeError(
+        f"image lacks {CACHE_LAYOUT_LABEL} label and {fallback_file} does not exist"
+    )
+
+
+def prepare_cache_dirs(cache_root: Path, mounts: list[tuple[str, str, int]]) -> None:
     reject_symlink(cache_root)
     cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     reject_symlink(cache_root)
-    for name, mode in SUBDIRS:
+    for name, _, mode in mounts:
         sub = cache_root / name
         reject_symlink(sub)
         if not sub.exists():
             sub.mkdir(mode=mode)
         reject_symlink(sub)
-
-
-def image_exists(image: str) -> bool:
-    result = subprocess.run(
-        ["docker", "image", "inspect", "--format", "{{.Id}}", image],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=False,
-    )
-    return result.returncode == 0
 
 
 def candidate_roots(cache_root: Path, persist_root: str | None) -> set[str]:
@@ -57,9 +137,11 @@ def candidate_roots(cache_root: Path, persist_root: str | None) -> set[str]:
     if persist_root:
         prefix = persist_root.rstrip("/")
         if prefix:
-            for item in list(roots):
-                if item.startswith("/") and not item.startswith(prefix + "/"):
-                    roots.add(os.path.normpath(prefix + item))
+            roots |= {
+                os.path.normpath(prefix + item)
+                for item in roots
+                if item.startswith("/") and not item.startswith(prefix + "/")
+            }
     return roots
 
 
@@ -97,6 +179,7 @@ def main(argv: list[str] | None = None) -> int:
         description=__doc__,
     )
     parser.add_argument("--cache-root", type=Path, default=None)
+    parser.add_argument("--cache-layout", type=Path, default=None)
     parser.add_argument("--persist-root", default=None)
     parser.add_argument("--image", default=DEFAULT_IMAGE)
     parser.add_argument(
@@ -109,7 +192,8 @@ def main(argv: list[str] | None = None) -> int:
         passthrough = passthrough[1:]
 
     cache_root = (args.cache_root or default_cache_root()).expanduser()
-    if not image_exists(args.image):
+    present, label_json = inspect_image_layout(args.image)
+    if not present:
         if args.require_image:
             print(
                 f"devcontainer-cache-prune: image not present locally: {args.image}",
@@ -122,11 +206,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    prepare_cache_dirs(cache_root)
+    mounts = resolve_cache_mounts(
+        label_json=label_json,
+        explicit_layout=args.cache_layout,
+        cache_root=cache_root,
+    )
+    prepare_cache_dirs(cache_root, mounts)
     roots = candidate_roots(cache_root, args.persist_root)
     mode_args: list[str] = []
     if "--idle" not in passthrough and not caches_in_use(roots):
         mode_args.append("--idle")
+
+    volume_args: list[str] = []
+    for mount_id, target, _ in mounts:
+        volume_args.extend(["-v", f"{cache_root / mount_id}:{target}"])
 
     command = [
         "docker",
@@ -138,21 +231,10 @@ def main(argv: list[str] | None = None) -> int:
         "--cap-drop=ALL",
         "--security-opt=no-new-privileges:true",
         "--pids-limit=256",
-        "-v",
-        f"{cache_root / 'nix'}:/var/cache/devcontainer-nix",
-        "-v",
-        f"{cache_root / 'xdg'}:/home/vscode/.cache",
-        "-v",
-        f"{cache_root / 'cargo'}:/home/vscode/.local/share/cargo",
+        *volume_args,
         args.image,
         "devcontainer-runtime",
         "prune-caches",
-        "--nix-cache-dir",
-        "/var/cache/devcontainer-nix",
-        "--xdg-cache-dir",
-        "/home/vscode/.cache",
-        "--cargo-home",
-        "/home/vscode/.local/share/cargo",
         *mode_args,
         *passthrough,
     ]
@@ -164,6 +246,12 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except KeyboardInterrupt:
         raise SystemExit(130)
-    except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as exc:
+    except (
+        OSError,
+        RuntimeError,
+        subprocess.SubprocessError,
+        TypeError,
+        ValueError,
+    ) as exc:
         print(f"devcontainer-cache-prune: {exc}", file=sys.stderr)
         raise SystemExit(1)

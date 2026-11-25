@@ -190,7 +190,7 @@ Shell 便利入口见 [home/cli.nix](../home/cli.nix)。其中 `nixos-rebuild-bo
 
 先用 `bw login` 登录账户，再调用 `bw-unlock` 解锁并将会话 token 留在当前 shell 的 `BW_SESSION`；`bw-lock` 清理变量并锁定 CLI。提示符显示 `BW_SESSION` 是否存在，实际请求仍以 Bitwarden 的状态和响应为准，token 不写入历史或提示内容。
 
-`,` 使用 nix-index 数据库运行缺少的命令。`coderadio`、`suno-radio` 播放电台；`docker-pull-my-images` 更新本机镜像，失败时有限重试并返回失败状态；`devc` 与 `devc-agent` 以当前目录名加随机后缀启动 `devcontainers-dev` 的 `:latest` 或 `:agent` 容器，执行前输出完整 `docker run` 命令，自动挂载持久化的 `~/.local/state/devcontainers/{codex,gemini,opencode,cache}` 并对工作区已存在的 `.devcontainer`、`AGENTS.md`、`.agents` 施加只读覆盖（`devc-dry`、`devc-agent-dry` 或首参 `--dry-run` 仅输出命令不启动容器）。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
+`,` 使用 nix-index 数据库运行缺少的命令。`coderadio`、`suno-radio` 播放电台；`docker-pull-my-images` 更新本机镜像，失败时有限重试并返回失败状态；`devc` 以当前目录名加随机后缀启动 `ghcr.io/hellodword/devcontainers-dev:latest` 容器，执行前输出完整 `docker run` 命令，将 `~/.codex`、`~/.gemini` 及 `opencode` 的配置/数据/状态目录映射至默认路径，优先从本地镜像 `devcontainers.nix.cache-layout` Label 离线读取统一缓存契约（本地无该 Label 时回退 `~/.local/state/devcontainers/cache-layout.json` 或拉取远端 `data/cache-layout.json` 缓存，可传 `--refresh-cache-layout` 主动刷新）挂载 `~/.local/state/devcontainers/cache/<id>`，并对工作区已存在的 `.devcontainer`、`AGENTS.md`、`.agents` 施加只读覆盖（`devc-dry` 或 `--dry-run` 仅输出命令不启动容器）。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
 
 ## 应用隔离
 

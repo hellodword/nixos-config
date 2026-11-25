@@ -137,6 +137,8 @@ in
         ".docker"
         ".codex"
         ".gemini"
+        ".config/opencode"
+        ".local/share/opencode"
         ".agents-viewer"
         ".cache/nix"
         ".cache/nix-index"

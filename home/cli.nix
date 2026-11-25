@@ -132,17 +132,35 @@ in
         }
         _devc_run() {
           local mode="$1"
-          local variant="$2"
-          shift 2
-          if [[ "''${1:-}" == "--dry-run" ]]; then
-            mode="dry"
-            shift
-          elif [[ "''${1:-}" == "--" ]]; then
-            shift
-          fi
+          local refresh_layout=0
+          shift
+          while (($# > 0)); do
+            case "''${1:-}" in
+              --dry-run)
+                mode="dry"
+                shift
+                ;;
+              --refresh-cache-layout)
+                refresh_layout=1
+                shift
+                ;;
+              --)
+                shift
+                break
+                ;;
+              *)
+                break
+                ;;
+            esac
+          done
 
-          local workdir repo_name name_prefix rand_hex container_name state_root guard target rendered
-          local tty_flags=(-i) ro_mounts=() cmd=()
+          local image="ghcr.io/hellodword/devcontainers-dev:latest"
+          local layout_url="https://raw.githubusercontent.com/hellodword/devcontainers.nix/master/data/cache-layout.json"
+          local workdir repo_name name_prefix rand_hex container_name state_root layout_cache layout_json
+          local codex_dir gemini_dir opencode_config_dir opencode_data_dir opencode_state_dir
+          local parsed_mounts cache_id cache_target cache_mode entry dir cache_dir guard target rendered
+          local tty_flags=(-i) ro_mounts=() cache_mounts=() cache_dirs=() cmd=()
+
           workdir="$(pwd -P)" || return 1
           repo_name="$(basename "$workdir")"
           [[ -n "$repo_name" && "$repo_name" != "/" ]] || repo_name="workspace"
@@ -155,7 +173,62 @@ in
           done
           [[ -n "$name_prefix" ]] || name_prefix="workspace"
           container_name="''${name_prefix}-''${rand_hex}"
+
           state_root="''${XDG_STATE_HOME:-$HOME/.local/state}/devcontainers"
+          layout_cache="$state_root/cache-layout.json"
+          codex_dir="$HOME/.codex"
+          gemini_dir="$HOME/.gemini"
+          opencode_config_dir="''${XDG_CONFIG_HOME:-$HOME/.config}/opencode"
+          opencode_data_dir="''${XDG_DATA_HOME:-$HOME/.local/share}/opencode"
+          opencode_state_dir="''${XDG_STATE_HOME:-$HOME/.local/state}/opencode"
+
+          layout_json=""
+          if (( refresh_layout == 0 )); then
+            layout_json="$(docker image inspect --format '{{ index .Config.Labels "devcontainers.nix.cache-layout" }}' "$image" 2>/dev/null || true)"
+            if [[ -z "$layout_json" && -s "$layout_cache" ]]; then
+              layout_json="$(<"$layout_cache")" || return 1
+            fi
+          fi
+          if [[ -z "$layout_json" ]]; then
+            if layout_json="$(${pkgs.curl}/bin/curl -fsSL --connect-timeout 5 --max-time 15 "$layout_url")"; then
+              ${pkgs.jq}/bin/jq -e '.version == 1 and (.mounts | type == "array" and length > 0)' >/dev/null <<<"$layout_json" || return 1
+              install -d -m 0700 "$state_root" || return 1
+              local tmp_layout
+              tmp_layout="$(mktemp "$state_root/.cache-layout.XXXXXX")" || return 1
+              if ! printf '%s\n' "$layout_json" >"$tmp_layout" || ! chmod 0600 "$tmp_layout" || ! mv -f "$tmp_layout" "$layout_cache"; then
+                rm -f "$tmp_layout"
+                return 1
+              fi
+            else
+              layout_json="$(docker image inspect --format '{{ index .Config.Labels "devcontainers.nix.cache-layout" }}' "$image" 2>/dev/null || true)"
+              [[ -n "$layout_json" ]] || return 1
+            fi
+          fi
+
+          parsed_mounts="$(
+            ${pkgs.jq}/bin/jq -er '
+              if type != "object" or .version != 1 or (.mounts | type) != "array" or (.mounts | length) == 0 then
+                error("invalid cache-layout schema")
+              else
+                .mounts[]
+                | if (.id | type) != "string" or (.id | test("^[a-z0-9][a-z0-9._-]*$") | not) then
+                    error("invalid cache mount id")
+                  elif (.target | type) != "string" or (.target | test("^/(home/vscode|var/cache)/") | not) or (.target | test("(^|/)\\.\\.(/|$)")) then
+                    error("invalid cache mount target")
+                  elif (.mode | type) != "string" or (.mode | test("^0[0-7]{3}$") | not) then
+                    error("invalid cache mount mode")
+                  else
+                    [.id, .target, .mode] | @tsv
+                  end
+              end
+            ' <<<"$layout_json"
+          )" || return 1
+
+          while IFS=$'\t' read -r cache_id cache_target cache_mode; do
+            [[ -n "$cache_id" ]] || continue
+            cache_mounts+=(-v "$state_root/cache/$cache_id:$cache_target")
+            cache_dirs+=("$cache_mode:$state_root/cache/$cache_id")
+          done <<<"$parsed_mounts"
 
           if [[ -t 0 && -t 1 ]]; then
             tty_flags+=(-t)
@@ -177,14 +250,14 @@ in
             --security-opt=no-new-privileges:true
             -v "$workdir:/workspaces/$repo_name"
             "''${ro_mounts[@]}"
-            -v "$state_root/codex:/home/vscode/.codex"
-            -v "$state_root/gemini:/home/vscode/.gemini"
-            -v "$state_root/opencode:/home/vscode/.config/opencode"
-            -v "$state_root/cache/nix:/var/cache/devcontainer-nix"
-            -v "$state_root/cache/xdg:/home/vscode/.cache"
-            -v "$state_root/cache/cargo:/home/vscode/.local/share/cargo"
+            -v "$codex_dir:/home/vscode/.codex"
+            -v "$gemini_dir:/home/vscode/.gemini"
+            -v "$opencode_config_dir:/home/vscode/.config/opencode"
+            -v "$opencode_data_dir:/home/vscode/.local/share/opencode"
+            -v "$opencode_state_dir:/home/vscode/.local/state/opencode"
+            "''${cache_mounts[@]}"
             -w "/workspaces/$repo_name"
-            "ghcr.io/hellodword/devcontainers-dev:$variant"
+            "$image"
             "$@"
           )
           printf -v rendered '%q ' "''${cmd[@]}"
@@ -194,30 +267,29 @@ in
             return 0
           fi
 
-          install -d -m 0700 \
+          for dir in \
+            "$codex_dir" \
+            "$gemini_dir" \
+            "$opencode_config_dir" \
+            "$opencode_data_dir" \
+            "$opencode_state_dir" \
             "$state_root" \
-            "$state_root/codex" \
-            "$state_root/gemini" \
-            "$state_root/opencode" \
-            "$state_root/cache" \
-            "$state_root/cache/xdg" \
-            "$state_root/cache/cargo" || return 1
-          install -d -m 0755 "$state_root/cache/nix" || return 1
+            "$state_root/cache"; do
+            [[ -d "$dir" ]] || install -d -m 0700 "$dir" || return 1
+          done
+          for entry in "''${cache_dirs[@]}"; do
+            cache_dir="''${entry#*:}"
+            [[ -d "$cache_dir" ]] || install -d -m "''${entry%%:*}" "$cache_dir" || return 1
+          done
 
           printf '%s\n' "''${rendered% }" >&2
           "''${cmd[@]}"
         }
         devc() {
-          _devc_run run latest "$@"
+          _devc_run run "$@"
         }
         devc-dry() {
-          _devc_run dry latest "$@"
-        }
-        devc-agent() {
-          _devc_run run agent "$@"
-        }
-        devc-agent-dry() {
-          _devc_run dry agent "$@"
+          _devc_run dry "$@"
         }
       '';
     };

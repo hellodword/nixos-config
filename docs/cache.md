@@ -19,7 +19,7 @@ curl -fsS http://172.17.0.1:37516/nix-cache-info
 
 ### 开发容器及其他 Nix 客户端
 
-开发容器挂载宿主持久化的 `~/.local/state/devcontainers/cache/nix`（容器内 `/var/cache/devcontainer-nix`）并连接宿主网桥时，按优先级依次复用镜像层、跨容器共享 `file://` 缓存、宿主 `harmonia`（`172.17.0.1:37516`）与 `oranc`（`172.17.0.1:37515`）。其他通用 Nix 客户端在仓库根目录通过 [scripts/nix-cache.sh](../scripts/nix-cache.sh)（委托 [infra/scripts/nix-cache.sh](../infra/scripts/nix-cache.sh)）查看或安装持久配置：
+开发容器按镜像内嵌的 `devcontainers.nix.cache-layout` 契约挂载宿主持久化的 `~/.local/state/devcontainers/cache/<id>`（其中 `nix` 对应容器内 `/var/cache/devcontainer-nix`，其余语言与构建工具池分别对应各自缓存目录）并连接宿主网桥时，Nix 按优先级依次复用镜像层、跨容器共享 `file://` 缓存、宿主 `harmonia`（`172.17.0.1:37516`）与 `oranc`（`172.17.0.1:37515`）。其他通用 Nix 客户端在仓库根目录通过 [scripts/nix-cache.sh](../scripts/nix-cache.sh)（委托 [infra/scripts/nix-cache.sh](../infra/scripts/nix-cache.sh)）查看或安装持久配置：
 
 ```sh
 bash scripts/nix-cache.sh print

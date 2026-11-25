@@ -64,7 +64,7 @@ in
       };
       image = lib.mkOption {
         type = lib.types.str;
-        default = "ghcr.io/hellodword/devcontainers-dev:agent";
+        default = "ghcr.io/hellodword/devcontainers-dev:latest";
         description = "Container image providing devcontainer-runtime prune-caches.";
       };
       dates = lib.mkOption {
@@ -126,13 +126,7 @@ in
           "d ${userHome}/.local 0700 ${userName} ${userGroup} -"
           "d ${userHome}/.local/state 0700 ${userName} ${userGroup} -"
           "d ${stateRoot} 0700 ${userName} ${userGroup} -"
-          "d ${stateRoot}/codex 0700 ${userName} ${userGroup} -"
-          "d ${stateRoot}/gemini 0700 ${userName} ${userGroup} -"
-          "d ${stateRoot}/opencode 0700 ${userName} ${userGroup} -"
           "d ${cacheRoot} 0700 ${userName} ${userGroup} -"
-          "d ${cacheRoot}/nix 0755 ${userName} ${userGroup} -"
-          "d ${cacheRoot}/xdg 0700 ${userName} ${userGroup} -"
-          "d ${cacheRoot}/cargo 0700 ${userName} ${userGroup} -"
         ];
       }
       (lib.mkIf cfg.hostStoreCache.enable {
@@ -204,6 +198,7 @@ in
             ProtectSystem = "strict";
             TemporaryFileSystem = "${userHome}:ro";
             BindPaths = [ cacheRoot ];
+            BindReadOnlyPaths = [ "-${stateRoot}/cache-layout.json" ];
             InaccessiblePaths = lib.optional (persistRoot != "") "-${persistRoot}";
             PrivateTmp = true;
             PrivateDevices = true;
