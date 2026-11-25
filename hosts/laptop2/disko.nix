@@ -1,8 +1,7 @@
 { inputs, config, ... }:
 
 let
-  device0 = "/dev/disk/by-id/nvme-KIOXIA-EXCERIA_G2_SSD_43AA20S8KMK5";
-  swapSize = "64GiB";
+  swapSize = "64G";
 in
 {
   imports = [
@@ -27,25 +26,21 @@ in
   boot.supportedFilesystems = [ "btrfs" ];
 
   disko.devices.disk = {
-    ${baseNameOf device0} = {
-      device = device0;
+    laptop2 = {
+      device = "/dev/nvme0n1";
       type = "disk";
       content = {
-        type = "table";
-        format = "gpt";
-        partitions = [
-          {
-            name = "boot";
-            start = "0";
-            end = "1M";
-            part-type = "primary";
-            flags = [ "bios_grub" ];
-          }
-          {
-            name = "ESP";
-            start = "1MiB";
-            end = "1GiB";
-            flags = [ "esp" ];
+        type = "gpt";
+        partitions = {
+          boot = {
+            priority = 1;
+            size = "1M";
+            type = "EF02";
+          };
+          ESP = {
+            priority = 2;
+            size = "1G";
+            type = "EF00";
             content = {
               type = "filesystem";
               format = "vfat";
@@ -57,22 +52,21 @@ in
               ];
               mountpoint = "/boot";
             };
-          }
-          {
-            name = "primary0";
-            start = "1GiB";
+          };
+          primary0 = {
+            priority = 3;
             end = "-${swapSize}";
             content = {
               type = "luks";
               name = "crypt0";
-              keyFile = "/tmp/crypt.key";
+              passwordFile = "/tmp/crypt.key";
               extraFormatArgs = [
                 "--type"
                 "luks2"
-              ]; # "--label" "crypt"
+              ];
               content = {
                 type = "btrfs";
-                extraArgs = [ "-f" ]; # Override existing partition
+                extraArgs = [ "-f" ];
                 subvolumes = {
                   "/nix" = {
                     mountpoint = "/nix";
@@ -91,18 +85,16 @@ in
                 };
               };
             };
-          }
-          {
-            name = "swap";
-            start = "-${swapSize}";
-            end = "100%";
-            part-type = "primary";
+          };
+          swap = {
+            priority = 4;
+            size = "100%";
             content = {
               type = "swap";
               randomEncryption = true;
             };
-          }
-        ];
+          };
+        };
       };
     };
   };

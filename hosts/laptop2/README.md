@@ -12,11 +12,11 @@
 
 ## 裸机安装与离线引导恢复
 
-全新磁盘或灾难恢复在 NixOS 安装介质中执行。先用 `lsblk -f` 核对 [disko.nix](disko.nix) 中的 NVMe 设备路径（`/dev/disk/by-id/nvme-KIOXIA-EXCERIA_G2_SSD_43AA20S8KMK5`），并准备好离线保存的 SOPS age 私钥、Restic 凭据及代理节点文件。
+全新磁盘或灾难恢复在 NixOS 安装介质中执行（若主板已开启自定义 Secure Boot，引导官方安装介质前先在固件设置中临时关闭 Secure Boot 并保留已注册密钥，恢复完成后重新开启）。先用 `lsblk -f` 核对目标 NVMe 设备路径与 [disko.nix](disko.nix) 中的 `/dev/nvme0n1` 一致，并准备好离线保存的 SOPS age 私钥、Restic 凭据及代理节点文件。
 
 ### 1. LUKS2 分区格式化与口令注册
 
-`disko.nix` 在建表阶段读取 `/tmp/crypt.key` 初始化 `crypt0`。先在内存中生成一次性密钥完成分区与挂载，再注册开机交互口令并移除临时密钥槽：
+`disko.nix` 在建表阶段读取 `/tmp/crypt.key` 初始化 `crypt0`，并为 GPT 分区写入 `disk-laptop2-{boot,ESP,primary0,swap}` 分区标签。先在内存中生成一次性密钥完成分区与挂载，再注册开机交互口令并移除临时密钥槽：
 
 ```sh
 umask 077
@@ -25,7 +25,7 @@ nix --extra-experimental-features 'nix-command flakes' build --out-link /tmp/dis
   .#nixosConfigurations.laptop2.config.system.build.diskoScript
 sudo /tmp/disko-laptop2
 
-luks_part=/dev/disk/by-id/nvme-KIOXIA-EXCERIA_G2_SSD_43AA20S8KMK5-part3
+luks_part=/dev/disk/by-partlabel/disk-laptop2-primary0
 sudo cryptsetup luksAddKey "$luks_part" --key-file /tmp/crypt.key
 sudo cryptsetup luksRemoveKey "$luks_part" /tmp/crypt.key
 rm -f /tmp/crypt.key
@@ -52,8 +52,8 @@ sudo install -m 0600 -o root -g root /path/to/offline/outbounds.json \
   /mnt/persist/usr/local/etc/sing-box/outbounds.json
 
 # 若已有离线备份的 /etc/secureboot 则原样拷入；否则预先生成签名密钥供 Lanzaboote 签发 UKI
-sudo mkdir -p /mnt/etc
-sudo ln -sfn /mnt/persist/etc/secureboot /mnt/etc/secureboot
+sudo mkdir -p /mnt/etc/secureboot
+sudo mount --bind /mnt/persist/etc/secureboot /mnt/etc/secureboot
 # 全新初始化无备份时执行：
 # sudo nix shell nixpkgs#sbctl -c sbctl create-keys -e /mnt/persist/etc/secureboot/keys -d /mnt/persist/etc/secureboot/GUID
 ```
@@ -93,15 +93,16 @@ backup-status
 
 ### 4. ESP 启动项应急重建
 
-当固件更新或 ESP 损坏导致无法引导时，用 NixOS 安装介质解锁并挂载现有子卷，重新安装已签名的启动项：
+当固件更新或 ESP 损坏导致无法引导时，用 NixOS 安装介质解锁并挂载现有子卷（若分区标签不可用，也可按 `lsblk -f` 查到的实际第 2、3 分区设备节点挂载），重新安装已签名的启动项：
 
 ```sh
-sudo cryptsetup open /dev/disk/by-id/nvme-KIOXIA-EXCERIA_G2_SSD_43AA20S8KMK5-part3 crypt0
+sudo cryptsetup open /dev/disk/by-partlabel/disk-laptop2-primary0 crypt0
 sudo mount -t tmpfs -o mode=755 tmpfs /mnt
-sudo mkdir -p /mnt/persist /mnt/nix /mnt/boot
+sudo mkdir -p /mnt/persist /mnt/nix /mnt/boot /mnt/etc/secureboot
 sudo mount -o subvol=/persist /dev/mapper/crypt0 /mnt/persist
 sudo mount -o subvol=/nix /dev/mapper/crypt0 /mnt/nix
-sudo mount /dev/disk/by-id/nvme-KIOXIA-EXCERIA_G2_SSD_43AA20S8KMK5-part2 /mnt/boot
+sudo mount /dev/disk/by-partlabel/disk-laptop2-ESP /mnt/boot
+sudo mount --bind /mnt/persist/etc/secureboot /mnt/etc/secureboot
 sudo nixos-enter --root /mnt -c '/nix/var/nix/profiles/system/bin/switch-to-configuration boot && sbctl verify'
 sync
 sudo umount -R /mnt
