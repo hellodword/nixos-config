@@ -52,7 +52,7 @@ PATH="$ci_tools/bin:$PATH" python3 -m tests.integration.cache --nixpkgs-input ni
 - **本地 `path-info` Ed25519 验签分流**：`nix build` 在 `require-sigs = true` 下统一从公共只读 substituters、共享缓存与目标缓存并发恢复已有产物并写入 `/nix/var/nix/db/db.sqlite`。发布器读取本地 `nix path-info --json` 元数据，在内存中以 `trustedPublicKeys` 校验每条路径的 Ed25519 指纹签名：
   - 通过当前目标缓存公钥验签的路径计入 `targetHits` 并跳过上传；
   - 通过其他可信上游或共享缓存公钥验签的路径计入 `upstreamHits` 并跳过上传；
-  - 无可信签名的本地构建路径（含密钥轮换后仅带旧签名的路径）列入待上传队列，常规产物按 NAR 体积从大到小在受控内存预算内并发推送，大体积产物（`> 512 MiB`）在检查点阶段逐条由独立子进程串行推送，统一通过 `oranc push --no-closure --already-signed --excluded-signing-key-pattern 'a^' --zstd-level 3 --max-retry 3` 签名写入目标 GHCR 仓库。
+  - 无可信签名的本地构建路径（含密钥轮换后仅带旧签名的路径）列入待上传队列，按 NAR 体积从大到小分批（后台增量每批 16 条、检查点排空每批 64 条，固定并发度 4 及单批超时保护）通过 `oranc push --no-closure --already-signed --excluded-signing-key-pattern 'a^' --zstd-level 3 --max-retry 3` 流式签名写入目标 GHCR 仓库。
 
 ## 旁路增量与阶段末双模式
 

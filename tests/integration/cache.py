@@ -118,7 +118,7 @@ def build_gate():
 @contextmanager
 def publishing(state, inventory, *, secret, **settings):
     with patch.dict(os.environ, {"ORANC_SIGNING_KEY": secret.read_text().strip()}):
-        cache.start_publisher(state, inventory, **settings, large_nar_bytes=4096)
+        cache.start_publisher(state, inventory, **settings)
     try:
         yield
     except BaseException:
@@ -674,6 +674,15 @@ def _run_suite(args):
             ])
 
             os.environ["XDG_CACHE_HOME"] = str(work / "nix-client-cache")
+            hermetic_nix_conf_dir = work / "system-nix-conf"
+            hermetic_nix_conf_dir.mkdir(parents=True, exist_ok=True)
+            (hermetic_nix_conf_dir / "nix.conf").write_text(
+                "experimental-features = nix-command flakes\n"
+                "sandbox = true\n"
+                "sandbox-fallback = true\n"
+                "require-sigs = true\n"
+            )
+            os.environ["NIX_CONF_DIR"] = str(hermetic_nix_conf_dir)
 
             # Key 1: target cache key
             secret = work / "target.secret"
@@ -896,16 +905,20 @@ def _run_suite(args):
                             assert entered.wait(180), "the dependent build did not reach its gate"
                             deadline = time.monotonic() + 120
                             receipt = state / "published-paths.json"
-                            while not receipt.exists() or fixture["child"]["path"] not in json.loads(
-                                receipt.read_text()
+                            expected_live = {
+                                fixture["large"]["path"],
+                                fixture["child"]["path"],
+                            }
+                            while not receipt.exists() or not expected_live.issubset(
+                                json.loads(receipt.read_text())
                             ):
                                 status = json.loads((state / "cache/status.json").read_text())
                                 assert status["result"] == "running", status
                                 assert time.monotonic() < deadline, (
-                                    "completed dependency was not published during the build"
+                                    "completed dependencies were not published during the build"
                                 )
                                 time.sleep(0.2)
-                            verify(target_uri, [fixture["child"]["path"]], public)
+                            verify(target_uri, sorted(expected_live), public)
                             while not (
                                 errors := [
                                     event
@@ -931,10 +944,6 @@ def _run_suite(args):
                                 assert time.monotonic() < deadline
                                 time.sleep(0.1)
                             assert not future.done()
-                            assert {
-                                fixture["large"]["path"],
-                                fixture["largePeer"]["path"],
-                            }.isdisjoint(json.loads(receipt.read_text()))
                         finally:
                             release.set()
 
@@ -958,13 +967,12 @@ def _run_suite(args):
                         for name in ("child", "large", "largePeer", "driver", "forgedSigned")
                     }
                     assert first == expected_first, {"actual": first, "expected": expected_first}
-                    large_uploads = [
+                    first_uploads = [
                         event
                         for event in read_records(state / "timings.jsonl")
-                        if event["kind"] == "cache-upload" and event["group"] == "large"
+                        if event["kind"] == "cache-upload" and event["returncode"] == 0
                     ]
-                    assert [event["paths"] for event in large_uploads] == [1, 1], large_uploads
-                    assert large_uploads[0]["narBytes"] > large_uploads[1]["narBytes"], large_uploads
+                    assert sum(event["paths"] for event in first_uploads) == len(first), first_uploads
                     verify(target_uri, first, public)
 
                     # Build root VM fixture & verify classification labels.

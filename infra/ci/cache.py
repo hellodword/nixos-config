@@ -27,10 +27,10 @@ except ImportError:
     from report import load_manifest, record
 
 
-MAX_PARALLEL = 16
-MAX_INFLIGHT_NAR_BYTES = 512 * 1024 ** 2
-LARGE_NAR_BYTES = 512 * 1024 ** 2
-BACKGROUND_BATCH = 64
+UPLOAD_PARALLEL = 4
+BACKGROUND_BATCH = 16
+DRAIN_BATCH = 64
+PUSH_TIMEOUT_SECONDS = 1800
 NIX32_ALPHABET = "0123456789abcdfghijklmnpqrsvwxyz"
 
 
@@ -362,60 +362,64 @@ class Publisher:
         ]
         if settings.get("no_ssl"):
             command.append("--no-ssl")
-        large_limit = settings.get("large_nar_bytes", LARGE_NAR_BYTES)
-        large, regular = [], []
-        for path, info in sorted(
-            self.pending.items(),
-            key=lambda item: (-item[1]["narSize"], item[0]),
-        ):
-            (large if info["narSize"] > large_limit else regular).append(path)
-        regular_batches = []
-        index = 0
-        while index < len(regular):
-            first_nar = self.pending[regular[index]]["narSize"]
-            first_parallel = max(
-                1,
-                min(MAX_PARALLEL, MAX_INFLIGHT_NAR_BYTES // max(1, first_nar)),
+        ordered = [
+            path
+            for path, _info in sorted(
+                self.pending.items(),
+                key=lambda item: (-item[1]["narSize"], item[0]),
             )
-            batch_size = (
-                BACKGROUND_BATCH
-                if first_parallel >= MAX_PARALLEL
-                else max(1, first_parallel * 2)
-            )
-            batch = regular[index : index + batch_size]
-            max_nar = max(self.pending[path]["narSize"] for path in batch)
-            parallel = max(
-                1,
-                min(MAX_PARALLEL, len(batch), MAX_INFLIGHT_NAR_BYTES // max(1, max_nar)),
-            )
-            regular_batches.append((parallel, batch))
-            index += len(batch)
-        groups = []
-        if drain:
-            for path in large:
-                groups.append(("large", 1, [path]))
-            for parallel, batch in regular_batches:
-                groups.append(("regular", parallel, batch))
-        elif regular_batches:
-            parallel, batch = regular_batches[0]
-            groups.append(("regular", parallel, batch))
+        ]
+        if not ordered:
+            return
+        batch_size = DRAIN_BATCH if drain else BACKGROUND_BATCH
+        batches = (
+            [ordered[idx : idx + batch_size] for idx in range(0, len(ordered), batch_size)]
+            if drain
+            else [ordered[:batch_size]]
+        )
+        timeout = settings.get("push_timeout_seconds", PUSH_TIMEOUT_SECONDS)
         upload_env = os.environ | {"ORANC_SIGNING_KEY": self.signing_key}
-        for name, parallel, group in groups:
+        for batch in batches:
+            parallel = max(1, min(UPLOAD_PARALLEL, len(batch)))
+            nar_bytes = sum(self.pending[p]["narSize"] for p in batch)
             started = time.monotonic()
-            result = subprocess.run(
-                [*command, "--parallel", str(parallel)],
-                input="".join(path + "\n" for path in group),
-                text=True,
-                env=upload_env,
-            )
+            try:
+                result = subprocess.run(
+                    [*command, "--parallel", str(parallel)],
+                    input="".join(path + "\n" for path in batch),
+                    text=True,
+                    env=upload_env,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired as error:
+                record(
+                    self.state,
+                    {
+                        "kind": "cache-upload",
+                        "phase": self.phase,
+                        "paths": len(batch),
+                        "narBytes": nar_bytes,
+                        "seconds": time.monotonic() - started,
+                        "returncode": 124,
+                        "timedOut": True,
+                    },
+                )
+                if drain:
+                    raise TimeoutError(
+                        f"oranc push timed out after {timeout}s ({len(batch)} paths)"
+                    ) from error
+                self.retry_failures += 1
+                self.next_background_upload = time.monotonic() + min(
+                    30.0, 2.0 ** self.retry_failures
+                )
+                return
             record(
                 self.state,
                 {
                     "kind": "cache-upload",
                     "phase": self.phase,
-                    "group": name,
-                    "paths": len(group),
-                    "narBytes": sum(self.pending[p]["narSize"] for p in group),
+                    "paths": len(batch),
+                    "narBytes": nar_bytes,
                     "seconds": time.monotonic() - started,
                     "returncode": result.returncode,
                 },
@@ -430,8 +434,8 @@ class Publisher:
                 return
             self.retry_failures = 0
             self.next_background_upload = 0.0
-            self.published.update(group)
-            for path in group:
+            self.published.update(batch)
+            for path in batch:
                 del self.pending[path]
             atomic_json(self.state / "published-paths.json", sorted(self.published))
 
@@ -460,7 +464,6 @@ def build_publisher_configuration(
     *,
     oranc="oranc",
     no_ssl=False,
-    large_nar_bytes=LARGE_NAR_BYTES,
 ):
     cache_cfg = manifest.get("cache")
     if not cache_cfg:
@@ -474,7 +477,6 @@ def build_publisher_configuration(
         "trusted_public_keys": cache_cfg.get("trustedPublicKeys") or [],
         "oranc": oranc,
         "no_ssl": no_ssl,
-        "large_nar_bytes": large_nar_bytes,
     }
 
 
@@ -488,7 +490,6 @@ def start_publisher(
     trusted_public_keys,
     oranc="oranc",
     no_ssl=False,
-    large_nar_bytes=LARGE_NAR_BYTES,
 ):
     state = Path(state).resolve()
     directory = state / "cache"
@@ -505,7 +506,6 @@ def start_publisher(
             "trusted_public_keys": list(trusted_public_keys),
             "oranc": oranc,
             "no_ssl": no_ssl,
-            "large_nar_bytes": large_nar_bytes,
         },
     )
     hook = directory / "post-build-hook"
@@ -714,7 +714,6 @@ def run_cache_command(*, operation, state, project_dir=None, phase="publication"
             trusted_public_keys=cfg["trusted_public_keys"],
             oranc=cfg["oranc"],
             no_ssl=cfg["no_ssl"],
-            large_nar_bytes=cfg["large_nar_bytes"],
         )
     elif operation == "serve":
         serve(state)

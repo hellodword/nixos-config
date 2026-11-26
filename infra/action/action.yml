@@ -399,7 +399,7 @@ runs:
         fi
         repository=$(jq -r '.cache.repository' /ci/manifest.json)
         registry=$(jq -r '.cache.registry // "ghcr.io"' /ci/manifest.json)
-        "$(cat /ci/oranc)" push --registry "$registry" --repository "$repository" --parallel 1 initialize --priority 41
+        timeout 60 "$(cat /ci/oranc)" push --registry "$registry" --repository "$repository" --parallel 1 initialize --priority 41
         BASH
 
     - name: Configure Nix substituters and run pre-build checks
@@ -510,7 +510,7 @@ runs:
           bash "$NIX_CI_INFRA_DIR/ci/container.sh" --detach --name "$NIX_CI_PUBLISHER" \
             --network "container:$NIX_CI_CONTAINER" \
             --cpu-shares=256 \
-            --memory=4g --memory-swap=8g \
+            --memory=1536m --memory-swap=1536m \
             --volume "$NIX_CI_STORE_VOLUME:/nix" \
             --volume "$NIX_CI_PROJECT_DIR:/workspace:ro" \
             --volume "$NIX_CI_INFRA_DIR:/infra:ro" \
@@ -610,7 +610,7 @@ runs:
         export ORANC_SIGNING_KEY
         bash "$NIX_CI_INFRA_DIR/ci/container.sh" --rm -i \
           --network "container:$NIX_CI_CONTAINER" \
-          --memory=4g --memory-swap=8g \
+          --memory=1536m --memory-swap=1536m \
           --volume "$NIX_CI_STORE_VOLUME:/nix" \
           --volume "$NIX_CI_PROJECT_DIR:/workspace:ro" \
           --volume "$NIX_CI_INFRA_DIR:/infra:ro" \
@@ -629,7 +629,7 @@ runs:
         fi
         repository=$(jq -r '.cache.repository' /ci/manifest.json)
         registry=$(jq -r '.cache.registry // "ghcr.io"' /ci/manifest.json)
-        "$(cat /ci/oranc)" push --registry "$registry" --repository "$repository" --parallel 1 initialize --priority 41
+        timeout 60 "$(cat /ci/oranc)" push --registry "$registry" --repository "$repository" --parallel 1 initialize --priority 41
         nix-ci cache publish --project-dir /workspace --state /ci
         BASH
 
