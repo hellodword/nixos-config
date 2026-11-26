@@ -201,12 +201,12 @@ Shell 便利入口与独立 Git 子命令见 [home/cli.nix](../home/cli.nix) 与
 | Bitwarden Desktop | 客户端配置；通过受限 D-Bus 访问桌面密钥环、输入法和文件选择器 |
 | Bitwarden CLI | CLI 配置和下载目录，导出文件可写到下载目录 |
 | mpv | 可播放工作目录、共享目录和个人媒体目录中的文件；截图保存到图片目录 |
-| feh | 可查看工作目录、共享目录及个人图片，也可打开 `~/.codex/generated_images` 中的生成图片 |
+| feh | 可查看工作目录、共享目录及个人图片，也可打开 `~/.codex/generated_images` 与 `~/.gemini/{antigravity-cli,antigravity}/brain` 会话目录中的图片文件 |
 | SQLite Browser | 应用配置和文档目录 |
 | Anytype | 自身配置与文档、下载目录 |
 | Remmina | 自身配置、只读 `~/.ssh` 与下载目录；SSH 公私钥用于远程连接认证 |
 
-Chrome、feh 和 mpv 都能读取 `~/dev`，在沙箱内该目录为只读；需要保存修改时，可另存到 `~/share` 或下载目录。feh 对生成图片目录同样只读。`~/share` 可用于临时交接其他位置的文件。命令行接受白名单内的相对路径和绝对路径，含空格的路径用引号包裹；桌面入口使用同一访问范围。
+Chrome、feh 和 mpv 都能读取 `~/dev`，在沙箱内该目录为只读；需要保存修改时，可另存到 `~/share` 或下载目录。feh 对 `~/.codex/generated_images` 及 Antigravity 会话图片文件同样只读。`~/share` 可用于临时交接其他位置的文件。命令行接受白名单内的相对路径和绝对路径，含空格的路径用引号包裹；桌面入口使用同一访问范围。
 
 `/run/current-system` 保留为 NixOS 共享资源入口，供 GTK 读取输入法模块缓存、主题和其他声明式资源。持久化目录通过正常的 home 路径使用，直接访问 `persistRoot` 受到限制。图形应用按需获得输入法、通知、文件选择器及密钥环的 D-Bus 通信权限。VS Code Dev Containers 和 Kitty 使用常规启动方式，保留开发环境访问能力。
 

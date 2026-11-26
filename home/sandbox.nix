@@ -34,6 +34,25 @@ let
     dbus-user.talk org.freedesktop.Notifications
   '';
   keyring = "dbus-user.talk org.freedesktop.secrets\n";
+  geminiImageRules = lib.concatStringsSep "\n" (
+    lib.concatMap
+      (
+        dir:
+        map (ext: "whitelist \${HOME}/.gemini/${dir}/*.${ext}") [
+          "png"
+          "jpg"
+          "jpeg"
+          "webp"
+          "gif"
+        ]
+      )
+      [
+        "antigravity-cli/brain/*"
+        "antigravity-cli/brain/*/.user_uploaded"
+        "antigravity/brain/*"
+        "antigravity/brain/*/.user_uploaded"
+      ]
+  );
   browserProfile = profile "firefox" desktopBus;
   firefox = wrap {
     package = config.programs.firefox.finalPackage;
@@ -159,6 +178,7 @@ in
           package = pkgs.feh;
           binaries = [ "feh" ];
           profile = profile "feh" ''
+            noblacklist ''${HOME}/.gemini
             mkdir ''${HOME}/dev
             mkdir ''${HOME}/share
             mkdir ''${HOME}/.codex/generated_images
@@ -167,6 +187,8 @@ in
             whitelist ''${HOME}/share
             whitelist ''${HOME}/.codex/generated_images
             read-only ''${HOME}/.codex/generated_images
+            ${geminiImageRules}
+            read-only ''${HOME}/.gemini
             whitelist ''${HOME}/.config/feh
             whitelist ''${PICTURES}
             whitelist ''${DOWNLOADS}

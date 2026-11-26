@@ -381,6 +381,15 @@
         user(machine, "feh --version >/dev/null")
         user(
             machine,
+            "mkdir -p ~/.gemini/antigravity-cli/brain/session && "
+            "python3 -c 'import base64, pathlib; data = base64.b64decode(\"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=\"); "
+            "pathlib.Path.home().joinpath(\".gemini/antigravity-cli/brain/session/sample.png\").write_bytes(data); "
+            "pathlib.Path.home().joinpath(\".gemini/antigravity-cli/outside.png\").write_bytes(data)' && "
+            "feh --list ~/.gemini/antigravity-cli/brain/session/sample.png >/dev/null && "
+            "! feh --list ~/.gemini/antigravity-cli/outside.png >/dev/null 2>&1",
+        )
+        user(
+            machine,
             "profile=$(sed -n 's/.*\\(--profile=[^ ]*\\).*/\\1/p' \"$(command -v firefox)\") && "
             "test -n \"$profile\" && /run/wrappers/bin/firejail --quiet \"$profile\" -- test ! -e /persist/firejail-canary.txt",
         )
