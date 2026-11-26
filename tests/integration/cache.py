@@ -17,7 +17,6 @@ import tempfile
 import threading
 import time
 from unittest.mock import patch
-from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from tests.support import ROOT
@@ -814,28 +813,66 @@ def _run_suite(args):
                     f"http://127.0.0.1:{proxy_port}/127.0.0.1:{registry_port}/synthetic/cache-test"
                 )
 
-                # Uninitialized OCI repository returns HTTP 404 on /nix-cache-info (relied on by action.yml).
-                try:
-                    urlopen(target_uri + "/nix-cache-info", timeout=10)
-                except HTTPError as http_err:
-                    assert http_err.code == 404, http_err.code
-                else:
-                    raise AssertionError("uninitialized OCI repository unexpectedly returned 200")
+                # Initialize secondary shared OCI cache first, verify configure_client skips uninitialized target
+                # when publish=False, then initialize target cache and verify configure_client includes all tiers.
+                run([
+                    "oranc",
+                    "push",
+                    "--registry",
+                    f"127.0.0.1:{registry_port}",
+                    "--repository",
+                    "synthetic/shared-core",
+                    "--no-ssl",
+                    "initialize",
+                    "--priority",
+                    "41",
+                ])
+                cfg_client_state = work / "configure-client-state"
+                cfg_client_state.mkdir()
+                (cfg_client_state / "nix-base.conf").write_text(
+                    "experimental-features = nix-command flakes\n"
+                    "substituters = https://cache.nixos.org\n"
+                    "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\n"
+                )
+                (cfg_client_state / "manifest.json").write_text(
+                    json.dumps({
+                        "cache": {
+                            "targetUri": target_uri,
+                            "readSubstituters": [public_uri, shared_uri, target_uri],
+                            "trustedPublicKeys": [upstream_public, shared_public, public],
+                        }
+                    })
+                )
+                assert cache.configure_client(cfg_client_state, publish=False) == [
+                    public_uri,
+                    shared_uri,
+                ]
+                assert (
+                    f"substituters = {public_uri} {shared_uri}"
+                    in (cfg_client_state / "nix.conf").read_text()
+                )
 
-                # Initialize both secondary shared OCI cache and target OCI cache.
-                for repo_name in ("synthetic/shared-core", "synthetic/cache-test"):
-                    run([
-                        "oranc",
-                        "push",
-                        "--registry",
-                        f"127.0.0.1:{registry_port}",
-                        "--repository",
-                        repo_name,
-                        "--no-ssl",
-                        "initialize",
-                        "--priority",
-                        "41",
-                    ])
+                run([
+                    "oranc",
+                    "push",
+                    "--registry",
+                    f"127.0.0.1:{registry_port}",
+                    "--repository",
+                    "synthetic/cache-test",
+                    "--no-ssl",
+                    "initialize",
+                    "--priority",
+                    "41",
+                ])
+                assert cache.configure_client(cfg_client_state, publish=True) == [
+                    public_uri,
+                    shared_uri,
+                    target_uri,
+                ]
+                assert (
+                    f"substituters = {public_uri} {shared_uri} {target_uri}"
+                    in (cfg_client_state / "nix.conf").read_text()
+                )
 
                 # Upload sharedOci ONLY to secondary shared OCI cache, then delete its local
                 # store path so nix build substitutes it with a verified upstream signature.
@@ -1363,11 +1400,17 @@ def _run_suite(args):
                 run(["nix-store", "--delete", fixture["tinyRegular"]["path"]])
                 prepares_state = work / "prepares-state"
                 evaluate.evaluate_manifest(project_dir=prepares_project, state=prepares_state)
+                prepares_tmp = work / "prepares-build-tmp"
+                prepares_tmp.mkdir()
+                (prepares_tmp / "stale.txt").write_text("stale")
                 with patch.dict(os.environ, {"NIX_CONFIG": client_nix_config}):
-                    build.build_group(state=prepares_state, group_name="drivers")
+                    build.run_all_groups(state=prepares_state, build_tmp=prepares_tmp)
                     assert valid_paths([fixture["driver"]["path"]]) == set()
                     assert valid_paths([fixture["tinyRegular"]["path"]]) == {fixture["tinyRegular"]["path"]}
-                    build.build_group(state=prepares_state, group_name="vms")
+                assert not list(prepares_tmp.iterdir())
+                assert (prepares_state / "jobs/uncached-vm").resolve() == Path(
+                    fixture["uncachedTarget"]["path"]
+                ).resolve()
                 prepares_targets = {
                     event["name"]: event
                     for event in read_records(prepares_state / "timings.jsonl")
@@ -1377,7 +1420,6 @@ def _run_suite(args):
                 assert prepares_targets["uncached-vm-driver"]["source"] == "executed"
                 assert prepares_targets["cached-vm"]["source"] == "cache restored"
                 assert prepares_targets["uncached-vm"]["source"] == "executed"
-                report.verify_results(prepares_state)
 
                 # 5. Authenticated recovery & interrupted NAR fallback.
                 authenticated_recovery(

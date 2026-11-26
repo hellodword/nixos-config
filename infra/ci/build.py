@@ -2,6 +2,7 @@
 """Build evaluated derivations by execution group, classify sources, and collect VM evidence."""
 
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -13,9 +14,9 @@ import time
 import uuid
 
 try:
-    from .report import load_manifest, record, utc_now
+    from .report import load_manifest, record, utc_now, verify_results
 except ImportError:
-    from report import load_manifest, record, utc_now
+    from report import load_manifest, record, utc_now, verify_results
 
 
 # Nix internal-json activity types (src/libutil/include/nix/util/logging.hh).
@@ -402,3 +403,93 @@ def build_group(*, state, group_name, pass_name="candidate", jobs=None, github_a
         vm_mode=vm_mode,
         github_actions=github_actions,
     )
+
+
+def _clean_build_tmp(build_tmp):
+    root = Path(build_tmp)
+    if not root.is_dir():
+        return
+
+    def _force_remove(func, target, _exc):
+        try:
+            os.chmod(target, 0o700)
+        except OSError:
+            pass
+        func(target)
+
+    for child in root.iterdir():
+        if child.is_symlink() or not child.is_dir():
+            child.unlink(missing_ok=True)
+        else:
+            shutil.rmtree(child, onexc=_force_remove)
+
+
+def link_job_outputs(state, manifest=None):
+    """Create atomic symlinks at <state>/jobs/<name> for realized manifest entries."""
+    state = Path(state).resolve()
+    manifest = manifest if manifest is not None else load_manifest(state)
+    jobs_dir = state / "jobs"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    ordered_groups = [
+        *(g for g in manifest.get("groups", []) if g.get("name") == "private"),
+        *(g for g in manifest.get("groups", []) if g.get("name") != "private"),
+    ]
+    candidates = [
+        entry["outputs"][0]
+        for group in ordered_groups
+        for entry in group.get("entries", [])
+        if entry.get("name") and "/" not in entry["name"] and entry.get("outputs")
+    ]
+    realized = valid_paths(sorted(set(candidates)))
+    for group in ordered_groups:
+        for entry in group.get("entries", []):
+            name = entry.get("name")
+            outputs = entry.get("outputs") or []
+            if not name or "/" in name or not outputs or outputs[0] not in realized:
+                continue
+            link_path = jobs_dir / name
+            temp_link = jobs_dir / f".{name}.{uuid.uuid4().hex}.tmp"
+            temp_link.symlink_to(outputs[0])
+            temp_link.replace(link_path)
+
+
+def run_all_groups(
+    *,
+    state,
+    pass_name="candidate",
+    publish=False,
+    build_tmp=None,
+    github_actions=False,
+):
+    """Execute all manifest groups in order, expose /ci/jobs symlinks, verify targets, and drain cache."""
+    state = Path(state).resolve()
+    manifest = load_manifest(state)
+    cache_mode = (manifest.get("cache") or {}).get("mode") or "none"
+    incremental_publish = bool(publish and cache_mode == "incremental")
+    checkpoint_fn = None
+    if incremental_publish:
+        try:
+            from .cache import checkpoint as checkpoint_fn
+        except ImportError:
+            from cache import checkpoint as checkpoint_fn
+
+    checkpointed_deps = False
+    for group in manifest.get("groups", []):
+        group_name = group["name"]
+        vm_kind = group.get("vm")
+        if vm_kind and not checkpointed_deps and incremental_publish:
+            checkpoint_fn(state, "publish-dependencies")
+            checkpointed_deps = True
+        build_group(
+            state=state,
+            group_name=group_name,
+            pass_name=pass_name,
+            github_actions=github_actions,
+        )
+        link_job_outputs(state, manifest)
+        if vm_kind and build_tmp is not None:
+            _clean_build_tmp(build_tmp)
+
+    verify_results(state, pass_name)
+    if incremental_publish:
+        checkpoint_fn(state, "publish-results", finish=True)

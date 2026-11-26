@@ -40,16 +40,14 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+
       - name: Verify manifest, integration suites, VM checks, and signed cache
-        uses: ./infra/action
+        uses: ./infra/actions/verify
         with:
-          mode: verify
-          project-dir: .
           select: ${{ format('{{"scope":"{0}","hostName":"{1}"}}', matrix.scope, matrix.host) }}
-          publish-cache: ${{ github.ref == 'refs/heads/master' && 'true' || 'false' }}
-          signing-key: ${{ secrets.NIX_CACHE_SIGNING_KEY }}
-          artifact-suffix: ${{ matrix.scope }}${{ matrix.host != '' && format('-{0}', matrix.host) || '' }}
-          pre-build-command: |
+          signing-key: ${{ github.ref == 'refs/heads/master' && secrets.NIX_CACHE_SIGNING_KEY || '' }}
+          artifact-name: diagnostics-${{ matrix.scope }}${{ matrix.host != '' && format('-{0}', matrix.host) || '' }}
+          pre-check: |
             nix build --no-link --print-build-logs --no-update-lock-file .#checks.x86_64-linux.lint
             if [[ "${{ matrix.scope }}" == remote ]]; then nixpkgs_input=nixpkgs-remote; else nixpkgs_input=nixpkgs; fi
             python3 -sE -m tests.integration.cache --nixpkgs-input "$nixpkgs_input"

@@ -9,12 +9,12 @@ import sys
 # Allow execution both as `python3 -m infra.ci` and `python3 /path/to/infra/ci`.
 if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from build import build_group
+    from build import build_group, run_all_groups
     from evaluate import evaluate_manifest
     from report import cgroup_path, monitor, render, resource_sample, run_phase, verify_results
     from update import merge as update_merge, prepare as update_prepare
 else:
-    from .build import build_group
+    from .build import build_group, run_all_groups
     from .evaluate import evaluate_manifest
     from .report import cgroup_path, monitor, render, resource_sample, run_phase, verify_results
     from .update import merge as update_merge, prepare as update_prepare
@@ -82,17 +82,29 @@ def build_parser():
     bld_parser.add_argument("--jobs", type=int, help="Override Nix --max-jobs concurrency")
     bld_parser.add_argument("--github-actions", action="store_true", help="Emit ::error:: annotations")
 
+    # 2b. run-groups
+    groups_parser = subparsers.add_parser(
+        "run-groups",
+        help="Execute all manifest groups, link /ci/jobs outputs, verify targets, and finish incremental cache",
+    )
+    add_common_arguments(groups_parser, state_required=False, include_default=False)
+    groups_parser.add_argument("--pass-name", default="candidate", help="Verification pass label")
+    groups_parser.add_argument("--publish", action="store_true", help="Run incremental cache checkpoints")
+    groups_parser.add_argument("--build-tmp", type=Path, default=None, help="Temporary build directory cleaned after VM groups")
+    groups_parser.add_argument("--github-actions", action="store_true", help="Emit ::error:: annotations")
+
     # 3. cache
-    cache_parser = subparsers.add_parser("cache", help="Verify remote narinfo and publish signed cache paths")
+    cache_parser = subparsers.add_parser("cache", help="Configure substituters or publish signed cache paths")
     add_common_arguments(cache_parser, state_required=False, include_default=False)
     cache_parser.add_argument(
         "operation",
-        choices=["start", "serve", "checkpoint", "stop", "publish"],
-        help="Cache publication lifecycle operation",
+        choices=["configure-client", "start", "serve", "checkpoint", "stop", "publish"],
+        help="Cache client or publication lifecycle operation",
     )
     cache_parser.add_argument("--phase", default="publication", help="Checkpoint or publication phase label")
     cache_parser.add_argument("--finish", action="store_true", help="Exit incremental publisher after checkpoint")
     cache_parser.add_argument("--no-ssl", action="store_true", help="Use plaintext HTTP when pushing to a local test registry")
+    cache_parser.add_argument("--publish", action="store_true", help="Require target substituter availability")
 
     # 4. report
     report_parser = subparsers.add_parser("report", help="Sample resources, verify required targets, or render Markdown")
@@ -158,6 +170,16 @@ def main(argv=None):
         )
         return 0
 
+    if args.subcommand == "run-groups":
+        run_all_groups(
+            state=state,
+            pass_name=args.pass_name,
+            publish=args.publish,
+            build_tmp=args.build_tmp,
+            github_actions=args.github_actions,
+        )
+        return 0
+
     if args.subcommand == "cache":
         if __package__ in (None, ""):
             from cache import run_cache_command
@@ -170,6 +192,7 @@ def main(argv=None):
             phase=args.phase,
             finish=args.finish,
             no_ssl=args.no_ssl,
+            publish=args.publish,
         )
         return 0
 

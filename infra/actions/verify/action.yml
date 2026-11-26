@@ -1,0 +1,139 @@
+name: Verify Nix CI Manifest
+description: Evaluate nix/ci.nix, build execution groups and VM suites, publish signed OCI cache paths, execute release hooks, and archive diagnostics
+
+inputs:
+  project-dir:
+    description: Consumer repository directory relative to GITHUB_WORKSPACE
+    required: false
+    default: .
+  select:
+    description: JSON selection object passed to nix/ci.nix
+    required: false
+    default: '{}'
+  signing-key:
+    description: Ed25519 signing secret key for signed OCI cache publication (empty disables cache publication)
+    required: false
+    default: ''
+  pre-check:
+    description: Optional shell command executed inside the container after cache proxy configuration and before build groups
+    required: false
+    default: ''
+  release:
+    description: Optional shell command executed inside the container after all required build groups succeed
+    required: false
+    default: ''
+  artifact-name:
+    description: Base name for the 7-day CI diagnostics artifact (run attempt is appended automatically)
+    required: false
+    default: diagnostics-verify
+
+runs:
+  using: composite
+  steps:
+    - name: Initialize isolated CI state
+      id: init
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        INPUT_PROJECT_DIR: ${{ inputs.project-dir }}
+        INPUT_SELECT: ${{ inputs.select }}
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" init
+
+    - name: Prepare disk, swap, KVM, and Nix build container
+      id: host
+      shell: bash
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" prepare-host
+
+    - name: Restore oranc bootstrap cache
+      id: oranc-restore
+      uses: actions/cache/restore@v6
+      continue-on-error: true
+      with:
+        path: ${{ runner.temp }}/nix-ci-oranc-cache
+        key: ${{ steps.host.outputs.oranc-key }}
+
+    - name: Import or build oranc
+      shell: bash
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" bootstrap-oranc
+
+    - name: Export oranc bootstrap archive
+      id: oranc-export
+      if: github.ref == 'refs/heads/master' && steps.oranc-restore.outputs.cache-hit != 'true'
+      continue-on-error: true
+      shell: bash
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" export-oranc
+
+    - name: Save oranc bootstrap cache
+      if: github.ref == 'refs/heads/master' && steps.oranc-export.outputs.ready == 'true'
+      uses: actions/cache/save@v6
+      continue-on-error: true
+      with:
+        path: ${{ runner.temp }}/nix-ci-oranc-cache
+        key: ${{ steps.host.outputs.oranc-key }}
+
+    - name: Start local oranc proxy, build ci-tools, and evaluate manifest
+      shell: bash
+      env:
+        ORANC_USERNAME: ${{ github.actor }}
+        ORANC_PASSWORD: ${{ github.token }}
+        INPUT_SELECT: ${{ inputs.select }}
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" prepare-tools-and-manifest
+
+    - name: Initialize target cache and configure Nix substituters
+      shell: bash
+      env:
+        ORANC_USERNAME: ${{ github.actor }}
+        ORANC_PASSWORD: ${{ github.token }}
+        ORANC_SIGNING_KEY: ${{ inputs.signing-key }}
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" setup-cache
+
+    - name: Run pre-check hook
+      if: inputs.pre-check != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        HOOK_COMMAND: ${{ inputs.pre-check }}
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" exec-hook
+
+    - name: Build manifest execution groups and verify required targets
+      shell: bash
+      env:
+        ORANC_USERNAME: ${{ github.actor }}
+        ORANC_PASSWORD: ${{ github.token }}
+        ORANC_SIGNING_KEY: ${{ inputs.signing-key }}
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" run-builds
+
+    - name: Run release hook
+      if: inputs.release != ''
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        HOOK_COMMAND: ${{ inputs.release }}
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" exec-hook
+
+    - name: Collect diagnostics, render summary, and tear down containers
+      if: always()
+      shell: bash
+      run: bash "${{ github.action_path }}/../../ci/runner.sh" teardown
+
+    - name: Upload CI diagnostics artifact
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}-${{ github.run_attempt }}
+        retention-days: 7
+        if-no-files-found: ignore
+        path: |
+          ${{ steps.init.outputs.state-dir }}/manifest.json
+          ${{ steps.init.outputs.state-dir }}/timings.jsonl
+          ${{ steps.init.outputs.state-dir }}/evaluation.jsonl
+          ${{ steps.init.outputs.state-dir }}/publication-paths.jsonl
+          ${{ steps.init.outputs.state-dir }}/published-paths.json
+          ${{ steps.init.outputs.state-dir }}/publisher.log
+          ${{ steps.init.outputs.state-dir }}/cache/status.json
+          ${{ steps.init.outputs.state-dir }}/resources.jsonl
+          ${{ steps.init.outputs.state-dir }}/oom-*.log
+          ${{ steps.init.outputs.state-dir }}/monitor.log
+          ${{ steps.init.outputs.state-dir }}/oranc.log
+          ${{ steps.init.outputs.state-dir }}/vm/
+          ${{ steps.init.outputs.state-dir }}/logs/

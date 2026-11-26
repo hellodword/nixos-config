@@ -6,6 +6,7 @@ import base64
 import fcntl
 from functools import cache
 import json
+import netrc
 import os
 from pathlib import Path
 import signal
@@ -14,6 +15,9 @@ import sys
 import tempfile
 import time
 import traceback
+from urllib.error import HTTPError
+import urllib.parse
+import urllib.request
 import uuid
 
 from cryptography.exceptions import InvalidSignature
@@ -696,9 +700,117 @@ def resolve_oranc_executable(state):
     return "oranc"
 
 
-def run_cache_command(*, operation, state, project_dir=None, phase="publication", finish=False, no_ssl=False):
+def _ghcr_package_missing(proxy_uri, auth_header):
+    path = urllib.parse.urlsplit(proxy_uri).path.lstrip("/")
+    if not path.startswith("ghcr.io/"):
+        return False
+    repo = path.removeprefix("ghcr.io/")
+    token_req = urllib.request.Request(
+        f"https://ghcr.io/token?service=ghcr.io&scope=repository:{repo}:pull",
+        headers=auth_header,
+    )
+    try:
+        with urllib.request.urlopen(token_req, timeout=30):
+            return False
+    except HTTPError as token_error:
+        return token_error.code in (401, 403)
+
+
+def configure_client(state, *, publish=False):
+    """Probe configured read substituters through the local proxy and write <state>/nix.conf."""
     state = Path(state).resolve()
-    if operation == "start":
+    base_conf = state / "nix-base.conf"
+    out_conf = state / "nix.conf"
+    netrc_path = state / "oranc.netrc"
+    manifest = load_manifest(state)
+    cache_cfg = manifest.get("cache")
+    if not cache_cfg:
+        if base_conf.exists() and base_conf != out_conf:
+            out_conf.write_text(base_conf.read_text())
+        return []
+
+    subs = list(cache_cfg.get("readSubstituters") or [])
+    keys = list(cache_cfg.get("trustedPublicKeys") or [])
+    target_uri = (cache_cfg.get("targetUri") or "").rstrip("/")
+    parsed_netrc = netrc.netrc(str(netrc_path)) if netrc_path.exists() else None
+
+    active_subs = []
+    for uri in subs:
+        cleaned = uri.rstrip("/")
+        parsed = urllib.parse.urlsplit(cleaned)
+        is_local_proxy = parsed.scheme == "http" and parsed.hostname in (
+            "127.0.0.1",
+            "127.0.0.2",
+            "::1",
+            "localhost",
+        )
+        if not is_local_proxy:
+            active_subs.append(uri)
+            continue
+
+        auth_header = {}
+        if parsed_netrc is not None and parsed.hostname:
+            auth_entry = parsed_netrc.authenticators(parsed.hostname)
+            if auth_entry:
+                login, _, password = auth_entry
+                if login and password:
+                    encoded = base64.b64encode(f"{login}:{password}".encode()).decode("ascii")
+                    auth_header = {"Authorization": f"Basic {encoded}"}
+
+        req = urllib.request.Request(cleaned + "/nix-cache-info", headers=auth_header)
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                body = response.read().decode()
+            if "StoreDir: /nix/store" not in body:
+                raise RuntimeError(f"Unexpected nix-cache-info from {uri}")
+            active_subs.append(uri)
+        except HTTPError as error:
+            if (
+                not publish
+                and cleaned == target_uri
+                and (
+                    error.code in (401, 403, 404)
+                    or (error.code == 500 and _ghcr_package_missing(cleaned, auth_header))
+                )
+            ):
+                continue
+            raise
+
+    source_conf = base_conf if base_conf.exists() else out_conf
+    existing_lines = source_conf.read_text().splitlines() if source_conf.exists() else []
+    base_lines = [
+        line
+        for line in existing_lines
+        if not line.startswith((
+            "substituters =",
+            "trusted-public-keys =",
+            "extra-substituters =",
+            "extra-trusted-public-keys =",
+            "netrc-file =",
+        ))
+    ]
+    base_lines.append("substituters = " + " ".join(active_subs))
+    base_lines.append("trusted-public-keys = " + " ".join(keys))
+    if netrc_path.exists():
+        base_lines.append(f"netrc-file = {netrc_path}")
+    out_conf.write_text("\n".join(base_lines) + "\n")
+    return active_subs
+
+
+def run_cache_command(
+    *,
+    operation,
+    state,
+    project_dir=None,
+    phase="publication",
+    finish=False,
+    no_ssl=False,
+    publish=False,
+):
+    state = Path(state).resolve()
+    if operation == "configure-client":
+        configure_client(state, publish=publish)
+    elif operation == "start":
         manifest = load_manifest(state)
         cfg = build_publisher_configuration(
             manifest,
@@ -735,12 +847,16 @@ def run_cache_command(*, operation, state, project_dir=None, phase="publication"
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("operation", choices=["start", "serve", "checkpoint", "stop", "publish"])
+    parser.add_argument(
+        "operation",
+        choices=["configure-client", "start", "serve", "checkpoint", "stop", "publish"],
+    )
     parser.add_argument("--state", type=Path, required=True)
     parser.add_argument("--project-dir", type=Path, default=Path("."))
     parser.add_argument("--phase", default="publication")
     parser.add_argument("--finish", action="store_true")
     parser.add_argument("--no-ssl", action="store_true")
+    parser.add_argument("--publish", action="store_true")
     args = parser.parse_args(argv)
     run_cache_command(
         operation=args.operation,
@@ -749,6 +865,7 @@ def main(argv=None):
         phase=args.phase,
         finish=args.finish,
         no_ssl=args.no_ssl,
+        publish=args.publish,
     )
 
 
