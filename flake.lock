@@ -1,30 +1,5 @@
 {
   "nodes": {
-    "agents-misc": {
-      "inputs": {
-        "nixpkgs": [
-          "nixpkgs"
-        ],
-        "oranc": [
-          "infra",
-          "oranc"
-        ],
-        "treefmt-nix": "treefmt-nix"
-      },
-      "locked": {
-        "lastModified": 1795526505,
-        "narHash": "sha256-et6vGyceJM5KHShn7Uud8Ano4oFzH0tkjPVJGuZxEJA=",
-        "owner": "hellodword",
-        "repo": "agents-misc",
-        "rev": "c1a41af40035177fe1b1db113bf846ffba00b8ee",
-        "type": "github"
-      },
-      "original": {
-        "owner": "hellodword",
-        "repo": "agents-misc",
-        "type": "github"
-      }
-    },
     "arkenfox-userjs": {
       "flake": false,
       "locked": {
@@ -390,7 +365,7 @@
         "crane": "crane",
         "flake-parts": "flake-parts",
         "nixpkgs": "nixpkgs_2",
-        "treefmt-nix": "treefmt-nix_2"
+        "treefmt-nix": "treefmt-nix"
       },
       "locked": {
         "lastModified": 1795675910,
@@ -473,7 +448,6 @@
     },
     "root": {
       "inputs": {
-        "agents-misc": "agents-misc",
         "arkenfox-userjs": "arkenfox-userjs",
         "catppuccin-fcitx5": "catppuccin-fcitx5",
         "cloudflare-ips-v4": "cloudflare-ips-v4",
@@ -589,27 +563,6 @@
       }
     },
     "treefmt-nix": {
-      "inputs": {
-        "nixpkgs": [
-          "agents-misc",
-          "nixpkgs"
-        ]
-      },
-      "locked": {
-        "lastModified": 1786901030,
-        "narHash": "sha256-WSFCsDSE5ffgD2MqzkM2CYjeFiKhRF/dJUN8uedb6YE=",
-        "owner": "numtide",
-        "repo": "treefmt-nix",
-        "rev": "27b3b12a8e6375f28ebe122f07d230ca5459bbfa",
-        "type": "github"
-      },
-      "original": {
-        "owner": "numtide",
-        "repo": "treefmt-nix",
-        "type": "github"
-      }
-    },
-    "treefmt-nix_2": {
       "inputs": {
         "nixpkgs": [
           "infra",

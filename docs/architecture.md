@@ -15,7 +15,6 @@
 | `scripts/` | 系统服务及本地维护命令的运行逻辑 |
 | `.github/workflows/` | GitHub 事件、权限与调用 `./infra/action` 的工作流编排 |
 | `tests/` | 合成配置、行为与进程检查、原生 NixOS VM 场景 |
-| `tools/vm-test-mcp/` | 可选远端执行的接入说明 |
 
 ## 配置归属
 

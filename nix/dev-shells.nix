@@ -71,9 +71,6 @@ let
           tools.dnsproxy
           tools.dns-collector
         ]
-        ++ lib.optional (
-          laptop && inputs.agents-misc.packages.${system} ? vm-test-submit
-        ) inputs.agents-misc.packages.${system}.vm-test-submit
         ++ lib.optionals (!laptop) [
           netcat-openbsd
           wireguard-tools

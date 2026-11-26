@@ -7,7 +7,7 @@
 在持久化的 `~/dev/workspace/` 下使用仓库，按任务选择环境：
 
 ```sh
-nix develop .#laptop  # 桌面、网络和备份开发及 VM 提交
+nix develop .#laptop  # 桌面、网络与备份开发、配置求值及静态检查
 nix develop .#vps     # 准备 VPS 材料、构建、Colmena 部署和 Worker 发布
 ```
 
@@ -22,7 +22,7 @@ nix develop .#vps     # 准备 VPS 材料、构建、Colmena 部署和 Worker �
 
 每个沙箱工具都有 `tmp/.cache/nixos-config-tools/<工具>/`，其中 `cache/` 和 `logs/` 保存缓存与日志，`tmp/` 保存每次运行的临时文件。正常退出即清理本次临时目录；再次调用时，systemd-tmpfiles 清理一天前遗留的临时文件及三十天未使用的缓存、日志。运行中的目录通过文件锁保留。沙箱在挂载仓库源码后自动遮蔽 `tmp/`、`.wrangler/`、`.config/`、`.secrets/`、`nixos-privates/` 及根级 `keys.txt`/`*.key` 等敏感路径，按白名单单独开放工具所需可写目录，并支持在 `tmp/` 子目录内直接执行命令。Wrangler 同时识别 `wrangler.{json,jsonc,toml}` 且不在干净源码目录遗留空状态目录。默认要求工作区位于持久文件系统；在受限临时环境中可显式设置 `NIXOS_CONFIG_ALLOW_TMPFS=1` 放行。
 
-开发 shell 将辅助工具的 `XDG_CACHE_HOME` 和 `TMPDIR` 放在同一根目录的 `shell/` 下，Go 使用独立子目录。VM 提交客户端的导出缓存也随之保存在磁盘工作区，容量由客户端自身管理。
+开发 shell 将辅助工具的 `XDG_CACHE_HOME` 和 `TMPDIR` 放在同一根目录的 `shell/` 下，Go 使用独立子目录。
 
 项目位于持久工作区时，这些目录跨注销、重启保留，磁盘空间由所在文件系统提供。Nix 继续使用已有的持久缓存，daemon 构建使用系统配置的临时目录。工具启动会检查缓存文件系统，避免在 tmpfs 工作区产生大量文件。沙箱保留 host 的 Unix 文件权限；例如 oranc 发布仍需要当前用户具备 Nix 数据库目录的访问权限。
 
@@ -184,7 +184,7 @@ nix build --no-link --print-build-logs --impure --expr '
 
 将 `vm-applications` 换成所需场景。测试和负载进程共用至多四个 CPU，每个 CPU 配置一半时间的竞争负载，测试的总期限相应延长。输出中的 `cpu-pressure.json` 记录实际 CPU 集合、耗时和退出状态。普通执行和竞争执行分别保留结果；再次验证时确认本轮实际启动了 VM。
 
-原生 VM 驱动将日志和截图写入测试输出，CI 将这些证据收入[诊断制品](ci.md)。本地没有 KVM 时，可使用[远端 VM 执行说明](../tools/vm-test-mcp/README.md)中的提交方式。
+原生 VM 驱动将日志和截图写入测试输出，CI 将这些证据收入[诊断制品](ci.md)。本地无 KVM 时可通过 `nix run github:hellodword/agents-misc#vm-test-submit` 将本地求值的测试 derivation 提交至已就绪的远端执行器。
 
 ## 验证边界
 
