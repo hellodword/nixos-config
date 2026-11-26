@@ -7,12 +7,14 @@
 let
   cfg = config.site.desktop;
   wallpaper = import ../../nix/wallpaper.nix { inherit pkgs; };
-  targets =
-    lib.optional cfg.sway.enable "site-sway.target" ++ lib.optional cfg.i3.enable "site-i3.target";
   service = action: {
     description = "${action} desktop wallpaper";
-    partOf = targets ++ [ "graphical-session.target" ];
-    after = targets ++ [
+    partOf = [
+      "site-sway.target"
+      "graphical-session.target"
+    ];
+    after = [
+      "site-sway.target"
       "graphical-session.target"
       "systemd-tmpfiles-setup.service"
     ];
@@ -59,7 +61,6 @@ let
             "%h/Pictures/wallpaper"
             "%h/.local/state/site-wallpaper"
           ];
-          BindReadOnlyPaths = [ "-%h/.Xauthority" ];
         }
       else
         {
@@ -67,12 +68,12 @@ let
         }
     )
     // lib.optionalAttrs (action != "apply") {
-      ExecCondition = "${pkgs.systemd}/bin/systemctl --user is-active --quiet ${lib.concatStringsSep " " targets}";
+      ExecCondition = "${pkgs.systemd}/bin/systemctl --user is-active --quiet site-sway.target";
     };
   };
 in
 {
-  config = lib.mkIf (cfg.enable && targets != [ ]) {
+  config = lib.mkIf (cfg.enable && cfg.sway.enable) {
     systemd.user.tmpfiles.rules = [
       "d %h/Pictures/wallpaper 0700 - - -"
       "d %h/.local/state/site-wallpaper 0700 - - -"
@@ -87,15 +88,21 @@ in
     };
     systemd.user.timers = {
       site-wallpaper = {
-        wantedBy = targets;
-        partOf = targets ++ [ "graphical-session.target" ];
+        wantedBy = [ "site-sway.target" ];
+        partOf = [
+          "site-sway.target"
+          "graphical-session.target"
+        ];
         timerConfig = {
           OnActiveSec = "30min";
           OnUnitActiveSec = "30min";
         };
       };
       "site-wallpaper-fetch@" = {
-        partOf = targets ++ [ "graphical-session.target" ];
+        partOf = [
+          "site-sway.target"
+          "graphical-session.target"
+        ];
         after = [ "graphical-session.target" ];
         unitConfig.Requisite = "graphical-session.target";
         timerConfig = {

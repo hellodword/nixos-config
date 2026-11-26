@@ -1,4 +1,4 @@
-"""Bing image collection and native Sway/i3 wallpaper presentation."""
+"""Bing image collection and native Sway wallpaper presentation."""
 import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -60,8 +60,10 @@ def timestamp():
 def schedule(systemctl):
     with locked("schedule.lock"):
         # ExecStopPost also runs during logout; the next login restores the deadline.
-        active = subprocess.run([systemctl, "--user", "is-active", "--quiet",
-                                 "site-sway.target", "site-i3.target"], timeout=10)
+        active = subprocess.run(
+            [systemctl, "--user", "is-active", "--quiet", "site-sway.target"],
+            timeout=10,
+        )
         if active.returncode:
             return
         previous = fetch_state().get("lastAttempt")
@@ -69,9 +71,13 @@ def schedule(systemctl):
         # Calendar timers need a future event, including the single overdue catch-up.
         due = math.ceil(max(due, time.time() + 2))
         timer = f"site-wallpaper-fetch@{due}.timer"
-        result = subprocess.run([systemctl, "--user", "list-units", "--all", "--output=json",
-                                 "site-wallpaper-fetch@*.timer"],
-                                check=True, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            [systemctl, "--user", "list-units", "--all", "--output=json", "site-wallpaper-fetch@*.timer"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
         obsolete = [unit["unit"] for unit in json.loads(result.stdout) if unit["unit"] != timer]
         if obsolete:
             subprocess.run([systemctl, "--user", "--no-block", "stop", *obsolete], check=True, timeout=10)
@@ -119,7 +125,7 @@ def collect():
     return collected
 
 
-def fetch(swaymsg, feh):
+def fetch(swaymsg):
     def interrupted(signum, _frame):
         raise SystemExit(128 + signum)
 
@@ -140,13 +146,16 @@ def fetch(swaymsg, feh):
             state.update(lastSuccess=timestamp(), result="new" if collected else "unchanged")
         write_state("fetch.json", json.dumps(state) + "\n")
         if state["result"] == "new":
-            present(False, swaymsg, feh, preferred=max(collected, key=lambda p: p.stem))
+            present(False, swaymsg, preferred=max(collected, key=lambda p: p.stem))
 
 
-def present(rotate, swaymsg, feh, preferred=None):
+def present(rotate, swaymsg, preferred=None):
     with locked("lock"):
-        images = sorted(p for p in LIBRARY.glob("*") if p.is_file()
-                        and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"})
+        images = sorted(
+            p
+            for p in LIBRARY.glob("*")
+            if p.is_file() and p.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+        )
         if not images:
             print("Wallpaper library is empty", flush=True)
             return
@@ -171,15 +180,12 @@ def present(rotate, swaymsg, feh, preferred=None):
             print("Wallpaper library has no readable images", flush=True)
             return
         session = os.environ.get("XDG_CURRENT_DESKTOP", "").split(":")
-        if "sway" in session:
-            command = [swaymsg, "output * bg " + json.dumps(str(selected), ensure_ascii=False) + " fill"]
-            result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=15)
-            if not all(item.get("success") for item in json.loads(result.stdout)):
-                raise RuntimeError("Sway did not apply the wallpaper")
-        elif "i3" in session:
-            subprocess.run([feh, "--no-fehbg", "--bg-fill", str(selected)], check=True, timeout=15)
-        else:
+        if "sway" not in session:
             return
+        command = [swaymsg, "output * bg " + json.dumps(str(selected), ensure_ascii=False) + " fill"]
+        result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=15)
+        if not all(item.get("success") for item in json.loads(result.stdout)):
+            raise RuntimeError("Sway did not apply the wallpaper")
         write_state("current", str(selected))
         print(f"Wallpaper: {selected.name}", flush=True)
 
@@ -188,15 +194,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["fetch", "apply", "rotate", "schedule"])
     parser.add_argument("--swaymsg", required=True)
-    parser.add_argument("--feh", required=True)
     parser.add_argument("--systemctl", required=True)
     args = parser.parse_args()
     if args.action == "fetch":
-        fetch(args.swaymsg, args.feh)
+        fetch(args.swaymsg)
     elif args.action == "schedule":
         schedule(args.systemctl)
     else:
-        present(args.action == "rotate", args.swaymsg, args.feh)
+        present(args.action == "rotate", args.swaymsg)
 
 
 if __name__ == "__main__":

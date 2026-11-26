@@ -17,31 +17,69 @@ let
     gtk-cursor-theme-name = userHome.home.pointerCursor.name;
     gtk-cursor-theme-size = userHome.home.pointerCursor.size;
   };
-  wmService = session: command: {
-    wantedBy = [ "site-${session}.target" ];
+  swayService = command: {
+    wantedBy = [ "site-sway.target" ];
     partOf = [
-      "site-${session}.target"
+      "site-sway.target"
       "graphical-session.target"
     ];
     after = [ "graphical-session.target" ];
-    unitConfig.ConditionEnvironment = "XDG_CURRENT_DESKTOP=${
-      if session == "sway" then "sway:X-Sway" else session
-    }";
+    unitConfig.ConditionEnvironment = "XDG_CURRENT_DESKTOP=sway:X-Sway";
     serviceConfig = {
       ExecStart = command;
       Restart = "on-failure";
       RestartSec = 2;
     };
   };
-  watcher =
-    session: binary:
-    (wmService session ("${binary} -m -t subscribe '[\"shutdown\"]'"))
-    // {
-      serviceConfig = {
-        ExecStart = "${binary} -m -t subscribe '[\"shutdown\"]'";
-        ExecStopPost = "${pkgs.systemd}/bin/systemctl --user --no-block stop site-${session}.target";
-      };
-    };
+  waylandSessionWrapper = pkgs.writeShellScript "wayland-session" ''
+    . /etc/profile
+    if [ -f ~/.profile ]; then
+      source ~/.profile
+    fi
+    cd "$HOME"
+
+    ${lib.optionalString config.services.displayManager.logToJournal ''
+      if [ -z "''${_DID_SYSTEMD_CAT:-}" ]; then
+        export _DID_SYSTEMD_CAT=1
+        exec ${config.systemd.package}/bin/systemd-cat -t wayland-session "$0" "$@"
+      fi
+    ''}
+    unset _DID_SYSTEMD_CAT
+
+    mkdir -p "''${XDG_DATA_HOME:-$HOME/.local/share}"
+
+    ${pkgs.systemd}/bin/systemctl --user import-environment DBUS_SESSION_BUS_ADDRESS XDG_SESSION_ID
+    ${pkgs.systemd}/bin/systemctl --user daemon-reload
+    ${pkgs.glib}/bin/gdbus call --session --dest org.freedesktop.DBus \
+      --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ReloadConfig >/dev/null
+
+    # The wrapper execs the selected session in-place, preserving its PID. Watch
+    # that lifetime even when SDDM terminates it before the desktop can log out.
+    ${pkgs.systemd}/bin/systemctl --user start "site-session-watch@$$.service" || exit 1
+
+    case "''${XDG_CURRENT_DESKTOP:-}" in
+      sway)
+        unset GTK_IM_MODULE
+        export XDG_CURRENT_DESKTOP=sway:X-Sway QT_IM_MODULE=fcitx
+        ;;
+      KDE)
+        # KWin supplies the native input-method socket. Clear any module
+        # overrides left in the shared user bus by a previous Sway session.
+        unset GTK_IM_MODULE QT_IM_MODULE SDL_IM_MODULE
+        ${pkgs.systemd}/bin/systemctl --user unset-environment GTK_IM_MODULE QT_IM_MODULE SDL_IM_MODULE
+        ${lib.optionalString (config.services.dbus.implementation == "dbus") ''
+          ${pkgs.dbus}/bin/dbus-update-activation-environment GTK_IM_MODULE= QT_IM_MODULE= SDL_IM_MODULE=
+        ''}
+        ;;
+    esac
+
+    if [ -n "''${1:-}" ]; then
+      eval exec "$@"
+    else
+      echo "error: missing Wayland session command" >&2
+      exit 1
+    fi
+  '';
 in
 {
   imports = [
@@ -50,12 +88,8 @@ in
     ./wallpaper.nix
   ];
   options.site.desktop = {
-    enable = lib.mkEnableOption "Sway, i3 and Plasma workstation";
+    enable = lib.mkEnableOption "Sway and Plasma Wayland workstation";
     sway.enable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-    };
-    i3.enable = lib.mkOption {
       type = lib.types.bool;
       default = true;
     };
@@ -71,12 +105,10 @@ in
         message = "Enabling site.desktop requires site.home.enable.";
       }
       {
-        assertion = cfg.sway.enable || cfg.i3.enable || cfg.plasma.enable;
+        assertion = cfg.sway.enable || cfg.plasma.enable;
         message = "Enable at least one desktop session, or disable site.desktop entirely.";
       }
     ];
-    services.xserver.enable = true;
-    programs.i3lock.enable = cfg.i3.enable;
     services.displayManager.sddm = {
       enable = true;
       wayland.enable = true;
@@ -84,52 +116,9 @@ in
         CursorTheme = "breeze_cursors";
         CursorSize = 24;
       };
-      # SDDM otherwise uses its own Wayland script and skips sessionCommands.
-      # Both protocols use the same session lifetime watcher.
-      settings.Wayland.SessionCommand = toString config.services.displayManager.sessionData.wrapper;
+      settings.Wayland.SessionCommand = toString waylandSessionWrapper;
     };
-    services.displayManager.defaultSession =
-      if cfg.sway.enable then
-        "sway"
-      else if cfg.plasma.enable then
-        "plasma"
-      else
-        "none+i3";
-    services.xserver.displayManager.sessionCommands = ''
-      ${pkgs.systemd}/bin/systemctl --user daemon-reload
-      ${pkgs.glib}/bin/gdbus call --session --dest org.freedesktop.DBus \
-        --object-path /org/freedesktop/DBus --method org.freedesktop.DBus.ReloadConfig >/dev/null
-      # The shared wrapper execs the selected session, preserving its PID. Watch that
-      # lifetime even when SDDM terminates it before the desktop can log out.
-      ${pkgs.systemd}/bin/systemctl --user start "site-session-watch@$$.service" || exit 1
-      # The NixOS wrapper otherwise starts a fake graphical target before the
-      # compositor has exported its display/IPC sockets. Mark only our WMs as
-      # systemd-aware; their config starts the real session target when ready.
-      case "''${XDG_CURRENT_DESKTOP:-}" in
-        sway)
-          unset I3SOCK
-          unset GTK_IM_MODULE
-          export XDG_CURRENT_DESKTOP=sway:X-Sway:X-NIXOS-SYSTEMD-AWARE QT_IM_MODULE=fcitx
-          ;;
-        i3|none+i3)
-          unset WAYLAND_DISPLAY SWAYSOCK
-          export XDG_CURRENT_DESKTOP=i3:X-NIXOS-SYSTEMD-AWARE GTK_IM_MODULE=fcitx QT_IM_MODULE=fcitx
-          ;;
-        KDE)
-          # KWin supplies the native input-method socket. Clear any module
-          # overrides left in the shared user bus by a previous WM session.
-          unset GTK_IM_MODULE QT_IM_MODULE SDL_IM_MODULE
-          ${pkgs.systemd}/bin/systemctl --user unset-environment GTK_IM_MODULE QT_IM_MODULE SDL_IM_MODULE
-          ${lib.optionalString (config.services.dbus.implementation == "dbus") ''
-            ${pkgs.dbus}/bin/dbus-update-activation-environment GTK_IM_MODULE= QT_IM_MODULE= SDL_IM_MODULE=
-          ''}
-          ;;
-      esac
-    '';
-    services.xserver.windowManager.i3 = {
-      enable = cfg.i3.enable;
-      configFile = userHome.xdg.configFile."i3/config".source;
-    };
+    services.displayManager.defaultSession = if cfg.sway.enable then "sway" else "plasma";
     programs.sway = {
       enable = cfg.sway.enable;
       package = import ../../nix/sway.nix { inherit pkgs; };
@@ -143,16 +132,10 @@ in
         export XDG_CURRENT_DESKTOP=sway:X-Sway QT_IM_MODULE=fcitx
       '';
     };
-    programs.nm-applet.enable =
-      config.networking.networkmanager.enable && (cfg.sway.enable || cfg.i3.enable);
+    programs.nm-applet.enable = config.networking.networkmanager.enable && cfg.sway.enable;
     systemd.user.services.nm-applet = lib.mkIf config.programs.nm-applet.enable {
-      wantedBy = lib.mkForce (
-        lib.optional cfg.sway.enable "site-sway.target" ++ lib.optional cfg.i3.enable "site-i3.target"
-      );
-      partOf = [
-        "site-sway.target"
-        "site-i3.target"
-      ];
+      wantedBy = lib.mkForce [ "site-sway.target" ];
+      partOf = [ "site-sway.target" ];
     };
     services.desktopManager.plasma6.enable = cfg.plasma.enable;
     services.dbus.enable = true;
@@ -200,8 +183,6 @@ in
         fcitx5-gtk
       ];
     };
-    # Kitty's X11 backend uses Fcitx's IBus-compatible D-Bus frontend.
-    environment.variables.GLFW_IM_MODULE = "ibus";
     xdg.portal = {
       enable = true;
       wlr.enable = cfg.sway.enable;
@@ -214,10 +195,6 @@ in
           default = [ "gtk" ];
           "org.freedesktop.impl.portal.ScreenCast" = [ "wlr" ];
           "org.freedesktop.impl.portal.Screenshot" = [ "wlr" ];
-          "org.freedesktop.impl.portal.Secret" = [ "kwallet" ];
-        };
-        i3 = {
-          default = [ "gtk" ];
           "org.freedesktop.impl.portal.Secret" = [ "kwallet" ];
         };
         KDE = {
@@ -266,7 +243,7 @@ in
     systemd.user.tmpfiles.rules = [
       "C %h/.config/gtk-2.0/gtkrc 0600 - - - ${config.environment.etc."gtk-2.0/gtkrc".source}"
     ];
-    systemd.user.targets = lib.genAttrs [ "site-sway" "site-i3" ] (_: {
+    systemd.user.targets.site-sway = {
       bindsTo = [ "graphical-session.target" ];
       wants = [
         "graphical-session-pre.target"
@@ -276,7 +253,7 @@ in
         "graphical-session-pre.target"
         "graphical-session.target"
       ];
-    });
+    };
     systemd.user.services = {
       "site-session-watch@" = {
         description = "Stop graphical services when the login session exits";
@@ -284,7 +261,7 @@ in
         serviceConfig = {
           Type = "exec";
           ExecStart = "${pkgs.util-linux}/bin/waitpid --exited %i";
-          ExecStopPost = "${pkgs.systemd}/bin/systemctl --user --no-block stop graphical-session.target site-sway.target site-i3.target";
+          ExecStopPost = "${pkgs.systemd}/bin/systemctl --user --no-block stop graphical-session.target site-sway.target";
         };
       };
       desktop-health = {
@@ -319,45 +296,28 @@ in
           ExecStart = "${pkgs.python3}/bin/python3 ${../../scripts/desktop/network_rules.py} --notify-send ${pkgs.libnotify}/bin/notify-send --rofi ${userHome.programs.rofi.finalPackage}/bin/rofi --systemctl ${pkgs.systemd}/bin/systemctl";
         };
       };
-      sway-session-watch = lib.mkIf cfg.sway.enable (watcher "sway" "${pkgs.sway}/bin/swaymsg");
-      i3-session-watch = lib.mkIf cfg.i3.enable (watcher "i3" "${pkgs.i3}/bin/i3-msg");
-      waybar = lib.mkIf cfg.sway.enable (
-        wmService "sway" "${pkgs.waybar}/bin/waybar -c ${
-          userHome.xdg.configFile."waybar/config".source
-        } -s ${userHome.xdg.configFile."waybar/style.css".source}"
-      );
-      mako = lib.mkIf cfg.sway.enable (
-        wmService "sway" "${pkgs.mako}/bin/mako --config ${userHome.xdg.configFile."mako/config".source}"
-      );
-      dunst = lib.mkIf cfg.i3.enable (
-        wmService "i3" "${pkgs.dunst}/bin/dunst -config ${userHome.xdg.configFile."dunst/dunstrc".source}"
-      );
-      snixembed = lib.mkIf cfg.i3.enable (
-        lib.recursiveUpdate (wmService "i3" "${pkgs.snixembed}/bin/snixembed") {
-          description = "Show StatusNotifierItem applications in the i3 tray";
-          serviceConfig =
-            (import ../../lib/desktop-service-hardening.nix {
-              persistRoot = config.site.storage.persistRoot;
-            })
-            // {
-              Type = "dbus";
-              BusName = "org.kde.StatusNotifierWatcher";
-              RuntimeDirectory = "snixembed";
-              Environment = [ "XDG_CACHE_HOME=%t/snixembed" ];
-            };
+      sway-session-watch = lib.mkIf cfg.sway.enable (
+        (swayService "${pkgs.sway}/bin/swaymsg -m -t subscribe '[\"shutdown\"]'")
+        // {
+          serviceConfig = {
+            ExecStart = "${pkgs.sway}/bin/swaymsg -m -t subscribe '[\"shutdown\"]'";
+            ExecStopPost = "${pkgs.systemd}/bin/systemctl --user --no-block stop site-sway.target";
+          };
         }
       );
-      swayidle = lib.mkIf cfg.sway.enable (
-        wmService "sway" "${pkgs.swayidle}/bin/swayidle -w timeout 60 '${locker}/bin/desktop-lock sway' lock '${locker}/bin/desktop-lock sway' before-sleep '${locker}/bin/desktop-lock sway'"
+      waybar = lib.mkIf cfg.sway.enable (
+        swayService "${pkgs.waybar}/bin/waybar -c ${userHome.xdg.configFile."waybar/config".source} -s ${
+          userHome.xdg.configFile."waybar/style.css".source
+        }"
       );
-      xss-lock = lib.mkIf cfg.i3.enable (
-        wmService "i3" "${pkgs.xss-lock}/bin/xss-lock --session \${XDG_SESSION_ID} --transfer-sleep-lock -- ${locker}/bin/desktop-lock i3 --foreground"
+      mako = lib.mkIf cfg.sway.enable (
+        swayService "${pkgs.mako}/bin/mako --config ${userHome.xdg.configFile."mako/config".source}"
+      );
+      swayidle = lib.mkIf cfg.sway.enable (
+        swayService "${pkgs.swayidle}/bin/swayidle -w timeout 60 '${locker}/bin/desktop-lock' lock '${locker}/bin/desktop-lock' before-sleep '${locker}/bin/desktop-lock'"
       );
       sway-polkit = lib.mkIf cfg.sway.enable (
-        wmService "sway" "${pkgs.kdePackages.polkit-kde-agent-1}/libexec/polkit-kde-authentication-agent-1"
-      );
-      i3-polkit = lib.mkIf cfg.i3.enable (
-        wmService "i3" "${pkgs.kdePackages.polkit-kde-agent-1}/libexec/polkit-kde-authentication-agent-1"
+        swayService "${pkgs.kdePackages.polkit-kde-agent-1}/libexec/polkit-kde-authentication-agent-1"
       );
     };
     systemd.user.timers.desktop-health = {
@@ -377,11 +337,9 @@ in
     environment.systemPackages = with pkgs; [
       waybar
       mako
-      dunst
       pavucontrol
       libnotify
       wl-clipboard
-      xclip
       brightnessctl
       kdePackages.kwallet
       kdePackages.kwalletmanager

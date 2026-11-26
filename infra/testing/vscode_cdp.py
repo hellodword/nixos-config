@@ -120,10 +120,9 @@ def gui_pids(port, namespace_pid=None, executable="code"):
 def retain_wm_windows(artifacts_dir, name):
     artifacts_dir = Path(artifacts_dir)
     desktop = os.environ.get("XDG_CURRENT_DESKTOP", "").lower().split(":")
-    wm = "swaymsg" if "sway" in desktop else "i3-msg" if "i3" in desktop else None
-    if wm and shutil.which(wm):
+    if "sway" in desktop and shutil.which("swaymsg"):
         tree = subprocess.run(
-            [wm, "-t", "get_tree"],
+            ["swaymsg", "-t", "get_tree"],
             check=True,
             capture_output=True,
             text=True,

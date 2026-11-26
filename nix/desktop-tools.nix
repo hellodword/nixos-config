@@ -2,20 +2,12 @@
 {
   copy = pkgs.writeShellApplication {
     name = "desktop-copy";
-    runtimeInputs = [
-      pkgs.wl-clipboard
-      pkgs.xclip
-    ];
+    runtimeInputs = [ pkgs.wl-clipboard ];
     text = ''
-      if [[ -n "''${WAYLAND_DISPLAY:-}" ]]; then
-        clipboard=(wl-copy)
+      if (($# > 0)); then
+        printf '%s' "$*" | wl-copy
       else
-        clipboard=(xclip -selection clipboard)
-      fi
-      if (( $# )); then
-        printf '%s' "$*" | "''${clipboard[@]}"
-      else
-        "''${clipboard[@]}"
+        wl-copy
       fi
     '';
   };
@@ -26,23 +18,18 @@
       xdg-user-dirs
       grim
       slurp
-      maim
       wl-clipboard
-      xclip
       satty
-      flameshot
     ];
     text = builtins.readFile ../scripts/desktop/screenshot.sh;
   };
   power = pkgs.writeShellApplication {
     name = "desktop-power";
-    runtimeInputs = [
-      pkgs.python3
-    ];
+    runtimeInputs = [ pkgs.python3 ];
     text = ''
       exec python3 ${../scripts/desktop/power.py} \
         --rofi ${rofi}/bin/rofi --systemctl ${pkgs.systemd}/bin/systemctl \
-        --swaymsg ${pkgs.sway}/bin/swaymsg --i3msg ${pkgs.i3}/bin/i3-msg \
+        --swaymsg ${pkgs.sway}/bin/swaymsg \
         --busctl ${pkgs.systemd}/bin/busctl "$@"
     '';
   };

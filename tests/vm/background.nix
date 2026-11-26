@@ -10,7 +10,7 @@ let
   network =
     (config.site.network.dns.enable or false) || (config.site.network.singBox.enable or false);
   desktop = config.site.desktop.enable or false;
-  wallpaper = desktop && (config.site.desktop.sway.enable || config.site.desktop.i3.enable);
+  wallpaper = desktop && config.site.desktop.sway.enable;
   deferred =
     names:
     lib.genAttrs names (_: {

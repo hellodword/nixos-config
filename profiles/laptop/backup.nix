@@ -117,7 +117,6 @@ in
       "${home}/.local/share/kscreen"
       "${home}/.config/kwinoutputconfig.json"
       "${home}/.config/kanshi"
-      "${home}/.config/autorandr"
       "${home}/.config/fcitx5"
       "${home}/.local/share/fcitx5"
       "${home}/.config/git/local.inc"

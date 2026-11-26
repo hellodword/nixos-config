@@ -25,7 +25,6 @@ let
       device = "/dev/disk/by-label/fixture-state";
     };
     sessions = [
-      "i3"
       "plasma"
       "sway"
     ];
@@ -86,7 +85,6 @@ let
     };
     sway = {
       module.site.desktop = {
-        i3.enable = lib.mkForce false;
         plasma.enable = lib.mkForce false;
         sway.enable = lib.mkForce true;
       };
@@ -120,14 +118,12 @@ let
             (
               session:
               {
-                i3 = config.services.xserver.windowManager.i3.enable;
                 plasma = config.services.desktopManager.plasma6.enable;
                 sway = config.programs.sway.enable;
               }
               .${session}
             )
             [
-              "i3"
               "plasma"
               "sway"
             ];

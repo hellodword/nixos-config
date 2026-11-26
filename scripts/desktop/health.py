@@ -11,7 +11,6 @@ import time
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--status", action="store_true", help="show the latest system/user failed-unit counts")
     parser.add_argument("--waybar", action="store_true", help="show failed-unit counts and names as Waybar JSON")
     args = parser.parse_args()
     state = Path(os.environ["XDG_RUNTIME_DIR"]) / "desktop-health.json"
@@ -19,18 +18,15 @@ def main():
         previous = json.loads(state.read_text())
     except (OSError, ValueError):
         previous = {}
-    if args.status or args.waybar:
+    if args.waybar:
         counts = [str(len(previous[scope])) if scope in previous else "?" for scope in ("system", "user")]
         text = f"Failed {counts[0]}/{counts[1]}"
-        if args.waybar:
-            details = []
-            for scope in ("system", "user"):
-                names = previous.get(scope)
-                details.append(scope.capitalize() + ": " + (
-                    "not sampled yet" if names is None else "\n" + "\n".join(names) if names else "no failed units"))
-            print(json.dumps({"text": text, "tooltip": html.escape("\n\n".join(details))}))
-        else:
-            print(text)
+        details = []
+        for scope in ("system", "user"):
+            names = previous.get(scope)
+            details.append(scope.capitalize() + ": " + (
+                "not sampled yet" if names is None else "\n" + "\n".join(names) if names else "no failed units"))
+        print(json.dumps({"text": text, "tooltip": html.escape("\n\n".join(details))}))
         return 0
     current = {}
     if os.environ.get("SITE_NETWORK_RULES_ENABLED") == "1":

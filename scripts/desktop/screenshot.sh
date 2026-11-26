@@ -5,31 +5,16 @@ case "$area:$action" in
   area:copy|area:save|area:edit|screen:copy|screen:save) ;;
   *) echo 'Usage: desktop-shot [area|screen] [copy|save|edit]' >&2; exit 2 ;;
 esac
-if [[ "$action" == edit && -z "${WAYLAND_DISPLAY:-}" ]]; then
-  exec flameshot gui
-fi
 shot=$(mktemp --tmpdir="${XDG_RUNTIME_DIR:-/tmp}" screenshot.XXXXXXXX.png)
 trap 'rm -f -- "$shot"' EXIT
-if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
-  if [[ "$area" == area ]]; then
-    geometry=$(slurp) || exit 0
-    grim -g "$geometry" "$shot"
-  else
-    grim "$shot"
-  fi
+if [[ "$area" == area ]]; then
+  geometry=$(slurp) || exit 0
+  grim -g "$geometry" "$shot"
 else
-  if [[ "$area" == area ]]; then
-    maim -s "$shot" || exit 0
-  else
-    maim "$shot"
-  fi
+  grim "$shot"
 fi
 if [[ "$action" == copy ]]; then
-  if [[ -n "${WAYLAND_DISPLAY:-}" ]]; then
-    wl-copy --type image/png < "$shot"
-  else
-    xclip -selection clipboard -t image/png -i "$shot"
-  fi
+  wl-copy --type image/png < "$shot"
 else
   directory=$(xdg-user-dir PICTURES)
   mkdir -p -- "$directory"

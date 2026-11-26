@@ -10,7 +10,6 @@ let
     nixosConfig.site.desktop or {
       enable = false;
       sway.enable = false;
-      i3.enable = false;
     };
   sans = builtins.head nixosConfig.fonts.fontconfig.defaultFonts.sansSerif;
   tools = import ../nix/desktop-tools.nix {
@@ -22,8 +21,8 @@ let
   };
 in
 {
-  config = lib.mkIf cfg.enable {
-    programs.waybar = lib.mkIf cfg.sway.enable {
+  config = lib.mkIf (cfg.enable && cfg.sway.enable) {
+    programs.waybar = {
       enable = true;
       systemd.enable = false;
       settings.main = {
@@ -107,7 +106,7 @@ in
           tooltip-format-disabled = "Wi-Fi disabled\nInterface: {ifname}";
         };
         "custom/tailscale" = {
-          exec = "${tools.tailscale}/bin/desktop-tailscale --waybar";
+          exec = "${tools.tailscale}/bin/desktop-tailscale";
           return-type = "json";
           interval = 10;
         };
@@ -211,95 +210,6 @@ in
         #idle_inhibitor { background: #2d3436; }
         #idle_inhibitor.activated { background: #ecf0f1; color: #202629; }
       '';
-    };
-    programs.i3status-rust = lib.mkIf cfg.i3.enable {
-      enable = true;
-      bars.default = {
-        theme = "ctp-mocha";
-        icons = "material-nf";
-        blocks = [
-          {
-            block = "focused_window";
-            driver = "sway_ipc";
-            format = " $title.str(max_w:35) |";
-          }
-          {
-            block = "cpu";
-            format = " CPU $utilization ";
-          }
-          {
-            block = "memory";
-            format = " RAM $mem_used_percents ";
-          }
-          {
-            block = "disk_space";
-            path = nixosConfig.site.storage.persistRoot;
-            info_type = "used";
-            format = " Disk $percentage ";
-          }
-          {
-            block = "net";
-            format = " $icon {$ssid|$device} ";
-          }
-          {
-            block = "disk_space";
-            path = "/";
-            info_type = "used";
-            format = " Root $percentage ";
-          }
-          {
-            block = "custom";
-            command = "${pkgs.python3}/bin/python3 ${../scripts/desktop/health.py} --status";
-            interval = 10;
-          }
-          {
-            block = "custom";
-            command = "${tools.tailscale}/bin/desktop-tailscale";
-            interval = 10;
-          }
-          {
-            block = "sound";
-            click = [
-              {
-                button = "left";
-                cmd = "${pkgs.pavucontrol}/bin/pavucontrol";
-              }
-            ];
-          }
-          {
-            block = "backlight";
-            missing_format = "";
-          }
-          {
-            block = "temperature";
-            format = " $icon $max ";
-            if_command = ''for input in /sys/class/hwmon/hwmon*/temp*_input; do [ -r "$input" ] && exit 0; done; exit 1'';
-          }
-          {
-            block = "battery";
-            driver = "upower";
-            format = " $icon $percentage ↓ ";
-            charging_format = " $icon $percentage ↑ ";
-            full_format = " $icon $percentage Full ";
-            not_charging_format = " $icon $percentage AC ";
-            warning = 60;
-            critical = 50;
-            missing_format = "";
-          }
-          (
-            localTimeZone
-            // {
-              block = "time";
-              format = " $timestamp.datetime(f:'%m-%d %H:%M %Z') ";
-            }
-          )
-          {
-            block = "time";
-            timezone = "Asia/Shanghai";
-            format = " $timestamp.datetime(f:'%H:%M CN') ";
-          }
-        ];
-      };
     };
   };
 }

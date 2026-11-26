@@ -182,7 +182,6 @@ in
         ".config/plasma-workspace"
         ".local/share/kscreen"
         ".config/kanshi"
-        ".config/autorandr"
         ".config/VirtualBox"
         "VirtualBox VMs"
         ".local/share/waydroid"

@@ -106,8 +106,6 @@ def logout_command(args):
     desktops = os.environ.get("XDG_CURRENT_DESKTOP", "").split(":")
     if "sway" in desktops:
         return [args.swaymsg, "exit"]
-    if "i3" in desktops:
-        return [args.i3msg, "exit"]
     if "KDE" in desktops:
         return [args.busctl, "--user", "call", "org.kde.Shutdown", "/Shutdown", "org.kde.Shutdown", "logout"]
     raise RuntimeError("This desktop has no configured logout action")
@@ -125,7 +123,7 @@ def show_blockers(args, action, system_action):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("rofi", "systemctl", "swaymsg", "i3msg", "busctl"):
+    for name in ("rofi", "systemctl", "swaymsg", "busctl"):
         parser.add_argument("--" + name, required=True)
     args = parser.parse_args()
     try:

@@ -237,12 +237,6 @@ in
         WLR_HEADLESS_OUTPUTS = "0";
       };
     };
-    i3 = {
-      services.displayManager.defaultSession = lib.mkForce "none+i3";
-      # qemu-vm otherwise injects 1024x768 as an Xorg user-preferred mode.
-      # Exercise an unknown monitor's EDID preference, with no saved override.
-      services.xserver.resolutions = lib.mkOverride 0 [ ];
-    };
     plasma = {
       services.displayManager.defaultSession = lib.mkForce "plasma";
       boot.kernelModules = [ "mac80211_hwsim" ];
@@ -322,22 +316,6 @@ in
         for purpose in ("github", "local"):
             assert user(machine, "ssh -n fixture-" + purpose + " whoami").strip() == "desktop"
 
-    def preferred_layout(machine):
-        try:
-            machine.wait_until_succeeds(user_command("xrandr --query | grep -E ' connected[^[:cntrl:]]*1280x800\\+0\\+0'"), timeout=30)
-        except Exception as error:
-            runtime["collect_failure"](error, [
-                (machine, "layout", user_command("xrandr --query")),
-                (machine, "layout-journal", user_command("journalctl --user -u autorandr.service -n 60 --no-pager")),
-            ])
-            raise
-
-    def reconnect_i3_display(machine, output):
-        connector = machine.succeed("readlink -f /sys/class/drm/card*-" + shlex.quote(output) + "/status").strip()
-        machine.succeed("printf off > " + shlex.quote(connector))
-        machine.wait_until_succeeds(user_command("xrandr --query | grep -E " + shlex.quote("^" + re.escape(output) + " disconnected")), timeout=30)
-        machine.succeed("printf detect > " + shlex.quote(connector))
-
     def process(name):
         # Match argv[0], including Nix wrappers. Idle managers also contain
         # their lock command in later arguments while the screen is unlocked.
@@ -348,15 +326,9 @@ in
     visible, login = gui["visible"], gui["login"]
     power_menu = runpy.run_path("${./power_menu.py}")
 
-    def power_visible(machine, pattern, **kwargs):
-        # The i3 power actions follow the saved left-rotation profile. QEMU
-        # captures the physical framebuffer; turn it upright for OCR while
-        # keeping the guest's real rotated layout and original screenshots.
-        return visible(machine, pattern, rotation=90 if machine.name == "i3" else 0, **kwargs)
-
     def unlock(machine, session, screenshot=None):
         with machine.input_lock:
-            locker = {"sway": "swaylock", "i3": "i3lock", "KDE": "kscreenlocker_greet"}[session]
+            locker = {"sway": "swaylock", "KDE": "kscreenlocker_greet"}[session]
             if machine.execute(process(locker))[0] == 0:
                 if session == "KDE":
                     # The locker process starts before its surface can receive
@@ -367,30 +339,10 @@ in
                     machine.send_key("ctrl", delay=timedelta(milliseconds=150))
                     pid = machine.succeed(process(locker)).strip().splitlines()[-1]
                     gui["qt_password_focus"](machine, pid, time.monotonic() + 30)
-                elif session == "sway":
+                else:
                     machine.wait_until_succeeds(
                         "pid=$(" + process(locker) + " | tail -n 1) && test -n \"$pid\" && grep -qE '/dev/shm/|memfd:' \"/proc/$pid/maps\" && "
                         + user_command("swaymsg -t get_tree | jq -e '[.. | objects | select(.focused? == true and .type? != \"workspace\")] | length == 0'"),
-                        timeout=30,
-                    )
-                    time.sleep(0.25)
-                else:
-                    x11_grab_probe = (
-                        "import ctypes, sys; "
-                        "x11 = ctypes.CDLL('${pkgs.libx11}/lib/libX11.so.6'); "
-                        "x11.XOpenDisplay.restype = ctypes.c_void_p; "
-                        "x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]; "
-                        "x11.XDefaultRootWindow.restype = ctypes.c_ulong; "
-                        "x11.XGrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_ulong]; "
-                        "x11.XUngrabKeyboard.argtypes = [ctypes.c_void_p, ctypes.c_ulong]; "
-                        "x11.XCloseDisplay.argtypes = [ctypes.c_void_p]; "
-                        "dpy = x11.XOpenDisplay(None); assert dpy; "
-                        "rc = x11.XGrabKeyboard(dpy, x11.XDefaultRootWindow(dpy), 0, 1, 1, 0); "
-                        "x11.XUngrabKeyboard(dpy, 0) if rc == 0 else None; "
-                        "x11.XCloseDisplay(dpy); sys.exit(0 if rc == 1 else 1)"
-                    )
-                    machine.wait_until_succeeds(
-                        process(locker) + " >/dev/null && " + user_command("${pkgs.python3}/bin/python3 -c " + shlex.quote(x11_grab_probe)),
                         timeout=30,
                     )
                     time.sleep(0.25)
@@ -423,23 +375,23 @@ in
                 "test -f /run/user/1000/vm-health-started && "
                 "test \"$(systemctl --user show desktop-health.service -p SubState --value)\" = start-pre"
             ), timeout=30)
-        command = {"sway": "swaymsg exit", "i3": "i3-msg exit",
+        command = {"sway": "swaymsg exit",
                    "plasmashell": "busctl --user call org.kde.Shutdown /Shutdown org.kde.Shutdown logout"}[compositor]
         # Return to the greeter through the session's own logout entrypoint.
         # Its transient command can be terminated with the graphical session.
         if menu:
-            power_menu["confirm"](machine, user, power_visible, "Log out", shortcut=compositor != "plasmashell")
+            power_menu["confirm"](machine, user, visible, "Log out", shortcut=compositor != "plasmashell")
         else:
             status, output = machine.execute(user_command(command), timeout=30)
             if status:
                 print("Session logout command:", status, output)
         failure = None
         try:
-            for unit in ("graphical-session.target", "desktop-health.timer", "site-sway.target", "site-i3.target", "site-wallpaper.timer", "site-wallpaper-fetch@*.timer"):
+            for unit in ("graphical-session.target", "desktop-health.timer", "site-sway.target", "site-wallpaper.timer", "site-wallpaper-fetch@*.timer"):
                 machine.wait_until_fails(user_command("systemctl --user is-active " + shlex.quote(unit)), timeout=60)
             # A late notification must not restart a notifier after logout.
             user(machine, "notify-send 'Session has ended'", True)
-            for name in (compositor, "waybar", "mako", "dunst", "fcitx5"):
+            for name in (compositor, "waybar", "mako", "fcitx5"):
                 machine.wait_until_fails(process(name), timeout=60)
             machine.wait_for_unit("display-manager.service")
             visible(machine, r"(?i)\bdesktop\b", timeout=60)
@@ -515,7 +467,9 @@ in
         machine.succeed("sbctl verify | grep -F '✓'")
         login_session(machine, "sway", "sway")
         machine.screenshot("boot-unlocked-sway")
-        stop_session(machine, "sway", menu=True)
+        machine.resume_idle()
+        power_menu["confirm"](machine, user, visible, "Power off", shortcut=True)
+        machine.wait_for_shutdown(timeout=timedelta(seconds=120))
 
     def login_session(machine, session, compositor, *, screenshot=None):
         login(machine, screenshot=screenshot)
@@ -543,11 +497,11 @@ in
         pixels = subprocess.check_output(["magick", str(raw), "-crop", f"{width}x1+0+3", "-depth", "8", "RGB:-"], timeout=10)
         return width, height, pixels
 
-    def wallpaper_visible(machine, session):
+    def wallpaper_visible(machine):
         selected = Path(user(machine, "cat ~/.local/state/site-wallpaper/current").strip()).name
         expected = {"202601010000.jpg": (180, 40, 70), "202601020000.jpg": (40, 70, 180),
                     "personal.png": (40, 160, 70)}[selected]
-        user(machine, ("swaymsg" if session == "sway" else "i3-msg") + " workspace 9")
+        user(machine, "swaymsg workspace 9")
         with tempfile.TemporaryDirectory() as temporary:
             frame = Path(temporary) / "background.png"
             raw = Path(temporary) / "background.ppm"
@@ -562,7 +516,7 @@ in
                     break
                 assert time.monotonic() < deadline, (selected, list(pixel))
                 time.sleep(0.2)
-        user(machine, ("swaymsg" if session == "sway" else "i3-msg") + " workspace 1")
+        user(machine, "swaymsg workspace 1")
         return selected
 
     def wallpaper_fetch_state(machine):
@@ -640,7 +594,6 @@ in
         )
         if session == "sway":
             machine.succeed("uname -r | grep -E '^${swayKernelPrefix}\\.' && modprobe vboxdrv && test -c /dev/vboxdrv")
-        if session in ("sway", "i3"):
             now = int(machine.succeed("date +%s"))
             saved_fetch = {"lastAttempt": datetime.fromtimestamp(now, timezone.utc).isoformat(), "result": "unchanged"}
             machine.succeed("install -d -o desktop -g users /home/desktop/Pictures/wallpaper /home/desktop/.local/state/site-wallpaper")
@@ -651,34 +604,34 @@ in
             ))
         login_session(machine, session, compositor, screenshot="sddm-" + machine.name)
         unlock(machine, session)
-        if session in ("sway", "i3"):
+        if session == "sway":
             machine.wait_for_unit("nginx.service")
-            assert wallpaper_visible(machine, session) == "personal.png"
+            assert wallpaper_visible(machine) == "personal.png"
             assert wallpaper_fetch_state(machine) == saved_fetch
             machine.succeed("test ! -e /run/wallpaper-requests")
             # Hold the HTTPS response while observing the restored local background.
             machine.succeed("printf restore-background > /run/wallpaper-hold")
             previous_attempt = wallpaper_due(machine)
             machine.wait_until_succeeds("grep -Fx restore-background /run/wallpaper-held", timeout=60)
-            assert wallpaper_visible(machine, session) == "personal.png"
+            assert wallpaper_visible(machine) == "personal.png"
             machine.succeed("rm /run/wallpaper-hold")
             wallpaper_attempt_finished(machine, previous_attempt, "new")
             machine.wait_until_succeeds(user_command("grep -F 202601020000.jpg ~/.local/state/site-wallpaper/current"), timeout=30)
-            assert wallpaper_visible(machine, session) == "202601020000.jpg"
+            assert wallpaper_visible(machine) == "202601020000.jpg"
             initial_files = user(machine, "stat -c '%n %i %Y' ~/Pictures/wallpaper/*")
             assert len(initial_files.splitlines()) == 3, initial_files
             previous_attempt = wallpaper_due(machine)
             wallpaper_attempt_finished(machine, previous_attempt, "unchanged")
             assert user(machine, "stat -c '%n %i %Y' ~/Pictures/wallpaper/*") == initial_files
-            previous = wallpaper_visible(machine, session)
+            previous = wallpaper_visible(machine)
             machine.succeed("systemctl stop nginx")
             previous_attempt = wallpaper_due(machine)
             wallpaper_attempt_finished(machine, previous_attempt, "failed")
-            assert wallpaper_visible(machine, session) == previous
+            assert wallpaper_visible(machine) == previous
             user(machine, "systemctl --user start site-wallpaper.service")
-            assert wallpaper_visible(machine, session) != previous
-            user(machine, ("swaymsg" if session == "sway" else "i3-msg") + " reload")
-            wallpaper_visible(machine, session)
+            assert wallpaper_visible(machine) != previous
+            user(machine, "swaymsg reload")
+            wallpaper_visible(machine)
             machine.succeed("systemctl start nginx")
         else:
             user(machine, "systemctl --user is-active site-wallpaper.timer", True)
@@ -700,22 +653,8 @@ in
         machine.screenshot("kitty-fonts-" + machine.name)
         if session == "sway":
             user(machine, "systemctl --user is-active site-sway.target waybar.service mako.service nm-applet.service")
-            user(machine, "systemctl --user is-active site-i3.target", True)
             machine.wait_until_succeeds(user_command("swaymsg -t get_tree | grep Desktop-fixture"))
-        elif session == "i3":
-            user(machine, "systemctl --user is-active site-i3.target dunst.service autorandr.service nm-applet.service")
-            user(machine, "systemctl --user is-active site-sway.target", True)
-            # Unknown monitors use the EDID preference: QEMU offers 5120x2160
-            # but marks 1280x800 as preferred.
-            modes = user(machine, "xrandr --query")
-            assert re.search(r"^\s+1280x800\s+[^\n]*\+", modes, re.MULTILINE), modes
-            assert not re.search(r"^\s+5120x2160\s+[^\n]*\+", modes, re.MULTILINE), modes
-            preferred_layout(machine)
-            machine.wait_until_succeeds(user_command("i3-msg -t get_tree | grep Desktop-fixture"))
-            machine.wait_until_succeeds(process("i3status-rs"), timeout=30)
-            visible(machine, "Disk")
         else:
-            user(machine, "systemctl --user is-active site-i3.target", True)
             user(machine, "systemctl --user is-active site-sway.target", True)
             im_pid = user(machine, "busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus GetConnectionUnixProcessID s org.fcitx.Fcitx5").strip().split()[1]
             im_parent = machine.succeed("ps -o ppid= -p " + im_pid).strip()
@@ -779,11 +718,10 @@ in
         # splash can still cover it. Capture the usable desktop, not startup.
         unlock(machine, session)
         visible(machine, "Native desktop", timeout=90)
-        if session in ("sway", "i3"):
-            wm = "swaymsg" if session == "sway" else "i3-msg"
+        if session == "sway":
             user(machine, "systemd-run --user --collect --unit=tabbed-fixture kitty --title Tabbed-fixture sleep 120")
             query = '[.. | objects | select(.layout? == "tabbed") | [.. | objects | select(.name? == "Desktop-fixture" or .name? == "Tabbed-fixture")] | length] | any(. >= 2)'
-            machine.wait_until_succeeds(user_command(wm + " -t get_tree | jq -e " + shlex.quote(query)), timeout=30)
+            machine.wait_until_succeeds(user_command("swaymsg -t get_tree | jq -e " + shlex.quote(query)), timeout=30)
             user(machine, "systemctl --user stop tabbed-fixture.service")
             visible(machine, "Native desktop", timeout=30)
         # Exercise the reminder's real GTK window and command interface in
@@ -797,17 +735,13 @@ in
         visible(machine, "Skip", timeout=30)
         user(machine, "safeeyes --disable")
         visible(machine, "Native desktop", timeout=30)
-        if session in ("sway", "i3"):
+        if session == "sway":
             # The compositor owns clipboard helpers for the session. A short
             # transient service would terminate them when its main process exits.
-            wm = "swaymsg" if session == "sway" else "i3-msg"
-            user(machine, wm + " exec 'desktop-shot screen copy'")
-            clipboard = "wl-paste --type image/png" if session == "sway" else "xclip -selection clipboard -t image/png -o"
-            machine.wait_until_succeeds(user_command(clipboard + " > /run/user/1000/screenshot.png"), timeout=30)
+            user(machine, "swaymsg exec 'desktop-shot screen copy'")
+            machine.wait_until_succeeds(user_command("wl-paste --type image/png > /run/user/1000/screenshot.png"), timeout=30)
             machine.succeed("test $(od -An -tx1 -N8 /run/user/1000/screenshot.png | tr -d ' \\n') = 89504e470d0a1a0a")
             user(machine, "desktop-shot screen save; test -s ~/Pictures/$(ls -t ~/Pictures | head -n1)")
-        # Each session's one-minute timeout must invoke a working PAM lock.
-        if session == "sway":
             with machine.allow_idle():
                 hover_status(machine)
         machine.resume_idle()
@@ -821,18 +755,18 @@ in
             unlock(machine, session)
             click_eye(machine, "ecf0f1", "2d3436")
         machine.send_key("ctrl")
-        locker = {"sway": "swaylock", "i3": "i3lock", "KDE": "kscreenlocker_greet"}[session]
+        locker = {"sway": "swaylock", "KDE": "kscreenlocker_greet"}[session]
         machine.wait_until_succeeds(process(locker), timeout=85)
         unlock(machine, session, screenshot="desktop-" + session.lower() + "-idle-lock")
         visible(machine, "Native desktop", timeout=30)
-        if session in ("sway", "i3"):
+        if session == "sway":
             machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
             machine.wait_until_succeeds(process(locker), timeout=30)
             unlock(machine, session, screenshot="desktop-" + session + "-manual-lock")
         machine.inhibit_idle()
         # Exercise D-Bus activation after the WM's notifier has stopped, not
         # merely the explicit startup path. Plasma must own its native name.
-        notifier = {"sway": "mako", "i3": "dunst", "KDE": "plasmashell"}[session]
+        notifier = {"sway": "mako", "KDE": "plasmashell"}[session]
         if session != "KDE":
             user(machine, "systemctl --user stop " + notifier + ".service")
             machine.wait_until_fails(process(notifier), timeout=30)
@@ -841,8 +775,8 @@ in
         user(machine, "notify-send --expire-time=0 --app-name=Desktop-check 'Desktop ready' '中文通知 · Session services ready'")
         owner = user(machine, "busctl --user call org.freedesktop.DBus /org/freedesktop/DBus org.freedesktop.DBus GetConnectionUnixProcessID s org.freedesktop.Notifications").strip().split()[1]
         assert owner in machine.succeed(process(notifier)).splitlines(), (session, owner)
-        for other in {"mako", "dunst"} - {notifier}:
-            machine.fail(process(other))
+        if session == "KDE":
+            machine.fail(process("mako"))
         visible(machine, "Desktop ready", timeout=30)
         machine.screenshot("desktop-" + session.lower())
         if session == "sway":
@@ -878,34 +812,9 @@ in
             assert len(active) == 2 and active[1]["rect"]["x"] >= active[0]["rect"]["x"] + active[0]["rect"]["width"]
             user(machine, "swaymsg output HEADLESS-1 unplug")
             assert_display_layout(machine, saved_single)
-        elif session == "i3":
-            user(machine, "systemctl --user is-active autorandr.service")
-            i3_output = user(machine, "xrandr --query | awk '/ connected/ {print $1; exit}'").strip()
-            # Keep a profile for the monitor's boot-time EDID. Forcing a
-            # virtio connector off removes its EDID until the next boot, so
-            # the reconnect scenario below represents an EDID-less display.
-            user(machine, "systemctl --user stop autorandr.service")
-            user(machine, "xrandr --output " + shlex.quote(i3_output) + " --rotate left")
-            user(machine, "autorandr --save vm-preference --force")
-            user(machine, "systemctl --user start autorandr.service")
-            # Reconnect the DRM output so the running session receives an
-            # actual topology event and applies its display policy.
-            user(machine, "xrandr --output " + shlex.quote(i3_output) + " --mode 5120x2160 --rotate normal")
-            reconnect_i3_display(machine, i3_output)
-            preferred_layout(machine)
-            user(machine, "systemctl --user stop autorandr.service")
-            user(machine, "xrandr --output " + shlex.quote(i3_output) + " --rotate left")
-            user(machine, "autorandr --save vm-reconnected --force")
-            user(machine, "systemctl --user start autorandr.service")
-            user(machine, "xrandr --output " + shlex.quote(i3_output) + " --rotate normal")
-            reconnect_i3_display(machine, i3_output)
-            machine.wait_until_succeeds(user_command("autorandr --current | grep -Fx vm-reconnected"), timeout=30)
-        if session in ("sway", "i3"):
-            wallpaper_visible(machine, session)
-        if session == "sway":
+            wallpaper_visible(machine)
             power_workloads(machine)
-        if session in ("sway", "i3"):
-            saved_wallpaper = wallpaper_visible(machine, session)
+            saved_wallpaper = wallpaper_visible(machine)
             saved_fetch = wallpaper_fetch_state(machine)
             requests = machine.succeed("cat /run/wallpaper-requests")
         stop_session(machine, compositor, menu=True, health_busy=True)
@@ -913,15 +822,9 @@ in
         user(machine, "systemctl --user start desktop-health.service")
         if session == "sway":
             assert_display_layout(machine, saved_single)
-        elif session == "i3":
-            machine.wait_until_succeeds(user_command("autorandr --current | grep vm-reconnected"), timeout=60)
-        elif session == "KDE":
-            identity_ready(machine)
-        if session in ("sway", "i3"):
-            assert wallpaper_visible(machine, session) == saved_wallpaper
+            assert wallpaper_visible(machine) == saved_wallpaper
             assert wallpaper_fetch_state(machine) == saved_fetch
             assert machine.succeed("cat /run/wallpaper-requests") == requests
-        if session == "sway":
             # The server acknowledges the request while the real downloader
             # waits for its response. Log out through Sway during that transfer.
             machine.succeed("printf logout-download > /run/wallpaper-hold")
@@ -938,45 +841,30 @@ in
             finally:
                 machine.execute("rm -f /run/wallpaper-hold")
             login_session(machine, session, compositor)
-            assert wallpaper_visible(machine, session) == saved_wallpaper
+            assert wallpaper_visible(machine) == saved_wallpaper
             assert wallpaper_fetch_state(machine) == saved_fetch
             assert machine.succeed("cat /run/wallpaper-requests") == requests
-        if session in ("sway", "i3"):
             boot_id = machine.succeed("cat /proc/sys/kernel/random/boot_id").strip()
-            power_menu["confirm"](machine, user, power_visible, "Reboot", shortcut=True)
+            power_menu["confirm"](machine, user, visible, "Reboot", shortcut=True)
             machine.machine.connected = False
             machine.wait_for_unit("display-manager.service", timeout=180)
             assert machine.succeed("cat /proc/sys/kernel/random/boot_id").strip() != boot_id
             login_session(machine, session, compositor)
             assert user(machine, "timeout 15 secret-tool lookup purpose desktop-test").strip() == "wallet-fixture"
-            assert wallpaper_visible(machine, session) == saved_wallpaper
+            assert wallpaper_visible(machine) == saved_wallpaper
             assert wallpaper_fetch_state(machine) == saved_fetch
             machine.succeed("test ! -e /run/wallpaper-requests")
-            if session == "sway":
-                machine.wait_until_succeeds(user_command("systemctl --user is-active kanshi.service"))
-                assert_display_layout(machine, saved_single)
-                user(machine, "swaymsg create_output")
-                assert_display_layout(machine, saved_dual)
-            else:
-                try:
-                    machine.wait_until_succeeds(user_command("autorandr --current | grep vm-preference"), timeout=60)
-                except Exception as error:
-                    runtime["collect_failure"](error, [
-                        (machine, "restored-layout", user_command("autorandr --debug --detected; autorandr --fingerprint; cat ~/.config/autorandr/vm-preference/setup ~/.config/autorandr/vm-preference/config")),
-                        (machine, "restored-layout-journal", user_command("journalctl --user -u autorandr.service --no-pager")),
-                        (machine, "restored-outputs", user_command("xrandr --query")),
-                    ])
-                    raise
-                outputs = user(machine, "xrandr --query")
-                assert re.search(r"^" + re.escape(i3_output) + r" connected[^\n]* left ", outputs, re.MULTILINE), outputs
-            # Use the same native lock after restoring a multi-output or
-            # rotated layout, then authenticate through its actual PAM UI.
+            machine.wait_until_succeeds(user_command("systemctl --user is-active kanshi.service"))
+            assert_display_layout(machine, saved_single)
+            user(machine, "swaymsg create_output")
+            assert_display_layout(machine, saved_dual)
             with machine.allow_idle():
                 machine.send_key("meta_l-semicolon", delay=timedelta(milliseconds=150))
                 machine.wait_until_succeeds(process(locker), timeout=30)
                 unlock(machine, session, screenshot="desktop-" + session + "-layout-lock")
             stop_session(machine, compositor)
         if session == "KDE":
+            identity_ready(machine)
             stop_session(machine, compositor)
             learned = machine.succeed("sha256sum /persist/home/desktop/.local/share/fcitx5/pinyin/user.dict /persist/home/desktop/.local/share/fcitx5/pinyin/user.history")
             # Recreate the home link as an ephemeral root would, while keeping
@@ -1004,7 +892,7 @@ in
     # Sessions use separate guests. Report each one's lifecycle result even
     # when another session fails, and fail the complete test on any error.
     failures = []
-    for machine, session, compositor in ((plasma, "KDE", "plasmashell"), (sway, "sway", "sway"), (i3, "i3", "i3")):
+    for machine, session, compositor in ((plasma, "KDE", "plasmashell"), (sway, "sway", "sway")):
         machine = gui["Desktop"](machine)
         try:
             with subtest(session):
@@ -1012,10 +900,6 @@ in
                 exercise_session(machine, session, compositor)
                 if session == "sway":
                     encrypted_boot(machine)
-                elif session == "i3":
-                    login_session(machine, session, compositor)
-                    power_menu["confirm"](machine, user, power_visible, "Power off", shortcut=True)
-                    machine.wait_for_shutdown(timeout=timedelta(seconds=120))
         except Exception as error:
             traceback.print_exc()
             failures.append((session, str(error)))
@@ -1023,7 +907,7 @@ in
                 (machine, "home", "journalctl -b -u home-manager-desktop.service -n 80 --no-pager"),
                 (machine, "session", "journalctl _UID=1000 -n 100 --no-pager"),
                 (machine, "identity", "journalctl -b -u site-identity -u sshd -n 80 --no-pager; " + user_command("systemctl --user status site-gpg-ssh-identities.service site-gpg-ssh-identities.path; journalctl --user -u site-gpg-ssh-identities.service -n 80 --no-pager")),
-                (machine, "idle", user_command("systemctl --user status swayidle xss-lock vm-idle-inhibit; xset q")),
+                (machine, "idle", user_command("systemctl --user status swayidle vm-idle-inhibit")),
                 (machine, "environment", user_command("systemctl --user show-environment") + "; cat /run/user/1000/safeeyes-status; journalctl _SYSTEMD_USER_UNIT=safeeyes.service -b -n 80 --no-pager"),
                 (machine, "wallpaper", "cat /run/wallpaper-requests /run/wallpaper-held; cat /home/desktop/.local/state/site-wallpaper/fetch.json; journalctl -u wallpaper-feed -n 50 --no-pager"),
             ]

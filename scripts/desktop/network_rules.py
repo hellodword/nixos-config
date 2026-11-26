@@ -1,7 +1,6 @@
 """Offer a shared-rule update without interrupting the current session."""
 import argparse
 import json
-import os
 from pathlib import Path
 import signal
 import subprocess
@@ -39,8 +38,7 @@ def review(args):
     notification = subprocess.Popen([
         args.notify_send, "--app-name=Network rules", "--expire-time=0",
         "--action=default=查看更新", "--action=review=查看更新", "--action=later=稍后",
-        "网络规则待应用", "规则已下载并校验，等待确认后应用。\n"
-        + ("中键点击查看。" if os.environ.get("XDG_CURRENT_DESKTOP") == "i3" else "点击查看更新。")],
+        "网络规则待应用", "规则已下载并校验，等待确认后应用。\n点击查看更新。"],
         stdout=subprocess.PIPE, text=True)
     try:
         action = notification.communicate()[0].strip()

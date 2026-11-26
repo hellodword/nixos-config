@@ -60,12 +60,11 @@ def main():
         work = Path(temporary)
         check_fonts(args.output, work)
         env = os.environ | {"XDG_RUNTIME_DIR": str(work)}
-        for session, command in (("sway", ["sway", "--validate", "-d"]), ("i3", ["i3", "-C"])):
-            result = subprocess.run([*command, "-c", settings[session]], env=env, capture_output=True, text=True, timeout=30)
-            (args.output / f"{session}-validation.log").write_text(result.stdout + result.stderr)
-            if result.returncode:
-                print(result.stdout + result.stderr, file=sys.stderr)
-                result.check_returncode()
+        result = subprocess.run(["sway", "--validate", "-d", "-c", settings["sway"]], env=env, capture_output=True, text=True, timeout=30)
+        (args.output / "sway-validation.log").write_text(result.stdout + result.stderr)
+        if result.returncode:
+            print(result.stdout + result.stderr, file=sys.stderr)
+            result.check_returncode()
 
 if __name__ == "__main__":
     main()

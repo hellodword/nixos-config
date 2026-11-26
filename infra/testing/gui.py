@@ -145,10 +145,6 @@ class Desktop:
         )
         if "sway" in self.session:
             command = "systemctl --user stop swayidle.service || true"
-        elif "i3" in self.session:
-            settings = self.machine.succeed(self.session_command("xset q"), timeout=30)
-            self.screensaver = re.search(r"timeout:\s+(\d+)\s+cycle:\s+(\d+)", settings).groups()
-            command = "xset s off"
         else:
             command = "systemd-run --user --collect --unit=vm-idle-inhibit vm-idle-inhibit"
         self.machine.succeed(self.session_command(command), timeout=30)
@@ -166,8 +162,6 @@ class Desktop:
                 "if systemctl --user list-unit-files swayidle.service | grep -q swayidle.service; "
                 "then systemctl --user start swayidle.service; fi"
             )
-        elif "i3" in self.session:
-            command = "xset s " + " ".join(self.screensaver) + "; xset s reset"
         else:
             command = "systemctl --user stop vm-idle-inhibit.service"
         self.machine.succeed(self.session_command(command), timeout=30)
@@ -249,11 +243,9 @@ def input_method(machine, user_command, active, deadline):
 
 def focused_window(machine, user_command, deadline=None):
     query = '''case "$XDG_CURRENT_DESKTOP" in
-      *sway*) wm=swaymsg ;;
-      *i3*) wm=i3-msg ;;
-      *KDE*) kdotool getwindowclassname "$(kdotool getactivewindow)"; exit ;;
+      *sway*) swaymsg -t get_tree | jq -c 'first(.. | objects | select(.focused? == true) | {app_id, window_properties, name, pid})' ;;
+      *KDE*) kdotool getwindowclassname "$(kdotool getactivewindow)" ;;
     esac
-    "$wm" -t get_tree | jq -c 'first(.. | objects | select(.focused? == true) | {app_id, window_properties, name, pid})'
     '''
     return machine.succeed(
         user_command(query),
@@ -264,7 +256,6 @@ def focused_window(machine, user_command, deadline=None):
 def wait_for_session(machine, session, user_command, *, target_unit=None, require_fcitx=True):
     default_targets = {
         "sway": "site-sway.target",
-        "i3": "site-i3.target",
         "KDE": "plasma-workspace.target",
     }
     target = target_unit if target_unit is not None else default_targets.get(session)

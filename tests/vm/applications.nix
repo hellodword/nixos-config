@@ -46,12 +46,6 @@
           neededForBoot = true;
         };
       };
-      services.xserver.resolutions = lib.mkOverride 0 [
-        {
-          x = 1920;
-          y = 1080;
-        }
-      ];
       home-manager.users.desktop.home.stateVersion = "22.11";
       users.users.desktop = {
         isNormalUser = true;
@@ -102,9 +96,6 @@
         site.containers.enable = true;
         environment.etc."application-fixtures/container.tar.gz".source = image;
       };
-    i3 = {
-      services.displayManager.defaultSession = lib.mkForce "none+i3";
-    };
     plasma = {
       services.displayManager.defaultSession = lib.mkForce "plasma";
     };
@@ -351,8 +342,7 @@
         if session == "KDE":
             focused = 'kdotool getwindowclassname "$(kdotool getactivewindow)" | grep -iw kitty'
         else:
-            wm = "swaymsg" if session == "sway" else "i3-msg"
-            focused = wm + " -t get_tree | jq -e " + shlex.quote('first(.. | objects | select(.focused? == true) | (.app_id // .window_properties.class // "") | ascii_downcase | select(. == "kitty"))')
+            focused = "swaymsg -t get_tree | jq -e " + shlex.quote('first(.. | objects | select(.focused? == true) | (.app_id // .window_properties.class // "") | ascii_downcase | select(. == "kitty"))')
         machine.wait_until_succeeds(user_command(focused), timeout=60)
         machine.screenshot(machine.name + "-kitty-prompt")
         input_actions(machine, [{"text": "printf ready > ~/application-workspace/terminal-ready; IFS= read -r -n 2 value; printf '%s\\n' \"$value\" > ~/application-workspace/terminal.txt\n"}], "kitty")
@@ -374,9 +364,8 @@
                 # Keep the clipboard owner alive until Rofi consumes the command.
                 try:
                     user(machine, "systemd-run --user --collect --unit=rofi-command-clipboard --property=Type=forking desktop-copy " + shlex.quote(command))
-                    clipboard = "wl-paste --no-newline" if session == "sway" else "xclip -selection clipboard -o"
                     machine.wait_until_succeeds(
-                        user_command('test "$(' + clipboard + ')" = ' + shlex.quote(command)), timeout=10)
+                        user_command('test "$(wl-paste --no-newline)" = ' + shlex.quote(command)), timeout=10)
                     machine.send_key("ctrl-v", delay=key_delay)
                     visible(machine, r"run:?\s+" + re.escape(command), region=power_menu["REGION"])
                     machine.send_key("ctrl-ret", delay=key_delay)
@@ -398,7 +387,7 @@
 
     failures = []
     outcomes = []
-    for machine, session in ((i3, "i3"), (plasma, "KDE"), (sway, "sway")):
+    for machine, session in ((plasma, "KDE"), (sway, "sway")):
         machine = gui["Desktop"](machine)
         try:
             machine.start()

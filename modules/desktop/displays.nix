@@ -6,7 +6,6 @@
 }:
 let
   cfg = config.site.desktop;
-  layout = import ../../nix/display-layout.nix { inherit pkgs; };
   sandbox =
     directory:
     import ../../lib/desktop-service-hardening.nix {
@@ -15,21 +14,16 @@ let
     };
 in
 {
-  config = lib.mkIf cfg.enable {
-    environment.systemPackages =
-      lib.optionals cfg.sway.enable [
-        pkgs.kanshi
-        pkgs.wdisplays
-      ]
-      ++ lib.optionals cfg.i3.enable [
-        pkgs.autorandr
-        pkgs.arandr
-      ];
-    systemd.user.tmpfiles.rules = lib.optionals cfg.sway.enable [
+  config = lib.mkIf (cfg.enable && cfg.sway.enable) {
+    environment.systemPackages = [
+      pkgs.kanshi
+      pkgs.wdisplays
+    ];
+    systemd.user.tmpfiles.rules = [
       "d %h/.config/kanshi 0700 - - -"
       "f %h/.config/kanshi/config 0600 - - -"
     ];
-    systemd.user.services.kanshi = lib.mkIf cfg.sway.enable {
+    systemd.user.services.kanshi = {
       description = "Restore saved display combinations";
       wantedBy = [ "site-sway.target" ];
       partOf = [ "site-sway.target" ];
@@ -46,7 +40,7 @@ in
         RestartSec = "2s";
       };
     };
-    systemd.user.services.wdisplays = lib.mkIf cfg.sway.enable {
+    systemd.user.services.wdisplays = {
       description = "Adjust displays and save their layout";
       partOf = [ "site-sway.target" ];
       after = [ "kanshi.service" ];
@@ -64,22 +58,6 @@ in
         DeviceAllow = [ "char-drm rw" ];
         RuntimeDirectory = "wdisplays";
         Environment = [ "XDG_CACHE_HOME=%t/wdisplays" ];
-      };
-    };
-    systemd.user.services.autorandr = lib.mkIf cfg.i3.enable {
-      description = "Restore saved display profiles; arrange unknown displays automatically";
-      wantedBy = [ "site-i3.target" ];
-      partOf = [ "site-i3.target" ];
-      after = [
-        "graphical-session.target"
-      ];
-      unitConfig.ConditionEnvironment = "XDG_CURRENT_DESKTOP=i3";
-      path = [ pkgs.systemd ];
-      serviceConfig = sandbox ".config/autorandr" // {
-        Type = "exec";
-        ExecStart = "${layout}/bin/site-display-layout --watch";
-        Restart = "on-failure";
-        RestartSec = "2s";
       };
     };
   };

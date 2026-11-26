@@ -1,15 +1,16 @@
-"""Present this host's Tailscale connection and addresses."""
+"""Present this host's Tailscale connection and addresses as Waybar JSON."""
 import html
 import json
 import subprocess
-import sys
 
 
 def status():
     try:
         result = subprocess.run(
             ["tailscale", "status", "--json", "--peers=false"],
-            capture_output=True, timeout=3, check=True,
+            capture_output=True,
+            timeout=3,
+            check=True,
         )
         data = json.loads(result.stdout)
         state = data.get("BackendState", "Unknown")
@@ -24,7 +25,4 @@ def status():
 
 if __name__ == "__main__":
     text, state, tooltip = status()
-    if sys.argv[1:] == ["--waybar"]:
-        print(json.dumps({"text": text, "class": state, "tooltip": html.escape(tooltip)}))
-    else:
-        print(text)
+    print(json.dumps({"text": text, "class": state, "tooltip": html.escape(tooltip)}))
