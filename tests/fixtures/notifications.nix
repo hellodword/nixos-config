@@ -26,7 +26,11 @@ rec {
     };
     systemd.services.site-notification-secrets.preStart = ''
       printf '%s' synthetic-apns-token > /run/notification-fixture-token
-      printf '%s\n' 'urls:' '  - wecombot://synthetic-webhook-token:' '    - tag: wecom' > /run/notification-fixture-channels
+      printf '%s\n' \
+        'urls:' \
+        '  - https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-webhook-token:' \
+        '    tag: wecom' \
+        > /run/notification-fixture-channels
       chmod 600 /run/notification-fixture-token /run/notification-fixture-channels
     '';
   };

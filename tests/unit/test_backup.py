@@ -15,6 +15,7 @@ from tests.support import load_script
 backup = load_script("backup/runner.py")
 health = load_script("backup/health.py")
 notify = load_script("backup/notify.py")
+notification_bootstrap = load_script("notifications/bootstrap.py")
 
 
 class SelectionTest(unittest.TestCase):
@@ -277,6 +278,40 @@ class RunnerReliabilityTest(unittest.TestCase):
             self.assertEqual(calls[0], ["check", "--with-cache", "--read-data-subset=1/24"])
             check_calls = [cmd for cmd in calls[1:] if cmd[0] == "check"]
             self.assertEqual(check_calls, [["check", "--with-cache"]])
+
+
+class NotificationConfigTest(unittest.TestCase):
+    def test_apprise_yaml_variants_and_service_confinement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            channels = Path(temporary) / "channels.yaml"
+            channels.write_text(
+                "version: 1\n"
+                "urls:\n"
+                "  - https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=synthetic-wecom-key:\n"
+                "    tag: wecom\n"
+                "  - dingtalk://syntheticsecret@synthetictoken:\n"
+                "      - tag: dingtalk\n"
+                "  - feishu://synthetic-feishu-token:\n"
+                "      tag: feishu\n"
+                "  - barks://api.push.apple.com/synthetic:\n"
+                "      - tag: bark-extra\n"
+            )
+            asset, config_yaml = notification_bootstrap.load_configuration(channels)
+            instance = notification_bootstrap.build_apprise(asset, config_yaml)
+            for tag in ("bark", "wecom", "dingtalk", "feishu", "bark-extra"):
+                self.assertEqual(len(list(instance.find(tag=tag))), 1, tag)
+            self.assertFalse(notification_bootstrap.URLBase.redirects)
+
+            for invalid in (
+                "urls:\n  - https://example.invalid/webhook\n",
+                "urls:\n  - json://example.invalid/webhook\n",
+                "urls:\n  - discord://12345/synthetic-token:\n      - tag: chat\n",
+                "urls:\n  - wecombot://first:\n    feishu://second:\n",
+                "urls:\n  - wecombot://${CALLER_TOKEN}:\n      - tag: wecom\n",
+            ):
+                channels.write_text(invalid)
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    notification_bootstrap.load_configuration(channels)
 
 
 if __name__ == "__main__":

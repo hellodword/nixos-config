@@ -52,6 +52,7 @@ let
       }
     );
   python = pkgs.python3.withPackages (p: [
+    p.apprise
     p.pyyaml
     p.dnspython
     p.h2
@@ -62,7 +63,12 @@ rec {
   inherit (import ./vps-checks.nix { inherit inputs; }) vps vm-vps;
   backup =
     pythonCheck "backup-behavior"
-      [ ../scripts/backup ../tests/unit/test_backup.py ../tests/integration/backup.py ]
+      [
+        ../scripts/backup
+        ../scripts/notifications
+        ../tests/unit/test_backup.py
+        ../tests/integration/backup.py
+      ]
       [ python pkgs.restic ]
       ''
         python3 -m unittest tests.unit.test_backup -v

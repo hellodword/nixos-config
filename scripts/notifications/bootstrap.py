@@ -31,17 +31,30 @@ MAX_BODY_BYTES = 8192
 TOKEN_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,31}$")
 
 
-def check_channel_entries(entries):
+def check_channel_entries(entries, allowed_types):
+    literal_asset = AppriseAsset(
+        plugin_paths=[],
+        storage_mode=PersistentStoreMode.MEMORY,
+        allow_templates=False,
+    )
     for entry in entries:
         if isinstance(entry, str):
-            candidates = [entry]
+            pass
         elif isinstance(entry, dict) and entry:
-            candidates = list(entry.keys())
+            if sum(1 for key in entry if isinstance(key, str) and "://" in key) != 1:
+                raise ValueError("each Apprise channel mapping must specify exactly one URL")
         else:
             raise ValueError("each Apprise channel entry must be a URL string or single-URL mapping")
-        for raw_url in candidates:
-            if not isinstance(raw_url, str) or urlsplit(raw_url).scheme.lower() not in ALLOWED_SCHEMAS:
-                raise ValueError("channel scheme is outside the allowed notification services")
+        config = AppriseConfig(asset=literal_asset)
+        snippet = yaml.safe_dump({"urls": [entry]}, allow_unicode=True)
+        if not config.add_config(snippet, format="yaml", recursion=0, insecure_includes=False):
+            raise ValueError("could not parse Apprise channel entry")
+        probe = Apprise(asset=literal_asset)
+        probe.add(config)
+        if any(not server.enabled or not isinstance(server, allowed_types) for server in probe):
+            raise ValueError("channel scheme is outside the allowed notification services")
+        if not len(probe):
+            raise ValueError("channel entry could not be loaded by an allowed notification service")
 
 
 def build_apprise(asset, config_yaml):
@@ -61,14 +74,20 @@ def load_configuration(channels_path):
     URLBase.redirects = False
     manager = NotificationManager()
     manager.enable_only(*sorted(ALLOWED_SCHEMAS))
+    allowed_types = tuple(plugin for plugin in manager.plugins() if plugin.enabled)
     extra = yaml.safe_load(channels_path.read_text()) or {}
-    if not isinstance(extra, dict) or set(extra) - {"urls"} or not isinstance(extra.get("urls", []), list):
+    if (
+        not isinstance(extra, dict)
+        or set(extra) - {"urls", "version"}
+        or extra.get("version", 1) != 1
+        or not isinstance(extra.get("urls", []), list)
+    ):
         raise ValueError("additional channels must be native Apprise YAML containing a urls list")
     # Channel addresses and credentials are literal configuration, never caller templates.
     if "${" in yaml.safe_dump(extra):
         raise ValueError("channel credentials and addresses must be literal")
     urls = extra.get("urls", [])
-    check_channel_entries(urls)
+    check_channel_entries(urls, allowed_types)
     config = {
         "template": [{"group": "bark"}, {"sound": ""}],
         "urls": [
