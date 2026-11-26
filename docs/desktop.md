@@ -1,20 +1,20 @@
 # 桌面使用与排障
 
-SDDM 提供 Sway、i3 和 Plasma，默认 Sway。会话登录时加载用户配置并启动对应后台服务，退出时清理这些服务。
+SDDM 提供 Sway 和 Plasma 两个 Wayland 会话，默认 Sway。会话登录时加载用户配置并启动对应后台服务，退出时清理这些服务。
 
 启用 Plasma 时，SDDM 使用 Breeze 登录界面，可选择用户、会话和键盘布局，也可重启或关机。睡眠和休眠是否可用由主机的电源策略决定。
 
-| 服务 | Sway | i3 | Plasma |
-| --- | --- | --- | --- |
-| 状态栏 | Waybar | i3bar + i3status-rust | Plasma panel |
-| 通知 | Mako | Dunst | Plasma |
-| 锁屏 | swaylock + swayidle | i3lock + xss-lock | KScreenLocker |
-| 显示器 | wdisplays + kanshi | ARandR + autorandr | KScreen/KWin |
-| 门户 | gtk + wlr 截屏/共享 | gtk | kde + gtk |
-| PolicyKit | KDE agent | KDE agent | Plasma 自带 |
-| 网络连接 | nm-applet | nm-applet | Plasma 网络面板 |
+| 服务 | Sway | Plasma |
+| --- | --- | --- |
+| 状态栏 | Waybar | Plasma panel |
+| 通知 | Mako | Plasma |
+| 锁屏 | swaylock + swayidle | KScreenLocker |
+| 显示器 | wdisplays + kanshi | KScreen/KWin |
+| 门户 | gtk + wlr 截屏/共享 | kde + gtk |
+| PolicyKit | KDE agent | Plasma 自带 |
+| 网络连接 | nm-applet | Plasma 网络面板 |
 
-三个会话共用音频、输入法和桌面密码钱包。GTK/Qt 使用桌面原生外观，Plasma 布局与配色保存在本机。字体选择见[字体与缩放](#字体与缩放)，可写设置的位置见[本机配置](local-state.md)。
+两个会话共用音频、输入法和桌面密码钱包。GTK/Qt 使用桌面原生外观，Plasma 布局与配色保存在本机。字体选择见[字体与缩放](#字体与缩放)，可写设置的位置见[本机配置](local-state.md)。
 
 下载好的共享网络规则通过桌面通知等待确认，操作与重连影响见[规则来源与更新](network.md#共享-route-子集与规则更新)。
 
@@ -22,27 +22,27 @@ Plasma 的 Baloo 文件索引关闭；Dolphin 按目录浏览文件，KRunner �
 
 ## 注销与电源操作
 
-Sway/i3 的 Super+Shift+P 打开电源菜单，也可运行 `desktop-power`。菜单提供 Log out、Reboot、Power off。执行前列出仍在运行的 Firefox、Chrome/Chromium、VS Code、Bitwarden 和 VirtualBox/QEMU 虚拟机，以应用名、进程数和 PID 展示；重启与关机还检查其他用户的虚拟机，以及正在执行或排队的备份、检查、恢复演练和仓库维护任务。
+Sway 的 Super+Shift+P 打开电源菜单，也可运行 `desktop-power`。菜单提供 Log out、Reboot、Power off。执行前列出仍在运行的 Firefox、Chrome/Chromium、VS Code、Bitwarden 和 VirtualBox/QEMU 虚拟机，以应用名、进程数和 PID 展示；重启与关机还检查其他用户的虚拟机，以及正在执行或排队的备份、检查、恢复演练和仓库维护任务。
 
 有上述工作时，关闭提示框，正常退出应用或等待任务结束，再次打开菜单。菜单不会结束这些进程，也不提供强制继续。检查通过后显示确认，默认选择 Cancel；确认执行前再次检查。进程检查用于提醒仍在运行的工作，不能判断文档是否已保存。重启与关机也遵守 logind 的 inhibitor。
 
-Log out 通过当前桌面的原生接口退出：Sway 使用 `swaymsg exit`，i3 使用 `i3-msg exit`，Plasma 使用自身的 Shutdown D-Bus 接口。注销完成后回到 SDDM，在会话选择器中选择 Sway、i3 或 Plasma，再登录。Super+Shift+E 保持 WM 原生退出确认，不经过电源菜单的进程检查。
+Log out 通过当前桌面的原生接口退出：Sway 使用 `swaymsg exit`，Plasma 使用自身的 Shutdown D-Bus 接口。注销完成后回到 SDDM，在会话选择器中选择 Sway 或 Plasma，再登录。Super+Shift+E 保持 Sway 原生退出确认，不经过电源菜单的进程检查。
 
 注销会结束当前图形会话及其窗口，桌面专属服务、通知和 portal 随会话停止。系统服务和系统级备份任务不随图形注销停止。普通用户服务是否继续取决于其所属 target、其他登录会话和用户管理器生命周期；关闭桌面终端前，应将需要继续运行的任务放入适当的服务中。新桌面重新建立图形环境，应用的恢复能力由应用自身决定。
 
-Plasma 在应用确认退出后停止健康检查的定时触发、正在执行的检查与规则确认通知，再结束图形会话。健康检查和规则通知各有五秒的停止期限。Sway、i3 的后台任务由会话退出统一收尾；壁纸下载中断后保留当前图片与下载时间，下次登录恢复调度。
+Plasma 在应用确认退出后停止健康检查的定时触发、正在执行的检查与规则确认通知，再结束图形会话。健康检查和规则通知各有五秒的停止期限。Sway 的后台任务由会话退出统一收尾；壁纸下载中断后保留当前图片与下载时间，下次登录恢复调度。
 
 其他关机入口如何中断备份，以及遗留锁的处理，见[备份退出行为](backup.md#注销关机保护与陈旧锁恢复)。
 
 ## 锁屏与启动解锁
 
-三个会话均在空闲一分钟后锁屏，并立即要求密码。Sway 和 i3 可按 Super+semicolon 手动锁屏，使用固定的深蓝紫色几何渐变背景，离线也可使用。背景按各屏幕布局裁切，i3 准备图片失败时使用相同配色的纯色背景。Plasma 在系统设置中管理锁屏外观。
+两个会话均在空闲一分钟后锁屏，并立即要求密码。Sway 可按 Super+semicolon 手动锁屏，使用固定的深蓝紫色几何渐变背景，离线也可使用；背景按各屏幕布局裁切。Plasma 在系统设置中管理锁屏外观。
 
 启动时由 Plymouth Breeze 显示 LUKS 解锁提示，主机需要在 initrd 中配置对应的显示驱动。输入磁盘密码后继续启动至 SDDM，再输入用户登录密码；磁盘解锁和桌面登录使用各自的凭据。Esc 可切换启动详情，图形提示不可用时使用文本提示排障。Plymouth 配置进入 initrd，需要安装启动代次并重启才能验收。
 
 ## 桌面密码钱包
 
-Chrome、VS Code 和 Bitwarden Desktop 通过标准 Secret Service 使用 KSecretD。KWallet Manager 可查看和管理条目。默认密码钱包为 `kdewallet`，密码与系统登录密码一致时，SDDM 密码登录通过 PAM 自动解锁；Sway、i3 在显示环境就绪后完成相同初始化。自动登录没有登录密码可供钱包解锁，需要手动解锁。
+Chrome、VS Code 和 Bitwarden Desktop 通过标准 Secret Service 使用 KSecretD。KWallet Manager 可查看和管理条目。默认密码钱包为 `kdewallet`，密码与系统登录密码一致时，SDDM 密码登录通过 PAM 自动解锁；Sway 在显示环境就绪后完成相同初始化。自动登录没有登录密码可供钱包解锁，需要手动解锁。
 
 钱包保存在 `~/.local/share/kwalletd/`，偏好保存在可写的 `~/.config/kwalletrc`，两者持久化并纳入 Restic。恢复钱包后使用其原密码解锁；修改系统登录密码后，可在 KWallet Manager 中同步修改钱包密码。
 
@@ -58,13 +58,13 @@ busctl --user get-property org.freedesktop.secrets "$wallet_path" \
 
 ## 随机壁纸
 
-Sway 和 i3 复用 `~/Pictures/wallpaper` 中的 JPEG、PNG、WebP、BMP 图片；原有非 Bing 图片同样参与随机选择。显示环境就绪后立即恢复上次壁纸，没有可用记录时从本地图库选择。会话内每 30 分钟换一张，有多张图片时避开上一张。所有显示器使用同一张图片，按 fill 裁切填满；Plasma 在系统设置中管理壁纸。
+Sway 复用 `~/Pictures/wallpaper` 中的 JPEG、PNG、WebP、BMP 图片；原有非 Bing 图片同样参与随机选择。显示环境就绪后立即恢复上次壁纸，没有可用记录时从本地图库选择。会话内每 30 分钟换一张，有多张图片时避开上一张。所有显示器使用同一张图片，按 fill 裁切填满；Plasma 在系统设置中管理壁纸。
 
 当前图片保存在 `~/.local/state/site-wallpaper/current`，最近下载尝试、成功时间和结果保存在同目录的 `fetch.json`；这些状态与图库均跨注销、重启保留。下载检查按上次尝试后一小时到期，成功、没有新图和失败都计入间隔。登录恢复剩余等待时间；已经到期或从未下载时补一次检查，登录本身不重置间隔。
 
 下载获取 Bing 最近八张图片，使用 HTTPS、日期文件名、图片解码校验和原子发布。下载完成且获得新的有效图片后才切换背景；下载期间、失败或没有新图时保留当前画面。本地轮换独立运行，不等待网络。图库不自动删除旧图片。
 
-Sway 使用原生背景命令，i3 使用 feh。配置重载和显示布局变化继续应用当前图片；定时任务随 WM 会话启动和停止。可手动轮换、查看下一次下载时间和持久记录：
+Sway 使用原生背景命令设置桌面壁纸。配置重载和显示布局变化继续应用当前图片；定时任务随 Sway 会话启动和停止。可手动轮换、查看下一次下载时间和持久记录：
 
 ```sh
 systemctl --user start site-wallpaper.service
@@ -77,7 +77,7 @@ journalctl --user -u site-wallpaper -u site-wallpaper-apply \
 
 ## 常用操作
 
-Sway/i3 的快捷键：
+Sway 的快捷键：
 
 | 快捷键 | 操作 |
 | --- | --- |
@@ -91,20 +91,20 @@ Sway/i3 的快捷键：
 | Super+减号 / Super+Shift+减号 | 显示 / 移入 scratchpad |
 | Super+1…9 | 切换工作区；加 Shift 移动窗口到工作区 |
 | Super+semicolon | 锁屏 |
-| Super+P | 调整显示器：Sway 使用 wdisplays，i3 使用 ARandR |
+| Super+P | 使用 wdisplays 调整显示器 |
 | Super+Ctrl+左/右 | 将工作区移到相邻屏幕；加 Shift 仅移动窗口 |
 | Print / Shift+Print | 区域 / 全屏截图到剪贴板 |
 | Super+Print / Super+Shift+Print | 区域 / 全屏截图保存到 Pictures |
-| Super+Shift+S | 区域截图后编辑：Sway 使用 Satty，i3 使用 Flameshot |
+| Super+Shift+S | 区域截图后使用 Satty 编辑 |
 | Super+Shift+P | 电源菜单：注销、重启、关机；检查重要进程后确认 |
-| Super+Shift+E | WM 原生退出确认 |
+| Super+Shift+E | Sway 原生退出确认 |
 | Super+Space | 切换输入法 |
 
-`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。两种 WM 的截图按 `image/png` 写入系统剪贴板。`desktop-shot` 也可在命令行使用。
+`rofi -show calc` 可计算，使用 Rofi 的接受自定义操作键复制结果；`rofi -show emoji` 选择后复制。截图按 `image/png` 写入 Wayland 系统剪贴板。`desktop-shot` 也可在命令行使用。
 
-两个 WM 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。mpv、feh、Emulator、Waydroid 窗口默认浮动。
+Sway 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。mpv、feh、Emulator、Waydroid 窗口默认浮动。
 
-Waybar 和 i3status-rust 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态及多时区时间：Waybar 同时显示本地时区（`clock#local`）、美西时间（`America/Los_Angeles`、`LA`）与中国时间（`Asia/Shanghai`、`CN`）三个时钟；i3status-rust 显示本地时区与中国时间两个时钟。
+Waybar 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态及多时区时间：同时显示本地时区（`clock#local`）、美西时间（`America/Los_Angeles`、`LA`）与中国时间（`Asia/Shanghai`、`CN`）三个时钟。
 
 Waybar 标题右侧的眼睛按钮可在演示时阻止空闲锁屏，初始关闭；再次点击恢复空闲锁屏。手动锁屏仍然可用。
 
@@ -112,7 +112,7 @@ Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网�
 
 `Failed 0/0` 表示上次采样时系统和用户均无失败单元，采样间隔一分钟；`?` 表示尚无结果，悬浮可查看系统和用户的失败单元名称。电量降至 60% 和 50% 时分别提醒，恢复充电后重新计次。温度、亮度及电池的时间和功率由设备支持情况决定。
 
-显示器调整、Wi-Fi 和输入法偏好保存在[本机入口](local-state.md)。Plasma Wayland 的输入法在系统设置的“虚拟键盘”中选择；Sway/i3 登录时自动启动 Fcitx。输入法主题可在 Fcitx 配置工具中选择。
+显示器调整、Wi-Fi 和输入法偏好保存在[本机入口](local-state.md)。Plasma Wayland 的输入法在系统设置的“虚拟键盘”中选择；Sway 登录时自动启动 Fcitx。输入法主题可在 Fcitx 配置工具中选择。
 
 `firefox` 和桌面入口读取 `~/.config/mozilla/firefox/default`，`firefox-origin` 读取 `origin`；显式 `--profile` 或 `-P` 使用指定资料。默认资料使用 Arkenfox 加项目覆盖项，保留会话、cookie 和登录资料，并安装 Violentmonkey；`origin` 保持独立。Firefox 与 Chrome 的 DNS 走系统分流。VS Code 既支持声明式扩展也支持界面安装，扩展数据与编辑器运行状态持久化。
 
@@ -122,11 +122,11 @@ Sway 下的 VS Code 和 Bitwarden Desktop 通过共享包装器 [nix/sway-xwayla
 
 ## 音频与触控板
 
-PipeWire 负责播放和录音，WirePlumber 管理设备与路由，提供 PulseAudio 与 64 位 ALSA 接口。浏览器会议、媒体、桌面录屏和虚拟机音频共用这套服务。Sway/i3 点状态栏音量打开 pavucontrol，Plasma 使用原生音量面板，可选择扬声器、耳机和麦克风。JACK 与 32 位 ALSA 按当前应用需求关闭。
+PipeWire 负责播放和录音，WirePlumber 管理设备与路由，提供 PulseAudio 与 64 位 ALSA 接口。浏览器会议、媒体、桌面录屏和虚拟机音频共用这套服务。Sway 点状态栏音量打开 pavucontrol，Plasma 使用原生音量面板，可选择扬声器、耳机和麦克风。JACK 与 32 位 ALSA 按当前应用需求关闭。
 
-PipeWire 的 X11 bell 模块关闭，音频服务不连接 X11/Xwayland 的响铃通道。普通播放、录音和桌面通知音继续使用 PipeWire。检查会话切换期间的崩溃时，查看整个 boot 的 journal；重新登录后用户管理器可能重建，当前服务的 `NRestarts=0` 不能代表前一会话没有重启。
+PipeWire 的 X11 bell 模块关闭，音频服务不连接 Xwayland 的响铃通道。普通播放、录音和桌面通知音继续使用 PipeWire。检查会话切换期间的崩溃时，查看整个 boot 的 journal；重新登录后用户管理器可能重建，当前服务的 `NRestarts=0` 不能代表前一会话没有重启。
 
-Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触控板；滚动方向使用常规方向。按下触控板的机械点击仍可使用。Plasma 在系统设置中调整并保存个人偏好。
+Sway 的触控板支持轻触点击、双指滚动，打字时暂时抑制触控板；滚动方向使用常规方向。按下触控板的机械点击仍可使用。Plasma 在系统设置中调整并保存个人偏好。
 
 ## 字体与缩放
 
@@ -137,7 +137,7 @@ Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触
 | Kitty | JetBrainsMono Nerd Font，12 pt；中文按覆盖范围回退 |
 | 通用等宽正文 | Sarasa Term SC |
 | Rofi | Noto Sans → Noto Sans CJK SC，16 pt |
-| Sway/i3 窗口标题 | JetBrainsMono Nerd Font → Noto Sans CJK SC，10 pt |
+| Sway 窗口标题 | JetBrainsMono Nerd Font → Noto Sans CJK SC，10 pt |
 | Waybar | Noto Sans → Noto Sans CJK SC → Symbols Nerd Font，13 px |
 | Emoji | Noto Color Emoji |
 | Nerd 图标 | Symbols Nerd Font；等宽场景使用 Mono 版本 |
@@ -148,8 +148,6 @@ Sway/i3 的触控板支持轻触点击、双指滚动，打字时暂时抑制触
 VS Code 编辑器和集成终端共用用户级字体设置，中文回退到 Sarasa Term SC。临时比较字体或字号时，在命令面板打开 `Preferences: Open Workspace Settings (JSON)`；确认后修改 [用户设置](../data/vscode.json)，并移除临时的工作区覆盖，让其他项目也使用这一偏好。项目自身的工作区设置优先于用户设置。
 
 Emoji 遵循 Unicode 的文字与 emoji 表示：`☺`、`❤` 等文字形式可以是黑白，带 FE0F 的 `☺️`、`❤️` 以及默认 emoji 使用 Noto Color Emoji。字符位于 BMP 还是补充平面、UTF-8 编码占三个还是四个字节，都不能单独决定其显示样式；肤色、ZWJ、国旗和键帽还包含多个码点。Kitty 保留自动字体回退，不把整段符号范围强制映射到 emoji 字体。
-
-i3status-rust 使用面向 Nerd Fonts 的 [`material-nf` 图标集](https://github.com/greshake/i3status-rust/blob/master/doc/themes.md)，由 Symbols Nerd Font 提供字形。
 
 [Sarasa Gothic](https://github.com/be5invis/Sarasa-Gothic) 的 Term SC 在同一字体内提供适合简体中文代码混排的中西文度量。
 
@@ -169,16 +167,16 @@ echo "$XDG_CURRENT_DESKTOP $XDG_SESSION_TYPE"
 login_user=$(id -un)
 systemctl status "home-manager-${login_user}.service"
 journalctl -b -u "home-manager-${login_user}.service"
-systemctl --user status site-sway.target site-i3.target
+systemctl --user status site-sway.target
 ```
 
-激活报告用户文件冲突时，按[主机维护](maintenance.md#回退与激活故障处理)中的步骤保留和合并原文件。输入法、portal 和音频问题在对应会话 journal 中定位。Sway/i3 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
+激活报告用户文件冲突时，按[主机维护](maintenance.md#回退与激活故障处理)中的步骤保留和合并原文件。输入法、portal 和音频问题在对应会话 journal 中定位。Sway 通过专属 target 管理生命周期，Plasma 使用自身服务；显示管理器退出触发统一清理。同一 UID 共用 systemd/D-Bus 环境，从 SDDM 选择一个图形会话使用。
 
-桌面检查与三会话 VM 的范围见[验证指南](validation.md)。首次设备验收包括正常注销、屏幕锁、portal 共享和外接显示器。
+桌面检查与双会话 VM 的范围见[验证指南](validation.md)。首次设备验收包括正常注销、屏幕锁、portal 共享和外接显示器。
 
 ## Shell 与日常工具
 
-[Safe Eyes 的托盘说明](https://github.com/slgobinath/safeeyes/wiki/How-to-install-backend-for-Safe-Eyes-tray-icon) 推荐在 i3 使用 snixembed。它只随 i3 会话运行；Safe Eyes 在图形环境和托盘服务就绪后启动。
+Safe Eyes 在图形环境和系统托盘就绪后启动。
 
 `BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池和 Git 本地备份入口的提示。
 
@@ -186,11 +184,11 @@ Kitty 中 Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
 
 `git backup <名称>` 在 `~/backups/git/<名称>` 建立 bare 仓库，并把它加入 origin 的推送地址，另提供 `laptop-git-backup` 推送 remote。后续 `git push origin` 会更新本地备份；没有 origin 时可用 `git backup -f <名称>`，再推送到 `laptop-git-backup`。注册命令本身不立即复制所有分支。Starship 在这个本地备份目录不存在时提示。
 
-Shell 便利入口见 [home/cli.nix](../home/cli.nix)。其中 `nixos-rebuild-boot-offline` 关闭 substitute；`sing-box-log` 查看 `network` 命名空间的 journal，`sing-box-config` 查看已生成的运行配置。
+Shell 便利入口与独立 Git 子命令见 [home/cli.nix](../home/cli.nix) 与 [home/cli-packages.nix](../home/cli-packages.nix)，隔离容器启动器集中在 [home/containers.nix](../home/containers.nix)。其中 `sing-box-log` 查看 `network` 命名空间的 journal，`sing-box-config` 查看已生成的运行配置。
 
 先用 `bw login` 登录账户，再调用 `bw-unlock` 解锁并将会话 token 留在当前 shell 的 `BW_SESSION`；`bw-lock` 清理变量并锁定 CLI。提示符显示 `BW_SESSION` 是否存在，实际请求仍以 Bitwarden 的状态和响应为准，token 不写入历史或提示内容。
 
-`,` 使用 nix-index 数据库运行缺少的命令。`coderadio`、`suno-radio` 播放电台；`docker-pull-my-images` 更新本机镜像，失败时有限重试并返回失败状态；`devc` 以当前目录名加随机后缀启动 `ghcr.io/hellodword/devcontainers-dev:latest` 容器，执行前输出完整 `docker run` 命令，将 `~/.codex`、`~/.gemini` 及 `opencode` 的配置/数据/状态目录映射至默认路径，优先从本地镜像 `devcontainers.nix.cache-layout` Label 离线读取统一缓存契约（本地无该 Label 时回退 `~/.local/state/devcontainers/cache-layout.json` 或拉取远端 `data/cache-layout.json` 缓存，可传 `--refresh-cache-layout` 主动刷新）挂载 `~/.local/state/devcontainers/cache/<id>`，并对工作区已存在的 `.devcontainer`、`AGENTS.md`、`.agents` 施加只读覆盖（`devc-dry` 或 `--dry-run` 仅输出命令不启动容器）。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
+`,` 使用 nix-index 数据库运行缺少的命令。`devc` 以当前目录名加随机后缀启动交互式 `ghcr.io/hellodword/devcontainers-dev:latest` `bash` 会话（透传附加 `docker run` 参数并复用上游 `docker run` 补全），执行前输出完整 `docker run` 命令，将 `~/.codex`、`~/.gemini` 及 `opencode` 的配置/数据/状态目录映射至默认路径，优先从本地镜像 `devcontainers.nix.cache-layout` Label 离线读取统一缓存契约（本地无该 Label 时回退 `~/.local/state/devcontainers/cache-layout.json` 或拉取远端 `data/cache-layout.json` 缓存，可传 `--refresh-cache-layout` 主动刷新）挂载 `~/.local/state/devcontainers/cache/<id>`，校验并只读挂载 `~/dev/workspace/agents-misc` 下的 `AGENTS.md` 与 `.agents`（缺失即报错退出），同时对工作区已存在的 `.devcontainer` 施加只读覆盖；`devc-dry` 或 `--dry-run` 仅输出命令不启动容器。`qrencode`、`apkid`、`emcc`、`honor-downloader`、`gopeed`、`charles`、`mitm`、`wg-serve` 通过各自的 Docker / `runsc` 容器运行。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
 
 ## 应用隔离
 
@@ -214,4 +212,4 @@ Chrome、feh 和 mpv 都能读取 `~/dev`，在沙箱内该目录为只读；需
 
 这些入口用于限制应用对会话资源的访问；用户仍可显式启动 Nix store 中的原始程序。文件选择器可选择的实际范围由 profile 的文件系统视图决定。需要扩展某个应用的访问目录时，调整对应 profile，按实际用途开放路径。
 
-Safe Eyes、显示器适配等后台服务使用 systemd 的文件系统与权限限制；对应服务只看到各自配置目录。autorandr hooks 需要额外文件时，在服务的 `BindReadOnlyPaths` 或 `BindPaths` 中声明具体目录。组件选择及服务边界见[权限边界](architecture.md#权限边界)。
+Safe Eyes、显示器适配等后台服务使用 systemd 的文件系统与权限限制；对应服务只看到各自配置目录。组件选择及服务边界见[权限边界](architecture.md#权限边界)。

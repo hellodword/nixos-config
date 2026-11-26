@@ -1,6 +1,6 @@
 # NixOS configuration
 
-管理笔记本与 VPS 的 NixOS 配置。laptop profile 组合 Sway、i3、Plasma、网络和备份；VPS profile 提供轻量持久系统、远端部署和代理出口。
+管理笔记本与 VPS 的 NixOS 配置。laptop profile 组合 Sway、Plasma、网络和备份；VPS profile 提供轻量持久系统、远端部署和代理出口。
 
 主机目录记录具体机器的硬件、身份和策略，例如 [laptop2](hosts/laptop2/README.md)。`profiles/laptop/` 维护共同选择，`modules/` 提供能力。
 

@@ -11,7 +11,6 @@
 | GPG 本机身份 | `~/.gnupg/`、GPG agent | 声明的认证子密钥自动启用给 SSH；密钥、智能卡引用与 ownertrust 持久保存，旧身份由本人确认后停用 |
 | Wi-Fi / 有线连接 | Plasma 网络面板、WM 托盘、`nmcli` / `nmtui` | 即时连接，自动保存后重启保留 |
 | Sway 显示器 | wdisplays、`~/.config/kanshi/config` | Apply 保存当前组合；kanshi 在连接变化及登录时恢复 |
-| i3 显示器 | `~/.config/autorandr/` | 输出变化时自动恢复匹配方案 |
 | Plasma 显示器 | 系统设置 → 显示配置 | 原生保存到 KWin/KScreen 状态 |
 | 桌面钱包 | KWallet Manager、`~/.config/kwalletrc` | 钱包与偏好持久化，密码登录时自动解锁 |
 | 输入法 | Fcitx 配置工具 | 配置、词库和学习记录持久保存 |
@@ -36,7 +35,7 @@ git config --file ~/.config/git/local.inc user.email you@example.net
 
 ## Wi-Fi
 
-NetworkManager 管理物理网卡。Plasma 使用原生网络面板；Sway/i3 使用 nm-applet，也可以运行 `nmtui` 或 `nmcli --ask device wifi connect 'SSID'`。动态连接保存在 `/etc/NetworkManager/system-connections/`，文件为 root 所有、0600；目录持久化并纳入加密 Restic 备份。
+NetworkManager 管理物理网卡。Plasma 使用原生网络面板；Sway 使用 nm-applet，也可以运行 `nmtui` 或 `nmcli --ask device wifi connect 'SSID'`。动态连接保存在 `/etc/NetworkManager/system-connections/`，文件为 root 所有、0600；目录持久化并纳入加密 Restic 备份。
 
 常用连接的声明、凭据和 UUID 由[主机凭据](secrets.md#声明式-wi-fi)管理。要把某个声明式连接完全交给本机维护，可用 `nmcli connection clone home home-local` 创建独立 UUID，再从声明中移除原连接。
 
@@ -50,11 +49,7 @@ Sway 使用 wdisplays 调整，kanshi 恢复已保存的屏幕组合。按 Super
 
 恢复按当前连接的屏幕组合匹配，不恢复应用或窗口。按 Super+Ctrl+左/右将整个工作区移到相邻屏幕，再加 Shift 只移动当前窗口，适合外屏展示而内屏继续工作。wdisplays 的 Apply 立即生效，没有定时自动回退；调整时保留一块可操作的屏幕。
 
-i3 监听屏幕连接变化，由 autorandr 恢复已保存方案；新连接组合采用首选模式，内屏在左，其余屏幕向右排列。按 Super+P 用 ARandR 调整布局后，运行 `autorandr --save office` 保存。连接同一组屏幕或重新登录时会恢复该方案。
-
-未知组合由 [布局脚本](../scripts/desktop/layout.py) 调用 XRandR 的原生模式选择；多个首选模式按 XRandR 顺序选择，缺少首选标记时使用其 DPI 回退。旋转、缩放和已有 panning 在自动布局时复位，个性化设置保存在 autorandr 方案里。
-
-Plasma 使用原生显示设置，`~/.config/kwinoutputconfig.json` 等文件通过持久化链接支持原子保存。三种桌面各自管理显示状态。Plasma 的触控板偏好保存到 `~/.config/kcminputrc`，通过持久化链接支持原子保存并纳入备份。
+Plasma 使用原生显示设置，`~/.config/kwinoutputconfig.json` 等文件通过持久化链接支持原子保存。两种桌面各自管理显示状态。Plasma 的触控板偏好保存到 `~/.config/kcminputrc`，通过持久化链接支持原子保存并纳入备份。
 
 Fcitx 用户配置位于 `~/.config/fcitx5/`，学习数据位于 `~/.local/share/fcitx5/`，包括 `pinyin/user.dict` 和 `pinyin/user.history`。`/etc/xdg/fcitx5/` 提供初始默认值；已有偏好继续生效。旧学习记录可从备份恢复。
 

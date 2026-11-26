@@ -25,7 +25,7 @@
 
 Home Manager 使用系统的 `pkgs`，通过 NixOS 模块构建和激活用户配置。系统闭包已经包含用户激活产物，维护入口统一见[主机维护](maintenance.md)。
 
-能力通过 `site.*.enable` 和原生 NixOS 选项选择。DNS、sing-box 和 Lockdown 可分别组合；Tailscale 使用原生模块；Sway、i3、Plasma 可分别选择。非自由软件的许可声明与选择它的模块放在一起，Home Manager 与系统共用这项策略。
+能力通过 `site.*.enable` 和原生 NixOS 选项选择。DNS、sing-box 和 Lockdown 可分别组合；Tailscale 使用原生模块；Sway、Plasma 可分别选择。非自由软件的许可声明与选择它的模块放在一起，Home Manager 与系统共用这项策略。
 
 ## 从服务找到脚本
 
@@ -66,6 +66,6 @@ Restic 按仓库分离可写状态与 cache，源目录只读。Apprise/Bark 使
 
 服务限制由 systemd 表达，共享设置位于[系统服务隔离](../lib/service-hardening.nix)和[桌面服务隔离](../lib/desktop-service-hardening.nix)，具体权限由服务模块选择。
 
-图形用户服务仍使用会话 socket，包括用户 D-Bus 和窗口管理器 IPC；这些接口保留了会话级权限，文件系统限制约束的是进程的直接访问。X11 还允许较广泛的窗口与输入访问。因此，这些服务与桌面会话处于同一信任范围。Firejail 应用另外使用各自的 D-Bus 规则；文件选择器可见范围由其文件系统视图决定。
+图形用户服务仍使用会话 socket，包括用户 D-Bus 和窗口管理器 IPC；这些接口保留了会话级权限，文件系统限制约束的是进程的直接访问，因此这些服务与桌面会话处于同一信任范围。Firejail 应用另外使用各自的 D-Bus 规则；文件选择器可见范围由其文件系统视图决定。
 
 [基础模块](../modules/core/base.nix)将 io_uring 限于具有 `CAP_SYS_ADMIN` 的进程，减少桌面进程可达的内核接口。普通用户及受限应用需要使用其他 I/O 接口。
