@@ -22,7 +22,7 @@ nix develop .#vps     # 准备 VPS 材料、构建、Colmena 部署和 Worker �
 
 每个沙箱工具都有 `tmp/.cache/nixos-config-tools/<工具>/`，其中 `cache/` 和 `logs/` 保存缓存与日志，`tmp/` 保存每次运行的临时文件。正常退出即清理本次临时目录；再次调用时，systemd-tmpfiles 清理一天前遗留的临时文件及三十天未使用的缓存、日志。运行中的目录通过文件锁保留。沙箱在挂载仓库源码后自动遮蔽 `tmp/`、`.wrangler/`、`.config/`、`.secrets/`、`nixos-privates/` 及根级 `keys.txt`/`*.key` 等敏感路径，按白名单单独开放工具所需可写目录，并支持在 `tmp/` 子目录内直接执行命令。Wrangler 同时识别 `wrangler.{json,jsonc,toml}` 且不在干净源码目录遗留空状态目录。默认要求工作区位于持久文件系统；在受限临时环境中可显式设置 `NIXOS_CONFIG_ALLOW_TMPFS=1` 放行。
 
-开发 shell 将辅助工具的 `XDG_CACHE_HOME` 和 `TMPDIR` 放在同一根目录的 `shell/` 下，Go 与 npm 使用各自子目录。VM 提交客户端的导出缓存也随之保存在磁盘工作区，容量由客户端自身管理。
+开发 shell 将辅助工具的 `XDG_CACHE_HOME` 和 `TMPDIR` 放在同一根目录的 `shell/` 下，Go 使用独立子目录。VM 提交客户端的导出缓存也随之保存在磁盘工作区，容量由客户端自身管理。
 
 项目位于持久工作区时，这些目录跨注销、重启保留，磁盘空间由所在文件系统提供。Nix 继续使用已有的持久缓存，daemon 构建使用系统配置的临时目录。工具启动会检查缓存文件系统，避免在 tmpfs 工作区产生大量文件。沙箱保留 host 的 Unix 文件权限；例如 oranc 发布仍需要当前用户具备 Nix 数据库目录的访问权限。
 

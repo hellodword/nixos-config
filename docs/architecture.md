@@ -62,7 +62,7 @@ laptop profile 的持久清单独立于功能开关。禁用应用后数据仍�
 
 后台桌面服务以 systemd 隔离各自的 home 状态和运行目录。dnsdist、dnsproxy、DNS Collector、oranc、harmonia 处理网络输入，使用独立身份、只读系统及设备/能力限制；harmonia 进一步通过套接字激活运行在独立私有网络命名空间，并由容器缓存回收服务在 `--network none` 的临时容器内清理容器可写缓存树。LuaJIT 所需的内存执行能力仅对 dnsdist 保留。整机接管由 Mullvad 完成，sing-box 通过用户态 WireGuard endpoint 接收流量，并用 FakeIP 恢复域名。引擎以专用用户运行，保留物理出口绑定及可选原生 endpoint 所需的网络能力；配置生成先在无网络、只读输入的独立沙箱完成，发布进程仅控制声明的服务。
 
-Restic 按仓库分离可写状态与 cache，源目录只读。Apprise/Bark 使用各自的 gVisor 容器和运行时凭据，Waydroid 使用上游 LXC 边界。常见基础服务继续使用 NixOS 上游单元定义。
+Restic 按仓库分离可写状态与 cache，源目录只读。Apprise/Bark 使用各自的 gVisor 容器和运行时凭据，Waydroid 使用上游 LXC 边界。宿主机 `nix develop` 开发环境中的网络、审计与发布工具通过 [tool-sandbox.nix](../nix/tool-sandbox.nix) 运行在 Bubblewrap 命名空间内，遮蔽用户主目录、SSH agent 与 `tmp/`、`keys.txt` 等解密凭据路径，仅开放声明的工作子目录，使本机交互维护维持与系统服务一致的最小权限范围。常见基础服务继续使用 NixOS 上游单元定义。
 
 服务限制由 systemd 表达，共享设置位于[系统服务隔离](../lib/service-hardening.nix)和[桌面服务隔离](../lib/desktop-service-hardening.nix)，具体权限由服务模块选择。
 

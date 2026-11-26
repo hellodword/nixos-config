@@ -21,7 +21,6 @@ let
         export TMPDIR="$devtools_cache/shell/tmp"
         export GOCACHE="$devtools_cache/go/build"
         export GOPATH="$devtools_cache/go"
-        export npm_config_cache="$devtools_cache/npm"
         export PYTHONNOUSERSITE=1
         export EDITOR=vim
         mkdir -p -m 700 "$XDG_CACHE_HOME" "$TMPDIR" "$HOME/.cache/nix"
@@ -77,7 +76,6 @@ let
         ) inputs.agents-misc.packages.${system}.vm-test-submit
         ++ lib.optionals (!laptop) [
           netcat-openbsd
-          nodejs
           wireguard-tools
           openvpn
           (import ./wrangler.nix { inherit pkgs; })
