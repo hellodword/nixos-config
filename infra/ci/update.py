@@ -10,17 +10,13 @@ import time
 from urllib.parse import urlparse
 
 try:
-    from .evaluate import sanitized_nixpkgs_env
+    from .evaluate import default_system, sanitized_nixpkgs_env
 except ImportError:
-    from evaluate import sanitized_nixpkgs_env
+    from evaluate import default_system, sanitized_nixpkgs_env
 
 
 def run(command, **kwargs):
     return subprocess.check_output(command, text=True, **kwargs).strip()
-
-
-def default_system():
-    return "x86_64-linux"
 
 
 def nix_string_literal(value):
@@ -48,7 +44,7 @@ def load_update_policy(project_dir, manifest_rel="nix/ci.nix", select_obj=None, 
         f"   inherit flake;"
         f"   system = {system_str};"
         f"   select = builtins.fromJSON {select_str};"
-        f" }}).update"
+        f" }}).update or null"
     )
     with sanitized_nixpkgs_env() as eval_env:
         policy = json.loads(

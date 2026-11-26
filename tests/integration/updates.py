@@ -20,6 +20,9 @@ def write_test_manifest(repo_dir):
     nix_dir = repo_dir / "nix"
     nix_dir.mkdir(exist_ok=True)
     shutil.copyfile(ROOT / "nix/ci.nix", nix_dir / "ci.nix")
+    infra_nix_dir = repo_dir / "infra/nix"
+    infra_nix_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(ROOT / "infra/nix/ci.nix", infra_nix_dir / "ci.nix")
 
 
 class UpdateCandidate(unittest.TestCase):
@@ -60,7 +63,7 @@ class UpdateCandidate(unittest.TestCase):
                 write_test_manifest(root)
                 lock = root / "flake.lock"
                 lock.write_text(json.dumps(baseline))
-                git("add", "--", "flake.lock", "nix/ci.nix")
+                git("add", "--", "flake.lock", "nix/ci.nix", "infra/nix/ci.nix")
                 git("commit", "--quiet", "-m", "fixture")
                 base = git("rev-parse", "HEAD")
 
@@ -206,7 +209,7 @@ class UpdateCandidate(unittest.TestCase):
                 "}\n"
             )
             write_test_manifest(project)
-            git(project, "add", "--", "flake.nix", "infra/flake.nix", "nix/ci.nix")
+            git(project, "add", "--", "flake.nix", "infra/flake.nix", "infra/nix/ci.nix", "nix/ci.nix")
             subprocess.run(
                 ["nix", "flake", "lock", "./infra"],
                 cwd=project,

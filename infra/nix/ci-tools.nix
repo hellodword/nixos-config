@@ -22,10 +22,6 @@ let
     pkgs.git
     pkgs.gh
     pkgs.jq
-    pkgs.skopeo
-    pkgs.actionlint
-    pkgs.shellcheck
-    pkgs.nixfmt
     pkgs.nix-eval-jobs
     pkgs.distribution
     oranc

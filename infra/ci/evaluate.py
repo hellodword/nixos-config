@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import platform
 import selectors
 import signal
 import subprocess
@@ -38,7 +39,11 @@ def sanitized_nixpkgs_env(base_env=None):
 
 
 def default_system():
-    return "x86_64-linux"
+    return {
+        "x86_64": "x86_64-linux",
+        "aarch64": "aarch64-linux",
+        "arm64": "aarch64-linux",
+    }.get(platform.machine(), "x86_64-linux")
 
 
 def nix_string_literal(value):
@@ -189,8 +194,9 @@ def evaluate_manifest(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None
     expr = manifest_expression(project_dir, manifest_rel, select_obj, system)
     eval_flags = ["--no-update-lock-file", "--impure"]
 
-    def query(attribute, eval_env, wrapper=None):
-        full_expr = f"{wrapper} ({expr}{attribute})" if wrapper else (expr + attribute)
+    def query(attribute, eval_env, *, wrapper=None, optional=False):
+        target = expr + attribute + (" or null" if optional else "")
+        full_expr = f"{wrapper} ({target})" if wrapper else target
         return json.loads(
             subprocess.check_output(
                 ["nix", "eval", "--json", *eval_flags, "--expr", full_expr],
@@ -221,8 +227,8 @@ def evaluate_manifest(*, project_dir, manifest_rel="nix/ci.nix", select_obj=None
                 cwd=project_dir,
                 env=eval_env,
             )
-            cache_config = query("cache", eval_env)
-            update_config = query("update", eval_env)
+            cache_config = query("cache", eval_env, optional=True)
+            update_config = query("update", eval_env, optional=True)
 
         private_builds = []
         if cache_config is not None:

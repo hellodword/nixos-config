@@ -11,6 +11,7 @@ let
   remote = scope == "remote";
   pkgs = flake.inputs.${if remote then "nixpkgs-remote" else "nixpkgs"}.legacyPackages.${system};
   inherit (pkgs) lib;
+  inherit (import ../infra/nix/ci.nix) mkManifest;
   checks = flake.checks.${system};
   allVMs = [
     "vm-network"
@@ -20,7 +21,6 @@ let
     "vm-files"
     "vm-vps"
   ];
-  vmNames = if remote then [ "vm-vps" ] else lib.remove "vm-vps" allVMs;
   checkNames =
     if remote then
       [ "vps" ]
@@ -53,19 +53,6 @@ let
         dev-shell = flake.devShells.${system}.laptop;
       }
   );
-  drivers = builtins.listToAttrs (
-    map (name: {
-      name = "${name}-driver";
-      value = checks.${name}.driver;
-    }) vmNames
-  );
-  driverJobs = map (name: {
-    job = "${name}-driver";
-    prepares = name;
-  }) vmNames;
-  cacheIdentity = builtins.fromJSON (builtins.readFile ./cache-identity.json);
-  cacheConfig = import ./cache-config.nix;
-  cachePolicy = import ./cache-policy.nix { inherit flake hostName scope; };
 in
 assert
   builtins.elem scope [
@@ -73,108 +60,49 @@ assert
     "remote"
   ]
   || throw "CI scope must be laptop or remote";
-{
-  jobs = products // drivers // lib.genAttrs (checkNames ++ vmNames) (name: checks.${name});
-
-  groups =
+mkManifest {
+  buildName = "dependencies";
+  build = products // lib.genAttrs checkNames (name: checks.${name});
+  driverKvm = remote;
+  driverGroupName = "vm-vps-driver";
+  vmGroups =
     if remote then
       [
         {
-          name = "private";
-          jobs = [ ];
-          required = true;
-          vm = null;
-          kvm = false;
-          maxJobs = 1;
-        }
-        {
-          name = "dependencies";
-          jobs = builtins.attrNames products ++ checkNames;
-          required = true;
-          vm = null;
-          kvm = false;
-          maxJobs = 1;
-        }
-        {
-          name = "vm-vps-driver";
-          jobs = driverJobs;
-          required = true;
-          vm = null;
-          kvm = true;
-          maxJobs = 1;
-        }
-        {
           name = "vm-vps";
-          jobs = [ "vm-vps" ];
-          required = true;
-          vm = "nixos";
-          kvm = true;
-          maxJobs = 1;
+          checks = {
+            inherit (checks) vm-vps;
+          };
         }
       ]
     else
       [
         {
-          name = "private";
-          jobs = [ ];
-          required = true;
-          vm = null;
-          kvm = false;
-          maxJobs = 1;
-        }
-        {
-          name = "dependencies";
-          jobs = builtins.attrNames products ++ checkNames ++ driverJobs;
-          required = true;
-          vm = null;
-          kvm = false;
-          maxJobs = 1;
-        }
-        {
           name = "vm-network-backup";
-          jobs = [
-            "vm-network"
-            "vm-backup"
-            "vm-files"
-          ];
-          required = true;
-          vm = "nixos";
-          kvm = true;
-          maxJobs = 1;
+          checks = {
+            inherit (checks)
+              vm-network
+              vm-backup
+              vm-files
+              ;
+          };
         }
         {
           name = "vm-desktop";
-          jobs = [ "vm-desktop" ];
-          required = true;
-          vm = "nixos";
-          kvm = true;
-          maxJobs = 1;
+          checks = {
+            inherit (checks) vm-desktop;
+          };
         }
         {
           name = "vm-applications";
-          jobs = [ "vm-applications" ];
-          required = true;
-          vm = "nixos";
-          kvm = true;
-          maxJobs = 1;
+          checks = {
+            inherit (checks) vm-applications;
+          };
         }
       ];
-
-  cache = {
-    registry = cacheIdentity.registry or "ghcr.io";
-    inherit (cacheIdentity) repository publicKey;
-    mode = "incremental";
-    targetUri = cacheConfig.ci.uri;
-    readSubstituters = cacheConfig.ci.settings.substituters;
-    trustedPublicKeys = cacheConfig.ci.settings.trusted-public-keys;
-    inherit (cachePolicy)
-      excludedPaths
-      excludedDerivations
-      bundles
-      privateBuilds
-      ;
-  };
-
+  cacheIdentity = builtins.fromJSON (builtins.readFile ./cache-identity.json);
+  cacheConfig = import ./cache-config.nix;
+  cachePolicy = import ./cache-policy.nix { inherit flake hostName scope; };
   update =
     if remote then
       {

@@ -215,7 +215,8 @@
     "infra": {
       "inputs": {
         "nixpkgs": "nixpkgs",
-        "oranc": "oranc"
+        "oranc": "oranc",
+        "treefmt-nix": "treefmt-nix"
       },
       "locked": {
         "path": "./infra",
@@ -344,28 +345,18 @@
         "type": "github"
       }
     },
-    "nixpkgs_2": {
-      "locked": {
-        "lastModified": 1795234589,
-        "narHash": "sha256-f/VVvxf5RsQgWVhUtefoca5ktVg0DA2bnkMOcmSnozo=",
-        "owner": "nixos",
-        "repo": "nixpkgs",
-        "rev": "2786a2a72088ecf32aea5b3ec52099e6a7cff78f",
-        "type": "github"
-      },
-      "original": {
-        "owner": "nixos",
-        "ref": "nixos-unstable",
-        "repo": "nixpkgs",
-        "type": "github"
-      }
-    },
     "oranc": {
       "inputs": {
         "crane": "crane",
         "flake-parts": "flake-parts",
-        "nixpkgs": "nixpkgs_2",
-        "treefmt-nix": "treefmt-nix"
+        "nixpkgs": [
+          "infra",
+          "nixpkgs"
+        ],
+        "treefmt-nix": [
+          "infra",
+          "treefmt-nix"
+        ]
       },
       "locked": {
         "lastModified": 1795675910,
@@ -566,7 +557,6 @@
       "inputs": {
         "nixpkgs": [
           "infra",
-          "oranc",
           "nixpkgs"
         ]
       },
