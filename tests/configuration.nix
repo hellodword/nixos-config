@@ -178,12 +178,30 @@ in
 lib.mapAttrs' (name: spec: lib.nameValuePair "configuration-${name}" (evaluate name spec)) cases
 // {
   git-backup =
+    let
+      hmUser = laptop.config.home-manager.users.${userName};
+      gitSettings = hmUser.programs.git.settings;
+      gitTools = builtins.filter (
+        pkg:
+        builtins.elem (pkg.name or "") [
+          "git-backup"
+          "git-signing"
+        ]
+      ) hmUser.home.packages;
+    in
+    assert lib.assertMsg (
+      !(gitSettings.alias ? backup) && !(gitSettings.alias ? signing)
+    ) "git backup and signing should be standalone commands rather than gitconfig aliases";
+    assert lib.assertMsg (
+      builtins.length gitTools == 2
+    ) "expected standalone git-backup and git-signing packages";
     pkgs.runCommand "git-backup"
       {
         nativeBuildInputs = [
           pkgs.git
           pkgs.bash
-        ];
+        ]
+        ++ gitTools;
       }
       ''
         export HOME="$TMPDIR/home" GIT_CONFIG_NOSYSTEM=1
@@ -193,11 +211,9 @@ lib.mapAttrs' (name: spec: lib.nameValuePair "configuration-${name}" (evaluate n
         cd work
         git config user.name Fixture
         git config user.email fixture@example.invalid
-        git config alias.backup ${
-          lib.escapeShellArg laptop.config.home-manager.users.${userName}.programs.git.settings.alias.backup
-        }
         git remote add origin "$NIX_BUILD_TOP/upstream"
-        git backup project
+        mkdir -p sub
+        (cd sub && git backup project)
         for revision in first second; do
           echo "$revision" > document
           git add document
