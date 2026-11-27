@@ -396,10 +396,10 @@ outbound = "direct"
 # Shadowrocket 的域名源仅含域名条件，IP 源集中用于末尾的连接规则。
 
 [rule_sets."pcdn"]
-url = "https://cdn.jsdelivr.net/gh/DDCHlsq/sing-ruleset@master/pcdn.json"
+url = "https://cdn.jsdelivr.net/gh/DDCHlsq/sing-ruleset@master/rules/pcdn.json"
 format = "source"
 shadowrocket = ["RULE-SET,https://cdn.jsdelivr.net/gh/ifflagged/Miami@main/Rulesets/Shadowrocket/zirawell/PCDN-Filter.list"]
-seed = { url = "https://cdn.jsdelivr.net/gh/DDCHlsq/sing-ruleset@c2c1e652acc950982b92d1006ad29151ceabd438/pcdn.json", hash = "sha256-9q+gl55dYKc+UKoHrN5FAqtcxkhEuvLTjxissQMPq7A=" }
+seed = { url = "https://cdn.jsdelivr.net/gh/DDCHlsq/sing-ruleset@bf2ec546d90d8ae4db0b0d967fd06cc3f06a4cb0/rules/pcdn.json", hash = "sha256-RX97XfOafygRZxFHkHUul5kuYify+46FUEGOSDpEQUI=" }
 
 [rule_sets."geosite-docker"]
 url = "https://cdn.jsdelivr.net/gh/lyc8503/sing-box-rules@rule-set-geosite/geosite-docker.srs"
