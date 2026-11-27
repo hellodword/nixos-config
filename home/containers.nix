@@ -11,6 +11,7 @@ let
     text = ''
       mode="run"
       refresh_layout=0
+      enable_android=0
       docker_args=()
       while (($# > 0)); do
         case "$1" in
@@ -20,6 +21,10 @@ let
             ;;
           --refresh-cache-layout)
             refresh_layout=1
+            shift
+            ;;
+          --android)
+            enable_android=1
             shift
             ;;
           *)
@@ -114,6 +119,44 @@ let
         ro_mounts+=(-v "$target:/workspaces/$repo_name/$rule:ro")
       done
 
+      android_dir="$HOME/.android"
+      android_args=()
+      if ((enable_android == 1)); then
+        if [[ "$mode" == "run" ]]; then
+          if [[ ! -d /dev/bus/usb ]]; then
+            echo "devc: /dev/bus/usb is not available on the host" >&2
+            exit 1
+          fi
+          if [[ ! -e "$android_dir/adbkey" && ! -e "$android_dir/adbkey.pub" ]] && command -v adb >/dev/null 2>&1; then
+            install -d -m 0700 "$android_dir"
+            adb keygen "$android_dir/adbkey"
+            chmod 0600 "$android_dir/adbkey"
+            chmod 0644 "$android_dir/adbkey.pub"
+          fi
+          if [[ ! -f "$android_dir/adbkey" || ! -f "$android_dir/adbkey.pub" ]]; then
+            echo "devc: missing regular files $android_dir/adbkey(.pub); run 'adb keygen ~/.android/adbkey' first" >&2
+            exit 1
+          fi
+          adbkey_file="$(realpath -e -- "$android_dir/adbkey")"
+          adbkey_pub_file="$(realpath -e -- "$android_dir/adbkey.pub")"
+        else
+          adbkey_file="$android_dir/adbkey"
+          adbkey_pub_file="$android_dir/adbkey.pub"
+          if [[ -f "$adbkey_file" ]]; then
+            adbkey_file="$(realpath -e -- "$adbkey_file")"
+          fi
+          if [[ -f "$adbkey_pub_file" ]]; then
+            adbkey_pub_file="$(realpath -e -- "$adbkey_pub_file")"
+          fi
+        fi
+        android_args=(
+          --device-cgroup-rule='c 189:* rmw'
+          -v /dev/bus/usb:/dev/bus/usb
+          -v "$adbkey_file:/home/vscode/.android/adbkey:ro"
+          -v "$adbkey_pub_file:/home/vscode/.android/adbkey.pub:ro"
+        )
+      fi
+
       cmd=(
         docker run --rm -it
         --name "$container_name"
@@ -128,6 +171,7 @@ let
         -v "$opencode_data_dir:/home/vscode/.local/share/opencode"
         -v "$opencode_state_dir:/home/vscode/.local/state/opencode"
         "''${cache_mounts[@]}"
+        "''${android_args[@]}"
         -w "/workspaces/$repo_name"
         "''${docker_args[@]}"
         "$image"
@@ -204,7 +248,7 @@ let
           local idx w
           for ((idx = 1; idx < COMP_CWORD; idx++)); do
             w="''${COMP_WORDS[idx]}"
-            if [[ "$w" == "--dry-run" || "$w" == "--refresh-cache-layout" ]]; then
+            if [[ "$w" == "--dry-run" || "$w" == "--refresh-cache-layout" || "$w" == "--android" ]]; then
               prefix_part="''${prefix_part/"$w"/}"
               stripped=$((stripped + 1))
               continue
@@ -227,7 +271,7 @@ let
             local extra
             while IFS= read -r extra; do
               [[ -n "$extra" ]] && COMPREPLY+=("$extra")
-            done < <(compgen -W "--dry-run --refresh-cache-layout" -- "$cur_word")
+            done < <(compgen -W "--android --dry-run --refresh-cache-layout" -- "$cur_word")
           fi
         }
 
