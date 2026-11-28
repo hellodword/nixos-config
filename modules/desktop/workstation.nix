@@ -278,9 +278,9 @@ in
                 pkgs.libnotify
               ]
             }
-            export SITE_BACKUP_ENABLED=${if config.site.backup.enable or false then "1" else "0"}
-            export SITE_NETWORK_RULES_ENABLED=${if networkRulesEnabled then "1" else "0"}
-            exec ${pkgs.python3}/bin/python3 ${../../scripts/desktop/health.py}
+            exec ${pkgs.python3}/bin/python3 ${../../scripts/desktop/health.py} \
+              ${lib.optionalString (config.site.backup.enable or false) "--check-backup"} \
+              ${lib.optionalString networkRulesEnabled "--check-network-rules"}
           '';
         };
       };

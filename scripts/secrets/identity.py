@@ -109,6 +109,10 @@ def ssh_filename(purpose, key):
     return f"gpg.{purpose_name(purpose)}.{key['keyid']}.pub"
 
 
+def ssh_stable_filename(purpose):
+    return f"gpg.{purpose_name(purpose)}.pub"
+
+
 def derive(document, keys):
     gpg = document.get("gpg", {})
     identities = {}
@@ -117,9 +121,13 @@ def derive(document, keys):
         purpose_name(purpose)
         key = keys.select(selected, "a", f"SSH purpose {purpose}")
         name = ssh_filename(purpose, key)
+        stable = ssh_stable_filename(purpose)
         identities[purpose] = {field: key[field] for field in ("fingerprint", "keyid", "keygrip")}
         identities[purpose]["file"] = name
-        public[name] = keys.ssh(key)
+        identities[purpose]["stableFile"] = stable
+        rendered = keys.ssh(key)
+        public[name] = rendered
+        public[stable] = rendered
     signing = gpg.get("signingKey")
     if signing:
         signing = keys.select(signing, "s", "Git signing")["fingerprint"]
@@ -206,7 +214,7 @@ def publish(source, runtime, ssh_directory, user):
         notification = runtime / "published-generation"
         notification.write_text(generation.name + "\n")
         notification.chmod(0o644)
-    print(f"Published {len(public)} GPG SSH identities and native SSH/Git configuration")
+    print(f"Published {len(manifest['ssh'])} GPG SSH identities and native SSH/Git configuration")
 
 
 def agent_command(home, request):

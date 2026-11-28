@@ -151,7 +151,8 @@ in
 
         def health():
             machine.succeed("systemctl start site-backup-status")
-            return json.loads(machine.succeed("backup-status"))["repositories"]
+            machine.succeed("backup-status >/dev/null")
+            return json.loads(machine.succeed("backup-status --json"))["repositories"]
 
         initial = health()
         assert all(value["backup"]["state"] == "pending" for value in initial.values()), initial

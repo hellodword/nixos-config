@@ -1,4 +1,7 @@
-# Command policies shared by the development shells and their VM scenarios.
+# Isolated development-shell command policies shared across shells and VM scenarios.
+# Network engines, linters, and cache tools run inside Bubblewrap namespaces via
+# tool-sandbox.nix so untrusted or complex parsers cannot read the host home
+# directory, SSH agent, or decrypted credential files directly.
 {
   inputs,
   pkgs,

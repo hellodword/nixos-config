@@ -28,13 +28,13 @@ in
       };
       secretFile = lib.mkOption {
         type = lib.types.str;
-        default = "${config.site.storage.persistRoot}/usr/local/etc/sing-box/clash-secret";
+        default = "/usr/local/etc/sing-box/clash-secret";
         description = "Runtime file containing the Clash API bearer token.";
       };
     };
     providerFile = lib.mkOption {
       type = lib.types.str;
-      default = "${config.site.storage.persistRoot}/usr/local/etc/sing-box/outbounds.json";
+      default = "/usr/local/etc/sing-box/outbounds.json";
       description = "Runtime JSONC containing native concrete outbounds and endpoints.";
     };
     directNetworks = lib.mkOption {
@@ -88,6 +88,10 @@ in
         "site-network-routing.service"
         "mullvad-daemon.service"
       ];
+      unitConfig.RequiresMountsFor = [
+        (builtins.dirOf cfg.providerFile)
+      ]
+      ++ lib.optional cfg.clash.enable (builtins.dirOf cfg.clash.secretFile);
       serviceConfig = import ../../lib/service-hardening.nix // {
         DynamicUser = false;
         MemoryDenyWriteExecute = true;

@@ -154,6 +154,16 @@ in
             format = "[BW 会话变量已设置]($style) ";
             style = "bold yellow";
           };
+          custom.network_direct = {
+            when = "${pkgs.gnugrep}/bin/grep -Eq ':(|[^:]*net_cls[^:]*):(.*/)?mullvad-exclusions$' /proc/self/cgroup";
+            shell = [
+              "${pkgs.bash}/bin/bash"
+              "--noprofile"
+              "--norc"
+            ];
+            format = "[\\[DIRECT\\]]($style) ";
+            style = "bold red";
+          };
         };
     };
     programs.git = {

@@ -357,10 +357,77 @@ def show_policy(args, stage):
     print(f"  {summary['final_source']} -> {summary['final']}")
 
 
+def show_status(args, consumers):
+    current_link = args.root / "current"
+    generation = os.readlink(current_link) if current_link.is_symlink() else "none"
+    print(f"Policy generation: {generation}")
+
+    applied = current_link / "ipv6-mode.json"
+    if applied.is_file():
+        only4 = json.loads(applied.read_text()).get("ipv4_only")
+        family_text = "IPv4 only" if only4 else "dual stack (IPv4 preferred)"
+    else:
+        family_text = "unavailable"
+    print(f"Address family: {family_text}")
+
+    if args.watch_underlay:
+        underlay_file = Path("/run/site-network-underlay/underlay.json")
+        underlay_data = None
+        if underlay_file.is_file():
+            try:
+                underlay_data = json.loads(underlay_file.read_text())
+            except ValueError:
+                underlay_data = None
+        if isinstance(underlay_data, dict) and underlay_data.get("interface"):
+            parts = [underlay_data["interface"]]
+            if underlay_data.get("gateway"):
+                parts.append(f"gw={underlay_data['gateway']}")
+            if underlay_data.get("ipv4"):
+                parts.append(f"v4={underlay_data['ipv4']}")
+            if underlay_data.get("ipv6"):
+                parts.append(f"v6={underlay_data['ipv6']}")
+            print("Physical underlay: " + " ".join(parts))
+        else:
+            print("Physical underlay: offline")
+        print("Mullvad tunnel: " + ipv6.tunnel_state())
+
+    if args.rules_status_file.is_file():
+        try:
+            rules_info = json.loads(args.rules_status_file.read_text())
+            active_id = (rules_info.get("active") or {}).get("id", "none")[:12]
+            pending_id = (rules_info.get("pending") or {}).get("id", "none")[:12]
+            print(f"Shared rules: active={active_id} pending={pending_id}")
+        except (OSError, ValueError, AttributeError):
+            pass
+
+    units = list(consumers) + (["tailscaled.service"] if args.tailscale else [])
+    for unit in units:
+        state = subprocess.run(
+            ["systemctl", "show", "-p", "ActiveState", "--value", unit],
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.strip() or "unknown"
+        print(f"{unit}: {state}")
+
+    error_json = args.root / "last-error.json"
+    if error_json.is_file():
+        try:
+            last = json.loads(error_json.read_text())
+            print(f"Last error ({last.get('time', '?')}): {last.get('phase', '?')}: {last.get('summary', '?')}")
+            print(f"Error log: {args.root / 'last-error.log'}")
+        except (OSError, ValueError):
+            print(f"Error log: {args.root / 'last-error.log'}")
+    prepare_log = args.root / "last-prepare.log"
+    if prepare_log.is_file():
+        print(f"Prepare log: {prepare_log}")
+    return 0
+
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["bootstrap", "check", "apply", "prepare", "ipv6", "initialize", "reconcile",
-                                         "update-rules", "apply-rules", "rules-status"])
+                                         "update-rules", "apply-rules", "rules-status", "status"])
     parser.add_argument("mode", nargs="?", choices=["on", "off", "status"])
     parser.add_argument("--ipv4-only", action="store_true")
     parser.add_argument("--tailscale", action="store_true")
@@ -424,6 +491,8 @@ def main():
         active = enabled_units(json.loads(manifest.read_text())) if manifest.exists() else set(consumers)
         return ipv6.status(args.root, [unit for unit in consumers if unit in active], args.watch_underlay, args.tailscale)
     try:
+        if args.action == "status":
+            return show_status(args, consumers)
         if args.action == "ipv6" and args.mode == "status":
             return show_ipv6_status()
         with (args.root / ".lock").open("a") as lock, ExitStack() as cleanup:

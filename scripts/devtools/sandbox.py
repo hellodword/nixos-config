@@ -45,11 +45,6 @@ def main():
             return path
 
         storage = directory(root / "tmp/.cache/nixos-config-tools" / policy["name"])
-        if in_repo and os.environ.get("NIXOS_CONFIG_ALLOW_TMPFS") != "1":
-            filesystem = subprocess.check_output(
-                [policy["stat"], "-f", "-c", "%T", str(storage)], text=True).strip()
-            if filesystem in {"tmpfs", "ramfs"}:
-                raise RuntimeError(f"{storage} is on {filesystem}; use the laptop's persistent workspace")
         cache, logs, temporary = [directory(storage / name) for name in ("cache", "logs", "tmp")]
         rules = "".join(
             f"e {json.dumps(str(path).replace('%', '%%'), ensure_ascii=False)} - - - {age} -\n"

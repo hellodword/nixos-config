@@ -12,8 +12,8 @@
     ./network.nix
   ];
   site = {
-    network.runtimeConnectionDirectory = lib.mkDefault "${config.site.storage.persistRoot}/usr/local/etc/network-policy/connection.d";
-    network.runtimeRouteDirectory = lib.mkDefault "${config.site.storage.persistRoot}/usr/local/etc/network-policy/route.d";
+    network.runtimeConnectionDirectory = lib.mkDefault "/usr/local/etc/network-policy/connection.d";
+    network.runtimeRouteDirectory = lib.mkDefault "/usr/local/etc/network-policy/route.d";
     core.enable = lib.mkDefault true;
     cli.enable = lib.mkDefault true;
     desktop.enable = lib.mkDefault true;

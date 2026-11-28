@@ -177,7 +177,7 @@ let
       )
     }:$PATH
     ${lib.optionalString cfg.lockdown.enable "export MULLVAD_RPC_SOCKET_PATH=/run/site-network-control/mullvad.sock"}
-    if [ "''${1:-}" != rules-status ]; then
+    if [ "''${1:-}" != rules-status ] && [ "''${1:-}" != status ]; then
       ${pkgs.coreutils}/bin/install -d -m 0750 -g site-network-policy ${runtimeRoot}
       ${pkgs.coreutils}/bin/install -d -m 0755 ${runtimeRoot}/sandbox
     fi
@@ -388,6 +388,10 @@ in
         "site-network-address-family.service"
       ]
       ++ lib.optional cfg.lockdown.enable "site-network-prepare.service";
+      unitConfig.RequiresMountsFor =
+        lib.optional (cfg.runtimeRouteDirectory != null) cfg.runtimeRouteDirectory
+        ++ lib.optional (cfg.runtimeConnectionDirectory != null) cfg.runtimeConnectionDirectory
+        ++ lib.optional cfg.singBox.enable (builtins.dirOf cfg.providerFile);
       path = [ pkgs.systemd ];
       serviceConfig = {
         Type = "oneshot";

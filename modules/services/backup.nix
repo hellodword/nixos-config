@@ -455,7 +455,69 @@ in
     environment.systemPackages = [
       pkgs.restic
       (pkgs.writeShellScriptBin "backup-status" ''
-        exec ${pkgs.jq}/bin/jq . /run/site-backup/status.json
+        exec ${pkgs.python3}/bin/python3 - "$@" <<'PY'
+        import argparse
+        import json
+        from pathlib import Path
+        import sys
+
+        STATUS_FILE = Path("/run/site-backup/status.json")
+        WINDOW_TZ = ${builtins.toJSON cfg.schedule.timeZone}
+
+        def fmt_age(seconds):
+            if not isinstance(seconds, int) or seconds < 0:
+                return "-"
+            if seconds < 60:
+                return f"{seconds}s"
+            if seconds < 3600:
+                return f"{seconds // 60}m"
+            if seconds < 86400:
+                return f"{seconds // 3600}h"
+            return f"{seconds // 86400}d"
+
+        def fmt_op(label, info):
+            if not isinstance(info, dict):
+                return f"{label}:unknown"
+            state = info.get("state", "unknown")
+            age = fmt_age(info.get("ageSeconds"))
+            part = info.get("partition")
+            total = info.get("partitions")
+            extra = f"({part}/{total})" if isinstance(part, int) and isinstance(total, int) else ""
+            if age != "-":
+                return f"{label}:{state}({age}){extra}"
+            return f"{label}:{state}{extra}"
+
+        parser = argparse.ArgumentParser(prog="backup-status", description="Show Restic backup repository health summary.")
+        parser.add_argument("--json", action="store_true", help="Print raw status JSON")
+        args = parser.parse_args()
+
+        try:
+            data = json.loads(STATUS_FILE.read_text())
+        except OSError as exc:
+            print(f"backup-status: {exc}", file=sys.stderr)
+            raise SystemExit(1)
+
+        if args.json:
+            print(json.dumps(data, indent=2, sort_keys=True))
+            raise SystemExit(0)
+
+        repos = data.get("repositories") or {}
+        print(f"Repositories: {data.get('fresh', 0)}/{data.get('total', len(repos))} fresh (schedule timezone: {WINDOW_TZ})")
+        for name, repo in sorted(repos.items()):
+            parts = [
+                fmt_op("backup", repo.get("backup")),
+                fmt_op("check", repo.get("check")),
+                fmt_op("restore", repo.get("canaryRestore")),
+                fmt_op("maint", repo.get("maintenance")),
+            ]
+            cur = repo.get("current") or {}
+            if cur.get("result") in {"running", "interrupted"}:
+                parts.append(f"current:{cur.get('operation', '?')}={cur['result']}")
+            notifs = repo.get("notifications") or {}
+            if any(isinstance(v, dict) and v.get("pending") for v in notifs.values()):
+                parts.append("notify:pending")
+            print(f"  {name}: " + "  ".join(parts))
+        PY
       '')
     ];
     systemd.tmpfiles.rules = [

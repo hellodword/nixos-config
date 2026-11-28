@@ -100,7 +100,10 @@ class DeclaredIdentity(unittest.TestCase):
             payload = root / "payload"
             payload.write_text("SSH agent protocol signing after identity rotation\n")
             public = public_directory / gpg_identity.public_name("github", keys["next"])
-            subprocess.run(["ssh-keygen", "-Y", "sign", "-U", "-f", str(public), "-n", "identity", str(payload)],
+            stable_public = public_directory / "gpg.github.pub"
+            self.assertTrue(stable_public.is_symlink())
+            self.assertEqual(stable_public.read_text(), public.read_text())
+            subprocess.run(["ssh-keygen", "-Y", "sign", "-U", "-f", str(stable_public), "-n", "identity", str(payload)],
                            env=isolated, check=True, capture_output=True)
             signers = root / "allowed-signers"
             signers.write_text("synthetic " + public.read_text())

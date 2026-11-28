@@ -12,6 +12,8 @@ import time
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--waybar", action="store_true", help="show failed-unit counts and names as Waybar JSON")
+    parser.add_argument("--check-backup", action="store_true", help="include backup repository health checks")
+    parser.add_argument("--check-network-rules", action="store_true", help="include pending network rule update notifications")
     args = parser.parse_args()
     state = Path(os.environ["XDG_RUNTIME_DIR"]) / "desktop-health.json"
     try:
@@ -29,7 +31,7 @@ def main():
         print(json.dumps({"text": text, "tooltip": html.escape("\n\n".join(details))}))
         return 0
     current = {}
-    if os.environ.get("SITE_NETWORK_RULES_ENABLED") == "1":
+    if args.check_network_rules:
         current["rulesSession"] = os.environ.get("XDG_SESSION_ID")
         try:
             pending_rules = json.loads(Path("/run/site-network-rules/status.json").read_text()).get("pending")
@@ -54,7 +56,7 @@ def main():
         current["battery"] = "critical" if min(levels) <= 50 else "warning" if min(levels) <= 60 else "normal"
         if current["battery"] != previous.get("battery") and current["battery"] != "normal":
             subprocess.run(["notify-send", "-u", "critical", "电量不足", f"剩余 {min(levels)}%，请连接电源。"], check=False)
-    if os.environ.get("SITE_BACKUP_ENABLED") == "1":
+    if args.check_backup:
         try:
             health = json.loads(Path("/run/site-backup/status.json").read_text())
             labels = {"backup": "备份", "check": "校验", "canaryRestore": "恢复抽检", "maintenance": "空间回收"}

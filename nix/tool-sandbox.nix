@@ -43,7 +43,6 @@ let
       nsswitch = pkgs.writeText "tool-nsswitch.conf" "passwd: files\ngroup: files\nhosts: files dns\n";
       bwrap = "${pkgs.bubblewrap}/bin/bwrap";
       git = "${pkgs.gitMinimal}/bin/git";
-      stat = "${pkgs.coreutils}/bin/stat";
       tmpfiles = "${pkgs.systemd}/bin/systemd-tmpfiles";
     }
   );
