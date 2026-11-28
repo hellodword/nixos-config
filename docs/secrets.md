@@ -59,9 +59,9 @@ sops "hosts/$host/secrets/system.sops.yaml"
 gpg --list-keys --keyid-format long --with-subkey-fingerprint --with-keygrip
 ```
 
-SSH 选择 `[A]` 子密钥，Git 签名选择 `[S]` 子密钥。系统从证书推导 keygrip、SSH 公钥和文件名 `/etc/ssh/gpg.<用途>.<16 位长 Key ID>.pub`。`ssh.hosts` 中的 `IdentityFile` 使用这个完整路径，格式与普通 OpenSSH 配置相同；更换子密钥时，同步修改声明指纹与对应路径。填写方式见[身份示例](../data/secrets/identity.example.yaml)。
+SSH 选择 `[A]` 子密钥，Git 签名选择 `[S]` 子密钥。系统从证书推导 keygrip、SSH 公钥，并同时发布带长 Key ID 的 `/etc/ssh/gpg.<用途>.<16 位长 Key ID>.pub` 与稳定软链 `/etc/ssh/gpg.<用途>.pub`。`ssh.hosts` 中的 `IdentityFile` 推荐使用稳定路径 `/etc/ssh/gpg.<用途>.pub`，格式与普通 OpenSSH 配置相同；更换子密钥时只需更新 `gpg.ssh` 中的声明指纹，无需同步改动 `ssh.hosts`（需要固定特定子密钥时仍可引用带长 Key ID 的路径）。填写方式见[身份示例](../data/secrets/identity.example.yaml)。
 
-解密后，`site-identity.service` 在隔离公钥环中生成一整组文件，再切换 `/run/site-identity/<用户名>/current`；生成失败时保留上一组可用文件。`current/manifest.json` 给出每个用途的完整指纹、keygrip 和公钥文件名。
+解密后，`site-identity.service` 在隔离公钥环中生成一整组文件，再切换 `/run/site-identity/<用户名>/current`；生成失败时保留上一组可用文件。`current/manifest.json` 给出每个用途的完整指纹、keygrip、带 Key ID 的 `publicFile` 与稳定文件名 `stableFile`。
 
 用户级 `site-gpg-ssh-identities.service` 读取清单，把本机 GPG 已有的认证子密钥通过 `Use-for-ssh` 属性启用给 SSH。用户服务启动、身份发布代次切换和 `~/.gnupg/private-keys-v1.d` 变化时自动执行；已有非零优先级继续生效，登记属性随 GPG 目录持久保存。
 
@@ -86,7 +86,7 @@ ssh -T git@github.com
 
 `IdentityFile` 指向公钥文件时，需要 agent 提供对应签名身份。若出现 `Load key "…pub": invalid format`，先比较清单、公钥与 `ssh-add -L`，再查看注册服务日志。[OpenSSH IdentityFile](https://man.openbsd.org/ssh_config#IdentityFile) 说明了公钥选择 agent 身份的用法。
 
-换钥时先在本机 GPG 准备好新子密钥，在远端登记新公钥，再把新证书、子密钥指纹与 `IdentityFile` 路径写入身份文档并部署。注册服务自动启用新身份，旧身份和本机额外身份继续可用。确认远端连接成功，且旧子密钥已从 `gpg.ssh` 的所有用途中撤下后，再手动停用旧 keygrip：
+换钥时先在本机 GPG 准备好新子密钥，在远端登记新公钥，再把新证书与子密钥指纹写入 `identity.sops.yaml` 并部署（`ssh.hosts` 使用稳定软链 `/etc/ssh/gpg.<用途>.pub` 时无需修改 `IdentityFile`；若显式引用了带 Key ID 的路径则同步更新）。注册服务自动启用新身份，旧身份和本机额外身份继续可用。确认远端连接成功，且旧子密钥已从 `gpg.ssh` 的所有用途中撤下后，再手动停用旧 keygrip：
 
 ```sh
 gpg-connect-agent 'KEYATTR 旧KEYGRIP Use-for-ssh: false' /bye

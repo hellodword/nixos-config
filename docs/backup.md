@@ -6,6 +6,7 @@
 
 ```sh
 backup-status
+backup-status --json
 systemctl list-timers 'site-backup-*'
 
 # 指定仓库与操作立即执行（automatic | backup | check | restore-test | maintenance）
@@ -18,7 +19,7 @@ sudo journalctl -u "site-backup-${backup_target}-${backup_operation}.service" -n
 sudo tail -n 80 "/var/lib/site-backup-${backup_target}/last-command.log"
 ```
 
-`backup-status` 汇总各目标 `backup`、`check`、`canaryRestore`、`maintenance` 的年龄、状态与下次允许自动执行的时间（`nextEligibleAt`），并展示最近结果、Restic 退出码（脱敏摘要）及通知投递记录：
+无参 `backup-status` 按仓库逐行打印可读摘要（包含 `backup`、`check` 分片进度、`canaryRestore`、`maintenance` 的状态与距今时长、活动作业或待发通知提示，以及自动窗口时区说明）；`backup-status --json` 输出完整的 `/run/site-backup/status.json`，供脚本或排障查看 `nextEligibleAt`、脱敏后的 Restic 退出码及通知投递记录：
 
 | 状态 | 含义 |
 | --- | --- |

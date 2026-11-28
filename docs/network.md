@@ -26,11 +26,18 @@ flowchart TD
   Filter -->|固定目的地隧道| SB
 ```
 
+网络栈按三方职责协作：
+
+- **Nix 声明层**：负责 DNS 拓扑、Mullvad Lockdown 保护策略、`sing-box` 稳定配置骨架、服务依赖与保护性策略路由。
+- **运行期控制面**（`network-policy`、`site-network-underlay`、`network-ipv6`）：负责跟踪物理链路变化、合并本机节点与规则片段、在无网络且只读输入的独立沙箱中执行原生校验、原子切换生效代次并在异常时自动回退。
+- **维护者本机输入**：`/usr/local/etc/sing-box/outbounds.json` 中的代理节点与凭据、`/usr/local/etc/network-policy/{route.d,connection.d}` 中的个人规则片段，以及外部代理节点自身的连通性由维护者负责。
+
 ## 日常操作与排障
 
 ### 状态检查、策略应用与 Lockdown 控制
 
 ```sh
+sudo network-policy status
 sudo network-lockdown status
 sudo network-lockdown disconnect
 sudo network-lockdown connect
@@ -41,11 +48,34 @@ network-policy rules-status
 systemctl status site-dns site-dns-race-cn site-dns-race-global sing-box site-network-underlay
 ```
 
+`sudo network-policy status` 只读汇总物理接口与网关（`/run/site-network-underlay/underlay.json`）、Mullvad 隧道状态、IPv6 模式、当前生效策略代次、共享规则更新状态、消费者服务 `ActiveState`，以及存在失败记录时的阶段摘要与日志路径（`/run/site-network-policy/last-prepare.log`、`last-error.log`）。
+
 候选策略生成与原生校验在无网络、只读输入的独立 systemd 命名空间中完成，随后由控制进程原子切换 `/run/site-network-policy/current` 并按实际配置哈希变化重启受影响的消费者服务（仅改节点只重启 `sing-box`，未变化的 DNS race 进程保持运行）。校验失败保留当前运行配置，校验详情写入 root-only 的 `/run/site-network-policy/last-prepare.log`，激活异常与回退记录写入 `last-error.log` 与 `last-error.json`。
 
 开启 Lockdown 且物理网络暂未连接（`underlay.json` 为空）时，`network-policy apply` 与 `network-ipv6` 同样允许验证并切换策略代次与地址族状态，暂不拉起 `sing-box`；待物理链路恢复后，基于 `ip monitor` 事件驱动的 `site-network-underlay.service` 自动绑定物理接口并启动 `sing-box`。
 
 `disconnect` 停止 `sing-box` 并断开本地隧道，同时保持 Mullvad Lockdown 阻断，防止未保护直连外泄；`connect` 恢复本地隧道与分流。命令成功返回 `0`，运行/校验错误返回 `1`，参数错误返回 `2`。
+
+### 按症状排障
+
+| 症状 | 首查命令 | 重点观察与下一步 |
+| --- | --- | --- |
+| 切换 Wi-Fi 后全部断网 | `sudo network-policy status`、`nmcli device status` | 核对物理接口状态、`underlay.json` 网关与 Lockdown 隧道状态，再按下方顺序查底层与 `network` 命名空间日志 |
+| 单个域名失败或走错出口 | `resolvectl query --cache=no <域名>`、`dig @127.0.0.1 -p 5300 <域名> A` | 区分应用侧 FakeIP 与本机真实解析，再用 `network-dns-log` 定位命中规则、解析组与出口 |
+| 修改了节点或个人规则未生效 | `sudo network-policy check`、`sudo network-policy apply` | 校验失败查 `/run/site-network-policy/last-prepare.log`，激活或回退异常查 `last-error.log` |
+
+1. **切换 Wi-Fi 后全部断网**
+   - 在宿主机终端执行 `nmcli device status`、`sudo network-lockdown status` 与 `sudo network-policy status`，核对无线网卡是否 `connected`、`/run/site-network-underlay/underlay.json` 是否已记录当前物理接口和网关，以及 Mullvad 是否处于本地隧道连接态。
+   - 若物理链路已连接但底层绑定或隧道未恢复，在系统默认 journal 中检查物理探测与守护进程：`sudo journalctl -u site-network-underlay -u mullvad-daemon -n 80 --no-pager`。
+   - 若底层接口与 Lockdown 正常，在 `network` 命名空间 journal 中检查解析与分流进程：`sudo journalctl --namespace=network -u site-dns -u site-dns-race-cn -u site-dns-race-global -u sing-box -n 80 --no-pager`。
+2. **单个域名失败或走错出口**
+   - 在宿主机终端执行 `resolvectl query --cache=no example.com` 观察应用侧返回：启用 FakeIP 时，公共域名的 `A`/`AAAA` 直接返回 `198.18.0.0/15`（双栈含 `2001:2::/48`）映射地址，代表查询已进入透明接管路径而非真实上游结果。
+   - 执行 `dig @127.0.0.1 -p 5300 example.com A` 直接请求本机 `dnsdist` 真实解析端口，确认对应解析组能否拿到有效上游记录。
+   - 执行 `sudo journalctl --namespace=network -u site-dns-events -o cat --no-pager --since '10 minutes ago' | network-dns-log --name example.com`，观察输出中命中的片段文件名、规则下标、解析组 `group`（`cn` / `global`）与目标 `outbound`。
+   - 对照 `sudo journalctl --namespace=network -u sing-box -n 80 --no-pager` 与显式代理测试（`curl -v --proxy http://127.0.0.1:10800 https://example.com/`）确认所选出口节点的实际连通性。
+3. **修改了节点或个人规则**
+   - 编辑 `/usr/local/etc/sing-box/outbounds.json` 或 `/usr/local/etc/network-policy/{route.d,connection.d}` 后，在宿主机终端运行 `sudo network-policy check` 预演片段合并顺序、规则语法与出口引用，确认通过后再执行 `sudo network-policy apply` 原子切换。
+   - 准备或原生校验失败时当前生效代次保持不变，读取 `/run/site-network-policy/last-prepare.log` 查看具体语法或引用报错；切换期间服务启动失败触发自动回退时，读取 `/run/site-network-policy/last-error.log` 与 `last-error.json`。
 
 ### 日志查询与保留
 
@@ -80,10 +110,10 @@ sudo journalctl --namespace=network --disk-usage
 
 ## 临时排除应用与 shell
 
-`network-exclude` 让指定命令或交互 shell 通过原生物理网络出站，并使用返回真实地址的独立加密 DNS，同时保留当前工作目录、用户身份、环境变量与 SSH agent：
+`network-exclude` 让指定命令或交互 shell 通过原生物理网络出站，并使用返回真实地址的独立加密 DNS，同时保留当前工作目录、用户身份、环境变量与 SSH agent；进入交互式排除 shell 时，Starship 通过读取 `/proc/self/cgroup` 中的 `mullvad-exclusions` 标记在提示符前显示粗体红色 `[DIRECT]`：
 
 ```sh
-network-exclude                         # 进入当前用户的排除 shell
+network-exclude                         # 进入当前用户的排除 shell（提示符显示 [DIRECT]）
 network-exclude curl https://example.com/
 network-exclude --dns tls://1.1.1.1 -- curl https://example.com/
 
@@ -96,7 +126,7 @@ systemctl status site-network-exclude-dns
 
 排除环境的共用 DNS 和引导解析器默认读取 `direct` 组。`dns set` 立即更新 `/run` 中的共用 DNS 列表，重启后恢复声明值。`--dns` 为当次命令建立临时解析器，命令退出后即回收。[DNS 上游声明](../data/network/dns-upstreams.toml)
 
-桌面提供 `firefox-direct` 和 `google-chrome-direct`（均支持 `--dns SERVER`），保留 Firejail 沙箱并使用持久化的独立配置与缓存目录，可与普通受保护浏览器并行运行；无终端启动鉴权失败或已有实例占用同一配置文件锁时通过桌面通知提示。
+桌面提供 `firefox-direct` 和 `google-chrome-direct`（均支持 `--dns SERVER`），保留 Firejail 沙箱并使用持久化的独立配置与缓存目录，经排除网络直接走物理网卡，可与普通受保护浏览器并行运行（区别于 `firefox-origin`：`firefox-origin` 仅隔离浏览器资料目录，网络仍走系统透明分流与 FakeIP）；无终端启动鉴权失败或已有实例占用同一配置文件锁时通过桌面通知提示。
 
 ## 地址族与运行时切换
 
@@ -133,7 +163,7 @@ sudo network-ipv6 off
 
 ### Clash API
 
-`site.network.clash.enable = true` 在 `127.0.0.1:9090`（`clash.port`）启用原生控制接口，从 `clash.secretFile`（默认 `/persist/usr/local/etc/sing-box/clash-secret`，root `0600`）加载非空 Bearer token。
+`site.network.clash.enable = true` 在 `127.0.0.1:9090`（`clash.port`）启用原生控制接口，从 `clash.secretFile`（默认 `/usr/local/etc/sing-box/clash-secret`，root `0600`）加载非空 Bearer token。
 
 - **分组 provider（含 `groups`，如 VPS 订阅）**：`render.py` 用各用途选择器（`proxy`、`hideme`、`downloads`、`ai` 等）及对应的 `自动 · <出口>` 测速组替代内置平面 `proxy`/`auto` 组。在 Clash API 中可直接打开任一用途组固定具体路径或切回自动择优；别名用途（如 `payment: hideme`）跟随目标组选择，对应 DNS 隧道同步走同一选择器。
 - **非分组 provider（仅含 `outbounds` / `endpoints`）**：保留内置 `proxy`（含 `auto` 与全部节点）选择器，未单独绑定的用途组默认指向 `proxy`。
@@ -146,11 +176,11 @@ sudo network-ipv6 off
 | --- | --- |
 | `site.network.routeFragments` | 声明式共享域名 route 片段（同时作用于 DNS 与连接分流） |
 | `site.network.connectionFragments` | 声明式 sing-box 原生连接 route 片段 |
-| `/persist/usr/local/etc/network-policy/route.d/*.{json,jsonc}` | 本机共享域名片段（同名文件整体替换声明式片段） |
-| `/persist/usr/local/etc/network-policy/connection.d/*.{json,jsonc}` | 本机连接片段（支持 IP、端口、协议或具体节点 tag） |
-| `/persist/usr/local/etc/sing-box/outbounds.json` | 运行时 `outbounds` / `endpoints` 节点与凭据（支持 JSONC） |
+| `/usr/local/etc/network-policy/route.d/*.{json,jsonc}` | 本机共享域名片段（与声明式片段同名时整份替换该文件） |
+| `/usr/local/etc/network-policy/connection.d/*.{json,jsonc}` | 本机连接片段（支持 IP、端口、协议或具体节点 tag；同名整份替换） |
+| `/usr/local/etc/sing-box/outbounds.json` | 运行时 `outbounds` / `endpoints` 节点与凭据（支持 JSONC） |
 
-两类片段合并后按文件名的 UTF-8 字节顺序统一排列（`route.d` 与 `connection.d` 不使用同名文件），首个命中的终止规则生效，`final` 采用对应消费者可见的最后一个定义。laptop profile 默认片段顺序如下：
+两类片段合并后按文件名的 UTF-8 字节顺序统一排列（`route.d` 与 `connection.d` 之间不使用同名文件；本机目录与声明式片段同名时整份替换对应声明文件），首个命中的终止规则生效，`final` 采用对应消费者可见的最后一个定义。laptop profile 默认片段顺序如下：
 
 | 文件 | 内容 |
 | --- | --- |
@@ -165,7 +195,7 @@ sudo network-ipv6 off
 | `97-direct-ip.json` | `site.network.directNetworks` → `direct` |
 | `98-geoip.json` | `site.network.ipRuleSets` → `direct` |
 
-`05-local.json` 可早于私有域生效，`30-local.json` 则位于私有域之后、共同策略之前。
+个人例外按目标优先级选择文件名前缀：在 UTF-8 字节序中，`30-local.json` 排在 `20-private.json` 之后、`40-purpose-*.json` 之前，适合覆盖共享业务分流规则而保留私有域保护；`05-local.json` 则排在 `10-tailnet.json` 与 `20-private.json` 之前。
 
 ### 独立系统接口（`endpoints`）
 

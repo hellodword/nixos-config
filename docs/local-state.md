@@ -16,11 +16,11 @@
 | 输入法 | Fcitx 配置工具 | 配置、词库和学习记录持久保存 |
 | GTK 外观 | Plasma 外观设置、`~/.config/gtk-{2,3,4}.0/` | 用户设置持久保存，优先于系统默认值 |
 | VS Code 扩展 | 扩展界面 | 即时安装；用户扩展目录与编辑器运行状态持久化 |
-| 代理节点与独立 endpoint | `/persist/usr/local/etc/sing-box/outbounds.json` | 校验后运行 `sudo network-policy apply`，见[网络指南](network.md) |
-| 共享域名 route 片段 | `/persist/usr/local/etc/network-policy/route.d/*.{json,jsonc}` | `sudo network-policy check` 后 `apply`，见[网络指南](network.md) |
-| 原生连接 route 片段 | `/persist/usr/local/etc/network-policy/connection.d/*.{json,jsonc}` | 与共享片段统一排序，校验后 `apply` |
+| 代理节点与独立 endpoint | `/usr/local/etc/sing-box/outbounds.json` | 校验后运行 `sudo network-policy apply`，见[网络指南](network.md) |
+| 共享域名 route 片段 | `/usr/local/etc/network-policy/route.d/*.{json,jsonc}` | `sudo network-policy check` 后 `apply`，见[网络指南](network.md) |
+| 原生连接 route 片段 | `/usr/local/etc/network-policy/connection.d/*.{json,jsonc}` | 与共享片段统一排序，校验后 `apply` |
 
-SSH、Wi-Fi、显示器、输入法与网络策略入口纳入精确备份；VS Code 目录持久化。路径中的 `/persist` 来自 `site.storage.persistRoot`；用户目录来自 NixOS 账户定义。SSH、Git 的受管主配置负责加载本机入口；编辑本机文件即可保留后续系统更新。
+SSH、Wi-Fi、显示器、输入法与网络策略入口纳入精确备份；VS Code 目录持久化。`/usr/local/etc` 等系统可写目录通过 `site.storage.persistRoot`（默认 `/persist`）持久化挂载；用户目录来自 NixOS 账户定义。SSH、Git 的受管主配置负责加载本机入口；编辑本机文件即可保留后续系统更新。
 
 ```sshconfig
 # ~/.ssh/hosts.d/work.conf

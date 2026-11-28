@@ -104,11 +104,11 @@ Sway 的快捷键：
 
 Sway 默认使用标签布局、纵向切分方向和居中标题，窗口间距为零。mpv、feh、Emulator、Waydroid 窗口默认浮动。
 
-Waybar 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态及多时区时间：同时显示本地时区（`clock#local`）、美西时间（`America/Los_Angeles`、`LA`）与中国时间（`Asia/Shanghai`、`CN`）三个时钟。
+Waybar 显示当前窗口标题、CPU、内存、根 tmpfs 和持久磁盘用量、系统/用户失败单元数、网络、Tailscale、音量、电量与充电状态及多时区时间：同时显示本地时区（`clock#local`）、协调世界时（`UTC`）、美西时间（`America/Los_Angeles`、`LA`）与中国时间（`Asia/Shanghai`、`CN`）四个时钟。
 
 Waybar 标题右侧的眼睛按钮可在演示时阻止空闲锁屏，初始关闭；再次点击恢复空闲锁屏。手动锁屏仍然可用。
 
-Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网关和即时流量；Wi-Fi 另显示 SSID 与信号。Tailscale 悬浮显示本机连接状态及 Tailnet 地址。本地时钟悬浮显示日期和月历，美西与中国时钟悬浮分别显示对应时区的星期、日期与时间。电池显示充放电状态、剩余时间和功率；内存、磁盘、音频、亮度及温度也提供对应详情。
+Waybar 的有线和 Wi-Fi 分别显示，悬浮信息包含接口名、IP、网关和即时流量；Wi-Fi 另显示 SSID 与信号。Tailscale 悬浮显示本机连接状态及 Tailnet 地址。本地时钟悬浮显示日期和月历，UTC、美西与中国时钟悬浮分别显示对应时区的星期、日期与时间。电池显示充放电状态、剩余时间和功率；内存、磁盘、音频、亮度及温度也提供对应详情。
 
 `Failed 0/0` 表示上次采样时系统和用户均无失败单元，采样间隔一分钟；`?` 表示尚无结果，悬浮可查看系统和用户的失败单元名称。电量降至 60% 和 50% 时分别提醒，恢复充电后重新计次。温度、亮度及电池的时间和功率由设备支持情况决定。
 
@@ -178,17 +178,21 @@ systemctl --user status site-sway.target
 
 Safe Eyes 在图形环境和系统托盘就绪后启动。
 
-`BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池和 Git 本地备份入口的提示。
+`BROWSER=firefox` 和 `TERMINAL=kitty` 为支持这些变量的 CLI 提供选择；桌面文件关联由 MIME 设置管理。Starship 保留 SSH 主机、目录、命令耗时、Nix shell、电池、Git 本地备份入口，以及 `network-exclude` 直连 shell 的 `[DIRECT]` 提示。
 
 Kitty 中 Ctrl+Shift+N / Ctrl+Shift+T 从当前目录打开新窗口 / 标签。
 
 `git backup <名称>` 在 `~/backups/git/<名称>` 建立 bare 仓库，并把它加入 origin 的推送地址，另提供 `laptop-git-backup` 推送 remote。后续 `git push origin` 会更新本地备份；没有 origin 时可用 `git backup -f <名称>`，再推送到 `laptop-git-backup`。注册命令本身不立即复制所有分支。Starship 在这个本地备份目录不存在时提示。
 
-Shell 便利入口与独立 Git 子命令见 [home/cli.nix](../home/cli.nix) 与 [home/cli-packages.nix](../home/cli-packages.nix)，隔离容器启动器集中在 [home/containers.nix](../home/containers.nix)。其中 `sing-box-log` 查看 `network` 命名空间的 journal，`sing-box-config` 查看已生成的运行配置。
+Shell 便利入口与独立 Git 子命令见 [home/cli.nix](../home/cli.nix) 与 [home/cli-packages.nix](../home/cli-packages.nix)，开发容器、临时端口转发与隔离应用包装器集中在 [home/containers.nix](../home/containers.nix)。其中 `sing-box-log` 查看 `network` 命名空间的 journal，`sing-box-config` 查看已生成的运行配置。
 
 先用 `bw login` 登录账户，再调用 `bw-unlock` 解锁并将会话 token 留在当前 shell 的 `BW_SESSION`；`bw-lock` 清理变量并锁定 CLI。提示符显示 `BW_SESSION` 是否存在，实际请求仍以 Bitwarden 的状态和响应为准，token 不写入历史或提示内容。
 
-`,` 使用 nix-index 数据库运行缺少的命令。`devc` 以当前目录名加随机后缀启动交互式 `ghcr.io/hellodword/devcontainers-dev:latest` `bash` 会话（透传附加 `docker run` 参数并复用上游 `docker run` 补全），执行前输出完整 `docker run` 命令，将 `~/.codex`、`~/.gemini` 及 `opencode` 的配置/数据/状态目录映射至默认路径，优先从本地镜像 `devcontainers.nix.cache-layout` Label 离线读取统一缓存契约（本地无该 Label 时回退 `~/.local/state/devcontainers/cache-layout.json` 或拉取远端 `data/cache-layout.json` 缓存，可传 `--refresh-cache-layout` 主动刷新）挂载 `~/.local/state/devcontainers/cache/<id>`，校验并只读挂载 `~/dev/workspace/agents-misc` 下的 `AGENTS.md` 与 `.agents`（缺失即报错退出），同时对工作区已存在的 `.devcontainer` 施加只读覆盖；传入 `--android` 时启用 USB 调试设备直通（`--device-cgroup-rule='c 189:* rmw'` 与 `/dev/bus/usb`）并只读挂载 `~/.android/adbkey(.pub)`（首次缺失且宿主装有 `adb` 时自动初始化密钥对）；`devc-dry` 或 `--dry-run` 仅输出命令不启动容器。`qrencode`、`apkid`、`emcc`、`honor-downloader`、`gopeed`、`charles`、`mitm`、`wg-serve` 通过各自的 Docker / `runsc` 容器运行。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
+`,` 使用 nix-index 数据库运行缺少的命令。`devc` 以当前目录名加随机后缀启动交互式 `ghcr.io/hellodword/devcontainers-dev:latest` `bash` 会话（透传附加 `docker run` 参数，Bash 补全提供 `--android` 与 `--dry-run`）：根据宿主 NixOS 配置显式注入网桥可达的 `DEVCONTAINER_LOCAL_CACHE_ADDR`（`oranc`）与 `DEVCONTAINER_HOST_STORE_CACHE_ADDR`（`harmonia`），对选定本地镜像执行单次 `docker image inspect` 固定精确 `.Id` 并读取 `devcontainers.nix.cache-layout` Label 挂载 `~/.local/state/devcontainers/cache/<id>`，以 `--pull=never` 运行该 `.Id`；将 `~/.codex`、`~/.gemini` 及 `opencode` 的配置/数据/状态目录映射至默认路径，对工作区已存在的 `.devcontainer` 施加只读覆盖，并要求 `~/dev/workspace/agents-misc` 下的 `AGENTS.md` 与 `.agents` 必须存在且当前目录对应路径为空或不存在（若工作区存在非空 `AGENTS.md`、`.agents` 或软链则报错拒绝覆盖，通过后以只读方式挂载）；传入 `--android` 时启用 USB 调试设备直通（`--device-cgroup-rule='c 189:* rmw'` 与 `/dev/bus/usb`）并只读挂载 `~/.android/adbkey(.pub)`（首次缺失且宿主装有 `adb` 时自动初始化密钥对）；`devc-dry` 或 `devc --dry-run` 输出完整 `docker run` 命令而不启动容器。
+
+`docker-port-forward` 提供前台临时端口转发（重复传入 `--forward <容器> <宿主端点> <容器端点>`，端点支持 `<端口>` 或 `<IPv4>:<端口>`，宿主缺省 `0.0.0.0:<端口>`、容器缺省 `127.0.0.1:<端口>`，提供运行中容器名补全）：目标容器含 `socat` 时直接经 `docker exec -i` 转发，无 `socat` 时按目标容器懒启动并复用单个与父进程 `stdin` 生命周期绑定的 `docker run --rm -i` `alpine/socat` 辅助容器，按 `Ctrl+C` 退出即自动回收。
+
+宿主机不直接运行不受信任的第三方命令行或图形工具：`qrencode`、`qrencode-png`、`apkid`、`emcc`、`honor-downloader`、`gopeed`、`charles`、`mitm`、`wg-serve` 统一封装在各自的 Docker / `runsc`（gVisor）隔离容器中，仅按需挂载当前任务所需的最小输入输出路径。`httpserver [目录或文件]` 提供临时 HTTPS 分享，按 Ctrl+C 停止。长期共享与证书配置见[文件服务](files.md)。
 
 ## 应用隔离
 

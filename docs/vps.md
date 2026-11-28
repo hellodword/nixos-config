@@ -149,7 +149,7 @@ nix-env -p /nix/var/nix/profiles/system --switch-generation "$generation" &&
 systemctl reboot
 ```
 
-各节点内置 `site-vps-gc.service` 与每周 `site-vps-gc.timer`（系统激活时亦自动运行）：自动扫描当前运行系统与 `/nix/var/nix/profiles/system-*-link` 仍引用的凭据及证书目录，保留所有可回退代次所需的 `/var/lib/site-vps/releases/*` 和 `/var/lib/site-vps-certificate/*`，仅清理已无任何系统代次引用的陈旧目录。
+各节点内置 `site-vps-gc.service` 与每日 `site-vps-gc.timer`（系统激活时亦自动运行）：自动扫描当前运行系统与 `/nix/var/nix/profiles/system-*-link` 仍引用的凭据及证书目录，保留所有可回退代次所需的 `/var/lib/site-vps/releases/*` 和 `/var/lib/site-vps-certificate/*`，仅清理已无任何系统代次引用的陈旧目录。
 
 ## 初次部署与救援写盘
 

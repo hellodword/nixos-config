@@ -6,7 +6,7 @@
 
 ### NixOS 主机与容器
 
-启用 `site.cache` 的主机自动配置本地 `oranc` 代理、Nix substituters 与签名公钥（当监听地址位于 Docker 网桥且启用了 Docker 时，`oranc.service` 排在 `docker.service` 之后启动；默认开启 `fallback = true` 与 5 秒连接超时，本地代理不可达时自动回退）。同时，启用 `site.containers` 的主机通过 [modules/services/containers.nix](../modules/services/containers.nix) 在容器网桥 `172.17.0.1:37516` 运行只读 `harmonia` 服务（`FreeBind` 套接字激活并随 `docker.service` 预热，`PrivateNetwork` 隔离进程网络，nftables 仅放行回环与本地容器网桥），直接向本机开发容器导出已验签的宿主 `/nix/store`：
+启用 `site.cache` 的主机自动配置本地 `oranc` 代理、Nix substituters 与签名公钥（当监听地址非回环且启用了 Docker 时，`oranc.service` 排在 `docker.service` 之后启动，并通过 nftables 仅放行回环与本地容器网桥 `docker0`/`br-*` 入站连接；默认开启 `fallback = true` 与 5 秒连接超时，本地代理不可达时自动回退）。同时，启用 `site.containers` 的主机通过 [modules/services/containers.nix](../modules/services/containers.nix) 在容器网桥 `172.17.0.1:37516` 运行只读 `harmonia` 服务（`FreeBind` 套接字激活并随 `docker.service` 预热，`PrivateNetwork` 隔离进程网络，nftables 同样仅放行回环与本地容器网桥），直接向本机开发容器导出已验签的宿主 `/nix/store`：
 
 ```sh
 systemctl status oranc harmonia.socket harmonia.service
@@ -19,7 +19,7 @@ curl -fsS http://172.17.0.1:37516/nix-cache-info
 
 ### 开发容器及其他 Nix 客户端
 
-开发容器按镜像内嵌的 `devcontainers.nix.cache-layout` 契约挂载宿主持久化的 `~/.local/state/devcontainers/cache/<id>`（其中 `nix` 对应容器内 `/var/cache/devcontainer-nix`，其余语言与构建工具池分别对应各自缓存目录）并连接宿主网桥时，Nix 按优先级依次复用镜像层、跨容器共享 `file://` 缓存、宿主 `harmonia`（`172.17.0.1:37516`）与 `oranc`（`172.17.0.1:37515`）。其他通用 Nix 客户端在仓库根目录通过 [scripts/nix-cache.sh](../scripts/nix-cache.sh)（委托 [infra/scripts/nix-cache.sh](../infra/scripts/nix-cache.sh)）查看或安装持久配置：
+宿主 `devc` 对选定本地镜像执行单次 `docker image inspect` 固定精确 `.Id` 并读取内嵌的 `devcontainers.nix.cache-layout` Label，按契约挂载宿主持久化的 `~/.local/state/devcontainers/cache/<id>`（其中 `nix` 对应容器内 `/var/cache/devcontainer-nix`，挂载即启用跨容器共享 `file://` 缓存，可写时注册构建后异步发布钩子），同时从宿主 NixOS 配置提取网桥端点显式传入 `DEVCONTAINER_LOCAL_CACHE_ADDR`（`oranc`，保持公钥验签）与 `DEVCONTAINER_HOST_STORE_CACHE_ADDR`（`harmonia`，容器校验 `/nix-cache-info` 后启用 `trusted=1`）。容器仅对显式传入的宿主端点启用对应缓存，Nix 按优先级依次复用镜像层、跨容器共享 `file://` 缓存、宿主 `harmonia`（`172.17.0.1:37516`）与 `oranc`（`172.17.0.1:37515`）。其他通用 Nix 客户端在仓库根目录通过 [scripts/nix-cache.sh](../scripts/nix-cache.sh)（委托 [infra/scripts/nix-cache.sh](../infra/scripts/nix-cache.sh)）查看或安装持久配置：
 
 ```sh
 bash scripts/nix-cache.sh print
@@ -32,7 +32,7 @@ nix develop .#laptop
 
 ### 本地验证与升级 `oranc`
 
-`oranc` 在 `infra/flake.lock` 中保留独立的上游构建锁，使日常升级公共 `nixpkgs` 时 `oranc` 输出路径与 CI 启动缓存键保持稳定。单独升级并验证：
+`oranc` 在 `infra/flake.lock` 中锁定并跟随 `infra` 的 `nixpkgs` 与 `treefmt-nix` 输入，由子 flake 统一管理构建工具链与缓存客户端。单独升级并验证：
 
 ```sh
 nix flake update oranc --flake ./infra
