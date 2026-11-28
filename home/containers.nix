@@ -338,9 +338,51 @@ let
         shellcheck --shell=bash "$out/share/bash-completion/completions/devc"
         ln -s devc "$out/share/bash-completion/completions/devc-dry"
       '';
+
+  portForwardBin = pkgs.writeShellApplication {
+    name = "docker-port-forward";
+    runtimeInputs = with pkgs; [
+      docker
+      python3
+    ];
+    text = ''
+      exec python3 -I ${../scripts/containers/port_forward.py} "$@"
+    '';
+  };
+
+  portForwardSuite =
+    pkgs.runCommand "docker-port-forward"
+      {
+        nativeBuildInputs = [ pkgs.shellcheck ];
+      }
+      ''
+        mkdir -p "$out/bin" "$out/share/bash-completion/completions"
+        ln -s ${portForwardBin}/bin/docker-port-forward "$out/bin/docker-port-forward"
+
+        cat > "$out/share/bash-completion/completions/docker-port-forward" <<'EOF'
+        _docker_port_forward_complete() {
+          local cur="''${COMP_WORDS[COMP_CWORD]}"
+          local prev=""
+          if ((COMP_CWORD > 0)); then
+            prev="''${COMP_WORDS[COMP_CWORD - 1]}"
+          fi
+          if [[ "$prev" == "--forward" ]]; then
+            mapfile -t COMPREPLY < <(compgen -W "$(docker ps --format '{{.Names}}' 2>/dev/null)" -- "$cur")
+            return 0
+          fi
+          if [[ "$cur" == -* ]]; then
+            mapfile -t COMPREPLY < <(compgen -W "--forward --help -h" -- "$cur")
+            return 0
+          fi
+        }
+        complete -F _docker_port_forward_complete docker-port-forward
+        EOF
+        shellcheck --shell=bash "$out/share/bash-completion/completions/docker-port-forward"
+      '';
 in
 [
   devcSuite
+  portForwardSuite
   (pkgs.writeShellApplication {
     name = "qrencode";
     runtimeInputs = [ pkgs.docker ];
