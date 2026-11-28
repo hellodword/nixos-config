@@ -105,7 +105,10 @@ def parse_tunnel_json(output):
 
 
 def tunnel_state(timeout=5):
-    result = run("mullvad", "status", "--json", check=False, timeout=timeout)
+    try:
+        result = run("mullvad", "status", "--json", check=False, timeout=timeout)
+    except (OSError, subprocess.SubprocessError):
+        return "unavailable"
     parsed = parse_tunnel_json(result.stdout)
     return parsed.get("state", "unknown") if parsed else "unavailable"
 

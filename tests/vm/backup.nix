@@ -272,7 +272,7 @@ in
         notifications = [json.loads(line) for line in upstream.succeed("cat /run/notification-fixture/events.jsonl").splitlines()]
         bodies = [str(event["body"]) for event in notifications]
         assert all(any(f"operation={operation}; result=success" in body for body in bodies) for operation in ("backup", "check", "restore-test", "maintenance"))
-        machine.succeed("systemctl start site-backup-status; backup-status > /tmp/backup-status.json")
+        machine.succeed("systemctl start site-backup-status; backup-status --json > /tmp/backup-status.json")
         machine.copy_from_machine("/tmp/backup-status.json")
   '';
 }

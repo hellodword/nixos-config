@@ -363,11 +363,14 @@ def show_status(args, consumers):
     print(f"Policy generation: {generation}")
 
     applied = current_link / "ipv6-mode.json"
+    family_text = "unavailable"
     if applied.is_file():
-        only4 = json.loads(applied.read_text()).get("ipv4_only")
-        family_text = "IPv4 only" if only4 else "dual stack (IPv4 preferred)"
-    else:
-        family_text = "unavailable"
+        try:
+            info = json.loads(applied.read_text())
+            if isinstance(info, dict):
+                family_text = "IPv4 only" if info.get("ipv4_only") else "dual stack (IPv4 preferred)"
+        except (OSError, ValueError):
+            pass
     print(f"Address family: {family_text}")
 
     if args.watch_underlay:
@@ -376,7 +379,7 @@ def show_status(args, consumers):
         if underlay_file.is_file():
             try:
                 underlay_data = json.loads(underlay_file.read_text())
-            except ValueError:
+            except (OSError, ValueError):
                 underlay_data = None
         if isinstance(underlay_data, dict) and underlay_data.get("interface"):
             parts = [underlay_data["interface"]]
@@ -394,30 +397,35 @@ def show_status(args, consumers):
     if args.rules_status_file.is_file():
         try:
             rules_info = json.loads(args.rules_status_file.read_text())
-            active_id = (rules_info.get("active") or {}).get("id", "none")[:12]
-            pending_id = (rules_info.get("pending") or {}).get("id", "none")[:12]
-            print(f"Shared rules: active={active_id} pending={pending_id}")
-        except (OSError, ValueError, AttributeError):
+            if isinstance(rules_info, dict):
+                active_id = str((rules_info.get("active") or {}).get("id") or "none")[:12]
+                pending_id = str((rules_info.get("pending") or {}).get("id") or "none")[:12]
+                print(f"Shared rules: active={active_id} pending={pending_id}")
+        except (OSError, ValueError, AttributeError, TypeError):
             pass
 
     units = list(consumers) + (["tailscaled.service"] if args.tailscale else [])
     for unit in units:
-        state = subprocess.run(
-            ["systemctl", "show", "-p", "ActiveState", "--value", unit],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).stdout.strip() or "unknown"
+        try:
+            state = subprocess.run(
+                ["systemctl", "show", "-p", "ActiveState", "--value", unit],
+                capture_output=True,
+                text=True,
+                check=False,
+            ).stdout.strip() or "unknown"
+        except (OSError, subprocess.SubprocessError):
+            state = "unknown"
         print(f"{unit}: {state}")
 
     error_json = args.root / "last-error.json"
     if error_json.is_file():
         try:
             last = json.loads(error_json.read_text())
-            print(f"Last error ({last.get('time', '?')}): {last.get('phase', '?')}: {last.get('summary', '?')}")
-            print(f"Error log: {args.root / 'last-error.log'}")
+            if isinstance(last, dict):
+                print(f"Last error ({last.get('time', '?')}): {last.get('phase', '?')}: {last.get('summary', '?')}")
         except (OSError, ValueError):
-            print(f"Error log: {args.root / 'last-error.log'}")
+            pass
+        print(f"Error log: {args.root / 'last-error.log'}")
     prepare_log = args.root / "last-prepare.log"
     if prepare_log.is_file():
         print(f"Prepare log: {prepare_log}")
@@ -490,9 +498,9 @@ def main():
         manifest = args.root / "current/activation.json"
         active = enabled_units(json.loads(manifest.read_text())) if manifest.exists() else set(consumers)
         return ipv6.status(args.root, [unit for unit in consumers if unit in active], args.watch_underlay, args.tailscale)
+    if args.action == "status":
+        return show_status(args, consumers)
     try:
-        if args.action == "status":
-            return show_status(args, consumers)
         if args.action == "ipv6" and args.mode == "status":
             return show_ipv6_status()
         with (args.root / ".lock").open("a") as lock, ExitStack() as cleanup:

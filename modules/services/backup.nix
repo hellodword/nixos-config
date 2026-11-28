@@ -493,7 +493,9 @@ in
 
         try:
             data = json.loads(STATUS_FILE.read_text())
-        except OSError as exc:
+            if not isinstance(data, dict):
+                raise ValueError("status root must be an object")
+        except (OSError, ValueError) as exc:
             print(f"backup-status: {exc}", file=sys.stderr)
             raise SystemExit(1)
 
