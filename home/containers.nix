@@ -210,12 +210,15 @@ let
           echo "devc: missing $rule_base/$rule" >&2
           exit 1
         fi
-        if [[ -d "$workdir/$rule" ]]; then
+        if [[ -L "$workdir/$rule" ]]; then
+          echo "devc: refusing to shadow non-empty $workdir/$rule" >&2
+          exit 1
+        elif [[ -d "$workdir/$rule" ]]; then
           if [[ -n "$(ls -A -- "$workdir/$rule")" ]]; then
             echo "devc: refusing to shadow non-empty $workdir/$rule" >&2
             exit 1
           fi
-        elif [[ -s "$workdir/$rule" || -L "$workdir/$rule" ]]; then
+        elif [[ -s "$workdir/$rule" ]]; then
           echo "devc: refusing to shadow non-empty $workdir/$rule" >&2
           exit 1
         fi

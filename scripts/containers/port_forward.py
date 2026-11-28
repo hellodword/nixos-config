@@ -131,14 +131,21 @@ async def serve_forwards(
                     stdout=asyncio.subprocess.PIPE,
                 )
                 assert proc.stdout is not None and proc.stdin is not None
-                line = await proc.stdout.readline()
-                if line.decode(errors="replace").strip() != "READY":
-                    proc.stdin.close()
+                try:
+                    line = await proc.stdout.readline()
+                    if line.decode(errors="replace").strip() != "READY":
+                        raise RuntimeError(
+                            f"failed to start {HELPER_IMAGE} helper for container {cid[:12]}"
+                        )
+                    helper_cid = cid_file.read_text(encoding="utf-8").strip()
+                except BaseException:
+                    with contextlib.suppress(OSError):
+                        proc.stdin.close()
+                    if proc.returncode is None:
+                        with contextlib.suppress(ProcessLookupError):
+                            proc.terminate()
                     await proc.wait()
-                    raise RuntimeError(
-                        f"failed to start {HELPER_IMAGE} helper for container {cid[:12]}"
-                    )
-                helper_cid = cid_file.read_text(encoding="utf-8").strip()
+                    raise
                 helpers[cid] = (helper_cid, proc)
                 return helper_cid
 
@@ -166,11 +173,14 @@ async def serve_forwards(
                     stdout=asyncio.subprocess.PIPE,
                 )
                 assert proc.stdin is not None and proc.stdout is not None
-                await asyncio.gather(
-                    _pump_to_proc(reader, proc.stdin),
-                    _pump_to_client(proc.stdout, writer),
-                )
-                await proc.wait()
+                in_task = asyncio.create_task(_pump_to_proc(reader, proc.stdin))
+                try:
+                    await _pump_to_client(proc.stdout, writer)
+                    await proc.wait()
+                finally:
+                    in_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await in_task
             except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
                 print(f"docker-port-forward: {exc}", file=sys.stderr)
             finally:
@@ -271,11 +281,7 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             parser.error(str(exc))
         if (host_ip, host_port) in seen_listeners:
-            print(
-                f"docker-port-forward: duplicate listener {host_ip}:{host_port}",
-                file=sys.stderr,
-            )
-            return 1
+            parser.error(f"duplicate listener {host_ip}:{host_port}")
         seen_listeners.add((host_ip, host_port))
         parsed_specs.append((container, host_ip, host_port, dst_ip, dst_port))
 
