@@ -49,7 +49,7 @@ Restic 的 backup、check、restore-test、maintenance 各自记录成功、失�
 
 备份通知在各仓库的持久状态目录中，仅保留每类操作的最新待发送结果。独立的 `site-backup-<target>-notify` 服务在作业结束后尝试发送，开机后及每 5 分钟补发；逐通道确认，已送达的通道不因另一通道失败而重发。投递过程中产生新结果时，旧结果的确认不会清除新结果。停机时该服务最多等待 5 秒，待发送结果留到下次启动。网络响应丢失或确认前停机仍可能导致重复投递。
 
-`backup-status` 的 `notifications` 字段显示最近投递及待发送状态，详细操作历史保留在本机 journal。Restic 任务的停止流程只落盘结果，通知服务独立访问网络；通知失败不会改变备份的成功记录。
+`backup-status` 在存在待发记录时提示 `notify:pending`，`backup-status --json` 的 `notifications` 字段显示最近投递及待发送状态，详细操作历史保留在本机 journal。Restic 任务的停止流程只落盘结果，通知服务独立访问网络；通知失败不会改变备份的成功记录。
 
 ## 额外通道
 
