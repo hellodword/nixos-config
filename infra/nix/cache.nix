@@ -75,8 +75,16 @@ let
       mkProxyScope =
         addr:
         let
+          clientAddr =
+            if addr == "0.0.0.0" then
+              "127.0.0.1"
+            else if addr == "::" then
+              "::1"
+            else
+              addr;
           listen = "${formatHost addr}:${toString port}";
-          uriFor = repo: "http://${listen}/${repo.registry}/${repo.repository}";
+          clientEndpoint = "${formatHost clientAddr}:${toString port}";
+          uriFor = repo: "http://${clientEndpoint}/${repo.registry}/${repo.repository}";
           uris = dedupe (map uriFor allRepos);
           uri =
             if normalizedTarget != null then

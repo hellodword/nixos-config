@@ -198,7 +198,6 @@ in
             ProtectSystem = "strict";
             TemporaryFileSystem = "${userHome}:ro";
             BindPaths = [ cacheRoot ];
-            BindReadOnlyPaths = [ "-${stateRoot}/cache-layout.json" ];
             InaccessiblePaths = lib.optional (persistRoot != "") "-${persistRoot}";
             PrivateTmp = true;
             PrivateDevices = true;

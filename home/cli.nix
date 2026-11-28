@@ -17,7 +17,13 @@ let
   nixpkgsExpr = "(import ${pkgs.path} { system = \"${hostSystem}\"; config.allowUnfree = true; })";
 in
 {
-  imports = [ (lib.mkIf cfg.enable (import ./cli-packages.nix { inherit pkgs; })) ];
+  imports = [
+    (lib.mkIf cfg.enable (
+      import ./cli-packages.nix {
+        inherit pkgs lib nixosConfig;
+      }
+    ))
+  ];
   config = lib.mkIf cfg.enable {
     programs.bash = {
       enable = true;

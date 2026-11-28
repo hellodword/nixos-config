@@ -76,44 +76,46 @@ def parse_cache_layout(raw_json: str, source: str) -> list[tuple[str, str, int]]
     return parsed
 
 
-def inspect_image_layout(image: str) -> tuple[bool, str]:
+def inspect_image_layout(image: str) -> tuple[bool, str, str]:
     result = subprocess.run(
-        [
-            "docker",
-            "image",
-            "inspect",
-            "--format",
-            f'{{{{ index .Config.Labels "{CACHE_LAYOUT_LABEL}" }}}}',
-            image,
-        ],
+        ["docker", "image", "inspect", image],
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
-        return False, ""
-    return True, result.stdout.strip()
+        err = result.stderr.strip()
+        lower = err.lower()
+        if "no such image" in lower or "no such object" in lower or "not found" in lower:
+            return False, "", ""
+        raise RuntimeError(err or f"docker image inspect failed for {image}")
+    items = json.loads(result.stdout)
+    if not isinstance(items, list) or not items or not isinstance(items[0], dict):
+        raise RuntimeError(f"unexpected docker image inspect output for {image}")
+    info = items[0]
+    image_id = info.get("Id")
+    if not isinstance(image_id, str) or not image_id:
+        raise RuntimeError(f"missing image Id for {image}")
+    labels = (info.get("Config") or {}).get("Labels") or {}
+    label_json = labels.get(CACHE_LAYOUT_LABEL) or ""
+    return True, image_id, label_json
 
 
 def resolve_cache_mounts(
     *,
+    image: str,
+    image_id: str,
     label_json: str,
     explicit_layout: Path | None,
-    cache_root: Path,
 ) -> list[tuple[str, str, int]]:
     if explicit_layout is not None:
         return parse_cache_layout(
             explicit_layout.read_text(encoding="utf-8"), str(explicit_layout)
         )
     if label_json:
-        return parse_cache_layout(label_json, f"image label {CACHE_LAYOUT_LABEL}")
-    fallback_file = cache_root.parent / "cache-layout.json"
-    if fallback_file.is_file():
-        return parse_cache_layout(
-            fallback_file.read_text(encoding="utf-8"), str(fallback_file)
-        )
+        return parse_cache_layout(label_json, f"image {image} ({image_id}) label {CACHE_LAYOUT_LABEL}")
     raise RuntimeError(
-        f"image lacks {CACHE_LAYOUT_LABEL} label and {fallback_file} does not exist"
+        f"image {image} ({image_id}) is missing label {CACHE_LAYOUT_LABEL}"
     )
 
 
@@ -121,12 +123,16 @@ def prepare_cache_dirs(cache_root: Path, mounts: list[tuple[str, str, int]]) -> 
     reject_symlink(cache_root)
     cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
     reject_symlink(cache_root)
+    os.chmod(cache_root, 0o700)
     for name, _, mode in mounts:
         sub = cache_root / name
         reject_symlink(sub)
         if not sub.exists():
             sub.mkdir(mode=mode)
-        reject_symlink(sub)
+            reject_symlink(sub)
+            os.chmod(sub, mode)
+        else:
+            reject_symlink(sub)
 
 
 def candidate_roots(cache_root: Path, persist_root: str | None) -> set[str]:
@@ -192,7 +198,8 @@ def main(argv: list[str] | None = None) -> int:
         passthrough = passthrough[1:]
 
     cache_root = (args.cache_root or default_cache_root()).expanduser()
-    present, label_json = inspect_image_layout(args.image)
+    dry_run = "--dry-run" in passthrough
+    present, image_id, label_json = inspect_image_layout(args.image)
     if not present:
         if args.require_image:
             print(
@@ -207,19 +214,40 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     mounts = resolve_cache_mounts(
+        image=args.image,
+        image_id=image_id,
         label_json=label_json,
         explicit_layout=args.cache_layout,
-        cache_root=cache_root,
     )
-    prepare_cache_dirs(cache_root, mounts)
+    volume_args: list[str] = []
+    if dry_run:
+        if not cache_root.exists():
+            print(
+                f"devcontainer-cache-prune: skipping dry-run, cache root does not exist: {cache_root}",
+                flush=True,
+            )
+            return 0
+        reject_symlink(cache_root)
+        for mount_id, target, _ in mounts:
+            pool = cache_root / mount_id
+            if pool.exists():
+                reject_symlink(pool)
+                volume_args.extend(["-v", f"{pool}:{target}"])
+        if not volume_args:
+            print(
+                f"devcontainer-cache-prune: skipping dry-run, no cache directories present in {cache_root}",
+                flush=True,
+            )
+            return 0
+    else:
+        prepare_cache_dirs(cache_root, mounts)
+        for mount_id, target, _ in mounts:
+            volume_args.extend(["-v", f"{cache_root / mount_id}:{target}"])
+
     roots = candidate_roots(cache_root, args.persist_root)
     mode_args: list[str] = []
     if "--idle" not in passthrough and not caches_in_use(roots):
         mode_args.append("--idle")
-
-    volume_args: list[str] = []
-    for mount_id, target, _ in mounts:
-        volume_args.extend(["-v", f"{cache_root / mount_id}:{target}"])
 
     command = [
         "docker",
@@ -232,7 +260,7 @@ def main(argv: list[str] | None = None) -> int:
         "--security-opt=no-new-privileges:true",
         "--pids-limit=256",
         *volume_args,
-        args.image,
+        image_id,
         "devcontainer-runtime",
         "prune-caches",
         *mode_args,

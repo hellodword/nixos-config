@@ -1,4 +1,9 @@
-{ pkgs, ... }:
+{
+  pkgs,
+  lib ? pkgs.lib,
+  nixosConfig ? { },
+  ...
+}:
 let
   gitSigning = pkgs.writeShellApplication {
     name = "git-signing";
@@ -106,5 +111,5 @@ in
       gitSigning
       gitBackup
     ])
-    ++ (import ./containers.nix { inherit pkgs; });
+    ++ (import ./containers.nix { inherit pkgs lib nixosConfig; });
 }

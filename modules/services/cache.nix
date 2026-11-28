@@ -10,14 +10,16 @@ let
   caches = import ../../nix/cache-config.nix;
   projectCache = caches.withProject cfg;
   oranc = inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.oranc;
-  needsDockerBridge =
-    config.virtualisation.docker.enable
-    && !lib.elem cfg.listenAddress [
-      "127.0.0.1"
-      "::1"
-      "0.0.0.0"
-      "::"
-    ];
+  isLoopback = lib.elem cfg.listenAddress [
+    "127.0.0.1"
+    "::1"
+  ];
+  isWildcard = lib.elem cfg.listenAddress [
+    "0.0.0.0"
+    "::"
+  ];
+  exposeToBridge = config.virtualisation.docker.enable && !isLoopback;
+  needsDockerBridge = exposeToBridge && !isWildcard;
 in
 {
   imports = [ ../core/reserved-ports.nix ];
@@ -89,6 +91,19 @@ in
           RestartSec = "2s";
           TimeoutStopSec = "10s";
           MemoryDenyWriteExecute = true;
+        };
+      };
+      networking = lib.mkIf exposeToBridge {
+        nftables.enable = true;
+        firewall.interfaces.docker0.allowedTCPPorts = [ cfg.port ];
+        nftables.tables.site-oci-cache = {
+          family = "inet";
+          content = ''
+            chain input {
+              type filter hook input priority -20; policy accept;
+              iifname != "lo" iifname != "docker0" iifname != "br-*" tcp dport ${toString cfg.port} drop
+            }
+          '';
         };
       };
       nix.settings = lib.optionalAttrs (cfg.netrcFile != null) { netrc-file = cfg.netrcFile; };
